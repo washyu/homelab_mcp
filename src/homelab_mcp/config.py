@@ -14,10 +14,17 @@ class DatabaseConfig:
         # SQLite configuration
         self.sqlite_path = os.getenv('SQLITE_PATH')
         if not self.sqlite_path:
-            home_dir = Path.home()
-            mcp_dir = home_dir / '.mcp'
-            mcp_dir.mkdir(exist_ok=True)
-            self.sqlite_path = str(mcp_dir / 'sitemap.db')
+            try:
+                home_dir = Path.home()
+                mcp_dir = home_dir / '.mcp'
+                mcp_dir.mkdir(exist_ok=True)
+                self.sqlite_path = str(mcp_dir / 'sitemap.db')
+            except (RuntimeError, OSError):
+                # Fallback to current directory if home directory cannot be determined
+                current_dir = Path.cwd()
+                mcp_dir = current_dir / '.mcp'
+                mcp_dir.mkdir(exist_ok=True)
+                self.sqlite_path = str(mcp_dir / 'sitemap.db')
         
         # PostgreSQL configuration
         self.postgres_config = {

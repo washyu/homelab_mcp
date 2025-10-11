@@ -17,11 +17,8 @@ from src.homelab_mcp.sitemap import (
 
 @pytest.fixture
 def temp_db():
-    """Create a temporary database for testing."""
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        db_path = tmp.name
-    yield db_path
-    os.unlink(db_path)
+    """Create an in-memory database for testing."""
+    yield ":memory:"
 
 
 @pytest.fixture
@@ -106,10 +103,8 @@ class TestNetworkSiteMap:
         """Test that initialization creates database tables."""
         sitemap = NetworkSiteMap(db_path=temp_db, db_type='sqlite')
         
-        # Verify database file exists
-        assert os.path.exists(temp_db)
-        
-        # Test that we can get empty devices list
+        # For in-memory database, just test that we can get empty devices list
+        # This confirms the database was initialized successfully
         devices = sitemap.get_all_devices()
         assert devices == []
     
@@ -381,23 +376,22 @@ class TestDatabaseOperations:
         """Test that all required tables are created."""
         sitemap = NetworkSiteMap(db_path=temp_db, db_type='sqlite')
         
-        import sqlite3
-        with sqlite3.connect(temp_db) as conn:
-            cursor = conn.cursor()
-            
-            # Check that devices table exists
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")
-            assert cursor.fetchone() is not None
-            
-            # Check that discovery_history table exists
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
-            assert cursor.fetchone() is not None
-            
-            # Check that indexes exist
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
-            indexes = [row[0] for row in cursor.fetchall()]
-            assert any("idx_devices_hostname_ip" in idx for idx in indexes)
-            assert any("idx_history_device_id" in idx for idx in indexes)
+        # Use the existing database adapter connection
+        cursor = sitemap.db_adapter.connection.cursor()
+        
+        # Check that devices table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")
+        assert cursor.fetchone() is not None
+        
+        # Check that discovery_history table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
+        assert cursor.fetchone() is not None
+        
+        # Check that indexes exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
+        indexes = [row[0] for row in cursor.fetchall()]
+        assert any("idx_devices_hostname_ip" in idx for idx in indexes)
+        assert any("idx_history_device_id" in idx for idx in indexes)
     
     def test_device_unique_constraint(self, sitemap, sample_ssh_discovery_success):
         """Test that hostname+connection_ip combination is unique."""

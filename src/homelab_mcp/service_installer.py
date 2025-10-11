@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import subprocess
 import yaml
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -9,6 +10,82 @@ from .ssh_tools import ssh_execute_command
 
 # Service templates directory
 TEMPLATES_DIR = Path(__file__).parent / "service_templates"
+
+
+class AnsibleRunner:
+    """Runner for executing Ansible playbooks."""
+    
+    def __init__(self, playbook_path: str, inventory_path: str, variables: Optional[Dict] = None):
+        self.playbook_path = playbook_path
+        self.inventory_path = inventory_path
+        self.variables = variables or {}
+        self.results = {}
+    
+    async def run_playbook(self, extra_vars: Optional[Dict] = None) -> Dict[str, Any]:
+        """Execute the Ansible playbook."""
+        cmd = [
+            "ansible-playbook",
+            "-i", self.inventory_path,
+            self.playbook_path
+        ]
+        
+        # Add extra variables
+        all_vars = {**self.variables, **(extra_vars or {})}
+        if all_vars:
+            vars_json = json.dumps(all_vars)
+            cmd.extend(["--extra-vars", vars_json])
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            self.results = {
+                "return_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "success": result.returncode == 0
+            }
+            
+            return self.results
+            
+        except Exception as e:
+            self.results = {
+                "return_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+                "success": False
+            }
+            return self.results
+
+
+def generate_ansible_inventory(hostname: str, username: str, config: Optional[Dict] = None) -> str:
+    """Generate Ansible inventory content."""
+    inventory = f"""[servers]
+{hostname} ansible_user={username} ansible_ssh_private_key_file=~/.ssh/mcp_admin_rsa
+
+[servers:vars]
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+"""
+    
+    if config and "additional_vars" in config:
+        for key, value in config["additional_vars"].items():
+            inventory += f"{key}={value}\n"
+    
+    return inventory
+
+
+def render_template(template_content: str, variables: Dict[str, Any]) -> str:
+    """Simple template rendering with variable substitution."""
+    result = template_content
+    for key, value in variables.items():
+        placeholder = f"{{{{{key}}}}}"
+        result = result.replace(placeholder, str(value))
+    return result
 
 
 class ServiceInstaller:
@@ -179,6 +256,10 @@ class ServiceInstaller:
             )
         elif install_method == "ansible":
             return await self._install_ansible_service(
+                service_name, service, hostname, username, password, config_override
+            )
+        elif install_method == "iso_installation":
+            return await self._install_iso_service(
                 service_name, service, hostname, username, password, config_override
             )
         else:
@@ -1390,4 +1471,44 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
             "command": cmd,
             "output": run_data.get("output", ""),
             "exit_code": run_data.get("exit_code")
+        }
+    
+    async def _install_iso_service(
+        self,
+        service_name: str,
+        service: Dict,
+        hostname: str,
+        username: str,
+        password: Optional[str],
+        config_override: Optional[Dict]
+    ) -> Dict[str, Any]:
+        """Handle ISO-based installation (like TrueNAS, Proxmox, etc.)."""
+        # ISO installations typically require manual intervention or VM/bare metal setup
+        # This method provides guidance rather than automated installation
+        
+        installation_config = service.get("installation", {})
+        download_url = installation_config.get("download_url")
+        installation_steps = installation_config.get("installation_steps", [])
+        requirements = installation_config.get("requirements", [])
+        
+        return {
+            "status": "guidance",
+            "service": service_name,
+            "method": "iso_installation",
+            "message": "ISO-based installations require manual setup",
+            "guidance": {
+                "download_url": download_url,
+                "requirements": requirements,
+                "installation_steps": installation_steps,
+                "installation_type": installation_config.get("installation_type", "bare_metal_or_vm"),
+                "target_hostname": hostname,
+                "next_steps": [
+                    "Download the ISO from the provided URL",
+                    "Create bootable media or mount ISO in VM",
+                    "Boot target system from installation media",
+                    "Follow the provided installation steps",
+                    "Configure network settings to match target hostname",
+                    "Complete post-installation configuration"
+                ]
+            }
         }

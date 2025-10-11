@@ -1,10 +1,15 @@
 """Tool definitions and execution for the Homelab MCP server."""
 
 import json
+import logging
 from typing import Any, Dict
 
 from .ssh_tools import ssh_discover_system, setup_remote_mcp_admin, verify_mcp_admin_access
 from .sitemap import NetworkSiteMap, discover_and_store, bulk_discover_and_store
+from .error_handling import timeout_wrapper, safe_json_response
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 # Tool registry
@@ -965,8 +970,11 @@ def get_available_tools() -> Dict[str, Dict[str, Any]]:
     return TOOLS.copy()
 
 
+@timeout_wrapper(timeout_seconds=45.0)
 async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a tool by name with the given arguments."""
+    """Execute a tool by name with the given arguments, with timeout protection."""
+    logger.info(f"Executing tool: {tool_name}")
+    
     # Initialize sitemap instance
     sitemap = NetworkSiteMap()
     

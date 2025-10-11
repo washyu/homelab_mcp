@@ -6,10 +6,16 @@ MCP (Model Context Protocol) server for homelab system management.
 import asyncio
 import json
 import sys
+import logging
 from typing import Any, Dict, Optional
 
 from .tools import get_available_tools, execute_tool
 from .ssh_tools import ensure_mcp_ssh_key
+from .error_handling import health_checker, timeout_wrapper
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class HomelabMCPServer:
@@ -20,17 +26,25 @@ class HomelabMCPServer:
         self.ssh_key_initialized = False
     
     async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle incoming MCP requests."""
+        """Handle incoming MCP requests with timeout protection."""
         method = request.get("method")
         params = request.get("params", {})
         request_id = request.get("id")
         
+        # Record request for health monitoring
+        health_checker.record_request()
+        
         try:
             if method == "initialize":
-                # Initialize SSH key on first request
+                # Initialize SSH key on first request with timeout
                 if not self.ssh_key_initialized:
-                    await ensure_mcp_ssh_key()
-                    self.ssh_key_initialized = True
+                    try:
+                        await asyncio.wait_for(ensure_mcp_ssh_key(), timeout=10.0)
+                        self.ssh_key_initialized = True
+                    except asyncio.TimeoutError:
+                        logger.error("SSH key initialization timed out")
+                        health_checker.record_error("timeout")
+                        return self._error_response(request_id, "SSH key initialization timed out")
                 
                 return self._success_response(request_id, {
                     "protocolVersion": "2024-11-05",
@@ -57,16 +71,37 @@ class HomelabMCPServer:
                 tool_args = params.get("arguments", {})
                 
                 if tool_name not in self.tools:
+                    health_checker.record_error("invalid_tool")
                     return self._error_response(request_id, f"Unknown tool: {tool_name}")
                 
-                result = await execute_tool(tool_name, tool_args)
-                return self._success_response(request_id, result)
+                # Execute tool with timeout protection
+                try:
+                    result = await asyncio.wait_for(
+                        execute_tool(tool_name, tool_args),
+                        timeout=60.0  # 60 second timeout for tool execution
+                    )
+                    return self._success_response(request_id, result)
+                except asyncio.TimeoutError:
+                    logger.error(f"Tool '{tool_name}' execution timed out")
+                    health_checker.record_error("timeout")
+                    return self._error_response(
+                        request_id, 
+                        f"Tool '{tool_name}' timed out after 60 seconds. The operation may still be running in the background."
+                    )
+            
+            elif method == "health/status":
+                # Health check endpoint
+                health_status = health_checker.get_health_status()
+                return self._success_response(request_id, health_status)
             
             else:
+                health_checker.record_error("unknown_method")
                 return self._error_response(request_id, f"Unknown method: {method}")
                 
         except Exception as e:
-            return self._error_response(request_id, str(e))
+            logger.error(f"Unexpected error handling request: {str(e)}", exc_info=True)
+            health_checker.record_error("unexpected")
+            return self._error_response(request_id, f"Server error: {str(e)}")
     
     def _success_response(self, request_id: Any, result: Any) -> Dict[str, Any]:
         """Create a successful JSON-RPC response."""
@@ -88,50 +123,104 @@ class HomelabMCPServer:
         }
     
     async def run_stdio(self):
-        """Run the MCP server using stdio (stdin/stdout)."""
+        """Run the MCP server using stdio with robust error handling."""
+        logger.info("Starting MCP server with enhanced error handling")
+        
         reader = asyncio.StreamReader()
         protocol = asyncio.StreamReaderProtocol(reader)
         await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
         
+        consecutive_errors = 0
+        max_consecutive_errors = 10
+        
         while True:
             try:
-                # Read line from stdin
-                line_bytes = await reader.readline()
-                if not line_bytes:
-                    break
+                # Read line from stdin with timeout to prevent hanging
+                try:
+                    line_bytes = await asyncio.wait_for(reader.readline(), timeout=300.0)  # 5 minute timeout
+                    if not line_bytes:
+                        logger.info("EOF received, shutting down server")
+                        break
+                except asyncio.TimeoutError:
+                    logger.warning("No input received for 5 minutes, server still running")
+                    continue
                     
                 line = line_bytes.decode('utf-8').strip()
                 if not line:
                     continue
                 
                 # Parse JSON-RPC request
-                request = json.loads(line)
+                try:
+                    request = json.loads(line)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON received: {str(e)}")
+                    error_response = self._error_response(None, f"Invalid JSON: {str(e)}", -32700)
+                    print(json.dumps(error_response))
+                    sys.stdout.flush()
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.error(f"Too many consecutive errors ({consecutive_errors}), shutting down")
+                        break
+                    continue
+                
+                # Reset error counter on successful JSON parse
+                consecutive_errors = 0
                 
                 # Check if this is a notification (no id field)
                 if "id" not in request:
                     # Notifications don't get responses, just process them
                     method = request.get("method")
                     if method == "notifications/initialized":
-                        # Client is ready, we can proceed
-                        pass
+                        logger.info("Client initialized notification received")
                     # Don't send any response for notifications
                     continue
                 
-                # Handle request
-                response = await self.handle_request(request)
+                # Handle request with timeout protection
+                try:
+                    response = await asyncio.wait_for(
+                        self.handle_request(request),
+                        timeout=120.0  # 2 minute timeout for complete request handling
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Request handling timed out after 2 minutes")
+                    error_response = self._error_response(
+                        request.get("id"),
+                        "Request processing timed out after 2 minutes",
+                        -32603
+                    )
+                    response = error_response
                 
                 # Send response to stdout
-                print(json.dumps(response))
-                sys.stdout.flush()
+                try:
+                    print(json.dumps(response))
+                    sys.stdout.flush()
+                except Exception as e:
+                    logger.error(f"Failed to send response: {str(e)}")
                 
-            except json.JSONDecodeError as e:
-                error_response = self._error_response(None, f"Invalid JSON: {str(e)}", -32700)
-                print(json.dumps(error_response))
-                sys.stdout.flush()
+            except KeyboardInterrupt:
+                logger.info("Received interrupt signal, shutting down gracefully")
+                break
             except Exception as e:
-                error_response = self._error_response(None, f"Server error: {str(e)}")
-                print(json.dumps(error_response))
-                sys.stdout.flush()
+                logger.error(f"Unexpected error in server loop: {str(e)}", exc_info=True)
+                consecutive_errors += 1
+                
+                # Try to send error response if we can identify the request
+                try:
+                    error_response = self._error_response(None, f"Server error: {str(e)}", -32603)
+                    print(json.dumps(error_response))
+                    sys.stdout.flush()
+                except Exception:
+                    logger.error("Failed to send error response")
+                
+                # If too many consecutive errors, shut down to prevent infinite loop
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.error(f"Too many consecutive errors ({consecutive_errors}), shutting down")
+                    break
+                
+                # Brief pause before continuing to avoid rapid error loops
+                await asyncio.sleep(0.1)
+        
+        logger.info("MCP server shutdown complete")
 
 
 async def main():

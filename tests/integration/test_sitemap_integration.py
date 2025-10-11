@@ -26,12 +26,8 @@ class TestSitemapIntegration:
     
     @pytest.fixture
     def temp_db(self):
-        """Create a temporary database for testing."""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        yield db_path
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        """Create an in-memory database for testing."""
+        yield ":memory:"
     
     @pytest.fixture
     def sitemap(self, temp_db):
@@ -528,8 +524,8 @@ class TestSitemapIntegration:
         
         # Test bulk discovery with mixed success/failure
         targets = [
-            {"hostname": "192.168.255.253", "username": "test"},  # Will fail
-            {"hostname": "192.168.255.252", "username": "test"}   # Will also fail
+            {"hostname": "192.168.255.253", "username": "test", "password": "test"},  # Will fail - invalid host
+            {"hostname": "192.168.255.252", "username": "test", "password": "test"}   # Will also fail - invalid host
         ]
         
         bulk_result = await bulk_discover_and_store(sitemap, targets)

@@ -1,5 +1,6 @@
 """Tests for the MCP server."""
 
+import asyncio
 import json
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -138,4 +139,169 @@ async def test_ssh_discover_tool_missing_params():
     
     assert response["jsonrpc"] == "2.0"
     assert response["id"] == 6
-    assert "error" in response or "error" in json.loads(response["result"]["content"][0]["text"])
+    # Should get either direct error or error in content
+    has_error = ("error" in response or 
+                ("result" in response and "content" in response["result"] and 
+                 "error" in str(response["result"]["content"])))
+    assert has_error
+
+
+@pytest.mark.asyncio
+async def test_health_status_endpoint():
+    """Test the health status endpoint."""
+    server = HomelabMCPServer()
+    
+    request = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "health/status"
+    }
+    
+    response = await server.handle_request(request)
+    
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 7
+    assert "result" in response
+    
+    health_status = response["result"]
+    assert "status" in health_status
+    assert "uptime_seconds" in health_status
+    assert "total_requests" in health_status
+    assert "error_rate" in health_status
+
+
+@pytest.mark.asyncio
+async def test_server_timeout_handling():
+    """Test that server handles tool timeouts gracefully."""
+    server = HomelabMCPServer()
+    
+    # Mock a tool that will timeout
+    with patch('src.homelab_mcp.tools.execute_tool') as mock_execute:
+        async def slow_tool(*args, **kwargs):
+            await asyncio.sleep(0.2)  # Longer than our test timeout
+            return {"content": [{"type": "text", "text": "success"}]}
+        
+        mock_execute.side_effect = slow_tool
+        
+        request = {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {
+                "name": "ssh_discover",
+                "arguments": {"hostname": "test", "username": "test"}
+            }
+        }
+        
+        # Should timeout and return error, not crash
+        response = await asyncio.wait_for(server.handle_request(request), timeout=0.5)
+        
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] == 8
+        # Should get either direct error or error in content
+        has_error = ("error" in response or 
+                    ("result" in response and "content" in response["result"] and 
+                     "error" in str(response["result"]["content"])))
+        assert has_error
+
+
+@pytest.mark.asyncio
+@patch('src.homelab_mcp.server.ensure_mcp_ssh_key')
+async def test_server_ssh_key_timeout(mock_ensure_key):
+    """Test server handles SSH key initialization timeout."""
+    # Make SSH key initialization timeout
+    async def slow_key_gen():
+        await asyncio.sleep(1.0)  # Long enough to trigger timeout in patched version
+        return "/test/path"
+    
+    mock_ensure_key.side_effect = slow_key_gen
+    
+    # Patch the timeout to immediately raise TimeoutError for faster testing
+    with patch('asyncio.wait_for') as mock_wait_for:
+        mock_wait_for.side_effect = asyncio.TimeoutError()
+        
+        server = HomelabMCPServer()
+        
+        request = {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "initialize"
+        }
+        
+        # Should timeout during SSH key generation
+        response = await server.handle_request(request)
+        
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] == 9
+        # Should get either direct error or error in content
+        has_error = ("error" in response or 
+                    ("result" in response and "content" in response["result"] and 
+                     "error" in str(response["result"]["content"])))
+        assert has_error
+
+
+@pytest.mark.asyncio
+async def test_server_health_monitoring():
+    """Test server health monitoring functionality."""
+    from src.homelab_mcp.error_handling import health_checker
+    
+    # Reset health checker for clean test
+    initial_requests = health_checker.request_count
+    initial_errors = health_checker.error_count
+    
+    server = HomelabMCPServer()
+    
+    # Make a successful request
+    request = {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/list"
+    }
+    
+    await server.handle_request(request)
+    
+    # Check that request was recorded
+    assert health_checker.request_count > initial_requests
+    
+    # Make an error request
+    error_request = {
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": {"name": "nonexistent_tool"}
+    }
+    
+    await server.handle_request(error_request)
+    
+    # Check that error was recorded
+    assert health_checker.error_count > initial_errors
+
+
+@pytest.mark.asyncio
+async def test_server_exception_handling():
+    """Test server handles unexpected exceptions gracefully."""
+    server = HomelabMCPServer()
+    
+    # Mock execute_tool to raise unexpected exception
+    with patch('src.homelab_mcp.tools.execute_tool') as mock_execute:
+        mock_execute.side_effect = RuntimeError("Unexpected error")
+        
+        request = {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "tools/call",
+            "params": {
+                "name": "ssh_discover",
+                "arguments": {"hostname": "test", "username": "test"}
+            }
+        }
+        
+        response = await server.handle_request(request)
+        
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] == 12
+        # Should get either direct error or error in content
+        has_error = ("error" in response or 
+                    ("result" in response and "content" in response["result"] and 
+                     "error" in str(response["result"]["content"])))
+        assert has_error

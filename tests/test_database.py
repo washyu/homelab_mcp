@@ -22,12 +22,8 @@ class TestSQLiteAdapter:
     
     @pytest.fixture
     def temp_db(self):
-        """Create a temporary database file."""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
-            db_path = tmp.name
-        yield db_path
-        if os.path.exists(db_path):
-            os.unlink(db_path)
+        """Create an in-memory database."""
+        yield ":memory:"
     
     @pytest.fixture
     def adapter(self, temp_db):
@@ -41,8 +37,7 @@ class TestSQLiteAdapter:
         adapter = SQLiteAdapter(temp_db)
         adapter.init_schema()
         
-        # Test that tables exist
-        adapter.connect()
+        # Test that tables exist (connection already established by init_schema)
         cursor = adapter.connection.cursor()
         
         # Check devices table

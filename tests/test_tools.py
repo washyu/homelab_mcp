@@ -55,9 +55,19 @@ def test_get_available_tools():
 
 @pytest.mark.asyncio
 async def test_execute_unknown_tool():
-    """Test executing unknown tool raises error."""
-    with pytest.raises(ValueError, match="Unknown tool"):
-        await execute_tool("nonexistent_tool", {})
+    """Test executing unknown tool returns structured error response."""
+    result = await execute_tool("nonexistent_tool", {})
+    
+    # Should return structured error response, not raise exception
+    assert "content" in result
+    assert len(result["content"]) == 1
+    assert result["content"][0]["type"] == "text"
+    
+    # Parse the error response
+    error_data = json.loads(result["content"][0]["text"])
+    assert error_data["status"] == "error"
+    assert "Unknown tool" in error_data["error"]
+    assert "nonexistent_tool" in error_data["error"]
 
 
 @pytest.mark.asyncio

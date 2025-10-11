@@ -5,7 +5,7 @@ import sys
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 
-from .database import SQLiteAdapter, PostgreSQLAdapter, get_database_adapter
+from .database import SQLiteAdapter, PostgreSQLAdapter, calculate_data_hash
 from .config import DatabaseConfig, get_config
 
 

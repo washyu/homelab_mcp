@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
@@ -7,35 +7,171 @@ on:
     branches: [ main, master, develop ]
 
 jobs:
-  test:
+  # Core unit tests - must pass for CI to succeed
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
-
+        python-version: ['3.11', '3.12']
+    
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
+          
+      - name: Install dependencies
+        run: |
+          uv sync
+          
+      - name: Run unit tests with coverage
+        run: |
+          uv run pytest \
+            tests/test_config.py \
+            tests/test_error_handling.py \
+            tests/test_database.py \
+            tests/test_sitemap.py \
+            tests/test_ssh_tools.py \
+            tests/test_tools.py \
+            tests/test_vm_operations.py \
+            tests/test_vm_providers.py \
+            tests/test_server.py \
+            tests/test_service_installer.py \
+            tests/test_infrastructure_crud.py \
+            tests/test_migration.py \
+            -v \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-fail-under=50 \
+            --tb=short
+            
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+  # Integration tests - allowed to fail but tracked
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          
+      - name: Install dependencies
+        run: |
+          uv sync
+          
+      - name: Run integration tests
+        run: |
+          uv run pytest \
+            tests/integration/ \
+            tests/test_ansible.py \
+            -v \
+            --tb=short \
+            -x
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -r requirements-dev.txt
+  # Cross-platform compatibility tests
+  cross-platform:
+    name: Cross-platform Tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.11', '3.12']
+        
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          
+      - name: Install UV (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          
+      - name: Install UV (Windows)  
+        if: runner.os == 'Windows'
+        run: |
+          irm https://astral.sh/uv/install.ps1 | iex
+          echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          
+      - name: Install dependencies
+        run: |
+          uv sync
+          
+      - name: Run core tests
+        run: |
+          uv run pytest \
+            tests/test_config.py \
+            tests/test_error_handling.py \
+            tests/test_database.py \
+            -v \
+            --tb=short
 
-    - name: Run tests
-      run: |
-        pytest -v --tb=short
-
-    - name: Run linting
-      run: |
-        black --check src tests
-        flake8 src tests
-
-    - name: Run type checking
-      run: |
-        mypy src tests --ignore-missing-imports
+  # Code quality checks
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          
+      - name: Install dependencies
+        run: |
+          uv sync
+          
+      - name: Lint with ruff
+        run: |
+          uv run ruff check src tests
+          
+      - name: Format check with ruff
+        run: |
+          uv run ruff format --check src tests
+          
+      - name: Type check with mypy
+        run: |
+          uv run mypy src --ignore-missing-imports

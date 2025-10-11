@@ -67,10 +67,17 @@ class SQLiteAdapter(DatabaseAdapter):
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
             # Default to ~/.mcp/sitemap.db
-            home_dir = Path.home()
-            mcp_dir = home_dir / '.mcp'
-            mcp_dir.mkdir(exist_ok=True)
-            db_path = str(mcp_dir / 'sitemap.db')
+            try:
+                home_dir = Path.home()
+                mcp_dir = home_dir / '.mcp'
+                mcp_dir.mkdir(exist_ok=True)
+                db_path = str(mcp_dir / 'sitemap.db')
+            except (RuntimeError, OSError):
+                # Fallback to current directory if home directory cannot be determined
+                current_dir = Path.cwd()
+                mcp_dir = current_dir / '.mcp'
+                mcp_dir.mkdir(exist_ok=True)
+                db_path = str(mcp_dir / 'sitemap.db')
         
         self.db_path = db_path
         self.connection = None

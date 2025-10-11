@@ -4,8 +4,14 @@ import asyncio
 import asyncssh
 import json
 import socket
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any, cast
+
+from .error_handling import ssh_connection_wrapper, retry_on_failure
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Get the path for storing SSH keys
 SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
@@ -44,6 +50,8 @@ async def ensure_mcp_ssh_key() -> str:
     return str(key_path)
 
 
+@ssh_connection_wrapper(timeout_seconds=30.0)
+@retry_on_failure(max_retries=2, delay_seconds=2.0)
 async def setup_remote_mcp_admin(
     hostname: str, 
     username: str, 
@@ -187,85 +195,74 @@ async def setup_remote_mcp_admin(
         }, indent=2)
 
 
+@ssh_connection_wrapper(timeout_seconds=15.0)
 async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
     """Verify SSH key access to mcp_admin account on remote system."""
-    try:
-        key_path = get_mcp_ssh_key_path()
+    key_path = get_mcp_ssh_key_path()
+    
+    if not key_path.exists():
+        return json.dumps({
+            "status": "error",
+            "hostname": hostname,
+            "error": "MCP SSH key not found. Run ensure_mcp_ssh_key() first."
+        }, indent=2)
+    
+    # Test SSH connection with key
+    connect_kwargs = {
+        "host": hostname,
+        "port": port,
+        "username": "mcp_admin",
+        "client_keys": [str(key_path)],
+        "known_hosts": None,
+        "connect_timeout": 10
+    }
+    
+    async with await asyncssh.connect(**connect_kwargs) as conn:
+        # Test basic access
+        whoami_result = await conn.run('whoami', check=False)
+        if whoami_result.exit_status != 0:
+            raise Exception("Failed to execute whoami command")
         
-        if not key_path.exists():
-            return json.dumps({
-                "status": "error",
-                "hostname": hostname,
-                "error": "MCP SSH key not found. Run ensure_mcp_ssh_key() first."
-            }, indent=2)
+        # Test sudo access
+        sudo_result = await conn.run('sudo -n whoami', check=False)
+        sudo_access = sudo_result.exit_status == 0
         
-        # Test SSH connection with key
-        connect_kwargs = {
-            "host": hostname,
-            "port": port,
-            "username": "mcp_admin",
-            "client_keys": [str(key_path)],
-            "known_hosts": None,
-            "connect_timeout": 10
+        # Get system hostname
+        hostname_result = await conn.run('hostname', check=False)
+        remote_hostname = hostname
+        if hostname_result.exit_status == 0 and hostname_result.stdout:
+            remote_hostname = cast(str, hostname_result.stdout).strip()
+        
+        # Check group memberships
+        groups_result = await conn.run('groups', check=False)
+        user_groups = []
+        if groups_result.exit_status == 0 and groups_result.stdout:
+            groups_output = cast(str, groups_result.stdout).strip()
+            # Parse groups output (format: "mcp_admin : mcp_admin sudo docker ...")
+            if ':' in groups_output:
+                user_groups = groups_output.split(':', 1)[1].strip().split()
+            else:
+                user_groups = groups_output.split()
+        
+        # Check which service groups the user belongs to
+        service_groups = [g for g in user_groups if g in ['docker', 'lxd', 'libvirt', 'kvm']]
+        
+    return json.dumps({
+        "status": "success",
+        "hostname": remote_hostname,
+        "connection_ip": hostname,
+        "mcp_admin": {
+            "ssh_access": "Success: Connected with SSH key",
+            "sudo_access": "Success: Passwordless sudo working" if sudo_access else "Failed: No sudo access",
+            "username": cast(str, whoami_result.stdout).strip() if whoami_result.stdout else "unknown",
+            "groups": user_groups,
+            "service_groups": service_groups
         }
-        
-        async with await asyncssh.connect(**connect_kwargs) as conn:
-            # Test basic access
-            whoami_result = await conn.run('whoami', check=False)
-            if whoami_result.exit_status != 0:
-                raise Exception("Failed to execute whoami command")
-            
-            # Test sudo access
-            sudo_result = await conn.run('sudo -n whoami', check=False)
-            sudo_access = sudo_result.exit_status == 0
-            
-            # Get system hostname
-            hostname_result = await conn.run('hostname', check=False)
-            remote_hostname = hostname
-            if hostname_result.exit_status == 0 and hostname_result.stdout:
-                remote_hostname = cast(str, hostname_result.stdout).strip()
-            
-            # Check group memberships
-            groups_result = await conn.run('groups', check=False)
-            user_groups = []
-            if groups_result.exit_status == 0 and groups_result.stdout:
-                groups_output = cast(str, groups_result.stdout).strip()
-                # Parse groups output (format: "mcp_admin : mcp_admin sudo docker ...")
-                if ':' in groups_output:
-                    user_groups = groups_output.split(':', 1)[1].strip().split()
-                else:
-                    user_groups = groups_output.split()
-            
-            # Check which service groups the user belongs to
-            service_groups = [g for g in user_groups if g in ['docker', 'lxd', 'libvirt', 'kvm']]
-            
-            return json.dumps({
-                "status": "success",
-                "hostname": remote_hostname,
-                "connection_ip": hostname,
-                "mcp_admin": {
-                    "ssh_access": "Success: Connected with SSH key",
-                    "sudo_access": "Success: Passwordless sudo working" if sudo_access else "Failed: No sudo access",
-                    "username": cast(str, whoami_result.stdout).strip() if whoami_result.stdout else "unknown",
-                    "groups": user_groups,
-                    "service_groups": service_groups
-                }
-            }, indent=2)
-        
-    except asyncssh.misc.PermissionDenied:
-        return json.dumps({
-            "status": "error",
-            "hostname": hostname,
-            "error": "SSH key authentication failed for mcp_admin"
-        }, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "status": "error",
-            "hostname": hostname,
-            "error": str(e)
-        }, indent=2)
+    }, indent=2)
 
 
+@ssh_connection_wrapper(timeout_seconds=30.0)
+@retry_on_failure(max_retries=1, delay_seconds=1.0)
 async def ssh_discover_system(
     hostname: str, 
     username: str, 
@@ -274,38 +271,37 @@ async def ssh_discover_system(
     port: int = 22
 ) -> str:
     """SSH into a system and gather hardware/system information."""
-    try:
-        # Connect via SSH
-        connect_kwargs = {
-            "host": hostname,
-            "port": port,
-            "username": username,
-            "known_hosts": None,
-            "connect_timeout": 10
-        }
-        
-        if key_path:
-            connect_kwargs["client_keys"] = [key_path]
-        elif password:
-            connect_kwargs["password"] = password
-        elif username == "mcp_admin":
-            # Use MCP key for mcp_admin user if available
-            mcp_key_path = get_mcp_ssh_key_path()
-            if mcp_key_path.exists():
-                connect_kwargs["client_keys"] = [str(mcp_key_path)]
-            else:
-                raise ValueError("MCP SSH key not found and no password provided for mcp_admin")
+    # Connect via SSH
+    connect_kwargs = {
+        "host": hostname,
+        "port": port,
+        "username": username,
+        "known_hosts": None,
+        "connect_timeout": 10
+    }
+    
+    if key_path:
+        connect_kwargs["client_keys"] = [key_path]
+    elif password:
+        connect_kwargs["password"] = password
+    elif username == "mcp_admin":
+        # Use MCP key for mcp_admin user if available
+        mcp_key_path = get_mcp_ssh_key_path()
+        if mcp_key_path.exists():
+            connect_kwargs["client_keys"] = [str(mcp_key_path)]
         else:
-            raise ValueError("Either password or key_path must be provided")
+            raise ValueError("MCP SSH key not found and no password provided for mcp_admin")
+    else:
+        raise ValueError("Either password or key_path must be provided")
+    
+    async with await asyncssh.connect(**connect_kwargs) as conn:
+        system_info = {}
         
-        async with await asyncssh.connect(**connect_kwargs) as conn:
-            system_info = {}
-            
-            # Get actual hostname from the remote system
-            hostname_result = await conn.run('hostname', check=False)
-            actual_hostname = hostname  # Default to the IP/hostname we connected with
-            if hostname_result.exit_status == 0 and hostname_result.stdout:
-                actual_hostname = cast(str, hostname_result.stdout).strip()
+        # Get actual hostname from the remote system
+        hostname_result = await conn.run('hostname', check=False)
+        actual_hostname = hostname  # Default to the IP/hostname we connected with
+        if hostname_result.exit_status == 0 and hostname_result.stdout:
+            actual_hostname = cast(str, hostname_result.stdout).strip()
             
             # Get CPU info
             cpu_info = {}
@@ -463,39 +459,15 @@ async def ssh_discover_system(
             if block_devices:
                 system_info['block_devices'] = block_devices
         
-        return json.dumps({
-            "status": "success",
-            "hostname": actual_hostname,
-            "connection_ip": hostname,
-            "data": system_info
-        }, indent=2)
-        
-    except asyncssh.misc.PermissionDenied:
-        return json.dumps({
-            "status": "error",
-            "connection_ip": hostname,
-            "error": "SSH authentication failed"
-        }, indent=2)
-    except asyncssh.misc.ConnectionLost:
-        return json.dumps({
-            "status": "error", 
-            "connection_ip": hostname,
-            "error": "SSH connection lost"
-        }, indent=2)
-    except asyncio.TimeoutError:
-        return json.dumps({
-            "status": "error",
-            "connection_ip": hostname,
-            "error": "SSH connection timeout"
-        }, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "status": "error",
-            "connection_ip": hostname,
-            "error": str(e)
-        }, indent=2)
+    return json.dumps({
+        "status": "success",
+        "hostname": actual_hostname,
+        "connection_ip": hostname,
+        "data": system_info
+    }, indent=2)
 
 
+@ssh_connection_wrapper(timeout_seconds=20.0)
 async def ssh_execute_command(
     hostname: str,
     username: str,
@@ -529,54 +501,34 @@ async def ssh_execute_command(
     if password:
         connect_kwargs['password'] = password
     
-    try:
-        async with asyncssh.connect(**connect_kwargs) as conn:
-            # Prepare the command with sudo if requested
-            if sudo:
-                if username == 'mcp_admin':
-                    # mcp_admin has passwordless sudo
-                    full_command = f"sudo {command}"
-                else:
-                    # Other users might need password for sudo
-                    full_command = f"echo '{password}' | sudo -S {command}" if password else f"sudo {command}"
+    async with asyncssh.connect(**connect_kwargs) as conn:
+        # Prepare the command with sudo if requested
+        if sudo:
+            if username == 'mcp_admin':
+                # mcp_admin has passwordless sudo
+                full_command = f"sudo {command}"
             else:
-                full_command = command
-            
-            # Execute the command
-            result = await conn.run(full_command, check=False)
-            
-            output = []
-            if result.stdout:
-                output.append(f"Output:\n{result.stdout.strip()}")
-            if result.stderr:
-                output.append(f"Error:\n{result.stderr.strip()}")
-            
-            return json.dumps({
-                "status": "success",
-                "hostname": hostname,
-                "command": command,
-                "exit_code": result.exit_status,
-                "output": "\n\n".join(output) if output else "Command executed successfully (no output)"
-            }, indent=2)
-            
-    except asyncssh.misc.PermissionDenied:
-        return json.dumps({
-            "status": "error",
-            "hostname": hostname,
-            "error": "SSH authentication failed"
-        }, indent=2)
-    except asyncio.TimeoutError:
-        return json.dumps({
-            "status": "error",
-            "hostname": hostname,
-            "error": "SSH connection timeout"
-        }, indent=2)
-    except Exception as e:
-        return json.dumps({
-            "status": "error",
-            "hostname": hostname,
-            "error": str(e)
-        }, indent=2)
+                # Other users might need password for sudo
+                full_command = f"echo '{password}' | sudo -S {command}" if password else f"sudo {command}"
+        else:
+            full_command = command
+        
+        # Execute the command
+        result = await conn.run(full_command, check=False)
+        
+        output = []
+        if result.stdout:
+            output.append(f"Output:\n{result.stdout.strip()}")
+        if result.stderr:
+            output.append(f"Error:\n{result.stderr.strip()}")
+        
+    return json.dumps({
+        "status": "success",
+        "hostname": hostname,
+        "command": command,
+        "exit_code": result.exit_status,
+        "output": "\n\n".join(output) if output else "Command executed successfully (no output)"
+    }, indent=2)
 
 
 async def update_mcp_admin_groups(
