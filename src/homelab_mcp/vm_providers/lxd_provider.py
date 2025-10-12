@@ -227,7 +227,9 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return {"status": "error", "platform": "lxd", "error": str(e)}
 
-    async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
+    async def get_vm_logs(
+        self, conn: Any, vm_name: str, lines: int = 100
+    ) -> dict[str, Any]:
         """Get LXD container logs."""
         try:
             # LXD doesn't have direct log command, so we'll get system logs

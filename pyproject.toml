@@ -60,6 +60,7 @@ dev-dependencies = [
     # Development tools
     "ipython>=8.0.0",
     "types-pyyaml>=6.0.12.20250915",
+    "pre-commit>=4.3.0",
 ]
 
 [tool.uv.sources]

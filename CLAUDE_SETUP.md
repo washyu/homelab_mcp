@@ -8,7 +8,7 @@ Once connected, you can ask Claude to:
 
 ### Infrastructure Management
 - **"Deploy a new nginx container on device 1"**
-- **"List all VMs running on my Pi server"** 
+- **"List all VMs running on my Pi server"**
 - **"Scale up the web service to 3 replicas"**
 - **"Create a backup of my infrastructure"**
 - **"Show me the status of all Docker containers"**
@@ -150,7 +150,7 @@ Claude: I'll deploy an nginx container for you. First, let me check your availab
 
 [Claude calls list_devices and shows your infrastructure]
 
-I'll deploy nginx on device 1. 
+I'll deploy nginx on device 1.
 
 [Claude calls deploy_vm with nginx configuration]
 
@@ -175,7 +175,7 @@ I can see you have nginx running. I'll scale it up by deploying additional insta
 
 ✅ Scaled web service to 3 replicas:
 - web-server-1: Running on device 1 (port 8001)
-- web-server-2: Running on device 2 (port 8002)  
+- web-server-2: Running on device 2 (port 8002)
 - web-server-3: Running on device 1 (port 8003)
 - Load balancer: Configured automatically
 ```
@@ -190,7 +190,7 @@ Claude: I'll create a comprehensive backup of your infrastructure.
 
 ✅ Infrastructure backup created successfully
 - Backup ID: backup_20240125_143022_abc12345
-- Scope: Full infrastructure 
+- Scope: Full infrastructure
 - Devices backed up: 3
 - Services included: 7 containers, 2 VMs
 - Size: 2.3 MB
@@ -266,7 +266,7 @@ Claude: [Checks all services and provides comprehensive status report]
 ## Next Steps
 
 1. **Connect Claude** using the setup instructions above
-2. **Test basic functionality** with "hello world" 
+2. **Test basic functionality** with "hello world"
 3. **Set up MCP admin** on your first device
 4. **Start managing** your infrastructure with natural language!
 

@@ -8,50 +8,50 @@ homepage: "https://pi-hole.net"
 # Installation method
 installation:
   method: "terraform"
-  
+
   terraform:
     required_version: ">= 1.0"
-    
+
     # State management
     backend:
       type: "local"
       path: "/opt/terraform-states/pihole-{{hostname}}.tfstate"
-    
+
     variables:
       hostname:
         type: "string"
         default: "{{hostname}}"
-      
+
       web_password:
         type: "string"
         sensitive: true
         description: "Admin web interface password"
-      
+
       upstream_dns:
         type: "list(string)"
         default: ["1.1.1.1", "1.0.0.1"]
         description: "Upstream DNS servers"
-      
+
       enable_dhcp:
         type: "bool"
         default: false
         description: "Enable DHCP server"
-      
+
       dhcp_start:
         type: "string"
         default: "192.168.4.20"
         description: "DHCP range start"
-      
+
       dhcp_end:
         type: "string"
         default: "192.168.4.254"
         description: "DHCP range end"
-    
+
     # Main configuration
     main_tf: |
       terraform {
         required_version = ">= 1.0"
-        
+
         required_providers {
           docker = {
             source  = "kreuzwerker/docker"
@@ -63,54 +63,54 @@ installation:
           }
         }
       }
-      
+
       # Generate random password if not provided
       resource "random_password" "web_password" {
         count   = var.web_password == "" ? 1 : 0
         length  = 16
         special = true
       }
-      
+
       locals {
         web_password = var.web_password != "" ? var.web_password : random_password.web_password[0].result
       }
-      
+
       # Docker network
       resource "docker_network" "pihole" {
         name = "pihole_network"
         driver = "bridge"
-        
+
         ipam_config {
           subnet = "172.20.0.0/16"
         }
       }
-      
+
       # Create volumes
       resource "docker_volume" "pihole_config" {
         name = "pihole_config"
       }
-      
+
       resource "docker_volume" "dnsmasq_config" {
         name = "dnsmasq_config"
       }
-      
+
       # Pull the image
       resource "docker_image" "pihole" {
         name = "pihole/pihole:latest"
         keep_locally = true
       }
-      
+
       # Create Pi-hole container
       resource "docker_container" "pihole" {
         image = docker_image.pihole.image_id
         name  = "pihole"
-        
+
         restart = "unless-stopped"
-        
+
         capabilities {
           add = ["NET_ADMIN"]
         }
-        
+
         env = [
           "TZ=UTC",
           "WEBPASSWORD=${local.web_password}",
@@ -122,26 +122,26 @@ installation:
           "DHCP_END=${var.dhcp_end}",
           "DHCP_ROUTER=${var.hostname}"
         ]
-        
+
         # Port mappings
         ports {
           internal = 53
           external = 53
           protocol = "tcp"
         }
-        
+
         ports {
           internal = 53
           external = 53
           protocol = "udp"
         }
-        
+
         ports {
           internal = 80
           external = 80
           protocol = "tcp"
         }
-        
+
         dynamic "ports" {
           for_each = var.enable_dhcp ? [1] : []
           content {
@@ -150,27 +150,27 @@ installation:
             protocol = "udp"
           }
         }
-        
+
         # Volume mounts
         volumes {
           volume_name    = docker_volume.pihole_config.name
           container_path = "/etc/pihole"
         }
-        
+
         volumes {
           volume_name    = docker_volume.dnsmasq_config.name
           container_path = "/etc/dnsmasq.d"
         }
-        
+
         # DNS settings
         dns = ["127.0.0.1", "1.1.1.1"]
-        
+
         # Network configuration
         networks_advanced {
           name = docker_network.pihole.name
           ipv4_address = "172.20.0.2"
         }
-        
+
         # Health check
         healthcheck {
           test = ["CMD", "dig", "+norecurse", "+retry=0", "@127.0.0.1", "pi.hole"]
@@ -179,11 +179,11 @@ installation:
           retries = 3
         }
       }
-      
+
       # Create custom blocklists
       resource "null_resource" "custom_blocklists" {
         depends_on = [docker_container.pihole]
-        
+
         provisioner "local-exec" {
           command = <<-EOT
             docker exec pihole pihole -a adlist add https://someonewhocares.org/hosts/zero/hosts
@@ -192,24 +192,24 @@ installation:
           EOT
         }
       }
-      
+
       # Outputs
       output "web_password" {
         value = local.web_password
         sensitive = true
         description = "Pi-hole admin password"
       }
-      
+
       output "admin_url" {
         value = "http://${var.hostname}/admin"
         description = "Pi-hole admin interface URL"
       }
-      
+
       output "dns_server" {
         value = var.hostname
         description = "DNS server address"
       }
-      
+
       output "container_id" {
         value = docker_container.pihole.id
         description = "Docker container ID"
@@ -219,7 +219,7 @@ installation:
 uninstall:
   method: "terraform"
   terraform_destroy: true
-  
+
   # Terraform will automatically:
   # - Stop and remove the container
   # - Remove the docker network

@@ -7,7 +7,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import psycopg2
@@ -87,7 +87,7 @@ class SQLiteAdapter(DatabaseAdapter):
                 db_path = str(mcp_dir / "sitemap.db")
 
         self.db_path = db_path
-        self.connection: Optional[sqlite3.Connection] = None
+        self.connection: sqlite3.Connection | None = None
 
     def connect(self) -> None:
         """Establish SQLite connection."""
@@ -378,7 +378,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             }
 
         self.connection_params = connection_params
-        self.connection: Optional[Any] = None  # psycopg2 connection type
+        self.connection: Any | None = None  # psycopg2 connection type
 
     def connect(self) -> None:
         """Establish PostgreSQL connection."""
@@ -693,7 +693,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_database_adapter(db_type: Optional[str] = None, **kwargs: Any) -> DatabaseAdapter:
+def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
     """Factory function to get the appropriate database adapter."""
     if db_type is None:
         # Auto-detect based on environment

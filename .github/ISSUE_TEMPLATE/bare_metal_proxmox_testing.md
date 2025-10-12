@@ -67,7 +67,7 @@ The MCP server has been developed and tested primarily in development environmen
 
 ### Test Data Collection
 - Performance metrics during operations
-- Error logs and failure scenarios  
+- Error logs and failure scenarios
 - Resource utilization patterns
 - Network traffic analysis
 - User experience feedback

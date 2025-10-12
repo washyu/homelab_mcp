@@ -57,7 +57,7 @@ installation:
           timeout: 10s
           retries: 3
           start_period: 60s
-      
+
       # Optional: Mosquitto MQTT broker for IoT devices
       mosquitto:
         container_name: "mosquitto"
@@ -72,7 +72,7 @@ installation:
           - "/opt/homeassistant/mosquitto/log:/mosquitto/log"
         networks:
           - homeassistant-network
-      
+
       # Optional: Node-RED for visual automation
       nodered:
         container_name: "nodered"
@@ -86,7 +86,7 @@ installation:
           - "/opt/homeassistant/nodered:/data"
         networks:
           - homeassistant-network
-    
+
     networks:
       homeassistant-network:
         driver: bridge
@@ -105,7 +105,7 @@ pi_integrations:
           name: "Motion Sensor"
           direction: in
           pull_mode: up
-  
+
   camera_module:
     description: "Pi Camera module integration"
     config: |
@@ -116,7 +116,7 @@ pi_integrations:
           image_width: 1280
           image_height: 720
           image_rotation: 180
-  
+
   bluetooth_tracking:
     description: "Device presence detection via Bluetooth"
     config: |
@@ -133,7 +133,7 @@ device_integrations:
       - "ConBee II"
       - "SkyConnect"
     setup: "Plug USB stick → Settings → Integrations → ZHA"
-  
+
   wifi_devices:
     auto_discovery:
       - "Philips Hue lights"
@@ -141,7 +141,7 @@ device_integrations:
       - "Shelly relays"
       - "Tasmota devices"
     setup: "Settings → Integrations → Add Integration"
-  
+
   bluetooth_devices:
     supported:
       - "Bluetooth temperature sensors"
@@ -163,7 +163,7 @@ automation_examples:
           action:
             service: light.turn_on
             entity_id: light.living_room
-  
+
   sunset_routine:
     description: "Close blinds and dim lights at sunset"
     yaml: |
@@ -188,7 +188,7 @@ post_install:
     - "Set up location and timezone"
     - "Configure first user account"
     - "Install HACS (Home Assistant Community Store) for additional integrations"
-  
+
   essential_integrations:
     - "Settings → Integrations → Add Integration:"
     - "  • Sun (for sunrise/sunset automation)"
@@ -196,7 +196,7 @@ post_install:
     - "  • Mobile App (for notifications)"
     - "  • File Editor (for config editing)"
     - "  • Terminal & SSH (for system access)"
-  
+
   backup_setup:
     - "Settings → System → Backups"
     - "Enable automatic backups to external storage"
@@ -220,7 +220,7 @@ performance_tuning:
             - binary_sensor
             - light
             - switch
-  
+
   logging_optimization:
     logger_config: |
       # Reduce log verbosity
@@ -229,7 +229,7 @@ performance_tuning:
         logs:
           homeassistant.core: info
           homeassistant.components.recorder: warning
-  
+
   storage_optimization:
     - "Use fast SD card (Class 10 U3) or USB 3.0 SSD"
     - "Enable log2ram to reduce SD card wear"
@@ -244,13 +244,13 @@ recommended_addons:
       purpose: "Command line access"
     - name: "Samba Share"
       purpose: "Network file access"
-  
+
   monitoring_addons:
     - name: "Glances"
       purpose: "System monitoring dashboard"
     - name: "Log Viewer"
       purpose: "Centralized log viewing"
-  
+
   automation_addons:
     - name: "Node-RED"
       purpose: "Visual automation builder"
@@ -262,11 +262,11 @@ energy_monitoring:
   smart_plugs:
     recommended: ["TP-Link Kasa HS110", "Shelly Plug S"]
     setup: "Auto-discovered → Configure energy monitoring"
-  
+
   whole_home_monitoring:
     devices: ["Emporia Vue", "Sense Energy Monitor"]
     integration: "Custom component or ESPHome"
-  
+
   solar_integration:
     inverters: ["SolarEdge", "Enphase", "Fronius"]
     setup: "Add integration → Configure API access"
@@ -281,7 +281,7 @@ mobile_apps:
       - "Location tracking"
       - "Push notifications"
       - "Quick actions"
-  
+
   companion_features:
     sensors: "Battery, network, location"
     actions: "Trigger automations remotely"
@@ -293,16 +293,16 @@ security:
     - "Default: http://{hostname}:8123"
     - "Enable HTTPS with SSL certificate"
     - "Use strong passwords and 2FA"
-  
+
   remote_access_options:
     nabu_casa:
       description: "Official cloud service ($6/month)"
       benefits: "Easy setup, supports Alexa/Google"
-    
+
     vpn_access:
       description: "VPN to home network"
       options: ["Tailscale", "WireGuard", "OpenVPN"]
-    
+
     reverse_proxy:
       description: "Self-hosted with domain"
       tools: ["nginx", "Caddy", "Traefik"]
@@ -312,13 +312,13 @@ monitoring:
   system_health:
     builtin: "Settings → System → Repairs"
     addon: "Glances for detailed Pi metrics"
-  
+
   performance_metrics:
     - "CPU usage and temperature"
     - "Memory consumption"
     - "SD card/storage health"
     - "Network connectivity"
-  
+
   backup_verification:
     schedule: "Weekly automatic backups"
     testing: "Restore test quarterly"
@@ -332,21 +332,21 @@ troubleshooting:
         - "Verify configuration.yaml syntax"
         - "Check available disk space"
         - "Restart container: docker restart homeassistant"
-    
+
     - issue: "Devices not discovered"
       solutions:
         - "Ensure network_mode: host is set"
         - "Check firewall settings"
         - "Verify devices are on same network"
         - "Enable multicast/mDNS"
-    
+
     - issue: "Poor performance on Pi"
       solutions:
         - "Reduce recorder retention days"
         - "Exclude unnecessary entities from recorder"
         - "Use faster storage (SSD)"
         - "Monitor CPU temperature"
-    
+
     - issue: "GPIO integration not working"
       solutions:
         - "Ensure privileged: true is set"
@@ -359,15 +359,15 @@ homelab_integrations:
   with_pi_hole:
     description: "Network-wide ad blocking"
     setup: "Add Pi-hole as DNS server in router settings"
-  
+
   with_jellyfin:
     description: "Media server control"
     integration: "Jellyfin integration for media control"
-  
+
   with_truenas:
     description: "Network storage access"
     setup: "Mount NFS/SMB shares for media storage"
-  
+
   with_cameras:
     description: "Security camera integration"
     options: ["Frigate NVR", "MotionEye", "Blue Iris"]
@@ -379,12 +379,12 @@ advanced_pi_features:
     motion: "PIR motion sensors"
     door_window: "Reed switches"
     light: "Photoresistors"
-  
+
   hat_support:
     sense_hat: "LED matrix and environmental sensors"
     enviro_plus: "Air quality monitoring"
     automation_hat: "Relays and analog inputs"
-  
+
   usb_devices:
     zigbee_coordinator: "ConBee II, SkyConnect"
     zwave_controller: "Aeotec Z-Stick 7"

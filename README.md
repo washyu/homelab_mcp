@@ -31,7 +31,7 @@ uv sync && uv run python run_server.py
 - **Automated Deployment** with requirement validation and health checking
 - **One-Command Installation**: *"Install Pi-hole on my homelab server with AI acceleration"*
 
-### 🧠 **AI Accelerator Support** 
+### 🧠 **AI Accelerator Support**
 - **Auto-Detection** of MemryX MX3, Coral Edge TPU, Hailo-8, Intel Neural Compute Stick
 - **Hardware Discovery** with USB/PCI device enumeration and classification
 - **Performance Optimization** for Pi 4/5 with memory and thermal management
@@ -61,7 +61,7 @@ uv sync && uv run python run_server.py
 #### `list_available_services`
 List all available service templates including AI accelerator-optimized services.
 
-#### `install_service` 
+#### `install_service`
 Deploy services with automatic AI accelerator detection and optimization.
 
 #### `plan_terraform_service`
@@ -85,7 +85,7 @@ Cleanly destroy Terraform-managed services and remove all associated resources.
 - **Performance testing tools** to validate accelerator speedup
 
 #### **Ollama** - Local LLM Server
-- **Pi-optimized** for 4GB/8GB RAM configurations  
+- **Pi-optimized** for 4GB/8GB RAM configurations
 - **Model recommendations** (tinyllama, phi, mistral:7b based on available RAM)
 - **API integration ready** for future UI development
 - **Thermal and performance tuning** for sustained Pi workloads
@@ -103,7 +103,7 @@ SSH into a remote system and gather comprehensive system information including:
 - **CPU details** (model, cores, architecture)
 - **Memory usage** (total, available, used)
 - **Storage information** (disk usage, mount points)
-- **Network interfaces** (IPs, MAC addresses, link status)  
+- **Network interfaces** (IPs, MAC addresses, link status)
 - **Hardware discovery**: USB devices (cameras, AI accelerators), PCI devices (network cards, GPUs), block devices (drives, partitions)
 - **Operating system** information and uptime
 - **AI accelerator detection**: MemryX MX3, Coral TPU, Hailo-8, Intel NCS
@@ -283,7 +283,7 @@ Remove a VM/container from a device:
 # Docker Compose (fast, simple)
 "Install Pi-hole using Docker Compose"
 
-# Terraform (enterprise-grade, state-managed)  
+# Terraform (enterprise-grade, state-managed)
 "Install Pi-hole using Terraform with state management"
 
 # Both methods support the same services with automatic accelerator detection
@@ -319,7 +319,7 @@ Perfect for deploying complete AI homelab stacks like MCP + Ollama + Web UI:
 ```bash
 # One command deploys entire stack:
 # ✅ MCP Server as systemd service
-# ✅ Ollama with GPU/AI accelerator support  
+# ✅ Ollama with GPU/AI accelerator support
 # ✅ Web UI with pre-configured API endpoints
 # ✅ Nginx reverse proxy with SSL ready
 # ✅ Firewall configuration
@@ -498,7 +498,7 @@ When `force_update_key` is true (default), the tool will:
 # 1. Set up Pi with AI accelerator for object detection
 "Install Frigate NVR on my Raspberry Pi at 192.168.1.100 to use the MemryX accelerator"
 
-# 2. Deploy local AI chat server 
+# 2. Deploy local AI chat server
 "Install Ollama on my Pi 5 for hosting Mistral 7B locally"
 
 # 3. Set up smart home automation with GPIO
@@ -566,7 +566,7 @@ mcp_python_server/
 │       ├── tools.py            # Tool registry and execution (34 tools)
 │       ├── ssh_tools.py        # SSH discovery with hardware detection
 │       ├── service_installer.py # Service installation framework
-│       ├── infrastructure_crud.py # Infrastructure lifecycle management  
+│       ├── infrastructure_crud.py # Infrastructure lifecycle management
 │       ├── vm_operations.py    # VM/container operations
 │       ├── sitemap.py          # Network topology mapping
 │       ├── database.py         # SQLite database for device tracking
@@ -588,7 +588,7 @@ mcp_python_server/
 │   └── run-integration-tests.sh  # Test automation
 ├── infrastructure/       # Infrastructure as code examples
 ├── DEPLOYMENT.md         # uv deployment guide with performance comparisons
-├── CLAUDE_SETUP.md       # Claude Desktop integration guide  
+├── CLAUDE_SETUP.md       # Claude Desktop integration guide
 ├── pyproject.toml        # uv project configuration
 ├── uv.lock              # Dependency lock file
 └── run_server.py        # Entry point with debug diagnostics

@@ -5,7 +5,7 @@
 ✅ **Excellent Progress Made:**
 - Fixed **22 → 13 failing tests** (41% improvement)
 - **248 tests passing** (90.5% pass rate)
-- **Config tests: 100% coverage** 
+- **Config tests: 100% coverage**
 - **Migration tests: 93% coverage**
 - **Overall coverage: 55%**
 
@@ -24,7 +24,7 @@
 def test_ansible_playbook_execution_success(self, mock_ssh):
     # Mock successful directory creation
     mock_ssh.return_value = '{"status": "success", "exit_code": 0, "output": "Directory created"}'
-    
+
     # Then rest of test...
 ```
 
@@ -38,7 +38,7 @@ def test_ansible_playbook_execution_success(self, mock_ssh):
 def test_migrate_device_history_success(self):
     # Remove the mock, use actual function
     self.migrator._migrate_device_history(source_device_id, target_device_id)
-    
+
     # Check that data_hash was calculated correctly
     call_args = self.mock_target.store_discovery_history.call_args
     assert len(call_args[0][2]) == 64  # SHA256 hash length
@@ -48,7 +48,7 @@ def test_migrate_device_history_success(self):
 
 The GitHub Actions workflow is already updated! It now includes:
 - ✅ **Unit tests with coverage**
-- ✅ **Integration tests (allowed to fail)**  
+- ✅ **Integration tests (allowed to fail)**
 - ✅ **Cross-platform testing**
 - ✅ **Code quality checks**
 
@@ -56,7 +56,7 @@ The GitHub Actions workflow is already updated! It now includes:
 
 **pytest.ini is updated** with proper markers:
 - `unit` - Fast tests for CI
-- `integration` - Mocked integration tests  
+- `integration` - Mocked integration tests
 - `e2e` - Real infrastructure tests
 - `network`, `docker`, `ssh`, etc. - Specific markers
 
@@ -82,8 +82,8 @@ python scripts/run_tests.py coverage
 # In GitHub Actions - already configured!
 - name: Run unit tests
   run: uv run python scripts/run_tests.py unit
-  
-- name: Run quality checks  
+
+- name: Run quality checks
   run: uv run python scripts/run_tests.py quality
 ```
 
@@ -96,7 +96,7 @@ python scripts/run_tests.py coverage
    - Update assertions to match actual vs expected behavior
    - **Files:** `tests/test_ansible.py` lines 260-390
 
-2. **Fix 2 Migration tests** ✏️  
+2. **Fix 2 Migration tests** ✏️
    - Remove hash mocking, use actual hash function
    - Update verification logic in integration test
    - **Files:** `tests/test_migration.py` lines 169, 614
@@ -109,7 +109,7 @@ python scripts/run_tests.py coverage
 ### **Next Week (Optional Improvements):**
 
 1. **Add more service_installer tests** to reach 60% coverage
-2. **Add more infrastructure_crud tests** to reach 50% coverage  
+2. **Add more infrastructure_crud tests** to reach 50% coverage
 3. **Set up Codecov integration** for coverage tracking
 
 ## Success Criteria for CI/CD
@@ -129,7 +129,7 @@ python scripts/run_tests.py coverage
 
 ### **Created/Updated Files:**
 - ✅ `.github/workflows/ci.yml` - Complete CI/CD pipeline
-- ✅ `pytest.ini` - Test markers and configuration  
+- ✅ `pytest.ini` - Test markers and configuration
 - ✅ `scripts/run_tests.py` - Test runner for all scenarios
 - ✅ `CI_CD_TEST_STRATEGY.md` - Complete strategy document
 - ✅ `IMMEDIATE_TEST_FIXES.md` - This file
@@ -141,7 +141,7 @@ python scripts/run_tests.py coverage
 ## Expected Timeline
 
 - **Day 1:** Fix 6 failing unit tests (2-3 hours)
-- **Day 2:** Test CI/CD pipeline, adjust if needed (1 hour)  
+- **Day 2:** Test CI/CD pipeline, adjust if needed (1 hour)
 - **Day 3:** Push to GitHub, verify Actions workflow (30 minutes)
 
 **Result:** Production-ready CI/CD pipeline with 100% unit test pass rate! 🚀
@@ -150,7 +150,7 @@ python scripts/run_tests.py coverage
 
 If you run into any issues:
 1. Run `python scripts/run_tests.py failing` to see current status
-2. Check the detailed strategy in `CI_CD_TEST_STRATEGY.md` 
+2. Check the detailed strategy in `CI_CD_TEST_STRATEGY.md`
 3. Use `python scripts/run_tests.py unit --no-coverage` for faster debugging
 
 The foundation is solid - just need these 6 test fixes to have a bulletproof CI/CD pipeline!

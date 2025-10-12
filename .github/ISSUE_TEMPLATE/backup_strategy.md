@@ -8,7 +8,7 @@ assignees: []
 
 ## Problem
 The MCP server now manages critical infrastructure state including:
-- Terraform state files (VM provisioning) 
+- Terraform state files (VM provisioning)
 - Ansible execution history (configuration changes)
 - Proxmox inventory and context
 - Authentication configurations
@@ -20,7 +20,7 @@ Currently, this state could be lost if the MCP server fails, causing loss of inf
 
 ### Backup Scope
 - **Infrastructure State**: Terraform state files, Ansible logs
-- **Context Data**: Homelab topology, device inventory, discovery data  
+- **Context Data**: Homelab topology, device inventory, discovery data
 - **Configuration**: Authentication configs, credentials (encrypted)
 - **Templates**: Custom Terraform modules, Ansible playbooks
 - **Execution History**: Audit trail of all infrastructure changes
@@ -31,7 +31,7 @@ Currently, this state could be lost if the MCP server fails, causing loss of inf
    - Scheduled snapshots with rotation policy
    - Git repository backup for configuration tracking
 
-2. **Remote Backup** 
+2. **Remote Backup**
    - Integration with cloud storage (S3, Google Drive, Dropbox)
    - NAS/TrueNAS integration for homelab environments
    - Git repository with encrypted state files

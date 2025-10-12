@@ -62,7 +62,7 @@ installation:
           - "1935:1935"    # RTMP
         networks:
           - frigate-network
-      
+
       # Optional: MQTT broker for Home Assistant integration
       mosquitto:
         container_name: "frigate-mqtt"
@@ -74,7 +74,7 @@ installation:
           - "/opt/frigate/mosquitto:/mosquitto/config"
         networks:
           - frigate-network
-    
+
     networks:
       frigate-network:
         driver: bridge
@@ -90,7 +90,7 @@ ai_accelerators:
           memryx:
             type: onnx
             device: /dev/memryx0
-    
+
     pcie_version:
       detection: "ls /dev/memryx*"
       device_path: "/dev/memryx0"
@@ -99,7 +99,7 @@ ai_accelerators:
           memryx:
             type: onnx
             device: /dev/memryx0
-  
+
   coral_edge_tpu:
     usb_version:
       detection: "lsusb | grep '18d1:9302'"
@@ -109,7 +109,7 @@ ai_accelerators:
           coral:
             type: edgetpu
             device: usb
-    
+
     pcie_version:
       detection: "ls /dev/apex_*"
       device_path: "/dev/apex_0"
@@ -118,7 +118,7 @@ ai_accelerators:
           coral:
             type: edgetpu
             device: pci
-  
+
   hailo_8:
     detection: "lsusb | grep '1e60:'"  # Hailo vendor ID
     device_path: "/dev/hailo0"
@@ -127,7 +127,7 @@ ai_accelerators:
         hailo:
           type: hailo
           device: /dev/hailo0
-  
+
   intel_ncs:
     detection: "lsusb | grep '03e7:'"  # Intel vendor ID
     device_path: "/dev/bus/usb"
@@ -136,7 +136,7 @@ ai_accelerators:
         openvino:
           type: openvino
           device: MYRIAD
-  
+
   cpu_fallback:
     always_available: true
     config: |
@@ -163,7 +163,7 @@ camera_configs:
             width: 1280
             height: 720
             fps: 5
-  
+
   usb_camera:
     description: "USB webcam"
     config: |
@@ -179,7 +179,7 @@ camera_configs:
             width: 640
             height: 480
             fps: 5
-  
+
   rtsp_camera:
     description: "Network IP camera"
     config: |
@@ -207,7 +207,7 @@ object_detection:
     - dog
     - cat
     - bird
-  
+
   zones_example:
     config: |
       cameras:
@@ -223,7 +223,7 @@ object_detection:
               objects:
                 - car
                 - truck
-  
+
   motion_masks:
     description: "Mask areas to ignore (trees, flags, etc.)"
     config: |
@@ -246,11 +246,11 @@ performance_tuning:
         input_pixel_format: rgb
         path: /edgetpu_model.tflite
         labelmap_path: /labelmap.txt
-      
+
       detect:
         fps: 5  # Reduced for Pi CPU
         max_disappeared: 25
-      
+
       objects:
         track:
           - person
@@ -260,7 +260,7 @@ performance_tuning:
             min_area: 5000
             max_area: 100000
             threshold: 0.7
-  
+
   cpu_optimized:
     config: |
       # CPU-only fallback configuration
@@ -270,7 +270,7 @@ performance_tuning:
         input_tensor: nhwc
         input_pixel_format: rgb
         path: /cpu_model.tflite
-      
+
       detect:
         fps: 2  # Very conservative for CPU
         max_disappeared: 25
@@ -283,13 +283,13 @@ post_install:
     - "Configure cameras in /opt/frigate/config/config.yml"
     - "Test object detection with live view"
     - "Set up recording schedules and retention"
-  
+
   ai_accelerator_verification:
     - "Check detected accelerator: docker logs frigate | grep -i 'detector'"
     - "Verify inference speed: Look for 'detection_fps' in stats"
     - "Monitor CPU usage with and without accelerator"
     - "Test different models for optimal performance"
-  
+
   camera_calibration:
     - "Adjust detection zones for optimal coverage"
     - "Set motion masks to ignore false positives"
@@ -306,17 +306,17 @@ home_assistant_integration:
           - name: "Front Door Person Count"
             state_topic: "frigate/front_door/person"
             value_template: "{{ value_json.count }}"
-        
+
         camera:
           - name: "Front Door Camera"
             topic: "frigate/front_door/snapshot"
-        
+
         binary_sensor:
           - name: "Front Door Motion"
             state_topic: "frigate/front_door/motion"
             payload_on: "ON"
             payload_off: "OFF"
-  
+
   automation_examples:
     person_detection: |
       automation:
@@ -348,7 +348,7 @@ storage_management:
             default: 14  # Keep events for 2 weeks
             objects:
               person: 30  # Keep person events for 1 month
-  
+
   storage_optimization:
     - "Use fast storage (SSD) for active recordings"
     - "Configure NAS mount for long-term storage"
@@ -365,7 +365,7 @@ advanced_ai:
         labelmap_path: /config/custom_labels.txt
         width: 640
         height: 640
-  
+
   multi_detector:
     description: "Use multiple AI accelerators"
     config: |
@@ -376,7 +376,7 @@ advanced_ai:
         coral2:
           type: edgetpu
           device: usb:1
-      
+
       cameras:
         camera1:
           ffmpeg:
@@ -386,7 +386,7 @@ advanced_ai:
           objects:
             filters:
               detector: coral1
-  
+
   face_recognition:
     description: "Add face recognition capability"
     setup: "Requires CompreFace or similar add-on"
@@ -398,13 +398,13 @@ monitoring:
     - "AI accelerator utilization"
     - "Memory and CPU usage"
     - "Storage consumption rate"
-  
+
   health_checks:
     - "Camera connectivity status"
     - "AI detector responsiveness"
     - "Recording service status"
     - "MQTT broker connectivity"
-  
+
   alerting:
     - "Email notifications for offline cameras"
     - "Mobile push for person detection"
@@ -420,14 +420,14 @@ troubleshooting:
         - "Verify device permissions: ls -la /dev/bus/usb/*/'"
         - "Install libedgetpu: apt install libedgetpu1-std"
         - "Check container privileges and device mounts"
-    
+
     - issue: "Poor detection performance"
       solutions:
         - "Verify AI accelerator is being used"
         - "Check model compatibility with hardware"
         - "Adjust detection FPS and resolution"
         - "Monitor CPU temperature: vcgencmd measure_temp"
-    
+
     - issue: "High CPU usage with accelerator"
       solutions:
         - "Verify accelerator is properly configured"
@@ -442,13 +442,13 @@ security:
     - "Use VPN for remote access"
     - "Isolate cameras on separate VLAN"
     - "Enable HTTPS for web interface"
-  
+
   privacy_considerations:
     - "Configure motion masks for private areas"
     - "Set appropriate retention periods"
     - "Secure storage encryption"
     - "Access control for viewing recordings"
-  
+
   data_protection:
     - "Local processing (no cloud required)"
     - "Encrypted storage options"
@@ -463,30 +463,30 @@ hardware_recommendations:
       performance: "13 TOPS"
       compatibility: "Excellent with Pi"
       models: "TensorFlow Lite only"
-    
+
     coral_m2:
       price: "$70"
       performance: "13 TOPS"
       compatibility: "Requires M.2 slot"
       models: "TensorFlow Lite only"
-    
+
     hailo_8:
       price: "$200+"
       performance: "26 TOPS"
       compatibility: "USB/PCIe versions"
       models: "ONNX, TensorFlow, PyTorch"
-  
+
   cameras:
     pi_camera_v3:
       resolution: "12MP"
       features: "Autofocus, low light"
       price: "$35"
-    
+
     usb_webcam:
       recommended: "Logitech C920/C930"
       resolution: "1080p"
       price: "$50-100"
-    
+
     ip_cameras:
       budget: "Wyze Cam v3 (RTSP firmware)"
       mid_range: "Reolink RLC-410A"

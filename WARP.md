@@ -227,7 +227,7 @@ SQLite database stores:
 ## Performance Considerations
 
 - **uv Package Manager**: 600x faster than pip for dependency resolution
-- **Async SSH**: Concurrent operations across multiple devices  
+- **Async SSH**: Concurrent operations across multiple devices
 - **SQLite Optimization**: Indexed queries for large device inventories
 - **Service Caching**: Template loading and validation caching
 - **Network Discovery**: Parallel device scanning with rate limiting
@@ -235,7 +235,7 @@ SQLite database stores:
 ## Testing Strategy
 
 - **Unit Tests**: Mock SSH connections, test tool logic in isolation
-- **Integration Tests**: Real Docker containers for SSH server simulation  
+- **Integration Tests**: Real Docker containers for SSH server simulation
 - **Service Tests**: Validate YAML templates and installation procedures
 - **MCP Protocol Tests**: JSON-RPC request/response validation
 - **End-to-End Tests**: Full workflow testing with Claude integration

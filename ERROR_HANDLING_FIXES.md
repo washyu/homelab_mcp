@@ -101,10 +101,10 @@ async def setup_remote_mcp_admin():
 ```python
 {
     "status": "error",
-    "error_type": "ssh_timeout", 
+    "error_type": "ssh_timeout",
     "suggestions": [
         "Check if the target device is reachable",
-        "Verify SSH service is running on the target", 
+        "Verify SSH service is running on the target",
         "Check network connectivity"
     ]
 }
@@ -206,7 +206,7 @@ echo '{"jsonrpc":"2.0","id":3,"method":"health/status"}' | python run_server.py
 # Successful operations
 INFO:homelab_mcp.tools:Executing tool: ssh_discover
 
-# Timeout warnings  
+# Timeout warnings
 WARNING:homelab_mcp.error_handling:Attempt 1/3 failed for 'ssh_discover': Connection timeout
 
 # Server health

@@ -21,13 +21,13 @@ installation:
   method: "iso_installation"
   download_url: "https://download.sys.truenas.com/TrueNAS-SCALE-24.10/TrueNAS-SCALE-24.10.iso"
   installation_type: "bare_metal_or_vm"
-  
+
   requirements:
     - "Dedicated system or VM with hardware passthrough"
     - "Minimum 8GB RAM (16GB+ recommended)"
     - "Boot drive (USB/SSD) + data drives"
     - "Network connectivity for initial setup"
-  
+
   installation_steps:
     - "Download TrueNAS Scale ISO"
     - "Create bootable USB or mount ISO in VM"
@@ -42,13 +42,13 @@ configurable_options:
     pool_type: "mirror"  # mirror, raidz1, raidz2, raidz3, stripe
     compression: "lz4"   # off, lz4, gzip, zstd
     encryption: false
-    
+
   services:
     enable_ssh: true
     enable_smb: true
     enable_nfs: false
     enable_iscsi: false
-    
+
   apps:
     enable_kubernetes: true
     enable_docker: true
@@ -58,13 +58,13 @@ management:
   web_interface: "http://{hostname}"
   default_credentials: "Set during installation"
   api_endpoint: "http://{hostname}/api/v2.0"
-  
+
   common_tasks:
     create_dataset: "Storage → Datasets → Add Dataset"
     share_smb: "Shares → Windows (SMB) → Add"
     share_nfs: "Shares → Unix (NFS) → Add"
     install_app: "Apps → Discover Apps"
-    
+
   cli_access: "SSH to system and use 'midclt' commands"
 
 features:
@@ -73,13 +73,13 @@ features:
     - "Snapshots and replication"
     - "Compression and deduplication"
     - "Self-healing on redundant arrays"
-    
+
   application_support:
     - "TrueCharts for 100+ applications"
     - "Docker container support"
     - "Kubernetes workloads"
     - "Official and community apps"
-    
+
   enterprise_features:
     - "Active Directory integration"
     - "Cloud sync and backup"
@@ -91,11 +91,11 @@ backup:
     automatic: "Configurable snapshot schedules"
     retention: "Customizable retention policies"
     replication: "Replicate to remote TrueNAS systems"
-    
+
   cloud_sync:
     providers: "Amazon S3, Google Drive, Dropbox, and more"
     encryption: "Client-side encryption available"
-    
+
   physical_backup:
     external_drives: "USB/eSATA drive support"
     tape_backup: "Enterprise tape drive support"
@@ -104,27 +104,27 @@ security:
   encryption:
     dataset_encryption: "Per-dataset encryption with ZFS"
     key_management: "Passphrase or key file based"
-    
+
   access_control:
     local_users: "Built-in user management"
     active_directory: "AD/LDAP integration"
     two_factor: "TOTP 2FA support"
-    
+
   network_security:
     firewall_rules: "Built-in firewall configuration"
     certificate_management: "Let's Encrypt integration"
-    
+
 monitoring:
   built_in_monitoring:
     - "Real-time system status dashboard"
     - "Storage pool health monitoring"
     - "Application resource usage"
     - "Network and disk I/O statistics"
-    
+
   alerting:
     email_alerts: "SMTP configuration for notifications"
     alert_types: "Hardware failures, pool issues, app problems"
-    
+
   reporting:
     performance_graphs: "Built-in Grafana dashboards"
     historical_data: "Long-term performance tracking"
@@ -136,13 +136,13 @@ troubleshooting:
         - "Check network configuration"
         - "Verify system is fully booted"
         - "Try accessing via IP address"
-        
+
     - issue: "Storage pool degraded"
       solutions:
         - "Check drive health in Storage → Disks"
         - "Review system alerts"
         - "Replace failed drives if needed"
-        
+
     - issue: "Apps not starting"
       solutions:
         - "Check apps pool health"
@@ -153,15 +153,15 @@ use_cases:
   home_storage:
     description: "Central file storage for home network"
     recommended_config: "2-4 drive mirror setup"
-    
+
   media_server:
     description: "Storage backend for Plex, Jellyfin"
     apps: "Plex, Jellyfin, Sonarr, Radarr"
-    
+
   backup_target:
     description: "Network backup destination"
     protocols: "SMB, NFS, rsync, cloud sync"
-    
+
   development:
     description: "Development environment with containers"
     features: "Git repos, databases, development tools"

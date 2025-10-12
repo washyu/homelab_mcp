@@ -16,36 +16,36 @@ requirements:
 # Installation method
 installation:
   method: "terraform"
-  
+
   terraform:
     required_version: ">= 1.0"
-    
+
     # Local state for infrastructure components
     backend:
       type: "local"
       path: "/opt/terraform-states/docker-{{hostname}}.tfstate"
-    
+
     variables:
       hostname:
         type: "string"
         default: "{{hostname}}"
         description: "Target hostname"
-      
+
       docker_version:
         type: "string"
         default: "24.0.7"
         description: "Docker version to install"
-      
+
       enable_swarm:
         type: "bool"
         default: false
         description: "Enable Docker Swarm mode"
-    
+
     # Main Terraform configuration
     main_tf: |
       terraform {
         required_version = ">= 1.0"
-        
+
         required_providers {
           null = {
             source  = "hashicorp/null"
@@ -53,7 +53,7 @@ installation:
           }
         }
       }
-      
+
       # Install Docker using provisioner
       resource "null_resource" "install_docker" {
         connection {
@@ -62,53 +62,53 @@ installation:
           user     = var.ssh_user
           password = var.ssh_password
         }
-        
+
         provisioner "remote-exec" {
           inline = [
             # Remove old versions
             "sudo apt-get remove -y docker docker-engine docker.io containerd runc || true",
-            
+
             # Install prerequisites
             "sudo apt-get update",
             "sudo apt-get install -y ca-certificates curl gnupg lsb-release",
-            
+
             # Add Docker GPG key
             "sudo mkdir -p /etc/apt/keyrings",
             "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg",
-            
+
             # Add Docker repository
             "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
-            
+
             # Install Docker
             "sudo apt-get update",
             "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
-            
+
             # Add user to docker group
             "sudo usermod -aG docker ${var.ssh_user}",
-            
+
             # Enable and start Docker
             "sudo systemctl enable docker",
             "sudo systemctl start docker"
           ]
         }
-        
+
         # Trigger replacement if Docker version changes
         triggers = {
           docker_version = var.docker_version
         }
       }
-      
+
       # Configure Docker daemon
       resource "null_resource" "configure_docker" {
         depends_on = [null_resource.install_docker]
-        
+
         connection {
           type     = "ssh"
           host     = var.hostname
           user     = var.ssh_user
           password = var.ssh_password
         }
-        
+
         provisioner "file" {
           content = jsonencode({
             log-driver = "json-file"
@@ -121,7 +121,7 @@ installation:
           })
           destination = "/tmp/daemon.json"
         }
-        
+
         provisioner "remote-exec" {
           inline = [
             "sudo mv /tmp/daemon.json /etc/docker/daemon.json",
@@ -129,36 +129,36 @@ installation:
           ]
         }
       }
-      
+
       # Initialize Swarm if requested
       resource "null_resource" "init_swarm" {
         count = var.enable_swarm ? 1 : 0
         depends_on = [null_resource.configure_docker]
-        
+
         connection {
           type     = "ssh"
           host     = var.hostname
           user     = var.ssh_user
           password = var.ssh_password
         }
-        
+
         provisioner "remote-exec" {
           inline = [
             "sudo docker swarm init --advertise-addr ${var.hostname}"
           ]
         }
       }
-      
+
       # Output installation status
       output "docker_installed" {
         value = true
         depends_on = [null_resource.install_docker]
       }
-      
+
       output "docker_version" {
         value = var.docker_version
       }
-      
+
       output "swarm_enabled" {
         value = var.enable_swarm
       }
@@ -167,7 +167,7 @@ installation:
 uninstall:
   method: "terraform"
   terraform_destroy: true
-  
+
   # Additional cleanup after terraform destroy
   post_destroy_commands:
     - "sudo apt-get purge -y docker-ce docker-ce-cli containerd.io"

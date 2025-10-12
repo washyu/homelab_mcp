@@ -25,37 +25,37 @@ installation:
   installation_script: |
     #!/bin/bash
     set -e
-    
+
     echo "=== K3s Kubernetes Installation Script ==="
-    
+
     # Default configuration
     K3S_VERSION="${K3S_VERSION:-v1.30.0+k3s1}"
     K3S_NODE_ROLE="${K3S_NODE_ROLE:-server}"
     K3S_TOKEN="${K3S_TOKEN:-$(openssl rand -hex 32)}"
     K3S_DATA_DIR="${K3S_DATA_DIR:-/var/lib/rancher/k3s}"
-    
+
     echo "Installing K3s version: $K3S_VERSION"
     echo "Node role: $K3S_NODE_ROLE"
-    
+
     # Check if running as root
     if [ "$EUID" -ne 0 ]; then
       echo "This script must be run as root"
       exit 1
     fi
-    
+
     # Update system
     echo "Updating system packages..."
     apt update && apt upgrade -y
-    
+
     # Install required packages
     apt install -y curl wget
-    
+
     # Create data directory
     mkdir -p "$K3S_DATA_DIR"
-    
+
     if [ "$K3S_NODE_ROLE" = "server" ]; then
       echo "Installing K3s server node..."
-      
+
       # Install K3s server
       curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" sh -s - server \
         --data-dir="$K3S_DATA_DIR" \
@@ -63,17 +63,17 @@ installation:
         --write-kubeconfig-mode=644 \
         --disable=traefik \
         --disable=servicelb
-      
+
       # Wait for K3s to be ready
       echo "Waiting for K3s to be ready..."
       sleep 10
-      
+
       # Check K3s status
       systemctl status k3s
-      
+
       # Get node status
       k3s kubectl get nodes
-      
+
       echo "=== K3s Server Installation Complete ==="
       echo "Kubeconfig location: /etc/rancher/k3s/k3s.yaml"
       echo "Node token: $K3S_TOKEN"
@@ -81,23 +81,23 @@ installation:
       echo ""
       echo "To add worker nodes, run on each node:"
       echo "curl -sfL https://get.k3s.io | K3S_URL=https://$(hostname -I | awk '{print $1}'):6443 K3S_TOKEN=$K3S_TOKEN sh -"
-      
+
     else
       echo "Installing K3s agent node..."
-      
+
       if [ -z "$K3S_URL" ]; then
         echo "Error: K3S_URL must be set for agent nodes"
         echo "Example: export K3S_URL=https://server-ip:6443"
         exit 1
       fi
-      
+
       # Install K3s agent
       curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="$K3S_VERSION" K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh -
-      
+
       echo "=== K3s Agent Installation Complete ==="
       echo "Connected to cluster: $K3S_URL"
     fi
-    
+
     # Install kubectl for easier management
     if ! command -v kubectl &> /dev/null; then
       echo "Installing kubectl..."
@@ -105,7 +105,7 @@ installation:
       chmod +x kubectl
       mv kubectl /usr/local/bin/
     fi
-    
+
     # Set up kubeconfig for non-root users
     if [ "$K3S_NODE_ROLE" = "server" ]; then
       echo "Setting up kubeconfig for users..."
@@ -119,15 +119,15 @@ installation:
         fi
       done
     fi
-    
+
     echo ""
     echo "K3s installation completed successfully!"
-    
+
   pre_install_checks:
     - "Verify Docker/containerd requirements"
     - "Check port availability (6443, 10250)"
     - "Ensure sufficient disk space for container images"
-  
+
   post_install_steps:
     - "Deploy ingress controller (if needed)"
     - "Set up persistent storage"
@@ -140,17 +140,17 @@ configurable_options:
     node_role: "server"  # server or agent
     cluster_token: "auto-generated"
     data_dir: "/var/lib/rancher/k3s"
-    
+
   networking:
     cluster_cidr: "10.42.0.0/16"
     service_cidr: "10.43.0.0/16"
     cluster_dns: "10.43.0.10"
-    
+
   features:
     disable_traefik: true     # Use external ingress
     disable_servicelb: true   # Use external load balancer
     disable_local_storage: false
-    
+
   storage:
     default_storage_class: "local-path"
     persistent_volumes: "/var/lib/rancher/k3s/storage"
@@ -161,13 +161,13 @@ management:
     - "kubectl - Kubernetes command line"
     - "k3s kubectl - K3s wrapped kubectl"
     - "crictl - Container runtime CLI"
-    
+
   common_commands:
     get_nodes: "kubectl get nodes"
     get_pods: "kubectl get pods --all-namespaces"
     get_services: "kubectl get svc --all-namespaces"
     cluster_info: "kubectl cluster-info"
-    
+
   config_locations:
     kubeconfig: "/etc/rancher/k3s/k3s.yaml"
     k3s_config: "/etc/rancher/k3s/config.yaml"
@@ -179,18 +179,18 @@ essential_addons:
     name: "nginx-ingress"
     install_command: |
       kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
-    
+
   dashboard:
     name: "kubernetes-dashboard"
     install_command: |
       kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
     access: "kubectl proxy --address='0.0.0.0' --accept-hosts='.*'"
-    
+
   cert_manager:
     name: "cert-manager"
     install_command: |
       kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-    
+
   monitoring:
     prometheus:
       install_command: |
@@ -232,7 +232,7 @@ sample_deployments:
         - port: 80
           targetPort: 80
         type: ClusterIP
-        
+
   persistent_storage_example:
     manifest: |
       apiVersion: v1
@@ -253,13 +253,13 @@ backup:
     location: "/var/lib/rancher/k3s/server/db/snapshots/"
     create_snapshot: "k3s etcd-snapshot save"
     restore_snapshot: "k3s server --cluster-reset --cluster-reset-restore-path=<snapshot>"
-    
+
   configuration_backup:
     files_to_backup:
       - "/etc/rancher/k3s/"
       - "/var/lib/rancher/k3s/server/manifests/"
       - "kubectl get all --all-namespaces -o yaml"
-    
+
   maintenance_tasks:
     - "Regular etcd snapshots"
     - "Monitor disk space for container images"
@@ -273,12 +273,12 @@ monitoring:
     - "containerd - Container runtime"
     - "kube-apiserver - API server"
     - "etcd - Cluster datastore"
-    
+
   health_checks:
     cluster_health: "kubectl get componentstatuses"
     node_health: "kubectl describe nodes"
     pod_health: "kubectl get pods --all-namespaces"
-    
+
   log_locations:
     k3s_logs: "journalctl -u k3s"
     container_logs: "kubectl logs <pod-name>"
@@ -307,7 +307,7 @@ security:
       - kind: ServiceAccount
         name: admin-user
         namespace: kubernetes-dashboard
-        
+
   network_policies:
     enable: true
     default_deny_example: |
@@ -320,7 +320,7 @@ security:
         policyTypes:
         - Ingress
         - Egress
-        
+
   pod_security:
     pod_security_standards: "restricted"
     admission_controller: "enabled"
@@ -334,21 +334,21 @@ troubleshooting:
         - "Review logs: journalctl -u k3s"
         - "Verify port availability: netstat -tlnp | grep :6443"
         - "Check disk space: df -h"
-        
+
     - issue: "Pods stuck in Pending state"
       solutions:
         - "Check node resources: kubectl describe nodes"
         - "Verify persistent volume claims"
         - "Check for resource quotas"
         - "Review pod events: kubectl describe pod <pod-name>"
-        
+
     - issue: "Cannot connect to cluster"
       solutions:
         - "Verify kubeconfig path and permissions"
         - "Check API server status"
         - "Validate network connectivity to port 6443"
         - "Ensure proper authentication tokens"
-        
+
     - issue: "High resource usage"
       solutions:
         - "Monitor pod resource usage: kubectl top pods"
@@ -361,15 +361,15 @@ advanced_features:
   multi_node_cluster:
     description: "Scale to multiple nodes for high availability"
     server_ha: "Requires external database (MySQL, PostgreSQL, etcd)"
-    
+
   custom_resources:
     description: "Extend Kubernetes with Custom Resource Definitions"
     operators: "Deploy operators for automated application management"
-    
+
   gitops:
     description: "GitOps workflow with ArgoCD or Flux"
     argocd_install: "kubectl create namespace argocd && kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
-    
+
   service_mesh:
     description: "Advanced networking with Istio or Linkerd"
     use_cases: "Traffic management, security, observability"

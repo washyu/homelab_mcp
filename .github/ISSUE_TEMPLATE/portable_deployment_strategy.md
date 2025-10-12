@@ -22,7 +22,7 @@ Goal: Manage infrastructure from anywhere with portable device
 Requirements: Lightweight, battery-powered, secure remote access
 ```
 
-### 2. Corporate Test Lab Automation  
+### 2. Corporate Test Lab Automation
 ```
 Scenario: Deploy to corporate network for developer teams
 Goal: Automated test lab provisioning via Teams/Slack chat
@@ -46,14 +46,14 @@ Requirements: Offline capability, sync when connected
 - [ ] **Resource Profiles**: Optimized configs for different hardware
 
 ### Chat Interface Options
-- [ ] **Web Interface**: Responsive web UI for any device  
+- [ ] **Web Interface**: Responsive web UI for any device
 - [ ] **Mobile App**: Native or PWA for smartphones/tablets
 - [ ] **CLI Client**: Terminal-based interface for SSH access
 - [ ] **API Gateway**: RESTful API for custom integrations
 
 ### Integration Platforms
 - [ ] **Microsoft Teams**: Bot integration with chat commands
-- [ ] **Slack**: Workspace integration with slash commands  
+- [ ] **Slack**: Workspace integration with slash commands
 - [ ] **Discord**: Server bot for gaming/community homelabs
 - [ ] **SSH/Terminal**: Direct command-line access
 - [ ] **Web Dashboard**: Browser-based management interface
@@ -84,7 +84,7 @@ teams:
   app_id: "mcp-homelab-bot"
   commands:
     - "/vm create web-server"
-    - "/status infrastructure" 
+    - "/status infrastructure"
     - "/deploy service jenkins"
 ```
 
@@ -151,7 +151,7 @@ curl -sSL https://get.mcp-homelab.com | bash -s -- --profile=portable
 
 ### Security for Corporate
 - **Network**: VPN/firewall integration
-- **Credentials**: Enterprise vault integration  
+- **Credentials**: Enterprise vault integration
 - **Audit**: Detailed logging and monitoring
 - **Compliance**: Data retention policies
 
@@ -181,6 +181,6 @@ curl -sSL https://get.mcp-homelab.com | bash -s -- --profile=portable
 ## Impact
 Enables widespread adoption of MCP for:
 - Small businesses with Pi-based infrastructure
-- Enterprise teams needing test lab automation  
+- Enterprise teams needing test lab automation
 - Network administrators requiring portable tools
 - Corporate environments with Teams/Slack integration

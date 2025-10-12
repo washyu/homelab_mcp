@@ -15,7 +15,7 @@ Your Homelab MCP Server is now fully built and ready to connect to Claude AI. Yo
 
 ### 23 MCP Tools Available
 - 🔐 **4 SSH & Admin tools** - Device access and setup
-- 🌐 **6 Network Discovery tools** - Scan and map your network  
+- 🌐 **6 Network Discovery tools** - Scan and map your network
 - 🏗️ **7 Infrastructure CRUD tools** - Deploy, update, scale services
 - 🖥️ **6 VM Management tools** - Full container/VM lifecycle
 
@@ -26,7 +26,7 @@ Your Homelab MCP Server is now fully built and ready to connect to Claude AI. Yo
 # On macOS
 cp claude_desktop_config.json ~/Library/Application\ Support/Claude/claude_desktop_config.json
 
-# On Windows  
+# On Windows
 copy claude_desktop_config.json %APPDATA%\Claude\claude_desktop_config.json
 
 # On Linux
@@ -66,7 +66,7 @@ You should see Claude respond with information about the 23 available tools.
 ### First Setup
 > **"Set up MCP admin access on my Pi server at 192.168.1.100 using username 'pi' and password 'raspberry'"**
 
-### Discover Your Network  
+### Discover Your Network
 > **"Scan and discover all devices on my network starting with my Pi server"**
 
 ### Deploy Something
@@ -90,7 +90,7 @@ With your MCP server connected to Claude, you can:
 
 ### Infrastructure as Code
 - **"Deploy a 3-tier web application across my devices"**
-- **"Scale my web service to handle more traffic"** 
+- **"Scale my web service to handle more traffic"**
 - **"Migrate the database service to a more powerful device"**
 
 ### DevOps Operations
@@ -98,7 +98,7 @@ With your MCP server connected to Claude, you can:
 - **"Deploy a monitoring stack with Prometheus and Grafana"**
 - **"Create automated backups of my critical services"**
 
-### Network Management  
+### Network Management
 - **"Analyze my network topology and suggest optimizations"**
 - **"Set up a new device and add it to my infrastructure"**
 - **"Show me the health status of all my services"**

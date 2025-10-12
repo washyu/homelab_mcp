@@ -52,7 +52,7 @@ installation:
           - /opt/ollama/config
           - /var/log/ollama
 
-    # Main installation tasks  
+    # Main installation tasks
     tasks:
       - name: "Deploy Ollama container"
         docker_container:
@@ -101,7 +101,7 @@ installation:
 
       - name: "Create Ollama systemd service"
         template:
-          src: ollama.service.j2  
+          src: ollama.service.j2
           dest: /etc/systemd/system/ollama.service
         vars:
           service_user: "{{ ansible_user }}"
@@ -140,12 +140,12 @@ installation:
             ========================================
             Ollama LLM Server Deployment Complete!
             ========================================
-            
+
             API Endpoint: http://{{ ansible_default_ipv4.address }}:{{ default_port }}
             Models Installed: {{ ollama_models | join(', ') }}
             GPU Enabled: {{ enable_gpu }}
             Memory Limit: {{ max_memory }}
-            
+
             Test Commands:
             curl http://{{ ansible_default_ipv4.address }}:{{ default_port }}/api/tags
             curl -X POST http://{{ ansible_default_ipv4.address }}:{{ default_port }}/api/generate \
@@ -165,7 +165,7 @@ service_templates:
     Description=Ollama Local LLM Server
     After=network.target docker.service
     Requires=docker.service
-    
+
     [Service]
     Type=notify
     User={{ service_user }}
@@ -173,7 +173,7 @@ service_templates:
     ExecStop=/usr/bin/docker stop ollama
     Restart=always
     RestartSec=5
-    
+
     [Install]
     WantedBy=multi-user.target
 
@@ -187,7 +187,7 @@ model_management:
       - name: "phi"
         size: "1.6GB"
         description: "Microsoft's small language model"
-    
+
     medium:
       - name: "llama2:7b"
         size: "3.8GB"
@@ -214,7 +214,7 @@ post_install:
       from langchain.llms import Ollama
       llm = Ollama(base_url="http://localhost:{{ default_port }}", model="tinyllama")
       response = llm("Write a Python function")
-    
+
     curl: |
       curl -X POST http://localhost:{{ default_port }}/api/chat \
         -H "Content-Type: application/json" \
@@ -250,13 +250,13 @@ troubleshooting:
         - "Check Docker service: systemctl status docker"
         - "Verify permissions: sudo usermod -aG docker {{ ansible_user }}"
         - "Check logs: docker logs ollama"
-    
+
     - issue: "Out of memory errors"
       solutions:
         - "Use smaller model: tinyllama instead of llama2:7b"
         - "Increase swap: sudo dphys-swapfile setup"
         - "Reduce memory limit in container"
-    
+
     - issue: "GPU not detected"
       solutions:
         - "Install nvidia-docker: distribution specific instructions"

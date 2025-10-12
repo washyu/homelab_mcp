@@ -20,7 +20,7 @@ Runs when:
 
 #### Cross-Platform Tests
 Runs when:
-- Manual workflow dispatch with `run_cross_platform: true`  
+- Manual workflow dispatch with `run_cross_platform: true`
 - Git tag push (releases)
 - Commit message contains `[cross-platform]`
 
@@ -57,7 +57,7 @@ Use the provided scripts for fast local feedback:
 You can manually trigger the workflow with specific options:
 
 1. Go to GitHub Actions tab
-2. Select "CI/CD Pipeline" 
+2. Select "CI/CD Pipeline"
 3. Click "Run workflow"
 4. Choose options:
    - ✅ Run integration tests
@@ -69,7 +69,7 @@ Force specific jobs to run by including tags in your commit message:
 
 ```bash
 git commit -m "feat: new feature [integration]"
-git commit -m "fix: cross-platform bug [cross-platform]" 
+git commit -m "fix: cross-platform bug [cross-platform]"
 git commit -m "security: update dependencies [security]"
 ```
 

@@ -1,0 +1,48 @@
+# Strict pre-commit hooks for CI/production - all checks must pass
+repos:
+  # Ruff - Fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.1
+    hooks:
+      # Run the linter
+      - id: ruff
+        name: ruff lint
+        args: [--fix]
+        types_or: [python, pyi]
+      # Run the formatter
+      - id: ruff-format
+        name: ruff format
+        types_or: [python, pyi]
+
+  # MyPy - Static type checking (strict)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        name: mypy type checking (strict)
+        args: [--ignore-missing-imports, --show-error-codes, --strict]
+        additional_dependencies:
+          - types-PyYAML
+        files: ^src/
+        exclude: ^tests/
+
+  # General code quality hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-yaml
+        exclude: ^(.github/|docs/|examples/)
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: ^(\.svg$|\.png$|\.jpg$|\.jpeg$|\.gif$)
+      - id: trailing-whitespace
+        exclude: ^(\.svg$|\.png$|\.jpg$|\.jpeg$|\.gif$)
+      - id: debug-statements
+      - id: check-ast
+
+# Global configuration
+default_stages: [pre-commit]
+fail_fast: true  # Stop on first failure in strict mode

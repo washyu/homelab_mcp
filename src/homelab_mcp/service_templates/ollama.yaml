@@ -51,7 +51,7 @@ installation:
           retries: 3
         networks:
           - ollama-network
-    
+
     networks:
       ollama-network:
         driver: bridge
@@ -63,12 +63,12 @@ recommended_models:
       size: "637MB"
       description: "Tiny but capable model"
     - name: "phi"
-      size: "1.6GB" 
+      size: "1.6GB"
       description: "Microsoft's small language model"
     - name: "gemma:2b"
       size: "1.4GB"
       description: "Google's lightweight model"
-  
+
   medium_models:  # For Pi 5 (8GB RAM)
     - name: "llama2:7b"
       size: "3.8GB"
@@ -87,7 +87,7 @@ post_install:
     - "Install a model: curl -X POST http://{hostname}:11434/api/pull -d '{\"name\": \"tinyllama\"}'"
     - "Test generation: curl -X POST http://{hostname}:11434/api/generate -d '{\"model\": \"tinyllama\", \"prompt\": \"Hello!\"}'"
     - "Web UI available via separate container or Open WebUI"
-  
+
   model_management:
     - "List models: curl http://{hostname}:11434/api/tags"
     - "Remove model: curl -X DELETE http://{hostname}:11434/api/delete -d '{\"name\": \"model_name\"}'"
@@ -99,12 +99,12 @@ performance_tuning:
     memory_limit: "3G"
     swap_file: "2G"  # Enable swap for larger models
     cpu_affinity: "0-3"  # Use all cores
-    
+
   pi_5_settings:
     memory_limit: "6G"
     swap_file: "4G"
     cpu_affinity: "0-3"
-    
+
   model_loading:
     preload_model: "tinyllama"  # Load default model on startup
     context_size: 2048  # Reduce for Pi
@@ -121,7 +121,7 @@ api_examples:
           "prompt": "Explain Raspberry Pi GPIO in simple terms",
           "stream": false
         }'
-  
+
   chat_completion:
     curl: |
       curl -X POST http://{hostname}:11434/api/chat \
@@ -144,7 +144,7 @@ integrations:
         -e OLLAMA_API_BASE_URL=http://ollama:11434/api \
         --network ollama-network \
         ghcr.io/open-webui/open-webui:main
-  
+
   langchain_python:
     description: "Python integration with LangChain"
     example: |
@@ -158,12 +158,12 @@ monitoring:
     - "/api/tags"  # List installed models
     - "/api/ps"    # Show running models
     - "/api/version"  # Ollama version
-  
+
   resource_monitoring:
     - "Memory usage: docker stats ollama"
     - "Model storage: du -sh /opt/ollama/models"
     - "API performance: curl -w @curl-format.txt http://{hostname}:11434/api/tags"
-  
+
   log_locations:
     container_logs: "docker logs ollama"
     model_logs: "/opt/ollama/config/logs"
@@ -176,14 +176,14 @@ troubleshooting:
         - "Use smaller model (tinyllama, phi)"
         - "Enable swap: sudo dphys-swapfile swapoff && sudo dphys-swapfile setup && sudo dphys-swapfile swapon"
         - "Increase container memory limit"
-        
+
     - issue: "Model download fails"
       solutions:
         - "Check internet connection"
         - "Verify disk space: df -h"
         - "Try smaller model first"
         - "Check Ollama logs: docker logs ollama"
-        
+
     - issue: "API not responding"
       solutions:
         - "Check container status: docker ps"
@@ -198,7 +198,7 @@ pi_considerations:
     - "Pi 5 (8GB): Can handle 7B models with swap"
     - "Storage: Use fast SD card (Class 10) or USB 3.0 SSD"
     - "Cooling: Ensure adequate cooling for sustained loads"
-  
+
   performance_tips:
     - "Use GPU acceleration if available (Pi 5)"
     - "Pre-pull models during off-peak hours"
@@ -211,7 +211,7 @@ security:
     - "Bind to localhost for local-only access"
     - "Use reverse proxy (nginx) for external access"
     - "Consider VPN access (Tailscale/WireGuard)"
-  
+
   model_safety:
     - "Only download models from trusted sources"
     - "Review model cards and capabilities"

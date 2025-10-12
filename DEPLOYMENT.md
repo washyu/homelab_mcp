@@ -268,7 +268,7 @@ chown -R $USER:$USER ~/.local/bin/
    uv run python -c "
    import asyncio
    from src.homelab_mcp.service_installer import ServiceInstaller
-   
+
    async def test():
        installer = ServiceInstaller()
        # Test requirement checking (replace with your server IP)
@@ -276,7 +276,7 @@ chown -R $USER:$USER ~/.local/bin/
            'jellyfin', '192.168.1.100', 'your-username', 'your-password'
        )
        print(result)
-   
+
    asyncio.run(test())
    "
    ```

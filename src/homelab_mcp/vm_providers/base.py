@@ -1,7 +1,7 @@
 """Abstract base class for VM providers."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 
 class VMProvider(ABC):
@@ -40,7 +40,9 @@ class VMProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
+    async def get_vm_logs(
+        self, conn: Any, vm_name: str, lines: int = 100
+    ) -> dict[str, Any]:
         """Get logs from a VM/container."""
         pass
 
@@ -77,7 +79,7 @@ class VMProvider(ABC):
         }
 
     def _format_success(
-        self, operation: str, vm_name: str, details: Optional[dict[str, Any]] = None
+        self, operation: str, vm_name: str, details: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Format success response consistently."""
         result = {"status": "success", "operation": operation, "vm_name": vm_name}

@@ -113,7 +113,7 @@ spec:
 Universal Definition → Helm Chart → Provider-Specific Config
 
 ollama-server.yaml → proxmox-chart/ → terraform + ansible
-                  → k8s-chart/     → kubernetes deployment  
+                  → k8s-chart/     → kubernetes deployment
                   → docker-chart/  → docker compose
                   → aws-chart/     → cloudformation + EC2
                   → azure-chart/   → ARM template + VM
@@ -137,7 +137,7 @@ resource "proxmox_vm_qemu" "{{ .Values.resource.name }}" {
   target_node = "{{ .Values.proxmox.node | default "proxmox-01" }}"
   cores       = {{ .Values.resource.cpu }}
   memory      = {{ .Values.resource.memory_mb }}
-  
+
   {{- if .Values.resource.gpu }}
   hostpci {
     host     = "{{ .Values.proxmox.gpu_device | default "01:00" }}"
@@ -146,12 +146,12 @@ resource "proxmox_vm_qemu" "{{ .Values.resource.name }}" {
   {{- end }}
 }
 
-# templates/ansible-playbook.yml.tpl  
+# templates/ansible-playbook.yml.tpl
 - name: Configure {{ .Values.resource.name }}
   hosts: "{{ .Values.resource.name }}"
   tasks:
     {{- if eq .Values.spec.workload_type "ai-inference" }}
-    - include_role: 
+    - include_role:
         name: nvidia-drivers
     - include_role:
         name: ollama
@@ -473,7 +473,7 @@ metadata:
   name: ollama-gpu-server
   version: "1.0.0"
   description: "AI inference server with GPU passthrough"
-  
+
 spec:
   # Resource requirements
   resources:
@@ -483,7 +483,7 @@ spec:
       memory_gb: 16
       storage_gb: 100
       gpu_passthrough: true
-      
+
   # Infrastructure definition (Terraform)
   infrastructure:
     provider: proxmox
@@ -492,13 +492,13 @@ spec:
       template_id: 9000
       network_bridge: "vmbr0"
       storage_pool: "local-lvm"
-      
+
   # Configuration management (Ansible)
   configuration:
     playbooks:
       - name: "setup-base-system"
         path: "ansible/playbooks/base-system.yml"
-      - name: "install-nvidia-drivers" 
+      - name: "install-nvidia-drivers"
         path: "ansible/playbooks/nvidia-gpu.yml"
       - name: "deploy-ollama"
         path: "ansible/playbooks/ollama.yml"
@@ -506,7 +506,7 @@ spec:
       ollama_models: ["llama2", "codellama"]
       ollama_port: 11434
       backup_enabled: true
-      
+
   # Resource dimensions/tags
   dimensions:
     purpose: "ai-inference"
@@ -514,7 +514,7 @@ spec:
     monitoring: "prometheus"
     owner: "homelab-admin"
     cost_center: "research"
-    
+
   # Validation rules
   validation:
     required_dimensions:
@@ -531,7 +531,7 @@ The MCP server provides tools that enable AI agents to intelligently manage infr
 ```javascript
 // MCP tool definitions for AI-driven homelab management
 const mcpTools = [
-  
+
   // MULTI-PROVIDER DISCOVERY TOOLS - Provide context for AI decision-making
   {
     name: "discover-infrastructure-context",
@@ -561,7 +561,7 @@ const mcpTools = [
       availability_zones: "Geographic distribution of resources"
     }
   },
-  
+
   {
     name: "find-best-provider-for-workload",
     description: "AI tool to determine optimal provider/platform for specific workload",
@@ -584,9 +584,9 @@ const mcpTools = [
       deployment_strategy: "How to deploy on recommended provider"
     }
   },
-  
+
   {
-    name: "analyze-resource-requirements", 
+    name: "analyze-resource-requirements",
     description: "Help AI determine optimal resource allocation for workload",
     inputSchema: {
       type: "object",
@@ -605,7 +605,7 @@ const mcpTools = [
       placement_recommendations: "Best nodes/pools for deployment"
     }
   },
-  
+
   {
     name: "find-optimal-placement",
     description: "AI tool to find best node/pool for deployment based on current state",
@@ -620,12 +620,12 @@ const mcpTools = [
     },
     returns: {
       best_node: "Optimal Proxmox node for deployment",
-      resource_pool: "Recommended resource pool path", 
+      resource_pool: "Recommended resource pool path",
       capacity_impact: "How deployment affects node capacity",
       alternative_nodes: "Backup placement options"
     }
   },
-  
+
   // HELM CHART TRANSLATION TOOLS - Convert universal definitions to provider-specific configs
   {
     name: "translate-universal-to-provider",
@@ -647,7 +647,7 @@ const mcpTools = [
       deployment_commands: "Commands to execute the rendered configuration"
     }
   },
-  
+
   {
     name: "list-available-helm-charts",
     description: "Get available Helm charts for different providers and workload types",
@@ -666,7 +666,7 @@ const mcpTools = [
       chart_versions: "Available versions and their differences"
     }
   },
-  
+
   {
     name: "validate-universal-definition",
     description: "Validate universal resource definition against available Helm charts",
@@ -691,7 +691,7 @@ const mcpTools = [
     name: "deploy-with-intelligence",
     description: "AI-driven deployment using Helm chart translation",
     inputSchema: {
-      type: "object", 
+      type: "object",
       properties: {
         universal_definition: { type: "object" }, // Complete universal resource definition
         preferred_provider: { type: "string" }, // AI recommendation, but user can override
@@ -709,7 +709,7 @@ const mcpTools = [
       execution_results: "Results of actual deployment (if not dry_run)"
     }
   },
-  
+
   {
     name: "query-resource-pools",
     description: "Query resource pools with filters (like WTT resource queries)",
@@ -723,7 +723,7 @@ const mcpTools = [
       }
     }
   },
-  
+
   {
     name: "list-deployment-templates",
     description: "List available templates (like WTT template discovery)",
@@ -736,7 +736,7 @@ const mcpTools = [
       }
     }
   },
-  
+
   {
     name: "get-deployment-status",
     description: "Get deployment status (like WTT job status)",
@@ -749,7 +749,7 @@ const mcpTools = [
       }
     }
   },
-  
+
   {
     name: "update-resource-dimensions",
     description: "Update resource metadata (like WTT dimensions)",
@@ -764,7 +764,7 @@ const mcpTools = [
       required: ["resource_id", "resource_type", "dimensions"]
     }
   },
-  
+
   // STATE MANAGEMENT TOOLS - AI-driven deviation detection and correction
   {
     name: "compare-expected-vs-actual-state",
@@ -785,7 +785,7 @@ const mcpTools = [
       recommended_actions: "AI recommendations for each deviation"
     }
   },
-  
+
   {
     name: "generate-template-from-instance",
     description: "Create reusable template from successful deployment (AI learning)",
@@ -806,7 +806,7 @@ const mcpTools = [
       reusability_score: "How broadly applicable this template is"
     }
   },
-  
+
   {
     name: "create-infrastructure-snapshot",
     description: "Capture complete infrastructure state for migration/backup (like WTT state capture)",
@@ -828,7 +828,7 @@ const mcpTools = [
       estimated_migration_time: "Time to recreate this infrastructure elsewhere"
     }
   },
-  
+
   {
     name: "plan-migration-from-snapshot",
     description: "Plan infrastructure migration using captured state",
@@ -849,7 +849,7 @@ const mcpTools = [
       estimated_downtime: "Expected service interruption time"
     }
   },
-  
+
   {
     name: "detect-infrastructure-anomalies",
     description: "AI-driven detection of unusual patterns or problems",
@@ -868,7 +868,7 @@ const mcpTools = [
       auto_correctable_issues": "Problems AI can fix automatically"
     }
   },
-  
+
   {
     name: "discover-proxmox-resources",
     description: "Discover and sync Proxmox resources with state tracking (like WTT resource discovery)",
@@ -902,17 +902,17 @@ User: "I need a Jenkins server that can handle CI/CD for 5 developers"
 AI Agent Workflow:
 1. analyze-resource-requirements(workload_type="jenkins", user_requirements={developers: 5})
    → Returns: 4 cores, 8GB RAM, 100GB storage recommended
-   
-2. discover-infrastructure-context(include_utilization=true)  
+
+2. discover-infrastructure-context(include_utilization=true)
    → Returns: Current cluster state, available capacity
-   
+
 3. find-optimal-placement(resource_requirements={cores:4, memory_gb:8}, high_availability=true)
    → Returns: Deploy on node-01, backup on node-02
-   
-4. deploy-with-intelligence(workload_type="jenkins", instance_name="jenkins-prod", 
+
+4. deploy-with-intelligence(workload_type="jenkins", instance_name="jenkins-prod",
                            user_requirements={developers: 5})
    → Executes: Terraform VM creation + Ansible Jenkins installation
-   
+
 5. update-context-after-deployment(instance_id, endpoint="http://jenkins.local:8080")
    → Updates: MCP context with new service information
 ```
@@ -924,18 +924,18 @@ User: "I want to run LLaMA models locally but not sure what I need"
 AI Agent Workflow:
 1. get-sop(operation="deploy_ollama", detailed=true)
    → Returns: Best practices, model size requirements, GPU recommendations
-   
-2. analyze-resource-requirements(workload_type="ollama", consider_gpu=true, 
+
+2. analyze-resource-requirements(workload_type="ollama", consider_gpu=true,
                                 performance_tier="standard")
    → Returns: Recommends RTX 4090, 16GB RAM, explains model size trade-offs
-   
+
 3. discover-infrastructure-context(providers=["all"], include_capacity=true)
    → Checks: GPU availability across Proxmox, AWS (P3 instances), Azure (NC series)
-   
-4. find-best-provider-for-workload(workload_type="ai-inference", 
+
+4. find-best-provider-for-workload(workload_type="ai-inference",
                                   requirements={gpu:true, cost_sensitive:true})
    → Returns: "Proxmox cheapest for 24/7, AWS best for burst workloads"
-   
+
 5. deploy-with-intelligence(workload_type="ollama", instance_name="ollama-gpu",
                            provider="proxmox", auto_optimize=true)
    → Creates: GPU-enabled VM with proper drivers and Ollama installation
@@ -946,15 +946,15 @@ AI Agent Workflow:
 User: "Deploy my web app with high availability, I don't care how"
 
 AI Agent Workflow:
-1. find-best-provider-for-workload(workload_type="web-app", 
+1. find-best-provider-for-workload(workload_type="web-app",
                                   availability_requirements="high")
    → Compares: Proxmox HA cluster vs K8s vs AWS auto-scaling
    → Returns: "Kubernetes provides best HA with automatic failover"
-   
+
 2. discover-infrastructure-context(providers=["kubernetes", "proxmox"])
    → Checks: K8s cluster capacity, Proxmox available for K8s nodes
-   
-3. deploy-with-intelligence(workload_type="web-app", 
+
+3. deploy-with-intelligence(workload_type="web-app",
                            deployment_target="kubernetes",
                            instance_name="webapp-ha")
    → Creates: K8s deployment with 3 replicas, load balancer, auto-scaling
@@ -967,13 +967,13 @@ User: "I have dev/staging/prod environments, optimize costs across all platforms
 AI Agent Workflow:
 1. discover-infrastructure-context(providers=["all"], include_costs=true)
    → Returns: Current spend across Proxmox (power), AWS, Azure, Docker hosts
-   
+
 2. analyze-cross-provider-optimization()
    → Finds: "Dev can move to cheaper Proxmox, Staging to spot instances, Prod stay put"
-   
+
 3. plan-multi-provider-migration()
    → Creates: Migration plan to optimize costs by $200/month
-   
+
 4. execute-optimization-plan(auto_approve_under_threshold=100)
    → Migrates: Dev to Proxmox, resizes staging instances, consolidates Docker containers
 ```
@@ -995,13 +995,13 @@ const sopTools = [
     },
     returns: {
       prerequisites: "Required infrastructure and dependencies",
-      deployment_steps: "Step-by-step deployment process", 
+      deployment_steps: "Step-by-step deployment process",
       validation_checks: "How to verify successful deployment",
       common_issues: "Known problems and solutions",
       post_deployment: "Configuration and maintenance tasks"
     }
   },
-  
+
   {
     name: "get-resource-allocation-guidelines",
     description: "Get best practices for resource sizing decisions",
@@ -1016,7 +1016,7 @@ const sopTools = [
       cost_optimization: "How to optimize resource usage"
     }
   },
-  
+
   {
     name: "get-placement-strategy",
     description: "Get best practices for VM/container placement",
@@ -1042,19 +1042,19 @@ Your WTT system's strength was maintaining accurate state - the MCP server enhan
 ```javascript
 // Context management for AI decision-making
 class ContextManager {
-  
+
   // Infrastructure Context (like WTT resource discovery)
   async getInfrastructureContext() {
     return {
       nodes: await this.discoverProxmoxNodes(),
-      resource_pools: await this.getResourcePoolHierarchy(), 
+      resource_pools: await this.getResourcePoolHierarchy(),
       templates: await this.getAvailableTemplates(),
       current_deployments: await this.getCurrentDeployments(),
       capacity_trends: await this.getCapacityTrends(),
       last_updated: timestamp
     };
   }
-  
+
   // Service Context (new capability)
   async getServiceContext() {
     return {
@@ -1065,12 +1065,12 @@ class ContextManager {
       security_posture: await this.getSecurityStatus()
     };
   }
-  
+
   // Operational Context (based on WTT audit logs)
   async getOperationalContext() {
     return {
       recent_deployments: await this.getRecentDeployments(),
-      failed_operations: await this.getFailedOperations(), 
+      failed_operations: await this.getFailedOperations(),
       resource_utilization_trends: await this.getUtilizationTrends(),
       maintenance_windows: await this.getMaintenanceSchedule(),
       cost_tracking: await this.getCostAnalysis()
@@ -1084,22 +1084,22 @@ class ContextManager {
 ```javascript
 // Core services based on WTT architecture
 class ModernHomelabServices {
-  
+
   // Identity Service (WTT Identity equivalent)
   class IdentityService {
     authenticate(token) {}
     authorize(user, resource, action) {}
     getUserPermissions(user) {}
   }
-  
-  // Resource Service (WTT Resource equivalent)  
+
+  // Resource Service (WTT Resource equivalent)
   class ResourceService {
     createResourcePool(poolConfig) {}
     queryResourcePools(filters) {}
     updateResourceCapacity(poolId, capacity) {}
     getResourceDimensions(resourceId) {}
   }
-  
+
   // Template Service (WTT Workflow Template equivalent)
   class TemplateService {
     createTemplate(templateConfig) {}
@@ -1107,7 +1107,7 @@ class ModernHomelabServices {
     listTemplates(filters) {}
     generateDeploymentPlan(templateId, parameters) {}
   }
-  
+
   // Deployment Service (WTT Job/Workflow equivalent)
   class DeploymentService {
     deployFromTemplate(templateId, parameters) {}
@@ -1115,14 +1115,14 @@ class ModernHomelabServices {
     cancelDeployment(instanceId) {}
     destroyDeployment(instanceId) {}
   }
-  
+
   // Infrastructure Service (New - handles Terraform/Ansible)
   class InfrastructureService {
     executeTerraform(moduleConfig) {}
     runAnsiblePlaybook(playbookConfig) {}
     validateInfrastructure(instanceId) {}
   }
-  
+
   // Notification Service (WTT Notification equivalent)
   class NotificationService {
     sendDeploymentNotification(instanceId, status) {}
@@ -1170,7 +1170,7 @@ class ModernHomelabServices {
 ## Migration Benefits from Original WTT
 
 - **Preserve Logic**: Core resource management concepts remain intact
-- **Modern Tools**: Terraform/Ansible replace proprietary WTT workflows  
+- **Modern Tools**: Terraform/Ansible replace proprietary WTT workflows
 - **Cloud Ready**: Can extend to cloud providers beyond Proxmox
 - **Open Source**: No proprietary dependencies or licensing concerns
 - **AI Integration**: MCP protocol enables intelligent automation

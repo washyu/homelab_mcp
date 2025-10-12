@@ -224,7 +224,9 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return {"status": "error", "platform": "docker", "error": str(e)}
 
-    async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
+    async def get_vm_logs(
+        self, conn: Any, vm_name: str, lines: int = 100
+    ) -> dict[str, Any]:
         """Get Docker container logs."""
         try:
             result = await self._run_command(

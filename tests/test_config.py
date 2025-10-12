@@ -263,9 +263,9 @@ class TestMCPConfig:
         for env_value, expected in test_cases:
             os.environ["MCP_DEBUG"] = env_value
             config = MCPConfig()
-            assert config.debug is expected, (
-                f"Failed for '{env_value}', expected {expected}, got {config.debug}"
-            )
+            assert (
+                config.debug is expected
+            ), f"Failed for '{env_value}', expected {expected}, got {config.debug}"
 
     def test_validate_success(self):
         """Test successful configuration validation."""

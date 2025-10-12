@@ -870,11 +870,11 @@ class ServiceInstaller:
             path = path.replace("{{service_name}}", service_name)
             path = path.replace("{{hostname}}", hostname)
 
-            return f'''terraform {{
+            return f"""terraform {{
   backend "local" {{
     path = "{path}"
   }}
-}}'''
+}}"""
 
         elif backend_type == "s3":
             config = backend_config.get("config", {})
@@ -886,14 +886,14 @@ class ServiceInstaller:
             key = key.replace("{{service_name}}", service_name)
             key = key.replace("{{hostname}}", hostname)
 
-            return f'''terraform {{
+            return f"""terraform {{
   backend "s3" {{
     bucket = "{bucket}"
     key    = "{key}"
     region = "{config.get("region", "us-east-1")}"
     encrypt = {str(config.get("encrypt", True)).lower()}
   }}
-}}'''
+}}"""
 
         else:
             # Default to local backend

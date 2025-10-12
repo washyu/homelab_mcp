@@ -56,7 +56,7 @@ installation:
           - "5001:5001"  # Metrics
         networks:
           - ai-network
-      
+
       # Custom inference service with Python API
       custom-inference:
         container_name: "custom-inference"
@@ -79,7 +79,7 @@ installation:
           - "5000:5000"  # Custom API
         networks:
           - ai-network
-      
+
       # Web UI for model management
       model-manager:
         container_name: "model-manager"
@@ -91,7 +91,7 @@ installation:
           - "8082:80"
         networks:
           - ai-network
-    
+
     networks:
       ai-network:
         driver: bridge
@@ -103,12 +103,12 @@ accelerator_detection:
       command: "lsusb | grep '2a03:' || lsusb | grep 'MemryX'"
       driver: "memryx-runtime"
       python_lib: "memryx"
-      
+
     pcie_detection:
       command: "ls /dev/memryx* || lspci | grep -i memryx"
       driver: "memryx-driver"
       python_lib: "memryx"
-    
+
     configuration:
       onnx: true
       tensorflow: false
@@ -116,30 +116,30 @@ accelerator_detection:
       model_format: ".onnx"
       performance: "20+ TOPS"
       power: "3W"
-      
+
   coral_edge_tpu:
     usb_detection:
       command: "lsusb | grep '18d1:9302'"
       driver: "libedgetpu"
       python_lib: "pycoral"
-      
+
     pcie_detection:
       command: "ls /dev/apex_*"
       driver: "gasket"
       python_lib: "pycoral"
-    
+
     configuration:
       tensorflow_lite: true
       model_format: ".tflite"
       performance: "13 TOPS"
       power: "2W"
-  
+
   hailo_8:
     detection:
       command: "lsusb | grep '1e60:' || ls /dev/hailo*"
       driver: "hailort"
       python_lib: "hailo-platform"
-    
+
     configuration:
       onnx: true
       tensorflow: true
@@ -147,19 +147,19 @@ accelerator_detection:
       model_format: ".hef"
       performance: "26 TOPS"
       power: "2.5W"
-  
+
   intel_ncs:
     detection:
       command: "lsusb | grep '03e7:'"
       driver: "openvino"
       python_lib: "openvino-runtime"
-    
+
     configuration:
       openvino: true
       model_format: ".xml/.bin"
       performance: "1 TOPS"
       power: "1W"
-  
+
   cpu_fallback:
     always_available: true
     configuration:
@@ -173,14 +173,14 @@ accelerator_detection:
 custom_inference_setup:
   dockerfile: |
     FROM python:3.9-slim
-    
+
     # Install system dependencies
     RUN apt-get update && apt-get install -y \
         libusb-1.0-0 \
         libc6-dev \
         curl \
         && rm -rf /var/lib/apt/lists/*
-    
+
     # Install Python packages
     RUN pip install --no-cache-dir \
         flask \
@@ -191,26 +191,26 @@ custom_inference_setup:
         tflite-runtime \
         pycoral \
         requests
-    
+
     # Set working directory
     WORKDIR /app
-    
+
     # Copy application
     COPY . .
-    
+
     # Expose port
     EXPOSE 5000
-    
+
     # Start application
     CMD ["python", "inference_server.py"]
-  
+
   inference_server_py: |
     #!/usr/bin/env python3
     """
     Multi-accelerator AI inference server
     Supports Coral TPU, Hailo, Intel NCS, and CPU fallback
     """
-    
+
     import os
     import subprocess
     import json
@@ -219,20 +219,20 @@ custom_inference_setup:
     import numpy as np
     from PIL import Image
     import logging
-    
+
     # Configure logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    
+
     app = Flask(__name__)
-    
+
     class AcceleratorManager:
         def __init__(self):
             self.accelerator_type = None
             self.interpreter = None
             self.detect_accelerator()
             self.load_model()
-        
+
         def detect_accelerator(self):
             """Auto-detect available AI accelerator"""
             # Check for MemryX accelerator first (newest)
@@ -240,74 +240,74 @@ custom_inference_setup:
                 self.accelerator_type = 'memryx'
                 logger.info("Detected MemryX MX3 accelerator")
                 return
-            
+
             # Check for Coral TPU
             if self._check_coral():
                 self.accelerator_type = 'coral'
                 logger.info("Detected Coral Edge TPU")
                 return
-            
+
             # Check for Hailo
             if self._check_hailo():
                 self.accelerator_type = 'hailo'
                 logger.info("Detected Hailo accelerator")
                 return
-            
+
             # Check for Intel NCS
             if self._check_intel_ncs():
                 self.accelerator_type = 'intel_ncs'
                 logger.info("Detected Intel Neural Compute Stick")
                 return
-            
+
             # Fallback to CPU
             self.accelerator_type = 'cpu'
             logger.info("Using CPU inference (no accelerator detected)")
-        
+
         def _check_memryx(self):
             try:
                 # Check for MemryX USB device
                 result = subprocess.run(['lsusb'], capture_output=True, text=True)
                 memryx_usb = '2a03:' in result.stdout or 'MemryX' in result.stdout
-                
+
                 # Check for MemryX PCIe device
                 memryx_pcie = os.path.exists('/dev/memryx0') or os.path.exists('/dev/memryx1')
-                
+
                 # Check lspci for MemryX devices
                 try:
                     pci_result = subprocess.run(['lspci'], capture_output=True, text=True)
                     memryx_pci = 'memryx' in pci_result.stdout.lower()
                 except:
                     memryx_pci = False
-                
+
                 return memryx_usb or memryx_pcie or memryx_pci
             except:
                 return False
-        
+
         def _check_coral(self):
             try:
                 result = subprocess.run(['lsusb'], capture_output=True, text=True)
                 return '18d1:9302' in result.stdout or os.path.exists('/dev/apex_0')
             except:
                 return False
-        
+
         def _check_hailo(self):
             try:
                 result = subprocess.run(['lsusb'], capture_output=True, text=True)
                 return '1e60:' in result.stdout or os.path.exists('/dev/hailo0')
             except:
                 return False
-        
+
         def _check_intel_ncs(self):
             try:
                 result = subprocess.run(['lsusb'], capture_output=True, text=True)
                 return '03e7:' in result.stdout
             except:
                 return False
-        
+
         def load_model(self):
             """Load appropriate model for detected accelerator"""
             model_path = f"/models/{self.accelerator_type}_model"
-            
+
             if self.accelerator_type == 'memryx':
                 self._load_memryx_model(model_path)
             elif self.accelerator_type == 'coral':
@@ -318,11 +318,11 @@ custom_inference_setup:
                 self._load_openvino_model(model_path)
             else:
                 self._load_cpu_model(model_path)
-        
+
         def _load_memryx_model(self, model_path):
             try:
                 import memryx
-                
+
                 model_file = f"{model_path}.onnx"
                 # MemryX typically uses ONNX models
                 self.memryx_model = memryx.Model(model_file)
@@ -332,12 +332,12 @@ custom_inference_setup:
                 logger.error(f"Failed to load MemryX model: {e}")
                 logger.info("Falling back to CPU inference")
                 self._load_cpu_model(model_path)
-        
+
         def _load_coral_model(self, model_path):
             try:
                 import tflite_runtime.interpreter as tflite
                 from pycoral.utils import edgetpu
-                
+
                 model_file = f"{model_path}.tflite"
                 self.interpreter = tflite.Interpreter(
                     model_path=model_file,
@@ -348,23 +348,23 @@ custom_inference_setup:
             except Exception as e:
                 logger.error(f"Failed to load Coral model: {e}")
                 self._load_cpu_model(model_path)
-        
+
         def _load_cpu_model(self, model_path):
             try:
                 import tflite_runtime.interpreter as tflite
-                
+
                 model_file = f"{model_path}.tflite"
                 self.interpreter = tflite.Interpreter(model_path=model_file)
                 self.interpreter.allocate_tensors()
                 logger.info(f"Loaded CPU model: {model_file}")
             except Exception as e:
                 logger.error(f"Failed to load CPU model: {e}")
-        
+
         def predict(self, image_data):
             """Run inference on image data"""
             if not self.interpreter:
                 return {"error": "No model loaded"}
-            
+
             try:
                 # Preprocess image
                 image = Image.open(image_data).convert('RGB')
@@ -372,31 +372,31 @@ custom_inference_setup:
                 input_data = np.array(image, dtype=np.float32)
                 input_data = np.expand_dims(input_data, axis=0)
                 input_data = input_data / 255.0  # Normalize
-                
+
                 # Run inference
                 input_details = self.interpreter.get_input_details()
                 output_details = self.interpreter.get_output_details()
-                
+
                 self.interpreter.set_tensor(input_details[0]['index'], input_data)
-                
+
                 start_time = time.time()
                 self.interpreter.invoke()
                 inference_time = (time.time() - start_time) * 1000
-                
+
                 output_data = self.interpreter.get_tensor(output_details[0]['index'])
-                
+
                 return {
                     "predictions": output_data.tolist(),
                     "inference_time_ms": round(inference_time, 2),
                     "accelerator": self.accelerator_type
                 }
-            
+
             except Exception as e:
                 return {"error": str(e)}
-    
+
     # Initialize accelerator manager
     accelerator = AcceleratorManager()
-    
+
     @app.route('/health', methods=['GET'])
     def health_check():
         return jsonify({
@@ -404,7 +404,7 @@ custom_inference_setup:
             "accelerator": accelerator.accelerator_type,
             "model_loaded": accelerator.interpreter is not None
         })
-    
+
     @app.route('/accelerator/info', methods=['GET'])
     def accelerator_info():
         return jsonify({
@@ -416,25 +416,25 @@ custom_inference_setup:
                 "intel_ncs": accelerator._check_intel_ncs()
             }
         })
-    
+
     @app.route('/predict', methods=['POST'])
     def predict():
         if 'image' not in request.files:
             return jsonify({"error": "No image provided"}), 400
-        
+
         image_file = request.files['image']
         result = accelerator.predict(image_file)
-        
+
         return jsonify(result)
-    
+
     @app.route('/benchmark', methods=['POST'])
     def benchmark():
         """Run performance benchmark"""
         if 'image' not in request.files:
             return jsonify({"error": "No image provided"}), 400
-        
+
         image_file = request.files['image']
-        
+
         # Run multiple inferences for benchmarking
         times = []
         for i in range(10):
@@ -442,11 +442,11 @@ custom_inference_setup:
             if 'inference_time_ms' in result:
                 times.append(result['inference_time_ms'])
             image_file.seek(0)  # Reset file pointer
-        
+
         if times:
             avg_time = sum(times) / len(times)
             fps = 1000 / avg_time if avg_time > 0 else 0
-            
+
             return jsonify({
                 "average_inference_time_ms": round(avg_time, 2),
                 "fps": round(fps, 2),
@@ -455,7 +455,7 @@ custom_inference_setup:
             })
         else:
             return jsonify({"error": "Benchmark failed"}), 500
-    
+
     if __name__ == '__main__':
         app.run(host='0.0.0.0', port=5000, debug=False)
 
@@ -467,27 +467,27 @@ model_management:
     hailo: [".hef", ".onnx"]
     intel_ncs: [".xml/.bin (OpenVINO)", ".onnx"]
     cpu: [".tflite", ".onnx", ".pb", ".h5"]
-  
+
   model_download:
     coral_models:
       - name: "MobileNet SSD"
         url: "https://coral.ai/models/object-detection/"
         description: "Object detection optimized for Edge TPU"
-      
+
       - name: "EfficientNet"
         url: "https://coral.ai/models/classification/"
         description: "Image classification"
-    
+
     example_download: |
       # Download pre-compiled Edge TPU model
       wget https://github.com/google-coral/edgetpu/raw/master/test_data/mobilenet_ssd_v2_coco_quant_postprocess_edgetpu.tflite \
         -O /opt/ai-inference/models/coral_model.tflite
-  
+
   model_conversion:
     to_edgetpu: |
       # Convert TensorFlow Lite model to Edge TPU
       edgetpu_compiler input_model.tflite
-    
+
     to_openvino: |
       # Convert to OpenVINO format
       mo --input_model model.onnx --output_dir openvino_model
@@ -496,28 +496,28 @@ model_management:
 api_examples:
   health_check:
     curl: "curl http://{hostname}:5000/health"
-    
+
   accelerator_info:
     curl: "curl http://{hostname}:5000/accelerator/info"
-    
+
   image_inference:
     curl: |
       curl -X POST http://{hostname}:5000/predict \
         -F "image=@test_image.jpg"
-    
+
     python: |
       import requests
-      
+
       with open('test_image.jpg', 'rb') as f:
           response = requests.post(
               'http://{hostname}:5000/predict',
               files={'image': f}
           )
-      
+
       result = response.json()
       print(f"Inference time: {result['inference_time_ms']}ms")
       print(f"Accelerator: {result['accelerator']}")
-  
+
   benchmark:
     curl: |
       curl -X POST http://{hostname}:5000/benchmark \
@@ -531,22 +531,22 @@ performance_benchmarks:
       resnet50: "4ms (250 FPS)"
       mobilenet_ssd: "15ms (66 FPS)"
       power: "3W"
-    
+
     coral_usb:
       mobilenet_ssd: "22ms (45 FPS)"
       efficientnet: "5ms (200 FPS)"
       power: "2W"
-    
+
     hailo_8:
       yolov5s: "8ms (125 FPS)"
       resnet50: "3ms (333 FPS)"
       power: "2.5W"
-    
+
     intel_ncs2:
       mobilenet_ssd: "35ms (28 FPS)"
       resnet50: "15ms (66 FPS)"
       power: "1W"
-    
+
     cpu_only_pi4:
       mobilenet_ssd: "250ms (4 FPS)"
       efficientnet: "180ms (5.5 FPS)"
@@ -565,7 +565,7 @@ integrations:
           json_attributes:
             - accelerator
             - model_loaded
-  
+
   frigate_nvr:
     custom_detector: |
       # Use custom inference server with Frigate
@@ -573,16 +573,16 @@ integrations:
         custom:
           type: http
           url: "http://ai-inference:5000/predict"
-  
+
   python_client:
     example: |
       import requests
       import cv2
-      
+
       class AIInferenceClient:
           def __init__(self, host="localhost", port=5000):
               self.base_url = f"http://{host}:{port}"
-          
+
           def predict_image(self, image_path):
               with open(image_path, 'rb') as f:
                   response = requests.post(
@@ -590,7 +590,7 @@ integrations:
                       files={'image': f}
                   )
               return response.json()
-          
+
           def get_accelerator_info(self):
               response = requests.get(f"{self.base_url}/accelerator/info")
               return response.json()
@@ -603,7 +603,7 @@ post_install:
     - "Download appropriate models for detected accelerator"
     - "Test inference with sample image"
     - "Run benchmark to verify performance"
-  
+
   model_setup:
     - "Create model directory: /opt/ai-inference/models"
     - "Download pre-trained models for your accelerator"
@@ -617,13 +617,13 @@ troubleshooting:
     - "Verify device permissions in container"
     - "Install accelerator drivers on host"
     - "Check container privilege settings"
-  
+
   poor_performance:
     - "Verify accelerator is being used (not CPU fallback)"
     - "Check model is compiled for accelerator"
     - "Monitor CPU/memory usage"
     - "Test with smaller input images"
-  
+
   model_loading_fails:
     - "Verify model format matches accelerator"
     - "Check model file permissions"

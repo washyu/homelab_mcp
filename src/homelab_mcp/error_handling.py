@@ -9,7 +9,7 @@ import json
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any, TypeVar, Union, Optional
+from typing import Any, TypeVar
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +31,7 @@ class MCPConnectionError(Exception):
 
 
 def timeout_wrapper(
-    timeout_seconds: float = 30.0, default_response: Optional[dict[str, Any]] = None
+    timeout_seconds: float = 30.0, default_response: dict[str, Any] | None = None
 ) -> Callable[[F], F]:
     """
     Decorator to wrap async functions with timeout protection.
@@ -123,7 +123,7 @@ def retry_on_failure(
                     return await func(*args, **kwargs)
                 except (ConnectionError, MCPConnectionError, OSError) as e:
                     # Let timeout errors bubble up to SSH wrapper for proper handling
-                    if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                    if isinstance(e, asyncio.TimeoutError | TimeoutError):
                         raise e
                     last_exception = e
                     if attempt < max_retries:
@@ -167,7 +167,7 @@ def retry_on_failure(
 
 
 async def safe_json_response(
-    data: Union[str, dict[str, Any]], fallback_message: str = "Operation completed"
+    data: str | dict[str, Any], fallback_message: str = "Operation completed"
 ) -> dict[str, Any]:
     """
     Safely create a JSON response, handling cases where data might be malformed.
@@ -264,7 +264,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
             except (ConnectionError, OSError) as e:
                 hostname = kwargs.get("hostname", args[0] if args else "unknown")
                 # Check if this is a timeout error
-                if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                if isinstance(e, asyncio.TimeoutError | TimeoutError):
                     error_response = json.dumps(
                         {
                             "status": "error",
