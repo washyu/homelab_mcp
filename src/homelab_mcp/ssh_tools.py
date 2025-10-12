@@ -529,7 +529,6 @@ async def ssh_execute_command(
     **kwargs,
 ) -> str:
     """Execute a command on a remote system via SSH."""
-    ssh_key_path = None
     client_keys = []
 
     # Use MCP admin key if username is mcp_admin

@@ -151,12 +151,12 @@ class SQLiteAdapter(DatabaseAdapter):
 
         # Create indexes
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip 
+            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
             ON devices (hostname, connection_ip)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_device_id 
+            CREATE INDEX IF NOT EXISTS idx_history_device_id
             ON discovery_history (device_id)
         """)
 
@@ -172,7 +172,7 @@ class SQLiteAdapter(DatabaseAdapter):
         # Check if device exists
         cursor.execute(
             """
-            SELECT id FROM devices 
+            SELECT id FROM devices
             WHERE hostname = ? AND connection_ip = ?
         """,
             (device_data["hostname"], device_data["connection_ip"]),
@@ -292,7 +292,7 @@ class SQLiteAdapter(DatabaseAdapter):
         # Check if this exact data was already stored recently
         cursor.execute(
             """
-            SELECT id FROM discovery_history 
+            SELECT id FROM discovery_history
             WHERE device_id = ? AND data_hash = ?
             ORDER BY discovered_at DESC LIMIT 1
         """,
@@ -420,32 +420,32 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         # Create indexes including JSONB indexes
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip 
+            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
             ON devices (hostname, connection_ip)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_status 
+            CREATE INDEX IF NOT EXISTS idx_devices_status
             ON devices (status)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_system_info_gin 
+            CREATE INDEX IF NOT EXISTS idx_devices_system_info_gin
             ON devices USING GIN (system_info)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_network_gin 
+            CREATE INDEX IF NOT EXISTS idx_devices_network_gin
             ON devices USING GIN (network_interfaces)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_device_id 
+            CREATE INDEX IF NOT EXISTS idx_history_device_id
             ON discovery_history (device_id)
         """)
 
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_data_gin 
+            CREATE INDEX IF NOT EXISTS idx_history_data_gin
             ON discovery_history USING GIN (discovery_data)
         """)
 
@@ -496,7 +496,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         # Check if device exists
         cursor.execute(
             """
-            SELECT id FROM devices 
+            SELECT id FROM devices
             WHERE hostname = %s AND connection_ip = %s
         """,
             (device_data["hostname"], device_data["connection_ip"]),
@@ -555,10 +555,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
-            SELECT 
+            SELECT
                 id, hostname, connection_ip::text as connection_ip, last_seen, status,
                 system_info, network_interfaces, error_message, created_at, updated_at
-            FROM devices 
+            FROM devices
             ORDER BY hostname, connection_ip
         """)
 
@@ -616,7 +616,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         # Check if this exact data was already stored recently
         cursor.execute(
             """
-            SELECT id FROM discovery_history 
+            SELECT id FROM discovery_history
             WHERE device_id = %s AND data_hash = %s
             ORDER BY discovered_at DESC LIMIT 1
         """,

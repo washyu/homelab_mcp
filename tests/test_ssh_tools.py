@@ -218,7 +218,7 @@ async def test_ssh_discover_with_key_path(mock_connect):
     mock_conn.run.return_value = mock_result
 
     # Execute discovery with key
-    result = await ssh_discover_system(
+    await ssh_discover_system(
         hostname="test-host", username="test-user", key_path="/path/to/key"
     )
 

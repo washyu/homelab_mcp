@@ -352,7 +352,7 @@ class TestDiscoveryToServiceDeploymentWorkflow:
 
                 discovery_result = json.loads(discovery_result_json)
                 assert discovery_result["status"] == "success"
-                web_device_id = discovery_result["device_id"]
+                discovery_result["device_id"]
 
                 # Step 2: Get deployment suggestions
                 suggestions = full_stack_env.sitemap.suggest_deployments()
@@ -457,7 +457,7 @@ class TestDiscoveryToServiceDeploymentWorkflow:
                     device_ids.append(result["device_id"])
 
                 # Step 2: Get deployment suggestions for optimal service placement
-                suggestions = full_stack_env.sitemap.suggest_deployments()
+                full_stack_env.sitemap.suggest_deployments()
 
                 # Step 3: Deploy services based on device capabilities
                 installer = ServiceInstaller()
@@ -893,7 +893,7 @@ class TestEndToEndWorkflowWithMCPTools:
                     "device_id": device_id,
                     "platform": platform,
                     "ports": ports,
-                    "status": "running",
+                    "vm_status": "running",
                 }
             )
 

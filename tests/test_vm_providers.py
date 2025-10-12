@@ -183,7 +183,7 @@ class TestDockerProvider:
         assert result["status"] == "success"
         assert result["vm_name"] == "test-container"
         assert "removed successfully" in result["message"]
-        assert result["forced"] == False
+        assert not result["forced"]
 
 
 class TestLXDProvider:

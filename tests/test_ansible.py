@@ -218,7 +218,7 @@ services:
                 "nginx.conf.j2": """server {
     listen 80;
     server_name _;
-    
+
     location / {
         proxy_pass http://localhost:{{ service_port }};
         proxy_set_header Host $host;
@@ -352,7 +352,7 @@ services:
                 mock_runner_class.assert_called_once()
 
                 # Check that variables were properly merged with defaults and template variables
-                call_args = (
+                (
                     mock_runner.run_playbook.call_args
                     if hasattr(mock_runner.run_playbook, "call_args")
                     else None
@@ -488,13 +488,8 @@ class TestAnsiblePlaybookRunner:
             # This is a placeholder for the structure
 
             # Mock inventory creation
-            inventory = {
-                "all": {"hosts": {"test-host": {"ansible_host": "192.168.1.100"}}}
-            }
-            variables = {"test_var": "test_value"}
 
             # Verify command would be constructed properly
-            expected_cmd_parts = ["ansible-playbook", "-i"]
             # This would test the actual runner implementation
 
     @pytest.mark.asyncio
@@ -808,38 +803,6 @@ class TestAnsibleIntegrationScenarios:
     @pytest.mark.asyncio
     async def test_high_availability_service_deployment(self):
         """Test deploying a high-availability service with Ansible."""
-        ha_template = {
-            "name": "ha-web-service",
-            "requirements": {"ports": [80, 443], "memory_gb": 8, "disk_gb": 50},
-            "installation": {
-                "method": "ansible",
-                "ansible": {
-                    "variables": {
-                        "cluster_nodes": ["web1", "web2", "web3"],
-                        "load_balancer_ip": "192.168.1.100",
-                    },
-                    "tasks": [
-                        {
-                            "name": "Deploy on cluster nodes",
-                            "docker_container": {
-                                "name": "web-service",
-                                "image": "nginx:alpine",
-                            },
-                            "delegate_to": "{{ item }}",
-                            "loop": "{{ cluster_nodes }}",
-                        },
-                        {
-                            "name": "Configure load balancer",
-                            "template": {
-                                "src": "haproxy.cfg.j2",
-                                "dest": "/etc/haproxy/haproxy.cfg",
-                            },
-                            "delegate_to": "{{ load_balancer_ip }}",
-                        },
-                    ],
-                },
-            },
-        }
 
         # Test high availability deployment scenario
         mock_runner = MockAnsibleRunner(success=True, tasks_run=4)  # 3 nodes + 1 LB
@@ -853,39 +816,6 @@ class TestAnsibleIntegrationScenarios:
     @pytest.mark.asyncio
     async def test_database_cluster_deployment(self):
         """Test deploying a database cluster with Ansible."""
-        db_cluster_template = {
-            "name": "postgres-cluster",
-            "installation": {
-                "method": "ansible",
-                "ansible": {
-                    "variables": {
-                        "master_node": "db-master",
-                        "replica_nodes": ["db-replica-1", "db-replica-2"],
-                    },
-                    "tasks": [
-                        {
-                            "name": "Deploy PostgreSQL master",
-                            "docker_container": {
-                                "name": "postgres-master",
-                                "image": "postgres:13",
-                                "env": {"POSTGRES_REPLICATION_MODE": "master"},
-                            },
-                            "delegate_to": "{{ master_node }}",
-                        },
-                        {
-                            "name": "Deploy PostgreSQL replicas",
-                            "docker_container": {
-                                "name": "postgres-replica",
-                                "image": "postgres:13",
-                                "env": {"POSTGRES_REPLICATION_MODE": "slave"},
-                            },
-                            "delegate_to": "{{ item }}",
-                            "loop": "{{ replica_nodes }}",
-                        },
-                    ],
-                },
-            },
-        }
 
         # Test database cluster deployment scenario
         mock_runner = MockAnsibleRunner(
@@ -901,55 +831,6 @@ class TestAnsibleIntegrationScenarios:
     @pytest.mark.asyncio
     async def test_monitoring_stack_deployment(self):
         """Test deploying a complete monitoring stack with Ansible."""
-        monitoring_template = {
-            "name": "monitoring-stack",
-            "installation": {
-                "method": "ansible",
-                "ansible": {
-                    "tasks": [
-                        {
-                            "name": "Deploy Prometheus",
-                            "docker_container": {
-                                "name": "prometheus",
-                                "image": "prom/prometheus:latest",
-                                "ports": ["9090:9090"],
-                            },
-                        },
-                        {
-                            "name": "Deploy Grafana",
-                            "docker_container": {
-                                "name": "grafana",
-                                "image": "grafana/grafana:latest",
-                                "ports": ["3000:3000"],
-                            },
-                        },
-                        {
-                            "name": "Deploy Node Exporter",
-                            "docker_container": {
-                                "name": "node-exporter",
-                                "image": "prom/node-exporter:latest",
-                                "ports": ["9100:9100"],
-                            },
-                        },
-                    ],
-                    "post_tasks": [
-                        {
-                            "name": "Configure Grafana datasource",
-                            "uri": {
-                                "url": "http://localhost:3000/api/datasources",
-                                "method": "POST",
-                                "body_format": "json",
-                                "body": {
-                                    "name": "Prometheus",
-                                    "type": "prometheus",
-                                    "url": "http://prometheus:9090",
-                                },
-                            },
-                        }
-                    ],
-                },
-            },
-        }
 
         # Test monitoring stack deployment
         mock_runner = MockAnsibleRunner(

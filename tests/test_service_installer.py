@@ -508,7 +508,7 @@ class TestServiceInstallerAnsibleMethod:
                     "variables_applied": variables,
                 }
 
-                result = await self.installer.install_service(
+                await self.installer.install_service(
                     "ansible-service", "test-host", "test-user", "test-pass", variables
                 )
 
@@ -769,14 +769,14 @@ class TestServiceInstallerVariableSubstitution:
             ) as mock_install:
                 mock_install.return_value = {"status": "success"}
 
-                result = await self.installer.install_service(
+                await self.installer.install_service(
                     "variable-service", "test-host", "test-user", "test-pass", variables
                 )
 
                 # Verify that template was passed with variables
                 mock_install.assert_called_once()
                 call_args = mock_install.call_args
-                processed_template = call_args[0][1]  # template parameter
+                call_args[0][1]  # template parameter
 
                 # Variables should be substituted in the template
                 # This would be verified in the actual implementation

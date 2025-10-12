@@ -444,7 +444,7 @@ class TestBackupAndRestore:
                 ) as mock_backup_topo:
                     mock_backup_topo.return_value = {"topology": "test"}
 
-                    with patch("builtins.open", mock_open()) as mock_file:
+                    with patch("builtins.open", mock_open()):
                         result = await create_infrastructure_backup(backup_scope="full")
                         result_data = json.loads(result)
 
@@ -458,8 +458,7 @@ class TestBackupAndRestore:
         """Test creating a partial infrastructure backup."""
         with patch(
             "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
-            mock_manager = MockManager.return_value
+        ):
 
             with patch(
                 "src.homelab_mcp.infrastructure_crud._backup_device"
@@ -474,7 +473,7 @@ class TestBackupAndRestore:
                 ) as mock_backup_topo:
                     mock_backup_topo.return_value = {"topology": "test"}
 
-                    with patch("builtins.open", mock_open()) as mock_file:
+                    with patch("builtins.open", mock_open()):
                         result = await create_infrastructure_backup(
                             backup_scope="partial", device_ids=[1, 2]
                         )
@@ -498,7 +497,7 @@ class TestBackupAndRestore:
 
         with patch(
             "builtins.open", mock_open(read_data=json.dumps(mock_backup_data))
-        ) as mock_file:
+        ):
             with patch(
                 "src.homelab_mcp.infrastructure_crud._rollback_device"
             ) as mock_rollback:
@@ -530,7 +529,7 @@ class TestBackupAndRestore:
 
         with patch(
             "builtins.open", mock_open(read_data=json.dumps(mock_backup_data))
-        ) as mock_file:
+        ):
             result = await rollback_infrastructure_to_backup(
                 backup_id=backup_id, validate_only=True
             )

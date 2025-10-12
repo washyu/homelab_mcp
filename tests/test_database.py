@@ -194,7 +194,7 @@ class TestPostgreSQLAdapter:
             "network_interfaces": json.dumps([{"name": "eth0"}]),
         }
 
-        device_id = adapter.store_device(device_data)
+        adapter.store_device(device_data)
 
         # Verify INSERT was called with JSONB data
         assert mock_cursor.execute.call_count >= 2  # SELECT + INSERT

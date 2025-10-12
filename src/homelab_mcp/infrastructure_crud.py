@@ -55,10 +55,10 @@ async def deploy_infrastructure_plan(
                     "validation_result": validation_result,
                     "estimated_duration": "15-30 minutes",
                     "affected_devices": len(
-                        set(
+                        {
                             service.get("target_device_id")
                             for service in deployment_plan.get("services", [])
-                        )
+                        }
                     ),
                 }
             )
@@ -413,7 +413,7 @@ async def validate_infrastructure_plan(
             validation_results["simulation"] = simulation_results
 
         all_checks = []
-        for level, checks in validation_results.items():
+        for _level, checks in validation_results.items():
             if checks:
                 all_checks.extend(checks)
 
@@ -1212,7 +1212,7 @@ async def _execute_migration_plan(
                     )
                     if inspect_result.exit_status == 0:
                         # Export container and configuration
-                        export_result = await source_conn.run(
+                        await source_conn.run(
                             f"docker commit {service_name} {service_name}_migration"
                         )
                         save_result = await source_conn.run(
@@ -1244,7 +1244,7 @@ async def _execute_migration_plan(
                                     )
 
                                 # Load and start container on target
-                                load_result = await target_conn.run(
+                                await target_conn.run(
                                     f"gunzip -c /tmp/{service_name}_migration.tar.gz | docker load"
                                 )
                                 run_result = await target_conn.run(

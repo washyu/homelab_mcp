@@ -220,7 +220,7 @@ def migrate_sqlite_to_postgresql(
             source.close()
             if not dry_run and "target" in locals():
                 target.close()
-        except:
+        except Exception:
             pass
 
 
@@ -278,7 +278,7 @@ POSTGRES_PASSWORD=your_password_here
 ENABLE_POSTGRESQL=true
 
 # Example Docker Compose for PostgreSQL:
-# 
+#
 # services:
 #   postgres:
 #     image: postgres:15
@@ -290,7 +290,7 @@ ENABLE_POSTGRESQL=true
 #       - "5432:5432"
 #     volumes:
 #       - postgres_data:/var/lib/postgresql/data
-# 
+#
 # volumes:
 #   postgres_data:
 """
@@ -333,7 +333,7 @@ def main():
     migrate_parser.add_argument("--password", required=True, help="Database password")
 
     # Config command
-    config_parser = subparsers.add_parser(
+    subparsers.add_parser(
         "config", help="Generate PostgreSQL configuration template"
     )
 

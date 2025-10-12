@@ -972,7 +972,7 @@ class ServiceInstaller:
 
         # Clean up Terraform directory if destroy succeeded
         if destroy_data.get("exit_code") == 0:
-            cleanup_result = await ssh_execute_command(
+            await ssh_execute_command(
                 hostname=hostname,
                 username=username,
                 password=password,
@@ -999,7 +999,7 @@ class ServiceInstaller:
         if service_name not in self.templates:
             return {"status": "error", "error": f"Unknown service: {service_name}"}
 
-        service = self.templates[service_name]
+        self.templates[service_name]
         tf_dir = f"/opt/terraform/{service_name}"
 
         # Check if already installed
@@ -1112,7 +1112,7 @@ class ServiceInstaller:
         # Create Ansible directory structure
         ansible_dir = f"/opt/ansible/{service_name}"
         setup_cmd = f"""
-sudo mkdir -p {ansible_dir}/playbooks {ansible_dir}/inventory {ansible_dir}/group_vars {ansible_dir}/host_vars && 
+sudo mkdir -p {ansible_dir}/playbooks {ansible_dir}/inventory {ansible_dir}/group_vars {ansible_dir}/host_vars &&
 sudo chown -R {username}:{username} {ansible_dir}
 """
 
@@ -1173,7 +1173,7 @@ sudo chown -R {username}:{username} {ansible_dir}
         # Generate group variables
         if config_override or service.get("default_config"):
             vars_content = self._generate_ansible_vars(service, config_override)
-            vars_result = await ssh_execute_command(
+            await ssh_execute_command(
                 hostname=hostname,
                 username=username,
                 password=password,
@@ -1275,11 +1275,11 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
   hosts: homelab
   become: yes
   gather_facts: yes
-  
+
   vars:
     service_name: {service_name}
     service_description: "{service.get("description", "")}"
-    
+
   tasks:
 """
 
@@ -1439,7 +1439,6 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
     ) -> dict[str, Any]:
         """Run an existing Ansible playbook for a service."""
         ansible_dir = f"/opt/ansible/{service_name}"
-        playbook_path = f"{ansible_dir}/playbooks/{service_name}.yml"
 
         # Check if playbook exists
         check_result = await self.check_ansible_service(

@@ -331,7 +331,7 @@ class TestVMOperations:
         assert result["status"] == "success"
         assert result["operation"] == "remove"
         assert result["vm_name"] == "test-container"
-        assert result["forced"] == False
+        assert not result["forced"]
         assert result["device_id"] == 1
         assert result["platform"] == "docker"
 

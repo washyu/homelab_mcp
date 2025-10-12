@@ -2,7 +2,10 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .sitemap import NetworkSiteMap
 
 
 class DatabaseConfig:
@@ -96,7 +99,9 @@ class MCPConfig:
                 )
 
             try:
-                import psycopg2
+                import importlib.util
+                if importlib.util.find_spec("psycopg2") is None:
+                    raise ImportError("psycopg2 not found")
             except ImportError:
                 errors.append(
                     "PostgreSQL selected but psycopg2 is not installed. "
