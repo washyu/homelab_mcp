@@ -376,9 +376,9 @@ class TestServiceInstallerIntegration:
                 if "ports" in req:
                     assert isinstance(req["ports"], list)
                 if "memory_gb" in req:
-                    assert isinstance(req["memory_gb"], (int, float))
+                    assert isinstance(req["memory_gb"], int | float)
                 if "disk_gb" in req:
-                    assert isinstance(req["disk_gb"], (int, float))
+                    assert isinstance(req["disk_gb"], int | float)
 
 
 class TestServiceInstallerAnsibleMethod:
