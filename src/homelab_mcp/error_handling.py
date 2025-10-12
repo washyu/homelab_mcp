@@ -9,7 +9,7 @@ import json
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Union, Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +31,8 @@ class MCPConnectionError(Exception):
 
 
 def timeout_wrapper(
-    timeout_seconds: float = 30.0, default_response: dict | None = None
-):
+    timeout_seconds: float = 30.0, default_response: Optional[dict[str, Any]] = None
+) -> Callable[[F], F]:
     """
     Decorator to wrap async functions with timeout protection.
 
@@ -43,7 +43,7 @@ def timeout_wrapper(
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 # Apply timeout to the function execution
                 result = await asyncio.wait_for(
@@ -95,14 +95,14 @@ def timeout_wrapper(
                     ]
                 }
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
 
 def retry_on_failure(
     max_retries: int = 3, delay_seconds: float = 1.0, backoff_multiplier: float = 2.0
-):
+) -> Callable[[F], F]:
     """
     Decorator to retry failed operations with exponential backoff.
 
@@ -114,7 +114,7 @@ def retry_on_failure(
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception = None
             delay = delay_seconds
 
@@ -144,7 +144,7 @@ def retry_on_failure(
                         raise e
                     # Don't retry on other non-connection errors
                     logger.error(f"Non-retryable error in '{func.__name__}': {str(e)}")
-                    last_exception = e
+                    last_exception = e  # type: ignore[assignment]
                     break
 
             # If we get here, all retries failed
@@ -161,13 +161,13 @@ def retry_on_failure(
             )
             return error_response
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
 
 async def safe_json_response(
-    data: str | dict, fallback_message: str = "Operation completed"
+    data: Union[str, dict[str, Any]], fallback_message: str = "Operation completed"
 ) -> dict[str, Any]:
     """
     Safely create a JSON response, handling cases where data might be malformed.
@@ -225,7 +225,7 @@ async def safe_json_response(
         return {"content": [{"type": "text", "text": fallback_response}]}
 
 
-def ssh_connection_wrapper(timeout_seconds: float = 15.0):
+def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
     """
     Specialized wrapper for SSH operations with connection-specific error handling.
 
@@ -235,13 +235,13 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0):
 
     def decorator(func: F) -> F:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> str:
             try:
                 result = await asyncio.wait_for(
                     func(*args, **kwargs), timeout=timeout_seconds
                 )
                 # Return successful result as-is (should be JSON string)
-                return result
+                return str(result)
             except TimeoutError:
                 hostname = kwargs.get("hostname", args[0] if args else "unknown")
                 error_response = json.dumps(
@@ -317,7 +317,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0):
                     )
                 return error_response
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
 
@@ -325,17 +325,17 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0):
 class HealthChecker:
     """Health checker for monitoring MCP server status."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.start_time = datetime.utcnow()
         self.request_count = 0
         self.error_count = 0
         self.timeout_count = 0
 
-    def record_request(self):
+    def record_request(self) -> None:
         """Record a new request."""
         self.request_count += 1
 
-    def record_error(self, error_type: str = "general"):
+    def record_error(self, error_type: str = "general") -> None:
         """Record an error."""
         self.error_count += 1
         if error_type == "timeout":

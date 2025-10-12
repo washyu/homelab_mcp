@@ -10,7 +10,7 @@ class DockerProvider(VMProvider):
     """Docker implementation of VM provider."""
 
     async def deploy_vm(
-        self, conn, vm_name: str, vm_config: dict[str, Any]
+        self, conn: Any, vm_name: str, vm_config: dict[str, Any]
     ) -> dict[str, Any]:
         """Deploy a new Docker container."""
         try:
@@ -90,7 +90,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("deploy", vm_name, str(e))
 
-    async def start_vm(self, conn, vm_name: str) -> dict[str, Any]:
+    async def start_vm(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Start a Docker container."""
         try:
             result = await self._run_command(conn, f"docker start {vm_name}")
@@ -114,7 +114,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("start", vm_name, str(e))
 
-    async def stop_vm(self, conn, vm_name: str) -> dict[str, Any]:
+    async def stop_vm(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Stop a Docker container."""
         try:
             result = await self._run_command(conn, f"docker stop {vm_name}")
@@ -129,7 +129,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("stop", vm_name, str(e))
 
-    async def restart_vm(self, conn, vm_name: str) -> dict[str, Any]:
+    async def restart_vm(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Restart a Docker container."""
         try:
             result = await self._run_command(conn, f"docker restart {vm_name}")
@@ -153,7 +153,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("restart", vm_name, str(e))
 
-    async def get_vm_status(self, conn, vm_name: str) -> dict[str, Any]:
+    async def get_vm_status(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Get Docker container status."""
         try:
             inspect_result = await self._run_command(conn, f"docker inspect {vm_name}")
@@ -184,7 +184,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("get_status", vm_name, str(e))
 
-    async def list_vms(self, conn) -> dict[str, Any]:
+    async def list_vms(self, conn: Any) -> dict[str, Any]:
         """List all Docker containers."""
         try:
             # Get all containers (running and stopped)
@@ -224,7 +224,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return {"status": "error", "platform": "docker", "error": str(e)}
 
-    async def get_vm_logs(self, conn, vm_name: str, lines: int = 100) -> dict[str, Any]:
+    async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
         """Get Docker container logs."""
         try:
             result = await self._run_command(
@@ -246,7 +246,7 @@ class DockerProvider(VMProvider):
             return self._format_error("get_logs", vm_name, str(e))
 
     async def remove_vm(
-        self, conn, vm_name: str, force: bool = False
+        self, conn: Any, vm_name: str, force: bool = False
     ) -> dict[str, Any]:
         """Remove a Docker container."""
         try:

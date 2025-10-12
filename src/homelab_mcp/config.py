@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class DatabaseConfig:
     """Database configuration settings."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.db_type = os.getenv("DATABASE_TYPE", "sqlite").lower()
 
         # SQLite configuration
@@ -63,7 +63,7 @@ class DatabaseConfig:
 class MCPConfig:
     """Main MCP server configuration."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.database = DatabaseConfig()
 
         # Server configuration

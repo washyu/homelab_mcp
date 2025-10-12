@@ -7,7 +7,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 try:
     import psycopg2
@@ -87,7 +87,7 @@ class SQLiteAdapter(DatabaseAdapter):
                 db_path = str(mcp_dir / "sitemap.db")
 
         self.db_path = db_path
-        self.connection = None
+        self.connection: Optional[sqlite3.Connection] = None
 
     def connect(self) -> None:
         """Establish SQLite connection."""
@@ -105,6 +105,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
 
         # Create devices table
@@ -167,6 +168,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
 
         # Check if device exists
@@ -182,7 +184,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         if existing:
             # Update existing device
-            device_id = existing[0]
+            device_id: int = existing[0]
             cursor.execute(
                 """
                 UPDATE devices SET
@@ -251,7 +253,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("error_message"),
                 ),
             )
-            device_id = cursor.lastrowid
+            lastrowid = cursor.lastrowid
+            assert lastrowid is not None
+            device_id = lastrowid
 
         self.connection.commit()
         return device_id
@@ -261,6 +265,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
         cursor.execute("SELECT * FROM devices ORDER BY hostname, connection_ip")
 
@@ -287,6 +292,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
 
         # Check if this exact data was already stored recently
@@ -316,6 +322,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
         cursor.execute(
             """
@@ -343,6 +350,7 @@ class SQLiteAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
         if params:
             cursor.execute(query, params)
@@ -370,7 +378,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             }
 
         self.connection_params = connection_params
-        self.connection = None
+        self.connection: Optional[Any] = None  # psycopg2 connection type
 
     def connect(self) -> None:
         """Establish PostgreSQL connection."""
@@ -388,6 +396,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
 
         # Create devices table with JSONB columns
@@ -456,6 +465,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
 
         # Prepare system info JSONB
@@ -506,7 +516,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         if existing:
             # Update existing device
-            device_id = existing[0]
+            device_id: int = existing[0]
             cursor.execute(
                 """
                 UPDATE devices SET
@@ -543,7 +553,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     device_data.get("error_message"),
                 ),
             )
-            device_id = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            assert result is not None
+            device_id = result[0]
 
         self.connection.commit()
         return device_id
@@ -553,6 +565,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute("""
             SELECT
@@ -605,6 +618,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor()
 
         # Parse discovery data to JSONB
@@ -640,6 +654,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(
             """
@@ -668,6 +683,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         if not self.connection:
             self.connect()
 
+        assert self.connection is not None
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         if params:
             cursor.execute(query, params)
@@ -677,7 +693,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_database_adapter(db_type: str = None, **kwargs) -> DatabaseAdapter:
+def get_database_adapter(db_type: Optional[str] = None, **kwargs: Any) -> DatabaseAdapter:
     """Factory function to get the appropriate database adapter."""
     if db_type is None:
         # Auto-detect based on environment
