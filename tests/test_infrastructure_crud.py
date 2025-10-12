@@ -456,10 +456,7 @@ class TestBackupAndRestore:
     @pytest.mark.asyncio
     async def test_create_infrastructure_backup_partial(self):
         """Test creating a partial infrastructure backup."""
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ):
-
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager"):
             with patch(
                 "src.homelab_mcp.infrastructure_crud._backup_device"
             ) as mock_backup_device:
@@ -495,9 +492,7 @@ class TestBackupAndRestore:
             "network_topology": {},
         }
 
-        with patch(
-            "builtins.open", mock_open(read_data=json.dumps(mock_backup_data))
-        ):
+        with patch("builtins.open", mock_open(read_data=json.dumps(mock_backup_data))):
             with patch(
                 "src.homelab_mcp.infrastructure_crud._rollback_device"
             ) as mock_rollback:
@@ -527,9 +522,7 @@ class TestBackupAndRestore:
             "created_at": "2024-01-01T12:00:00",
         }
 
-        with patch(
-            "builtins.open", mock_open(read_data=json.dumps(mock_backup_data))
-        ):
+        with patch("builtins.open", mock_open(read_data=json.dumps(mock_backup_data))):
             result = await rollback_infrastructure_to_backup(
                 backup_id=backup_id, validate_only=True
             )

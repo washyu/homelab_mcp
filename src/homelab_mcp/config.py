@@ -100,6 +100,7 @@ class MCPConfig:
 
             try:
                 import importlib.util
+
                 if importlib.util.find_spec("psycopg2") is None:
                     raise ImportError("psycopg2 not found")
             except ImportError:

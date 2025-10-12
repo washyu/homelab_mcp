@@ -333,9 +333,7 @@ def main():
     migrate_parser.add_argument("--password", required=True, help="Database password")
 
     # Config command
-    subparsers.add_parser(
-        "config", help="Generate PostgreSQL configuration template"
-    )
+    subparsers.add_parser("config", help="Generate PostgreSQL configuration template")
 
     args = parser.parse_args()
 
