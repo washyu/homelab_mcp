@@ -8,8 +8,6 @@ from unittest.mock import patch
 
 import pytest
 
-pytestmark = pytest.mark.integration
-
 from src.homelab_mcp.config import create_database_from_config, get_config
 from src.homelab_mcp.service_installer import ServiceInstaller
 from src.homelab_mcp.sitemap import (
@@ -18,6 +16,8 @@ from src.homelab_mcp.sitemap import (
 )
 from src.homelab_mcp.tools import execute_tool
 from src.homelab_mcp.vm_operations import deploy_vm, get_vm_status, list_vms_on_device
+
+pytestmark = pytest.mark.integration
 
 
 class FullStackTestEnvironment:

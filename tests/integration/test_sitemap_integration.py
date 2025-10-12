@@ -4,8 +4,6 @@ import json
 
 import pytest
 
-pytestmark = pytest.mark.integration
-
 from src.homelab_mcp.sitemap import (
     NetworkSiteMap,
     bulk_discover_and_store,
@@ -16,6 +14,8 @@ from src.homelab_mcp.ssh_tools import (
     verify_mcp_admin_access,
 )
 from src.homelab_mcp.tools import execute_tool
+
+pytestmark = pytest.mark.integration
 
 
 class TestSitemapIntegration:

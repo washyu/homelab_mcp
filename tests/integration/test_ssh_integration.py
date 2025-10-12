@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.integration
-
 from src.homelab_mcp.ssh_tools import (
     ensure_mcp_ssh_key,
     get_mcp_ssh_key_path,
@@ -14,6 +12,8 @@ from src.homelab_mcp.ssh_tools import (
     ssh_discover_system,
     verify_mcp_admin_access,
 )
+
+pytestmark = pytest.mark.integration
 
 
 class TestSSHIntegration:
@@ -152,6 +152,7 @@ class TestSSHIntegration:
         assert setup_data1["status"] == "success"
 
         # Modify the SSH key to simulate a different key
+        key_path = get_mcp_ssh_key_path()
         pub_key_path = Path(str(key_path) + ".pub")
         with open(pub_key_path) as f:
             original_key = f.read()
