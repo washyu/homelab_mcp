@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from .config import get_config
-from .database import PostgreSQLAdapter, SQLiteAdapter
+from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
 
 
 class DatabaseMigrator:
@@ -77,8 +77,6 @@ class DatabaseMigrator:
                     discovery_data = str(change["data"])
 
                 # Calculate hash for the data
-                from .database import calculate_data_hash
-
                 data_hash = calculate_data_hash(discovery_data)
 
                 # Store in target database

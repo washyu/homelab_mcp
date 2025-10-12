@@ -660,6 +660,13 @@ class TestMigrationIntegration:
         mock_source.get_device_changes.return_value = history
         mock_target.store_device.side_effect = [10, 20]
 
+        # Setup target devices for verification (same devices with different IDs)
+        target_devices = [
+            MockDevice.create_sample_device(10, "server-1"),
+            MockDevice.create_sample_device(20, "server-2"),
+        ]
+        mock_target.get_all_devices.return_value = target_devices
+
         # Create migrator and run migration
         migrator = DatabaseMigrator(mock_source, mock_target)
 

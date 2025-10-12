@@ -8,7 +8,7 @@ import functools
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 # Configure logging
@@ -67,7 +67,7 @@ def timeout_wrapper(
                                     "status": "error",
                                     "error": error_msg,
                                     "error_type": "timeout",
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(UTC).isoformat(),
                                 },
                                 indent=2,
                             ),
@@ -87,7 +87,7 @@ def timeout_wrapper(
                                     "status": "error",
                                     "error": error_msg,
                                     "error_type": "unexpected",
-                                    "timestamp": datetime.utcnow().isoformat(),
+                                    "timestamp": datetime.now(UTC).isoformat(),
                                 },
                                 indent=2,
                             ),
@@ -155,7 +155,7 @@ def retry_on_failure(
                     "error": error_msg,
                     "error_type": "retry_exhausted",
                     "attempts": max_retries + 1,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 indent=2,
             )
@@ -191,12 +191,22 @@ async def safe_json_response(
                     {
                         "status": "success",
                         "message": data,
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                     },
                     indent=2,
                 )
         elif isinstance(data, dict):
             response_text = json.dumps(data, indent=2)
+        else:
+            # Handle any other data type by converting to string
+            response_text = json.dumps(
+                {
+                    "status": "success",
+                    "message": str(data),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+                indent=2,
+            )
 
         return {"content": [{"type": "text", "text": response_text}]}
 
@@ -207,7 +217,7 @@ async def safe_json_response(
                 "status": "error",
                 "error": f"Response formatting failed: {str(e)}",
                 "fallback_message": fallback_message,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             indent=2,
         )
@@ -246,7 +256,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                             "Check network connectivity",
                             "Try increasing the timeout value",
                         ],
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                     },
                     indent=2,
                 )
@@ -261,7 +271,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                             "connection_ip": hostname,
                             "error": f"SSH connection timeout: {str(e)}",
                             "error_type": "ssh_timeout",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         },
                         indent=2,
                     )
@@ -272,7 +282,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                             "connection_ip": hostname,
                             "error": f"SSH connection failed: {str(e)}",
                             "error_type": "ssh_connection_error",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         },
                         indent=2,
                     )
@@ -290,7 +300,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                             "connection_ip": hostname,
                             "error": f"SSH key authentication failed: {str(e)}",
                             "error_type": "ssh_auth_error",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         },
                         indent=2,
                     )
@@ -301,7 +311,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                             "connection_ip": hostname,
                             "error": f"SSH operation failed: {str(e)}",
                             "error_type": "ssh_general_error",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.now(UTC).isoformat(),
                         },
                         indent=2,
                     )
@@ -316,7 +326,7 @@ class HealthChecker:
     """Health checker for monitoring MCP server status."""
 
     def __init__(self) -> None:
-        self.start_time = datetime.utcnow()
+        self.start_time = datetime.now(UTC)
         self.request_count = 0
         self.error_count = 0
         self.timeout_count = 0
@@ -333,7 +343,7 @@ class HealthChecker:
 
     def get_health_status(self) -> dict[str, Any]:
         """Get current health status."""
-        uptime = (datetime.utcnow() - self.start_time).total_seconds()
+        uptime = (datetime.now(UTC) - self.start_time).total_seconds()
 
         return {
             "status": "healthy"
@@ -346,7 +356,7 @@ class HealthChecker:
             "timeout_errors": self.timeout_count,
             "error_rate": self.error_count / max(self.request_count, 1),
             "start_time": self.start_time.isoformat(),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
 
