@@ -1,12 +1,12 @@
 """Tests for Ansible integration functionality."""
 
 import json
-import os
-import pytest
 import tempfile
-import yaml
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock, call
+from unittest.mock import patch
+
+import pytest
+import yaml
 
 from src.homelab_mcp.service_installer import ServiceInstaller
 

@@ -2,18 +2,17 @@
 
 import json
 import os
-import pytest
 import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock, call
-from datetime import datetime
+from unittest.mock import MagicMock, call, patch
+
+import pytest
 
 from src.homelab_mcp.migration import (
     DatabaseMigrator,
-    migrate_sqlite_to_postgresql,
-    setup_postgresql_database,
     create_postgres_config_template,
     main,
+    migrate_sqlite_to_postgresql,
+    setup_postgresql_database,
 )
 
 

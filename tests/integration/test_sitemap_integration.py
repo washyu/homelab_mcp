@@ -1,22 +1,19 @@
 """Integration tests for sitemap functionality with real SSH discovery."""
 
 import json
+
 import pytest
-import tempfile
-import os
-from pathlib import Path
 
 pytestmark = pytest.mark.integration
 
 from src.homelab_mcp.sitemap import (
     NetworkSiteMap,
-    discover_and_store,
     bulk_discover_and_store,
+    discover_and_store,
 )
 from src.homelab_mcp.ssh_tools import (
     setup_remote_mcp_admin,
     verify_mcp_admin_access,
-    ssh_discover_system,
 )
 from src.homelab_mcp.tools import execute_tool
 

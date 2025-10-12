@@ -62,6 +62,10 @@ dev-dependencies = [
     
     # Development tools
     "ipython>=8.0.0",
+    
+    # Build tools
+    "build>=0.10.0",
+    "twine>=4.0.0",
 ]
 
 [tool.uv.sources]

@@ -3,8 +3,9 @@
 import asyncio
 import subprocess
 import time
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture(scope="session")

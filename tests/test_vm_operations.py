@@ -2,16 +2,18 @@
 
 import asyncio
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from src.homelab_mcp.vm_operations import (
-    deploy_vm,
+    VMManager,
     control_vm_state,
+    deploy_vm,
+    get_vm_logs,
     get_vm_status,
     list_vms_on_device,
-    get_vm_logs,
     remove_vm,
-    VMManager,
 )
 
 

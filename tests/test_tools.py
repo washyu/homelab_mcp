@@ -1,9 +1,11 @@
 """Tests for MCP tools."""
 
 import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from src.homelab_mcp.tools import get_available_tools, execute_tool
+
+from src.homelab_mcp.tools import execute_tool, get_available_tools
 
 
 def test_get_available_tools():

@@ -1,19 +1,18 @@
 """Integration tests for SSH functionality with real containers."""
 
 import json
-import pytest
 from pathlib import Path
-import tempfile
-import os
+
+import pytest
 
 pytestmark = pytest.mark.integration
 
 from src.homelab_mcp.ssh_tools import (
     ensure_mcp_ssh_key,
-    setup_remote_mcp_admin,
-    verify_mcp_admin_access,
-    ssh_discover_system,
     get_mcp_ssh_key_path,
+    setup_remote_mcp_admin,
+    ssh_discover_system,
+    verify_mcp_admin_access,
 )
 
 
@@ -52,7 +51,7 @@ class TestSSHIntegration:
             assert pub_key_path.stat().st_mode > 0
 
         # Verify key content format
-        with open(pub_key_path, "r") as f:
+        with open(pub_key_path) as f:
             pub_key_content = f.read()
 
         assert pub_key_content.startswith("ssh-rsa ")
@@ -154,7 +153,7 @@ class TestSSHIntegration:
 
         # Modify the SSH key to simulate a different key
         pub_key_path = Path(str(key_path) + ".pub")
-        with open(pub_key_path, "r") as f:
+        with open(pub_key_path) as f:
             original_key = f.read()
 
         # Create a fake "different" key by modifying the comment

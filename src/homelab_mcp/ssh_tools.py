@@ -1,14 +1,13 @@
 """SSH tools for system discovery and management."""
 
-import asyncio
-import asyncssh
 import json
-import socket
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any, cast
+from typing import cast
 
-from .error_handling import ssh_connection_wrapper, retry_on_failure
+import asyncssh
+
+from .error_handling import retry_on_failure, ssh_connection_wrapper
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -289,8 +288,8 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
 async def ssh_discover_system(
     hostname: str,
     username: str,
-    password: Optional[str] = None,
-    key_path: Optional[str] = None,
+    password: str | None = None,
+    key_path: str | None = None,
     port: int = 22,
 ) -> str:
     """SSH into a system and gather hardware/system information."""
@@ -524,7 +523,7 @@ async def ssh_execute_command(
     hostname: str,
     username: str,
     command: str,
-    password: Optional[str] = None,
+    password: str | None = None,
     sudo: bool = False,
     port: int = 22,
     **kwargs,

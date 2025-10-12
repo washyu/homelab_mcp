@@ -1,7 +1,8 @@
 """Docker provider for VM operations."""
 
 import json
-from typing import Dict, List, Optional, Any
+from typing import Any
+
 from .base import VMProvider
 
 
@@ -9,8 +10,8 @@ class DockerProvider(VMProvider):
     """Docker implementation of VM provider."""
 
     async def deploy_vm(
-        self, conn, vm_name: str, vm_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, conn, vm_name: str, vm_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Deploy a new Docker container."""
         try:
             # Check if container already exists
@@ -89,7 +90,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("deploy", vm_name, str(e))
 
-    async def start_vm(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def start_vm(self, conn, vm_name: str) -> dict[str, Any]:
         """Start a Docker container."""
         try:
             result = await self._run_command(conn, f"docker start {vm_name}")
@@ -113,7 +114,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("start", vm_name, str(e))
 
-    async def stop_vm(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def stop_vm(self, conn, vm_name: str) -> dict[str, Any]:
         """Stop a Docker container."""
         try:
             result = await self._run_command(conn, f"docker stop {vm_name}")
@@ -128,7 +129,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("stop", vm_name, str(e))
 
-    async def restart_vm(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def restart_vm(self, conn, vm_name: str) -> dict[str, Any]:
         """Restart a Docker container."""
         try:
             result = await self._run_command(conn, f"docker restart {vm_name}")
@@ -152,7 +153,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("restart", vm_name, str(e))
 
-    async def get_vm_status(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def get_vm_status(self, conn, vm_name: str) -> dict[str, Any]:
         """Get Docker container status."""
         try:
             inspect_result = await self._run_command(conn, f"docker inspect {vm_name}")
@@ -183,7 +184,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("get_status", vm_name, str(e))
 
-    async def list_vms(self, conn) -> Dict[str, Any]:
+    async def list_vms(self, conn) -> dict[str, Any]:
         """List all Docker containers."""
         try:
             # Get all containers (running and stopped)
@@ -223,7 +224,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return {"status": "error", "platform": "docker", "error": str(e)}
 
-    async def get_vm_logs(self, conn, vm_name: str, lines: int = 100) -> Dict[str, Any]:
+    async def get_vm_logs(self, conn, vm_name: str, lines: int = 100) -> dict[str, Any]:
         """Get Docker container logs."""
         try:
             result = await self._run_command(
@@ -246,7 +247,7 @@ class DockerProvider(VMProvider):
 
     async def remove_vm(
         self, conn, vm_name: str, force: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Remove a Docker container."""
         try:
             # Stop container first if it's running (unless force is used)

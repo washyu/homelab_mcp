@@ -1,16 +1,14 @@
 """Tests for configuration management."""
 
 import os
-import pytest
 import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.homelab_mcp.config import (
     DatabaseConfig,
     MCPConfig,
-    get_config,
     create_database_from_config,
+    get_config,
     print_config_info,
 )
 

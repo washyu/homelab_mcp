@@ -3,8 +3,8 @@ Factory for creating Docker clients with fallback support.
 This module handles various Docker SDK import issues.
 """
 
-import sys
 import subprocess
+import sys
 
 
 def create_docker_client():

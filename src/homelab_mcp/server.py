@@ -5,13 +5,13 @@ MCP (Model Context Protocol) server for homelab system management.
 
 import asyncio
 import json
-import sys
 import logging
-from typing import Any, Dict, Optional
+import sys
+from typing import Any
 
-from .tools import get_available_tools, execute_tool
+from .error_handling import health_checker
 from .ssh_tools import ensure_mcp_ssh_key
-from .error_handling import health_checker, timeout_wrapper
+from .tools import execute_tool, get_available_tools
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +25,7 @@ class HomelabMCPServer:
         self.tools = get_available_tools()
         self.ssh_key_initialized = False
 
-    async def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
         """Handle incoming MCP requests with timeout protection."""
         method = request.get("method")
         params = request.get("params", {})
@@ -41,7 +41,7 @@ class HomelabMCPServer:
                     try:
                         await asyncio.wait_for(ensure_mcp_ssh_key(), timeout=10.0)
                         self.ssh_key_initialized = True
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.error("SSH key initialization timed out")
                         health_checker.record_error("timeout")
                         return self._error_response(
@@ -83,7 +83,7 @@ class HomelabMCPServer:
                         timeout=60.0,  # 60 second timeout for tool execution
                     )
                     return self._success_response(request_id, result)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.error(f"Tool '{tool_name}' execution timed out")
                     health_checker.record_error("timeout")
                     return self._error_response(
@@ -105,13 +105,13 @@ class HomelabMCPServer:
             health_checker.record_error("unexpected")
             return self._error_response(request_id, f"Server error: {str(e)}")
 
-    def _success_response(self, request_id: Any, result: Any) -> Dict[str, Any]:
+    def _success_response(self, request_id: Any, result: Any) -> dict[str, Any]:
         """Create a successful JSON-RPC response."""
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
     def _error_response(
         self, request_id: Any, message: str, code: int = -32603
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create an error JSON-RPC response."""
         return {
             "jsonrpc": "2.0",
@@ -140,7 +140,7 @@ class HomelabMCPServer:
                     if not line_bytes:
                         logger.info("EOF received, shutting down server")
                         break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         "No input received for 5 minutes, server still running"
                     )
@@ -186,7 +186,7 @@ class HomelabMCPServer:
                         self.handle_request(request),
                         timeout=120.0,  # 2 minute timeout for complete request handling
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.error("Request handling timed out after 2 minutes")
                     error_response = self._error_response(
                         request.get("id"),

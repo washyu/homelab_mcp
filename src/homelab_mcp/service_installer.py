@@ -1,11 +1,12 @@
 """Service installation framework for homelab applications."""
 
-import asyncio
 import json
 import subprocess
-import yaml
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any
+
+import yaml
+
 from .ssh_tools import ssh_execute_command
 
 # Service templates directory
@@ -16,14 +17,14 @@ class AnsibleRunner:
     """Runner for executing Ansible playbooks."""
 
     def __init__(
-        self, playbook_path: str, inventory_path: str, variables: Optional[Dict] = None
+        self, playbook_path: str, inventory_path: str, variables: dict | None = None
     ):
         self.playbook_path = playbook_path
         self.inventory_path = inventory_path
         self.variables = variables or {}
         self.results = {}
 
-    async def run_playbook(self, extra_vars: Optional[Dict] = None) -> Dict[str, Any]:
+    async def run_playbook(self, extra_vars: dict | None = None) -> dict[str, Any]:
         """Execute the Ansible playbook."""
         cmd = ["ansible-playbook", "-i", self.inventory_path, self.playbook_path]
 
@@ -56,7 +57,7 @@ class AnsibleRunner:
 
 
 def generate_ansible_inventory(
-    hostname: str, username: str, config: Optional[Dict] = None
+    hostname: str, username: str, config: dict | None = None
 ) -> str:
     """Generate Ansible inventory content."""
     inventory = f"""[servers]
@@ -74,7 +75,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
     return inventory
 
 
-def render_template(template_content: str, variables: Dict[str, Any]) -> str:
+def render_template(template_content: str, variables: dict[str, Any]) -> str:
     """Simple template rendering with variable substitution."""
     result = template_content
     for key, value in variables.items():
@@ -89,7 +90,7 @@ class ServiceInstaller:
     def __init__(self):
         self.templates = self._load_service_templates()
 
-    def _load_service_templates(self) -> Dict[str, Dict]:
+    def _load_service_templates(self) -> dict[str, dict]:
         """Load all service templates from the templates directory."""
         templates = {}
 
@@ -99,7 +100,7 @@ class ServiceInstaller:
         # Load YAML template files
         for template_file in TEMPLATES_DIR.glob("*.yaml"):
             try:
-                with open(template_file, "r") as f:
+                with open(template_file) as f:
                     service_data = yaml.safe_load(f)
                     service_name = template_file.stem
                     templates[service_name] = service_data
@@ -108,11 +109,11 @@ class ServiceInstaller:
 
         return templates
 
-    def get_available_services(self) -> List[str]:
+    def get_available_services(self) -> list[str]:
         """Get list of available service templates."""
         return list(self.templates.keys())
 
-    def get_service_info(self, service_name: str) -> Optional[Dict]:
+    def get_service_info(self, service_name: str) -> dict | None:
         """Get detailed information about a service."""
         return self.templates.get(service_name)
 
@@ -121,8 +122,8 @@ class ServiceInstaller:
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+    ) -> dict[str, Any]:
         """Check if a device meets the requirements for a service."""
         if service_name not in self.templates:
             return {"status": "error", "error": f"Unknown service: {service_name}"}
@@ -206,9 +207,9 @@ class ServiceInstaller:
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-        config_override: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+        config_override: dict | None = None,
+    ) -> dict[str, Any]:
         """Install a service on the target device."""
         if service_name not in self.templates:
             return {"status": "error", "error": f"Unknown service: {service_name}"}
@@ -259,12 +260,12 @@ class ServiceInstaller:
     async def _install_docker_compose_service(
         self,
         service_name: str,
-        service: Dict,
+        service: dict,
         hostname: str,
         username: str,
-        password: Optional[str],
-        config_override: Optional[Dict],
-    ) -> Dict[str, Any]:
+        password: str | None,
+        config_override: dict | None,
+    ) -> dict[str, Any]:
         """Install a service using Docker Compose."""
         results = {
             "service": service_name,
@@ -441,12 +442,12 @@ class ServiceInstaller:
     async def _install_script_service(
         self,
         service_name: str,
-        service: Dict,
+        service: dict,
         hostname: str,
         username: str,
-        password: Optional[str],
-        config_override: Optional[Dict],
-    ) -> Dict[str, Any]:
+        password: str | None,
+        config_override: dict | None,
+    ) -> dict[str, Any]:
         """Install a service using shell scripts."""
         # TODO: Implement script-based installation
         return {
@@ -454,7 +455,7 @@ class ServiceInstaller:
             "error": "Script-based installation not yet implemented",
         }
 
-    def _merge_config(self, base_config: Dict, override: Dict) -> Dict:
+    def _merge_config(self, base_config: dict, override: dict) -> dict:
         """Merge configuration override with base configuration."""
         # Simple recursive merge - could be enhanced
         result = base_config.copy()
@@ -476,8 +477,8 @@ class ServiceInstaller:
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+    ) -> dict[str, Any]:
         """Get the current status of an installed service."""
         service_dir = f"/opt/{service_name}"
 
@@ -518,12 +519,12 @@ class ServiceInstaller:
     async def _install_terraform_service(
         self,
         service_name: str,
-        service: Dict,
+        service: dict,
         hostname: str,
         username: str,
-        password: Optional[str],
-        config_override: Optional[Dict],
-    ) -> Dict[str, Any]:
+        password: str | None,
+        config_override: dict | None,
+    ) -> dict[str, Any]:
         """Install a service using Terraform."""
         results = {
             "service": service_name,
@@ -748,7 +749,7 @@ class ServiceInstaller:
         self,
         hostname: str,
         username: str,
-        password: Optional[str],
+        password: str | None,
         remote_path: str,
         content: str,
     ) -> bool:
@@ -766,7 +767,7 @@ class ServiceInstaller:
         data = json.loads(result)
         return data.get("exit_code") == 0
 
-    def _generate_variables_tf(self, variables: Dict) -> str:
+    def _generate_variables_tf(self, variables: dict) -> str:
         """Generate variables.tf file from template variables."""
         content = []
         for var_name, var_config in variables.items():
@@ -810,11 +811,11 @@ class ServiceInstaller:
 
     def _generate_tfvars(
         self,
-        variables: Dict,
-        overrides: Optional[Dict],
+        variables: dict,
+        overrides: dict | None,
         hostname: str,
         username: str,
-        password: Optional[str],
+        password: str | None,
     ) -> str:
         """Generate terraform.tfvars file with actual values."""
         tfvars = {}
@@ -856,7 +857,7 @@ class ServiceInstaller:
         return "\n".join(content)
 
     def _generate_backend_tf(
-        self, backend_config: Dict, service_name: str, hostname: str
+        self, backend_config: dict, service_name: str, hostname: str
     ) -> str:
         """Generate backend.tf for state management."""
         backend_type = backend_config.get("type", "local")
@@ -906,7 +907,7 @@ class ServiceInstaller:
         self,
         hostname: str,
         username: str,
-        password: Optional[str],
+        password: str | None,
         state_path: str,
         service_name: str,
     ) -> bool:
@@ -939,8 +940,8 @@ class ServiceInstaller:
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+    ) -> dict[str, Any]:
         """Destroy a Terraform-managed service."""
         tf_dir = f"/opt/terraform/{service_name}"
 
@@ -991,9 +992,9 @@ class ServiceInstaller:
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-        config_override: Optional[Dict] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+        config_override: dict | None = None,
+    ) -> dict[str, Any]:
         """Generate a Terraform plan without applying changes."""
         if service_name not in self.templates:
             return {"status": "error", "error": f"Unknown service: {service_name}"}
@@ -1043,8 +1044,8 @@ class ServiceInstaller:
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+    ) -> dict[str, Any]:
         """Refresh Terraform state and detect drift."""
         tf_dir = f"/opt/terraform/{service_name}"
 
@@ -1093,12 +1094,12 @@ class ServiceInstaller:
     async def _install_ansible_service(
         self,
         service_name: str,
-        service: Dict,
+        service: dict,
         hostname: str,
         username: str,
-        password: Optional[str],
-        config_override: Optional[Dict],
-    ) -> Dict[str, Any]:
+        password: str | None,
+        config_override: dict | None,
+    ) -> dict[str, Any]:
         """Install a service using Ansible playbook."""
         ansible_config = service.get("installation", {}).get("ansible", {})
 
@@ -1243,7 +1244,7 @@ fi
         }
 
     def _generate_ansible_inventory(
-        self, hostname: str, username: str, config_override: Optional[Dict]
+        self, hostname: str, username: str, config_override: dict | None
     ) -> str:
         """Generate Ansible inventory file."""
         inventory = f"""[homelab]
@@ -1263,7 +1264,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
         return inventory
 
     def _generate_ansible_playbook(
-        self, service: Dict, service_name: str, config_override: Optional[Dict]
+        self, service: dict, service_name: str, config_override: dict | None
     ) -> str:
         """Generate Ansible playbook from service template."""
         ansible_config = service.get("installation", {}).get("ansible", {})
@@ -1308,7 +1309,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
         return playbook
 
-    def _format_ansible_task(self, task: Dict, indent: int) -> str:
+    def _format_ansible_task(self, task: dict, indent: int) -> str:
         """Format an Ansible task with proper indentation."""
         spaces = " " * indent
         task_str = f"{spaces}- name: {task.get('name', 'Unnamed task')}\n"
@@ -1331,7 +1332,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
         return task_str + "\n"
 
     def _generate_ansible_vars(
-        self, service: Dict, config_override: Optional[Dict]
+        self, service: dict, config_override: dict | None
     ) -> str:
         """Generate Ansible variables file."""
         vars_content = "---\n# Service configuration variables\n\n"
@@ -1355,8 +1356,8 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        password: str | None = None,
+    ) -> dict[str, Any]:
         """Check the status of an Ansible-managed service."""
         ansible_dir = f"/opt/ansible/{service_name}"
 
@@ -1431,11 +1432,11 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
         service_name: str,
         hostname: str,
         username: str = "mcp_admin",
-        password: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        extra_vars: Optional[Dict] = None,
+        password: str | None = None,
+        tags: list[str] | None = None,
+        extra_vars: dict | None = None,
         check_mode: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run an existing Ansible playbook for a service."""
         ansible_dir = f"/opt/ansible/{service_name}"
         playbook_path = f"{ansible_dir}/playbooks/{service_name}.yml"
@@ -1485,12 +1486,12 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
     async def _install_iso_service(
         self,
         service_name: str,
-        service: Dict,
+        service: dict,
         hostname: str,
         username: str,
-        password: Optional[str],
-        config_override: Optional[Dict],
-    ) -> Dict[str, Any]:
+        password: str | None,
+        config_override: dict | None,
+    ) -> dict[str, Any]:
         """Handle ISO-based installation (like TrueNAS, Proxmox, etc.)."""
         # ISO installations typically require manual intervention or VM/bare metal setup
         # This method provides guidance rather than automated installation

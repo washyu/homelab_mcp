@@ -2,11 +2,11 @@
 
 import json
 import sys
-from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+from typing import Any
 
-from .database import SQLiteAdapter, PostgreSQLAdapter, calculate_data_hash
-from .config import DatabaseConfig, get_config
+from .config import get_config
+from .database import PostgreSQLAdapter, SQLiteAdapter
 
 
 class DatabaseMigrator:
@@ -16,7 +16,7 @@ class DatabaseMigrator:
         self.source = source_adapter
         self.target = target_adapter
 
-    def migrate_devices(self) -> Tuple[int, int]:
+    def migrate_devices(self) -> tuple[int, int]:
         """Migrate device records from source to target database."""
         print("Migrating device records...")
 
@@ -140,8 +140,8 @@ class DatabaseMigrator:
 
 
 def migrate_sqlite_to_postgresql(
-    sqlite_path: Optional[str] = None,
-    postgres_params: Optional[Dict[str, Any]] = None,
+    sqlite_path: str | None = None,
+    postgres_params: dict[str, Any] | None = None,
     dry_run: bool = False,
 ) -> bool:
     """Migrate data from SQLite to PostgreSQL."""
@@ -224,7 +224,7 @@ def migrate_sqlite_to_postgresql(
             pass
 
 
-def setup_postgresql_database(postgres_params: Optional[Dict[str, Any]] = None) -> bool:
+def setup_postgresql_database(postgres_params: dict[str, Any] | None = None) -> bool:
     """Setup and initialize PostgreSQL database."""
 
     print("=== PostgreSQL Database Setup ===")

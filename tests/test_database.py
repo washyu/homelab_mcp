@@ -1,20 +1,20 @@
 """Tests for database abstraction layer."""
 
 import json
-import pytest
-import tempfile
 import os
-from unittest.mock import MagicMock, patch
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
-from src.homelab_mcp.database import (
-    SQLiteAdapter,
-    PostgreSQLAdapter,
-    get_database_adapter,
-    calculate_data_hash,
-    POSTGRESQL_AVAILABLE,
-)
+import pytest
+
 from src.homelab_mcp.config import DatabaseConfig
+from src.homelab_mcp.database import (
+    POSTGRESQL_AVAILABLE,
+    PostgreSQLAdapter,
+    SQLiteAdapter,
+    calculate_data_hash,
+    get_database_adapter,
+)
 
 
 class TestSQLiteAdapter:

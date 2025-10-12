@@ -1,9 +1,10 @@
 """Tests for the MCP server."""
 
 import asyncio
-import json
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, patch
+
 from src.homelab_mcp.server import HomelabMCPServer
 
 
@@ -205,7 +206,7 @@ async def test_server_ssh_key_timeout(mock_ensure_key):
 
     # Patch the timeout to immediately raise TimeoutError for faster testing
     with patch("asyncio.wait_for") as mock_wait_for:
-        mock_wait_for.side_effect = asyncio.TimeoutError()
+        mock_wait_for.side_effect = TimeoutError()
 
         server = HomelabMCPServer()
 

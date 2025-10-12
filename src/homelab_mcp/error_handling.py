@@ -7,8 +7,9 @@ import asyncio
 import functools
 import json
 import logging
-from typing import Any, Dict, Optional, Callable, TypeVar, Union
+from collections.abc import Callable
 from datetime import datetime
+from typing import Any, TypeVar
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +31,7 @@ class MCPConnectionError(Exception):
 
 
 def timeout_wrapper(
-    timeout_seconds: float = 30.0, default_response: Optional[Dict] = None
+    timeout_seconds: float = 30.0, default_response: dict | None = None
 ):
     """
     Decorator to wrap async functions with timeout protection.
@@ -49,7 +50,7 @@ def timeout_wrapper(
                     func(*args, **kwargs), timeout=timeout_seconds
                 )
                 return result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 error_msg = f"Operation '{func.__name__}' timed out after {timeout_seconds} seconds"
                 logger.error(error_msg)
 
@@ -166,8 +167,8 @@ def retry_on_failure(
 
 
 async def safe_json_response(
-    data: Union[str, Dict], fallback_message: str = "Operation completed"
-) -> Dict[str, Any]:
+    data: str | dict, fallback_message: str = "Operation completed"
+) -> dict[str, Any]:
     """
     Safely create a JSON response, handling cases where data might be malformed.
 
@@ -241,7 +242,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0):
                 )
                 # Return successful result as-is (should be JSON string)
                 return result
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 hostname = kwargs.get("hostname", args[0] if args else "unknown")
                 error_response = json.dumps(
                     {
@@ -340,7 +341,7 @@ class HealthChecker:
         if error_type == "timeout":
             self.timeout_count += 1
 
-    def get_health_status(self) -> Dict[str, Any]:
+    def get_health_status(self) -> dict[str, Any]:
         """Get current health status."""
         uptime = (datetime.utcnow() - self.start_time).total_seconds()
 

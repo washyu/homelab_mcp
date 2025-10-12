@@ -1,14 +1,13 @@
 """Infrastructure CRUD operations for complete network management."""
 
-import asyncio
-import asyncssh
 import json
 import uuid
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any
+
+import asyncssh
 
 from .sitemap import NetworkSiteMap
-from .ssh_tools import ssh_discover_system
 
 
 class InfrastructureManager:
@@ -17,9 +16,7 @@ class InfrastructureManager:
     def __init__(self):
         self.sitemap = NetworkSiteMap()
 
-    async def get_device_connection_info(
-        self, device_id: int
-    ) -> Optional[Dict[str, Any]]:
+    async def get_device_connection_info(self, device_id: int) -> dict[str, Any] | None:
         """Get SSH connection info for a device from the sitemap."""
         devices = self.sitemap.get_all_devices()
         for device in devices:
@@ -33,7 +30,7 @@ class InfrastructureManager:
 
 
 async def deploy_infrastructure_plan(
-    deployment_plan: Dict[str, Any], validate_only: bool = False
+    deployment_plan: dict[str, Any], validate_only: bool = False
 ) -> str:
     """Deploy new infrastructure based on AI recommendations or user specifications."""
 
@@ -118,7 +115,7 @@ async def deploy_infrastructure_plan(
 
 async def update_device_configuration(
     device_id: int,
-    config_changes: Dict[str, Any],
+    config_changes: dict[str, Any],
     backup_before_change: bool = True,
     validate_only: bool = False,
 ) -> str:
@@ -233,7 +230,7 @@ async def update_device_configuration(
 
 async def decommission_network_device(
     device_id: int,
-    migration_plan: Optional[Dict[str, Any]] = None,
+    migration_plan: dict[str, Any] | None = None,
     force_removal: bool = False,
     validate_only: bool = False,
 ) -> str:
@@ -331,7 +328,7 @@ async def decommission_network_device(
 
 
 async def scale_infrastructure_services(
-    scaling_plan: Dict[str, Any], validate_only: bool = False
+    scaling_plan: dict[str, Any], validate_only: bool = False
 ) -> str:
     """Scale services up or down based on resource analysis."""
 
@@ -394,7 +391,7 @@ async def scale_infrastructure_services(
 
 
 async def validate_infrastructure_plan(
-    change_plan: Dict[str, Any], validation_level: str = "comprehensive"
+    change_plan: dict[str, Any], validation_level: str = "comprehensive"
 ) -> str:
     """Validate infrastructure changes before applying them."""
 
@@ -451,9 +448,9 @@ async def validate_infrastructure_plan(
 
 async def create_infrastructure_backup(
     backup_scope: str = "full",
-    device_ids: Optional[List[int]] = None,
+    device_ids: list[int] | None = None,
     include_data: bool = False,
-    backup_name: Optional[str] = None,
+    backup_name: str | None = None,
 ) -> str:
     """Create a backup of current infrastructure state."""
 
@@ -506,7 +503,7 @@ async def create_infrastructure_backup(
         return json.dumps(
             {
                 "status": "success",
-                "message": f"Infrastructure backup created successfully",
+                "message": "Infrastructure backup created successfully",
                 "backup_id": backup_id,
                 "backup_path": backup_path,
                 "scope": backup_scope,
@@ -526,7 +523,7 @@ async def create_infrastructure_backup(
 async def rollback_infrastructure_to_backup(
     backup_id: str,
     rollback_scope: str = "full",
-    device_ids: Optional[List[int]] = None,
+    device_ids: list[int] | None = None,
     validate_only: bool = False,
 ) -> str:
     """Rollback recent infrastructure changes."""
@@ -535,7 +532,7 @@ async def rollback_infrastructure_to_backup(
         # Load backup data
         backup_path = f"/tmp/infrastructure_backup_{backup_id}.json"
         try:
-            with open(backup_path, "r") as f:
+            with open(backup_path) as f:
                 backup_data = json.load(f)
         except FileNotFoundError:
             return json.dumps(
@@ -608,7 +605,7 @@ async def rollback_infrastructure_to_backup(
 
 
 # Helper functions (simplified implementations)
-async def _validate_deployment_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+async def _validate_deployment_plan(plan: dict[str, Any]) -> dict[str, Any]:
     """Validate a deployment plan."""
     errors = []
     warnings = []
@@ -681,8 +678,8 @@ async def _validate_deployment_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _deploy_service(
-    manager: InfrastructureManager, service: Dict[str, Any]
-) -> Dict[str, Any]:
+    manager: InfrastructureManager, service: dict[str, Any]
+) -> dict[str, Any]:
     """Deploy a single service."""
     try:
         device_id = service["target_device_id"]
@@ -807,22 +804,22 @@ async def _deploy_service(
 
 
 async def _apply_network_change(
-    manager: InfrastructureManager, change: Dict[str, Any]
-) -> Dict[str, Any]:
+    manager: InfrastructureManager, change: dict[str, Any]
+) -> dict[str, Any]:
     """Apply a network configuration change."""
     return {"status": "success", "change": change["action"]}
 
 
 async def _update_sitemap_after_deployment(
-    manager: InfrastructureManager, results: List[Dict[str, Any]]
+    manager: InfrastructureManager, results: list[dict[str, Any]]
 ) -> None:
     """Update sitemap after deployment."""
     pass
 
 
 async def _validate_config_changes(
-    changes: Dict[str, Any], device_id: int
-) -> Dict[str, Any]:
+    changes: dict[str, Any], device_id: int
+) -> dict[str, Any]:
     """Validate configuration changes."""
     errors = []
     warnings = []
@@ -885,8 +882,8 @@ async def _validate_config_changes(
 
 
 async def _update_service_config(
-    conn, service_name: str, config: Dict[str, Any]
-) -> Dict[str, Any]:
+    conn, service_name: str, config: dict[str, Any]
+) -> dict[str, Any]:
     """Update service configuration."""
     try:
         service_type = config.get("type", "docker")
@@ -1003,23 +1000,23 @@ async def _update_service_config(
         return {"status": "error", "service": service_name, "error": str(e)}
 
 
-async def _update_network_config(conn, config: Dict[str, Any]) -> Dict[str, Any]:
+async def _update_network_config(conn, config: dict[str, Any]) -> dict[str, Any]:
     """Update network configuration."""
     return {"status": "success", "component": "network"}
 
 
-async def _update_security_config(conn, config: Dict[str, Any]) -> Dict[str, Any]:
+async def _update_security_config(conn, config: dict[str, Any]) -> dict[str, Any]:
     """Update security configuration."""
     return {"status": "success", "component": "security"}
 
 
-async def _update_resource_config(conn, config: Dict[str, Any]) -> Dict[str, Any]:
+async def _update_resource_config(conn, config: dict[str, Any]) -> dict[str, Any]:
     """Update resource configuration."""
     return {"status": "success", "component": "resources"}
 
 
 async def _rediscover_device_after_changes(
-    manager: InfrastructureManager, device_id: int, connection_info: Dict[str, Any]
+    manager: InfrastructureManager, device_id: int, connection_info: dict[str, Any]
 ) -> None:
     """Rediscover device after configuration changes."""
     pass
@@ -1027,7 +1024,7 @@ async def _rediscover_device_after_changes(
 
 async def _analyze_device_dependencies(
     manager: InfrastructureManager, device_id: int
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Analyze device dependencies."""
     try:
         connection_info = await manager.get_device_connection_info(device_id)
@@ -1173,8 +1170,8 @@ async def _analyze_device_dependencies(
 
 
 async def _execute_migration_plan(
-    manager: InfrastructureManager, device_id: int, plan: Dict[str, Any]
-) -> List[Dict[str, Any]]:
+    manager: InfrastructureManager, device_id: int, plan: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Execute service migration plan."""
     results = []
 
@@ -1339,24 +1336,24 @@ async def _execute_migration_plan(
         ]
 
 
-async def _stop_all_device_services(conn) -> Dict[str, Any]:
+async def _stop_all_device_services(conn) -> dict[str, Any]:
     """Stop all services on a device."""
     return {"status": "success", "action": "services_stopped"}
 
 
-async def _remove_from_clusters(conn) -> Dict[str, Any]:
+async def _remove_from_clusters(conn) -> dict[str, Any]:
     """Remove device from clusters."""
     return {"status": "success", "action": "removed_from_clusters"}
 
 
-async def _validate_scaling_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+async def _validate_scaling_plan(plan: dict[str, Any]) -> dict[str, Any]:
     """Validate a scaling plan."""
     return {"valid": True, "errors": [], "resource_impact": {}}
 
 
 async def _scale_service_up(
-    manager: InfrastructureManager, scale_up: Dict[str, Any]
-) -> Dict[str, Any]:
+    manager: InfrastructureManager, scale_up: dict[str, Any]
+) -> dict[str, Any]:
     """Scale a service up."""
     return {
         "status": "success",
@@ -1366,8 +1363,8 @@ async def _scale_service_up(
 
 
 async def _scale_service_down(
-    manager: InfrastructureManager, scale_down: Dict[str, Any]
-) -> Dict[str, Any]:
+    manager: InfrastructureManager, scale_down: dict[str, Any]
+) -> dict[str, Any]:
     """Scale a service down."""
     return {
         "status": "success",
@@ -1376,31 +1373,31 @@ async def _scale_service_down(
     }
 
 
-async def _perform_basic_validation(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def _perform_basic_validation(plan: dict[str, Any]) -> list[dict[str, Any]]:
     """Perform basic validation checks."""
     return [{"check": "syntax", "passed": True}]
 
 
 async def _perform_comprehensive_validation(
-    plan: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    plan: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Perform comprehensive validation checks."""
     return [{"check": "dependencies", "passed": True}]
 
 
-async def _perform_simulation_validation(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def _perform_simulation_validation(plan: dict[str, Any]) -> list[dict[str, Any]]:
     """Perform simulation validation."""
     return [{"check": "simulation", "passed": True}]
 
 
-def _generate_validation_recommendations(checks: List[Dict[str, Any]]) -> List[str]:
+def _generate_validation_recommendations(checks: list[dict[str, Any]]) -> list[str]:
     """Generate validation recommendations."""
     return ["All validations passed"]
 
 
 async def _backup_device(
     manager: InfrastructureManager, device_id: int, include_data: bool
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Backup a single device."""
     try:
         connection_info = await manager.get_device_connection_info(device_id)
@@ -1542,13 +1539,13 @@ async def _backup_device(
         return {"device_id": device_id, "backed_up": False, "error": str(e)}
 
 
-async def _backup_network_topology(manager: InfrastructureManager) -> Dict[str, Any]:
+async def _backup_network_topology(manager: InfrastructureManager) -> dict[str, Any]:
     """Backup network topology."""
     return {"topology": "backed_up"}
 
 
 async def _rollback_device(
-    manager: InfrastructureManager, device_id: int, backup_data: Dict[str, Any]
-) -> Dict[str, Any]:
+    manager: InfrastructureManager, device_id: int, backup_data: dict[str, Any]
+) -> dict[str, Any]:
     """Rollback a single device."""
     return {"status": "success", "device_id": device_id}

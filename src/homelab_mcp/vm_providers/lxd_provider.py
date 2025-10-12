@@ -1,7 +1,7 @@
 """LXD provider for VM operations."""
 
-import json
-from typing import Dict, List, Optional, Any
+from typing import Any
+
 from .base import VMProvider
 
 
@@ -9,8 +9,8 @@ class LXDProvider(VMProvider):
     """LXD implementation of VM provider."""
 
     async def deploy_vm(
-        self, conn, vm_name: str, vm_config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, conn, vm_name: str, vm_config: dict[str, Any]
+    ) -> dict[str, Any]:
         """Deploy a new LXD container."""
         try:
             # Check if container already exists
@@ -77,7 +77,7 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return self._format_error("deploy", vm_name, str(e))
 
-    async def start_vm(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def start_vm(self, conn, vm_name: str) -> dict[str, Any]:
         """Start an LXD container."""
         try:
             result = await self._run_command(conn, f"lxc start {vm_name}")
@@ -101,7 +101,7 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return self._format_error("start", vm_name, str(e))
 
-    async def stop_vm(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def stop_vm(self, conn, vm_name: str) -> dict[str, Any]:
         """Stop an LXD container."""
         try:
             result = await self._run_command(conn, f"lxc stop {vm_name}")
@@ -116,7 +116,7 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return self._format_error("stop", vm_name, str(e))
 
-    async def restart_vm(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def restart_vm(self, conn, vm_name: str) -> dict[str, Any]:
         """Restart an LXD container."""
         try:
             result = await self._run_command(conn, f"lxc restart {vm_name}")
@@ -140,7 +140,7 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return self._format_error("restart", vm_name, str(e))
 
-    async def get_vm_status(self, conn, vm_name: str) -> Dict[str, Any]:
+    async def get_vm_status(self, conn, vm_name: str) -> dict[str, Any]:
         """Get LXD container status."""
         try:
             info_result = await self._run_command(conn, f"lxc info {vm_name}")
@@ -193,7 +193,7 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return self._format_error("get_status", vm_name, str(e))
 
-    async def list_vms(self, conn) -> Dict[str, Any]:
+    async def list_vms(self, conn) -> dict[str, Any]:
         """List all LXD containers."""
         try:
             # Get container list with details
@@ -227,7 +227,7 @@ class LXDProvider(VMProvider):
         except Exception as e:
             return {"status": "error", "platform": "lxd", "error": str(e)}
 
-    async def get_vm_logs(self, conn, vm_name: str, lines: int = 100) -> Dict[str, Any]:
+    async def get_vm_logs(self, conn, vm_name: str, lines: int = 100) -> dict[str, Any]:
         """Get LXD container logs."""
         try:
             # LXD doesn't have direct log command, so we'll get system logs
@@ -268,7 +268,7 @@ class LXDProvider(VMProvider):
 
     async def remove_vm(
         self, conn, vm_name: str, force: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Remove an LXD container."""
         try:
             # Stop container first if it's running (unless force is used)
@@ -293,7 +293,7 @@ class LXDProvider(VMProvider):
 
     async def create_snapshot(
         self, conn, vm_name: str, snapshot_name: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a snapshot of an LXD container."""
         try:
             result = await self._run_command(
@@ -317,7 +317,7 @@ class LXDProvider(VMProvider):
 
     async def restore_snapshot(
         self, conn, vm_name: str, snapshot_name: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Restore an LXD container from a snapshot."""
         try:
             result = await self._run_command(

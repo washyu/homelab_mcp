@@ -1,10 +1,11 @@
 """Tests for the service installer module."""
 
 import json
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
+
+import pytest
 
 from src.homelab_mcp.service_installer import ServiceInstaller
 

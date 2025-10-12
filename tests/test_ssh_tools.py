@@ -1,15 +1,16 @@
 """Tests for SSH tools."""
 
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import asyncssh
+import pytest
+
 from src.homelab_mcp.ssh_tools import (
-    ssh_discover_system,
     ensure_mcp_ssh_key,
     setup_remote_mcp_admin,
+    ssh_discover_system,
     verify_mcp_admin_access,
-    get_mcp_ssh_key_path,
 )
 
 
@@ -176,9 +177,8 @@ async def test_ssh_discover_auth_failure(mock_connect):
 @patch("asyncssh.connect")
 async def test_ssh_discover_connection_timeout(mock_connect):
     """Test SSH discovery with connection timeout."""
-    import asyncio
 
-    mock_connect.side_effect = asyncio.TimeoutError()
+    mock_connect.side_effect = TimeoutError()
 
     result = await ssh_discover_system(
         hostname="unreachable-host", username="test-user", password="test-pass"

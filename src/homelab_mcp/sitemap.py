@@ -1,11 +1,11 @@
 """Network site mapping and device tracking functionality."""
 
 import json
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from typing import Any
 
-from .database import get_database_adapter, calculate_data_hash, DatabaseAdapter
+from .database import calculate_data_hash, get_database_adapter
 
 
 @dataclass
@@ -16,29 +16,29 @@ class NetworkDevice:
     connection_ip: str
     last_seen: str
     status: str  # success, error
-    cpu_model: Optional[str] = None
-    cpu_cores: Optional[int] = None
-    memory_total: Optional[str] = None
-    memory_used: Optional[str] = None
-    memory_free: Optional[str] = None
-    memory_available: Optional[str] = None
-    disk_filesystem: Optional[str] = None
-    disk_size: Optional[str] = None
-    disk_used: Optional[str] = None
-    disk_available: Optional[str] = None
-    disk_use_percent: Optional[str] = None
-    disk_mount: Optional[str] = None
-    network_interfaces: Optional[str] = None  # JSON string
-    uptime: Optional[str] = None
-    os_info: Optional[str] = None
-    error_message: Optional[str] = None
+    cpu_model: str | None = None
+    cpu_cores: int | None = None
+    memory_total: str | None = None
+    memory_used: str | None = None
+    memory_free: str | None = None
+    memory_available: str | None = None
+    disk_filesystem: str | None = None
+    disk_size: str | None = None
+    disk_used: str | None = None
+    disk_available: str | None = None
+    disk_use_percent: str | None = None
+    disk_mount: str | None = None
+    network_interfaces: str | None = None  # JSON string
+    uptime: str | None = None
+    os_info: str | None = None
+    error_message: str | None = None
 
 
 class NetworkSiteMap:
     """Manages the network site map database."""
 
     def __init__(
-        self, db_path: Optional[str] = None, db_type: Optional[str] = None, **db_kwargs
+        self, db_path: str | None = None, db_type: str | None = None, **db_kwargs
     ):
         """Initialize the site map with database connection."""
         self.db_adapter = get_database_adapter(
@@ -125,17 +125,17 @@ class NetworkSiteMap:
         data_hash = calculate_data_hash(discovery_data)
         self.db_adapter.store_discovery_history(device_id, discovery_data, data_hash)
 
-    def get_all_devices(self) -> List[Dict[str, Any]]:
+    def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from the database."""
         return self.db_adapter.get_all_devices()
 
     def get_device_changes(
         self, device_id: int, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get change history for a specific device."""
         return self.db_adapter.get_device_changes(device_id, limit)
 
-    def analyze_network_topology(self) -> Dict[str, Any]:
+    def analyze_network_topology(self) -> dict[str, Any]:
         """Analyze the network topology and provide insights."""
         devices = self.get_all_devices()
 
@@ -225,7 +225,7 @@ class NetworkSiteMap:
         else:
             return 0.0
 
-    def suggest_deployments(self) -> Dict[str, Any]:
+    def suggest_deployments(self) -> dict[str, Any]:
         """Suggest optimal deployment locations based on current network state."""
         devices = self.get_all_devices()
         online_devices = [d for d in devices if d["status"] == "success"]
@@ -299,8 +299,8 @@ async def discover_and_store(
     sitemap: NetworkSiteMap,
     hostname: str,
     username: str,
-    password: Optional[str] = None,
-    key_path: Optional[str] = None,
+    password: str | None = None,
+    key_path: str | None = None,
     port: int = 22,
 ) -> str:
     """Discover a device and store it in the site map."""
@@ -329,7 +329,7 @@ async def discover_and_store(
 
 
 async def bulk_discover_and_store(
-    sitemap: NetworkSiteMap, targets: List[Dict[str, Any]]
+    sitemap: NetworkSiteMap, targets: list[dict[str, Any]]
 ) -> str:
     """Discover multiple devices and store them in the site map."""
     results = []

@@ -1,11 +1,12 @@
 """VM operations for MCP integration."""
 
-import asyncio
-import asyncssh
 import json
-from typing import Dict, List, Optional, Any
-from .vm_providers import get_vm_provider
+from typing import Any
+
+import asyncssh
+
 from .sitemap import NetworkSiteMap
+from .vm_providers import get_vm_provider
 
 
 class VMManager:
@@ -14,9 +15,7 @@ class VMManager:
     def __init__(self):
         self.sitemap = NetworkSiteMap()
 
-    async def get_device_connection_info(
-        self, device_id: int
-    ) -> Optional[Dict[str, Any]]:
+    async def get_device_connection_info(self, device_id: int) -> dict[str, Any] | None:
         """Get SSH connection info for a device from the sitemap."""
         devices = self.sitemap.get_all_devices()
         for device in devices:
@@ -30,7 +29,7 @@ class VMManager:
 
 
 async def deploy_vm(
-    device_id: int, platform: str, vm_name: str, vm_config: Dict[str, Any]
+    device_id: int, platform: str, vm_name: str, vm_config: dict[str, Any]
 ) -> str:
     """Deploy a new VM/container on a specific device."""
     try:
@@ -138,9 +137,7 @@ async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
         )
 
 
-async def list_vms_on_device(
-    device_id: int, platforms: Optional[List[str]] = None
-) -> str:
+async def list_vms_on_device(device_id: int, platforms: list[str] | None = None) -> str:
     """List all VMs on a specific device across platforms."""
     try:
         manager = VMManager()

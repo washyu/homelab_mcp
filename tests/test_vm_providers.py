@@ -1,9 +1,11 @@
 """Tests for VM providers."""
 
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.homelab_mcp.vm_providers import get_vm_provider, VMProvider
+
+import pytest
+
+from src.homelab_mcp.vm_providers import get_vm_provider
 from src.homelab_mcp.vm_providers.docker_provider import DockerProvider
 from src.homelab_mcp.vm_providers.lxd_provider import LXDProvider
 

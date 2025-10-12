@@ -1,8 +1,8 @@
 """Configuration management for the homelab MCP server."""
 
 import os
-from typing import Dict, Any, Optional, List
 from pathlib import Path
+from typing import Any
 
 
 class DatabaseConfig:
@@ -35,7 +35,7 @@ class DatabaseConfig:
             "password": os.getenv("POSTGRES_PASSWORD", "password"),
         }
 
-    def get_database_params(self) -> Dict[str, Any]:
+    def get_database_params(self) -> dict[str, Any]:
         """Get database parameters for the current configuration."""
         if self.db_type == "postgresql":
             return {"db_type": "postgresql", "connection_params": self.postgres_config}
@@ -83,7 +83,7 @@ class MCPConfig:
             os.getenv("ENABLE_RESOURCE_POOLS", "false").lower() == "true"
         )
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate configuration and return any errors."""
         errors = []
 
@@ -118,7 +118,7 @@ def get_config() -> MCPConfig:
     return MCPConfig()
 
 
-def create_database_from_config(config: Optional[MCPConfig] = None) -> "NetworkSiteMap":
+def create_database_from_config(config: MCPConfig | None = None) -> "NetworkSiteMap":
     """Create a NetworkSiteMap instance from configuration."""
     if config is None:
         config = get_config()
@@ -129,7 +129,7 @@ def create_database_from_config(config: Optional[MCPConfig] = None) -> "NetworkS
     return NetworkSiteMap(**db_params)
 
 
-def print_config_info(config: Optional[MCPConfig] = None) -> None:
+def print_config_info(config: MCPConfig | None = None) -> None:
     """Print current configuration information."""
     if config is None:
         config = get_config()

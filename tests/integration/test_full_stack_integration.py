@@ -3,28 +3,21 @@
 import asyncio
 import json
 import os
-import pytest
 import tempfile
-import time
-from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch
+
+import pytest
 
 pytestmark = pytest.mark.integration
 
-from src.homelab_mcp.sitemap import (
-    NetworkSiteMap,
-    discover_and_store,
-    bulk_discover_and_store,
-)
+from src.homelab_mcp.config import create_database_from_config, get_config
 from src.homelab_mcp.service_installer import ServiceInstaller
-from src.homelab_mcp.vm_operations import deploy_vm, get_vm_status, list_vms_on_device
-from src.homelab_mcp.ssh_tools import (
-    setup_remote_mcp_admin,
-    verify_mcp_admin_access,
-    ssh_discover_system,
+from src.homelab_mcp.sitemap import (
+    bulk_discover_and_store,
+    discover_and_store,
 )
 from src.homelab_mcp.tools import execute_tool
-from src.homelab_mcp.config import get_config, create_database_from_config
+from src.homelab_mcp.vm_operations import deploy_vm, get_vm_status, list_vms_on_device
 
 
 class FullStackTestEnvironment:

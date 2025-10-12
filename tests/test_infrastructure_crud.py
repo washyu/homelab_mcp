@@ -1,18 +1,19 @@
 """Tests for the infrastructure CRUD module."""
 
 import json
+from unittest.mock import AsyncMock, mock_open, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
 
 from src.homelab_mcp.infrastructure_crud import (
     InfrastructureManager,
-    deploy_infrastructure_plan,
-    update_device_configuration,
-    decommission_network_device,
-    scale_infrastructure_services,
-    validate_infrastructure_plan,
     create_infrastructure_backup,
+    decommission_network_device,
+    deploy_infrastructure_plan,
     rollback_infrastructure_to_backup,
+    scale_infrastructure_services,
+    update_device_configuration,
+    validate_infrastructure_plan,
 )
 
 

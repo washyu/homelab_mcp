@@ -1,13 +1,13 @@
 """Database abstraction layer for network sitemap functionality."""
 
-import os
-import json
-import sqlite3
 import hashlib
+import json
+import os
+import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple, Union
 from pathlib import Path
+from typing import Any
 
 try:
     import psycopg2
@@ -37,12 +37,12 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def store_device(self, device_data: Dict[str, Any]) -> int:
+    def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device record."""
         pass
 
     @abstractmethod
-    def get_all_devices(self) -> List[Dict[str, Any]]:
+    def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from the database."""
         pass
 
@@ -56,14 +56,14 @@ class DatabaseAdapter(ABC):
     @abstractmethod
     def get_device_changes(
         self, device_id: int, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get change history for a device."""
         pass
 
     @abstractmethod
     def execute_query(
-        self, query: str, params: Optional[Tuple] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, params: tuple | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a query and return results."""
         pass
 
@@ -71,7 +71,7 @@ class DatabaseAdapter(ABC):
 class SQLiteAdapter(DatabaseAdapter):
     """SQLite database adapter."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         if db_path is None:
             # Default to ~/.mcp/sitemap.db
             try:
@@ -162,7 +162,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         self.connection.commit()
 
-    def store_device(self, device_data: Dict[str, Any]) -> int:
+    def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device in SQLite."""
         if not self.connection:
             self.connect()
@@ -256,7 +256,7 @@ class SQLiteAdapter(DatabaseAdapter):
         self.connection.commit()
         return device_id
 
-    def get_all_devices(self) -> List[Dict[str, Any]]:
+    def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from SQLite."""
         if not self.connection:
             self.connect()
@@ -311,7 +311,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
     def get_device_changes(
         self, device_id: int, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get device change history from SQLite."""
         if not self.connection:
             self.connect()
@@ -337,8 +337,8 @@ class SQLiteAdapter(DatabaseAdapter):
         return changes
 
     def execute_query(
-        self, query: str, params: Optional[Tuple] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, params: tuple | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a query and return results."""
         if not self.connection:
             self.connect()
@@ -355,7 +355,7 @@ class SQLiteAdapter(DatabaseAdapter):
 class PostgreSQLAdapter(DatabaseAdapter):
     """PostgreSQL database adapter with JSONB support."""
 
-    def __init__(self, connection_params: Optional[Dict[str, Any]] = None):
+    def __init__(self, connection_params: dict[str, Any] | None = None):
         if not POSTGRESQL_AVAILABLE:
             raise ImportError("psycopg2 is required for PostgreSQL support")
 
@@ -451,7 +451,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         self.connection.commit()
 
-    def store_device(self, device_data: Dict[str, Any]) -> int:
+    def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device in PostgreSQL with JSONB."""
         if not self.connection:
             self.connect()
@@ -548,7 +548,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self.connection.commit()
         return device_id
 
-    def get_all_devices(self) -> List[Dict[str, Any]]:
+    def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from PostgreSQL."""
         if not self.connection:
             self.connect()
@@ -635,7 +635,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
     def get_device_changes(
         self, device_id: int, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get device change history from PostgreSQL."""
         if not self.connection:
             self.connect()
@@ -662,8 +662,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         return changes
 
     def execute_query(
-        self, query: str, params: Optional[Tuple] = None
-    ) -> List[Dict[str, Any]]:
+        self, query: str, params: tuple | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a query and return results."""
         if not self.connection:
             self.connect()

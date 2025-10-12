@@ -1,17 +1,15 @@
 """Tests for network sitemap functionality."""
 
 import json
+from unittest.mock import patch
+
 import pytest
-import tempfile
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
 
 from src.homelab_mcp.sitemap import (
-    NetworkSiteMap,
     NetworkDevice,
-    discover_and_store,
+    NetworkSiteMap,
     bulk_discover_and_store,
+    discover_and_store,
 )
 
 
