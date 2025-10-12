@@ -12,7 +12,7 @@ from .database import PostgreSQLAdapter, SQLiteAdapter
 class DatabaseMigrator:
     """Handles migration between different database backends."""
 
-    def __init__(self, source_adapter, target_adapter):
+    def __init__(self, source_adapter: Any, target_adapter: Any) -> None:
         self.source = source_adapter
         self.target = target_adapter
 
@@ -297,7 +297,7 @@ ENABLE_POSTGRESQL=true
     return template
 
 
-def main():
+def main() -> None:
     """Command-line interface for migration utilities."""
     import argparse
 

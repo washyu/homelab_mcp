@@ -22,7 +22,7 @@ class AnsibleRunner:
         self.playbook_path = playbook_path
         self.inventory_path = inventory_path
         self.variables = variables or {}
-        self.results = {}
+        self.results: dict[str, Any] = {}
 
     async def run_playbook(self, extra_vars: dict | None = None) -> dict[str, Any]:
         """Execute the Ansible playbook."""
@@ -87,10 +87,10 @@ def render_template(template_content: str, variables: dict[str, Any]) -> str:
 class ServiceInstaller:
     """Framework for installing and managing homelab services."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.templates = self._load_service_templates()
 
-    def _load_service_templates(self) -> dict[str, dict]:
+    def _load_service_templates(self) -> dict[str, dict[str, Any]]:
         """Load all service templates from the templates directory."""
         templates = {}
 
@@ -130,7 +130,7 @@ class ServiceInstaller:
 
         service = self.templates[service_name]
         requirements = service.get("requirements", {})
-        results = {
+        results: dict[str, Any] = {
             "service": service_name,
             "hostname": hostname,
             "requirements_met": True,
@@ -150,11 +150,13 @@ class ServiceInstaller:
                 port_available = (
                     port_data.get("exit_code", 1) != 0
                 )  # Port is free if command fails
-                results["checks"][f"port_{port}"] = {
-                    "required": True,
-                    "available": port_available,
-                    "status": "pass" if port_available else "fail",
-                }
+                checks_dict = results.get("checks", {})
+                if isinstance(checks_dict, dict):
+                    checks_dict[f"port_{port}"] = {
+                        "required": True,
+                        "available": port_available,
+                        "status": "pass" if port_available else "fail",
+                    }
                 if not port_available:
                     results["requirements_met"] = False
 
@@ -171,11 +173,13 @@ class ServiceInstaller:
                 required_mb = requirements["memory_gb"] * 1024
                 memory_ok = available_mb >= required_mb
 
-                results["checks"]["memory"] = {
-                    "required_mb": required_mb,
-                    "available_mb": available_mb,
-                    "status": "pass" if memory_ok else "fail",
-                }
+                checks_dict = results.get("checks", {})
+                if isinstance(checks_dict, dict):
+                    checks_dict["memory"] = {
+                        "required_mb": required_mb,
+                        "available_mb": available_mb,
+                        "status": "pass" if memory_ok else "fail",
+                    }
                 if not memory_ok:
                     results["requirements_met"] = False
 
@@ -192,11 +196,13 @@ class ServiceInstaller:
                 required_kb = requirements["disk_gb"] * 1024 * 1024
                 disk_ok = available_kb >= required_kb
 
-                results["checks"]["disk_space"] = {
-                    "required_gb": requirements["disk_gb"],
-                    "available_gb": round(available_kb / 1024 / 1024, 2),
-                    "status": "pass" if disk_ok else "fail",
-                }
+                checks_dict = results.get("checks", {})
+                if isinstance(checks_dict, dict):
+                    checks_dict["disk_space"] = {
+                        "required_gb": requirements["disk_gb"],
+                        "available_gb": round(available_kb / 1024 / 1024, 2),
+                        "status": "pass" if disk_ok else "fail",
+                    }
                 if not disk_ok:
                     results["requirements_met"] = False
 
@@ -285,16 +291,20 @@ class ServiceInstaller:
 
             docker_data = json.loads(docker_check)
             if docker_data.get("exit_code") != 0:
-                results["steps"].append(
-                    {
-                        "step": "check_docker",
-                        "status": "fail",
-                        "error": "Docker not installed",
-                    }
-                )
+                step_list = results.setdefault("steps", [])
+                if isinstance(step_list, list):
+                    step_list.append(
+                        {
+                            "step": "check_docker",
+                            "status": "fail",
+                            "error": "Docker not installed",
+                        }
+                    )
                 return {"status": "error", "results": results}
 
-            results["steps"].append({"step": "check_docker", "status": "success"})
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append({"step": "check_docker", "status": "success"})
 
             # Step 2: Ensure Docker Compose is available
             compose_check = await ssh_execute_command(
@@ -306,18 +316,20 @@ class ServiceInstaller:
 
             compose_data = json.loads(compose_check)
             if compose_data.get("exit_code") != 0:
-                results["steps"].append(
-                    {
-                        "step": "check_docker_compose",
-                        "status": "fail",
-                        "error": "Docker Compose not available",
-                    }
-                )
+                step_list = results.setdefault("steps", [])
+                if isinstance(step_list, list):
+                    step_list.append(
+                        {
+                            "step": "check_docker_compose",
+                            "status": "fail",
+                            "error": "Docker Compose not available",
+                        }
+                    )
                 return {"status": "error", "results": results}
 
-            results["steps"].append(
-                {"step": "check_docker_compose", "status": "success"}
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append({"step": "check_docker_compose", "status": "success"})
 
             # Step 3: Create service directory
             service_dir = f"/opt/{service_name}"
@@ -331,22 +343,26 @@ class ServiceInstaller:
 
             mkdir_data = json.loads(mkdir_result)
             if mkdir_data.get("exit_code") != 0:
-                results["steps"].append(
-                    {
-                        "step": "create_directory",
-                        "status": "fail",
-                        "error": f"Failed to create {service_dir}",
-                    }
-                )
+                step_list = results.setdefault("steps", [])
+                if isinstance(step_list, list):
+                    step_list.append(
+                        {
+                            "step": "create_directory",
+                            "status": "fail",
+                            "error": f"Failed to create {service_dir}",
+                        }
+                    )
                 return {"status": "error", "results": results}
 
-            results["steps"].append(
-                {
-                    "step": "create_directory",
-                    "status": "success",
-                    "directory": service_dir,
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "create_directory",
+                        "status": "success",
+                        "directory": service_dir,
+                    }
+                )
 
             # Step 4: Generate docker-compose.yml
             compose_content = service["installation"]["docker_compose"]
@@ -367,16 +383,20 @@ class ServiceInstaller:
 
             write_data = json.loads(write_compose)
             if write_data.get("exit_code") != 0:
-                results["steps"].append(
-                    {
-                        "step": "write_compose_file",
-                        "status": "fail",
-                        "error": "Failed to write docker-compose.yml",
-                    }
-                )
+                step_list = results.setdefault("steps", [])
+                if isinstance(step_list, list):
+                    step_list.append(
+                        {
+                            "step": "write_compose_file",
+                            "status": "fail",
+                            "error": "Failed to write docker-compose.yml",
+                        }
+                    )
                 return {"status": "error", "results": results}
 
-            results["steps"].append({"step": "write_compose_file", "status": "success"})
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append({"step": "write_compose_file", "status": "success"})
 
             # Step 5: Start the service
             start_result = await ssh_execute_command(
@@ -388,22 +408,26 @@ class ServiceInstaller:
 
             start_data = json.loads(start_result)
             if start_data.get("exit_code") != 0:
-                results["steps"].append(
-                    {
-                        "step": "start_service",
-                        "status": "fail",
-                        "error": f"Failed to start service: {start_data.get('output', '')}",
-                    }
-                )
+                step_list = results.setdefault("steps", [])
+                if isinstance(step_list, list):
+                    step_list.append(
+                        {
+                            "step": "start_service",
+                            "status": "fail",
+                            "error": f"Failed to start service: {start_data.get('output', '')}",
+                        }
+                    )
                 return {"status": "error", "results": results}
 
-            results["steps"].append(
-                {
-                    "step": "start_service",
-                    "status": "success",
-                    "output": start_data.get("output", ""),
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "start_service",
+                        "status": "success",
+                        "output": start_data.get("output", ""),
+                    }
+                )
 
             # Step 6: Verify service is running
             status_result = await ssh_execute_command(
@@ -414,15 +438,17 @@ class ServiceInstaller:
             )
 
             status_data = json.loads(status_result)
-            results["steps"].append(
-                {
-                    "step": "verify_service",
-                    "status": "success"
-                    if status_data.get("exit_code") == 0
-                    else "warning",
-                    "container_status": status_data.get("output", ""),
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "verify_service",
+                        "status": "success"
+                        if status_data.get("exit_code") == 0
+                        else "warning",
+                        "container_status": status_data.get("output", ""),
+                    }
+                )
 
             return {
                 "status": "success",
@@ -434,9 +460,11 @@ class ServiceInstaller:
             }
 
         except Exception as e:
-            results["steps"].append(
-                {"step": "exception", "status": "fail", "error": str(e)}
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {"step": "exception", "status": "fail", "error": str(e)}
+                )
             return {"status": "error", "results": results}
 
     async def _install_script_service(
@@ -560,16 +588,20 @@ class ServiceInstaller:
 
                 install_data = json.loads(install_result)
                 if install_data.get("exit_code") != 0:
-                    results["steps"].append(
-                        {
-                            "step": "install_terraform",
-                            "status": "fail",
-                            "error": "Failed to install Terraform",
-                        }
-                    )
+                    step_list = results.setdefault("steps", [])
+                    if isinstance(step_list, list):
+                        step_list.append(
+                            {
+                                "step": "install_terraform",
+                                "status": "fail",
+                                "error": "Failed to install Terraform",
+                            }
+                        )
                     return {"status": "error", "results": results}
 
-            results["steps"].append({"step": "check_terraform", "status": "success"})
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append({"step": "check_terraform", "status": "success"})
 
             # Step 2: Create Terraform workspace
             tf_dir = f"/opt/terraform/{service_name}"
@@ -581,14 +613,16 @@ class ServiceInstaller:
                 sudo=True,
             )
 
-            results["steps"].append(
-                {
-                    "step": "create_workspace",
-                    "status": "success"
-                    if json.loads(mkdir_result).get("exit_code") == 0
-                    else "fail",
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "create_workspace",
+                        "status": "success"
+                        if json.loads(mkdir_result).get("exit_code") == 0
+                        else "fail",
+                    }
+                )
 
             # Step 3: Generate Terraform files
             tf_config = service["installation"]["terraform"]
@@ -632,9 +666,11 @@ class ServiceInstaller:
                     hostname, username, password, f"{tf_dir}/backend.tf", backend_tf
                 )
 
-            results["steps"].append(
-                {"step": "generate_terraform_files", "status": "success"}
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {"step": "generate_terraform_files", "status": "success"}
+                )
 
             # Step 4: Terraform init
             init_result = await ssh_execute_command(
@@ -645,13 +681,17 @@ class ServiceInstaller:
             )
 
             init_data = json.loads(init_result)
-            results["steps"].append(
-                {
-                    "step": "terraform_init",
-                    "status": "success" if init_data.get("exit_code") == 0 else "fail",
-                    "output": init_data.get("output", ""),
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "terraform_init",
+                        "status": "success"
+                        if init_data.get("exit_code") == 0
+                        else "fail",
+                        "output": init_data.get("output", ""),
+                    }
+                )
 
             if init_data.get("exit_code") != 0:
                 return {"status": "error", "results": results}
@@ -665,12 +705,16 @@ class ServiceInstaller:
             )
 
             plan_data = json.loads(plan_result)
-            results["steps"].append(
-                {
-                    "step": "terraform_plan",
-                    "status": "success" if plan_data.get("exit_code") == 0 else "fail",
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "terraform_plan",
+                        "status": "success"
+                        if plan_data.get("exit_code") == 0
+                        else "fail",
+                    }
+                )
 
             if plan_data.get("exit_code") != 0:
                 return {"status": "error", "results": results}
@@ -684,12 +728,16 @@ class ServiceInstaller:
             )
 
             apply_data = json.loads(apply_result)
-            results["steps"].append(
-                {
-                    "step": "terraform_apply",
-                    "status": "success" if apply_data.get("exit_code") == 0 else "fail",
-                }
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {
+                        "step": "terraform_apply",
+                        "status": "success"
+                        if apply_data.get("exit_code") == 0
+                        else "fail",
+                    }
+                )
 
             if apply_data.get("exit_code") != 0:
                 return {"status": "error", "results": results}
@@ -723,12 +771,14 @@ class ServiceInstaller:
                     f"{tf_dir}/terraform.tfstate",
                     service_name,
                 )
-                results["steps"].append(
-                    {
-                        "step": "backup_state",
-                        "status": "success" if backup_result else "fail",
-                    }
-                )
+                step_list = results.setdefault("steps", [])
+                if isinstance(step_list, list):
+                    step_list.append(
+                        {
+                            "step": "backup_state",
+                            "status": "success" if backup_result else "fail",
+                        }
+                    )
 
             return {
                 "status": "success",
@@ -740,9 +790,11 @@ class ServiceInstaller:
             }
 
         except Exception as e:
-            results["steps"].append(
-                {"step": "exception", "status": "fail", "error": str(e)}
-            )
+            step_list = results.setdefault("steps", [])
+            if isinstance(step_list, list):
+                step_list.append(
+                    {"step": "exception", "status": "fail", "error": str(e)}
+                )
             return {"status": "error", "results": results}
 
     async def _write_remote_file(
@@ -765,7 +817,7 @@ class ServiceInstaller:
         )
 
         data = json.loads(result)
-        return data.get("exit_code") == 0
+        return bool(data.get("exit_code") == 0)
 
     def _generate_variables_tf(self, variables: dict) -> str:
         """Generate variables.tf file from template variables."""
@@ -933,7 +985,7 @@ class ServiceInstaller:
         )
 
         data = json.loads(result)
-        return data.get("exit_code") == 0
+        return bool(data.get("exit_code") == 0)
 
     async def destroy_terraform_service(
         self,

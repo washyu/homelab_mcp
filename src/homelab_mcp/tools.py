@@ -1166,8 +1166,10 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
 
         installer = ServiceInstaller()
         services = installer.get_available_services()
-        result = {"available_services": services, "count": len(services)}
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        result_dict = {"available_services": services, "count": len(services)}
+        return {
+            "content": [{"type": "text", "text": json.dumps(result_dict, indent=2)}]
+        }
 
     elif tool_name == "get_service_info":
         from .service_installer import ServiceInstaller
@@ -1194,57 +1196,75 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.check_service_requirements(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        requirements_result = await installer.check_service_requirements(**arguments)
+        return {
+            "content": [
+                {"type": "text", "text": json.dumps(requirements_result, indent=2)}
+            ]
+        }
 
     elif tool_name == "install_service":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.install_service(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        install_result = await installer.install_service(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(install_result, indent=2)}]
+        }
 
     elif tool_name == "get_service_status":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.get_service_status(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        status_result = await installer.get_service_status(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(status_result, indent=2)}]
+        }
 
     elif tool_name == "plan_terraform_service":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.plan_terraform_service(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        plan_result = await installer.plan_terraform_service(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(plan_result, indent=2)}]
+        }
 
     elif tool_name == "destroy_terraform_service":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.destroy_terraform_service(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        destroy_result = await installer.destroy_terraform_service(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(destroy_result, indent=2)}]
+        }
 
     elif tool_name == "refresh_terraform_service":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.refresh_terraform_service(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        refresh_result = await installer.refresh_terraform_service(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(refresh_result, indent=2)}]
+        }
 
     elif tool_name == "check_ansible_service":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.check_ansible_service(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        ansible_result = await installer.check_ansible_service(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(ansible_result, indent=2)}]
+        }
 
     elif tool_name == "run_ansible_playbook":
         from .service_installer import ServiceInstaller
 
         installer = ServiceInstaller()
-        result = await installer.run_ansible_playbook(**arguments)
-        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+        playbook_result = await installer.run_ansible_playbook(**arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(playbook_result, indent=2)}]
+        }
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

@@ -12,7 +12,7 @@ from .vm_providers import get_vm_provider
 class VMManager:
     """Manager for VM operations across different platforms."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.sitemap = NetworkSiteMap()
 
     async def get_device_connection_info(self, device_id: int) -> dict[str, Any] | None:

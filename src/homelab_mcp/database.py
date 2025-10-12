@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import psycopg2
-    import psycopg2.extras
+    import psycopg2  # type: ignore
+    import psycopg2.extras  # type: ignore
 
     POSTGRESQL_AVAILABLE = True
 except ImportError:

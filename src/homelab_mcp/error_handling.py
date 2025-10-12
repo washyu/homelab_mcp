@@ -197,16 +197,6 @@ async def safe_json_response(
                 )
         elif isinstance(data, dict):
             response_text = json.dumps(data, indent=2)
-        else:
-            # Fallback for other types
-            response_text = json.dumps(
-                {
-                    "status": "success",
-                    "message": str(data),
-                    "timestamp": datetime.utcnow().isoformat(),
-                },
-                indent=2,
-            )
 
         return {"content": [{"type": "text", "text": response_text}]}
 

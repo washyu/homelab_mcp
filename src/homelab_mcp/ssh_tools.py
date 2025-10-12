@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import asyncssh
 
@@ -94,7 +94,12 @@ async def setup_remote_mcp_admin(
                     "sudo useradd -m -s /bin/bash -G sudo mcp_admin", check=False
                 )
                 if create_user.exit_status != 0:
-                    setup_results["user_creation"] = f"Failed: {create_user.stderr}"
+                    stderr_text = (
+                        create_user.stderr.decode()
+                        if isinstance(create_user.stderr, bytes)
+                        else str(create_user.stderr)
+                    )
+                    setup_results["user_creation"] = f"Failed: {stderr_text}"
                 else:
                     setup_results["user_creation"] = "Success: mcp_admin user created"
                     # Ensure proper ownership of home directory
@@ -111,7 +116,12 @@ async def setup_remote_mcp_admin(
             if sudo_group.exit_status == 0:
                 setup_results["sudo_access"] = "Success: Added to sudo group"
             else:
-                setup_results["sudo_access"] = f"Failed: {sudo_group.stderr}"
+                stderr_text = (
+                    sudo_group.stderr.decode()
+                    if isinstance(sudo_group.stderr, bytes)
+                    else str(sudo_group.stderr)
+                )
+                setup_results["sudo_access"] = f"Failed: {stderr_text}"
 
             # Check if our key is already in authorized_keys
             key_check = await conn.run(
@@ -140,8 +150,13 @@ async def setup_remote_mcp_admin(
                 )
 
                 if mkdir_cmd.exit_status != 0:
+                    stderr_text = (
+                        mkdir_cmd.stderr.decode()
+                        if isinstance(mkdir_cmd.stderr, bytes)
+                        else str(mkdir_cmd.stderr)
+                    )
                     setup_results["ssh_key"] = (
-                        f"Failed to create .ssh directory: {mkdir_cmd.stderr}"
+                        f"Failed to create .ssh directory: {stderr_text}"
                     )
                 else:
                     if force_update_key and key_exists:
@@ -166,7 +181,12 @@ async def setup_remote_mcp_admin(
                         else:
                             setup_results["ssh_key"] = "Success: SSH key installed"
                     else:
-                        setup_results["ssh_key"] = f"Failed: {add_key.stderr}"
+                        stderr_text = (
+                            add_key.stderr.decode()
+                            if isinstance(add_key.stderr, bytes)
+                            else str(add_key.stderr)
+                        )
+                        setup_results["ssh_key"] = f"Failed: {stderr_text}"
 
             # Enable passwordless sudo for mcp_admin
             sudoers_setup = await conn.run(
@@ -179,14 +199,24 @@ async def setup_remote_mcp_admin(
                     "Success: Passwordless sudo enabled"
                 )
             else:
-                setup_results["passwordless_sudo"] = f"Failed: {sudoers_setup.stderr}"
+                stderr_text = (
+                    sudoers_setup.stderr.decode()
+                    if isinstance(sudoers_setup.stderr, bytes)
+                    else str(sudoers_setup.stderr)
+                )
+                setup_results["passwordless_sudo"] = f"Failed: {stderr_text}"
 
             # Test SSH key authentication
             test_conn = await conn.run("sudo -u mcp_admin whoami", check=False)
             if test_conn.exit_status == 0:
                 setup_results["test_access"] = "Success: mcp_admin access verified"
             else:
-                setup_results["test_access"] = f"Failed: {test_conn.stderr}"
+                stderr_text = (
+                    test_conn.stderr.decode()
+                    if isinstance(test_conn.stderr, bytes)
+                    else str(test_conn.stderr)
+                )
+                setup_results["test_access"] = f"Failed: {stderr_text}"
 
         return json.dumps(
             {
@@ -319,7 +349,7 @@ async def ssh_discover_system(
         raise ValueError("Either password or key_path must be provided")
 
     async with await asyncssh.connect(**connect_kwargs) as conn:
-        system_info = {}
+        system_info: dict[str, Any] = {}
 
         # Get actual hostname from the remote system
         hostname_result = await conn.run("hostname", check=False)
@@ -328,7 +358,7 @@ async def ssh_discover_system(
             actual_hostname = cast(str, hostname_result.stdout).strip()
 
             # Get CPU info
-            cpu_info = {}
+            cpu_info: dict[str, Any] = {}
             cpu_result = await conn.run("nproc", check=False)
             if cpu_result.exit_status == 0 and cpu_result.stdout:
                 cpu_info["count"] = int(cast(str, cpu_result.stdout).strip())
@@ -373,7 +403,7 @@ async def ssh_discover_system(
                         }
 
             # Get network interfaces
-            network_info = []
+            network_info: list[dict[str, Any]] = []
             # Try modern ip command first
             ip_result = await conn.run("ip -j addr show 2>/dev/null", check=False)
             if ip_result.exit_status == 0 and ip_result.stdout:
@@ -413,7 +443,7 @@ async def ssh_discover_system(
                     system_info["os"] = os_line.split("=", 1)[1].strip('"')
 
             # Get USB devices
-            usb_devices = []
+            usb_devices: list[dict[str, str]] = []
             lsusb_result = await conn.run("lsusb 2>/dev/null", check=False)
             if lsusb_result.exit_status == 0 and lsusb_result.stdout:
                 for line in cast(str, lsusb_result.stdout).strip().split("\n"):
@@ -421,7 +451,7 @@ async def ssh_discover_system(
                         # Parse lsusb output: Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
                         parts = line.split(" ", 6)
                         if len(parts) >= 7:
-                            device_info = {
+                            usb_device_info = {
                                 "bus": parts[1],
                                 "device": parts[3].rstrip(":"),
                                 "vendor_id": parts[5].split(":")[0],
@@ -430,12 +460,12 @@ async def ssh_discover_system(
                                 if len(parts) > 6
                                 else "Unknown",
                             }
-                            usb_devices.append(device_info)
+                            usb_devices.append(usb_device_info)
             if usb_devices:
                 system_info["usb_devices"] = usb_devices
 
             # Get PCI devices
-            pci_devices = []
+            pci_devices: list[dict[str, str]] = []
             lspci_result = await conn.run("lspci 2>/dev/null", check=False)
             if lspci_result.exit_status == 0 and lspci_result.stdout:
                 for line in cast(str, lspci_result.stdout).strip().split("\n"):
@@ -443,7 +473,7 @@ async def ssh_discover_system(
                         # Parse lspci output: 00:00.0 Host bridge: Intel Corporation Device 4660 (rev 02)
                         parts = line.split(" ", 2)
                         if len(parts) >= 3:
-                            device_info = {
+                            pci_device_info = {
                                 "slot": parts[0],
                                 "class": parts[1].rstrip(":"),
                                 "description": parts[2],
@@ -454,25 +484,25 @@ async def ssh_discover_system(
                                 or "ethernet" in parts[2].lower()
                                 or "wireless" in parts[2].lower()
                             ):
-                                device_info["type"] = "network"
+                                pci_device_info["type"] = "network"
                             elif (
                                 "vga" in parts[1].lower()
                                 or "display" in parts[1].lower()
                             ):
-                                device_info["type"] = "graphics"
+                                pci_device_info["type"] = "graphics"
                             elif "usb" in parts[1].lower() or "usb" in parts[2].lower():
-                                device_info["type"] = "usb_controller"
+                                pci_device_info["type"] = "usb_controller"
                             elif (
                                 "sata" in parts[1].lower()
                                 or "storage" in parts[1].lower()
                             ):
-                                device_info["type"] = "storage"
-                            pci_devices.append(device_info)
+                                pci_device_info["type"] = "storage"
+                            pci_devices.append(pci_device_info)
             if pci_devices:
                 system_info["pci_devices"] = pci_devices
 
             # Get block devices (drives)
-            block_devices = []
+            block_devices: list[dict[str, Any]] = []
             lsblk_result = await conn.run(
                 "lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL 2>/dev/null", check=False
             )
@@ -482,7 +512,7 @@ async def ssh_discover_system(
                     if "blockdevices" in lsblk_data:
                         for device in lsblk_data["blockdevices"]:
                             if device.get("type") == "disk":
-                                device_info = {
+                                block_device_info: dict[str, Any] = {
                                     "name": device.get("name"),
                                     "size": device.get("size"),
                                     "model": device.get("model", "Unknown"),
@@ -492,16 +522,17 @@ async def ssh_discover_system(
                                 if "children" in device:
                                     for child in device["children"]:
                                         if child.get("type") == "part":
-                                            device_info["partitions"].append(
-                                                {
-                                                    "name": child.get("name"),
-                                                    "size": child.get("size"),
-                                                    "mountpoint": child.get(
-                                                        "mountpoint"
-                                                    ),
-                                                }
+                                            partition_info = {
+                                                "name": child.get("name"),
+                                                "size": child.get("size"),
+                                                "mountpoint": child.get("mountpoint"),
+                                            }
+                                            partitions_list = block_device_info.get(
+                                                "partitions", []
                                             )
-                                block_devices.append(device_info)
+                                            if isinstance(partitions_list, list):
+                                                partitions_list.append(partition_info)
+                                block_devices.append(block_device_info)
                 except json.JSONDecodeError:
                     pass
             if block_devices:
@@ -526,7 +557,7 @@ async def ssh_execute_command(
     password: str | None = None,
     sudo: bool = False,
     port: int = 22,
-    **kwargs,
+    **kwargs: Any,
 ) -> str:
     """Execute a command on a remote system via SSH."""
     client_keys = []
@@ -572,9 +603,19 @@ async def ssh_execute_command(
 
         output = []
         if result.stdout:
-            output.append(f"Output:\n{result.stdout.strip()}")
+            stdout_text = (
+                result.stdout.decode()
+                if isinstance(result.stdout, bytes)
+                else str(result.stdout)
+            )
+            output.append(f"Output:\n{stdout_text.strip()}")
         if result.stderr:
-            output.append(f"Error:\n{result.stderr.strip()}")
+            stderr_text = (
+                result.stderr.decode()
+                if isinstance(result.stderr, bytes)
+                else str(result.stderr)
+            )
+            output.append(f"Error:\n{stderr_text.strip()}")
 
     return json.dumps(
         {
@@ -606,7 +647,7 @@ async def update_mcp_admin_groups(
         }
 
         async with await asyncssh.connect(**connect_kwargs) as conn:
-            results = {}
+            results: dict[str, Any] = {}
 
             # Check if mcp_admin user exists
             user_check = await conn.run("id mcp_admin", check=False)
@@ -677,7 +718,12 @@ async def update_mcp_admin_groups(
                 if add_group.exit_status == 0:
                     added_groups.append(group)
                 else:
-                    failed_groups.append(f"{group}: {add_group.stderr}")
+                    stderr_text = (
+                        add_group.stderr.decode()
+                        if isinstance(add_group.stderr, bytes)
+                        else str(add_group.stderr)
+                    )
+                    failed_groups.append(f"{group}: {stderr_text}")
 
             # Get updated groups
             updated_groups_result = await conn.run("groups mcp_admin", check=False)
@@ -720,3 +766,8 @@ async def update_mcp_admin_groups(
         return json.dumps(
             {"status": "error", "hostname": hostname, "error": str(e)}, indent=2
         )
+    # This should never be reached, but mypy requires it
+    return json.dumps(
+        {"status": "error", "hostname": hostname, "error": "Unexpected execution path"},
+        indent=2,
+    )

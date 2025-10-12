@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class HomelabMCPServer:
     """MCP Server for homelab system discovery and monitoring."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.tools = get_available_tools()
         self.ssh_key_initialized = False
 
@@ -119,7 +119,7 @@ class HomelabMCPServer:
             "error": {"code": code, "message": message},
         }
 
-    async def run_stdio(self):
+    async def run_stdio(self) -> None:
         """Run the MCP server using stdio with robust error handling."""
         logger.info("Starting MCP server with enhanced error handling")
 
@@ -234,7 +234,7 @@ class HomelabMCPServer:
         logger.info("MCP server shutdown complete")
 
 
-async def main():
+async def main() -> None:
     """Main entry point."""
     server = HomelabMCPServer()
     await server.run_stdio()

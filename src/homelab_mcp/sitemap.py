@@ -38,7 +38,7 @@ class NetworkSiteMap:
     """Manages the network site map database."""
 
     def __init__(
-        self, db_path: str | None = None, db_type: str | None = None, **db_kwargs
+        self, db_path: str | None = None, db_type: str | None = None, **db_kwargs: Any
     ):
         """Initialize the site map with database connection."""
         self.db_adapter = get_database_adapter(
@@ -159,43 +159,56 @@ class NetworkSiteMap:
 
             # OS distribution
             os_info = device.get("os_info", "Unknown")
-            analysis["operating_systems"][os_info] = (
-                analysis["operating_systems"].get(os_info, 0) + 1
-            )
+            if isinstance(analysis["operating_systems"], dict):
+                analysis["operating_systems"][os_info] = (
+                    analysis["operating_systems"].get(os_info, 0) + 1
+                )
 
             # CPU models
             cpu_model = device.get("cpu_model", "Unknown")
-            analysis["cpu_architectures"][cpu_model] = (
-                analysis["cpu_architectures"].get(cpu_model, 0) + 1
-            )
+            if isinstance(analysis["cpu_architectures"], dict):
+                analysis["cpu_architectures"][cpu_model] = (
+                    analysis["cpu_architectures"].get(cpu_model, 0) + 1
+                )
 
             # Network segments (by IP prefix)
             connection_ip = device.get("connection_ip", "")
             if "." in connection_ip:
                 network_prefix = ".".join(connection_ip.split(".")[:3]) + ".0/24"
-                analysis["network_segments"][network_prefix] = (
-                    analysis["network_segments"].get(network_prefix, 0) + 1
-                )
+                if isinstance(analysis["network_segments"], dict):
+                    analysis["network_segments"][network_prefix] = (
+                        analysis["network_segments"].get(network_prefix, 0) + 1
+                    )
 
             # Resource utilization analysis
             if device.get("disk_use_percent"):
                 try:
                     disk_usage = int(device["disk_use_percent"].rstrip("%"))
                     if disk_usage > 80:
-                        analysis["resource_utilization"]["high_disk_usage"].append(
-                            {
-                                "hostname": device["hostname"],
-                                "usage": device["disk_use_percent"],
-                            }
-                        )
+                        if (
+                            isinstance(analysis["resource_utilization"], dict)
+                            and "high_disk_usage" in analysis["resource_utilization"]
+                        ):
+                            analysis["resource_utilization"]["high_disk_usage"].append(
+                                {
+                                    "hostname": device["hostname"],
+                                    "usage": device["disk_use_percent"],
+                                }
+                            )
                 except (ValueError, AttributeError):
                     pass
 
             # Identify resource-constrained devices
-            if device.get("cpu_cores") and device.get("cpu_cores") <= 2:
-                if device.get("memory_total"):
-                    memory_gb = self._parse_memory_gb(device["memory_total"])
-                    if memory_gb <= 2:
+            cpu_cores = device.get("cpu_cores")
+            if cpu_cores is not None and cpu_cores <= 2:
+                memory_total = device.get("memory_total")
+                if memory_total:
+                    memory_gb = self._parse_memory_gb(str(memory_total))
+                    if (
+                        memory_gb <= 2
+                        and isinstance(analysis["resource_utilization"], dict)
+                        and "low_resources" in analysis["resource_utilization"]
+                    ):
                         analysis["resource_utilization"]["low_resources"].append(
                             {
                                 "hostname": device["hostname"],
@@ -230,7 +243,7 @@ class NetworkSiteMap:
         devices = self.get_all_devices()
         online_devices = [d for d in devices if d["status"] == "success"]
 
-        suggestions = {
+        suggestions: dict[str, list[dict[str, str]]] = {
             "load_balancer_candidates": [],
             "database_candidates": [],
             "monitoring_targets": [],
@@ -243,7 +256,10 @@ class NetworkSiteMap:
             # Load balancer candidates (high CPU, good memory)
             cpu_cores = device.get("cpu_cores") or 0
             if cpu_cores >= 4:
-                memory_gb = self._parse_memory_gb(device.get("memory_total"))
+                memory_total = device.get("memory_total")
+                memory_gb = self._parse_memory_gb(
+                    str(memory_total) if memory_total else ""
+                )
 
                 if memory_gb >= 4:
                     suggestions["load_balancer_candidates"].append(
@@ -258,7 +274,10 @@ class NetworkSiteMap:
                 try:
                     disk_usage = int(device["disk_use_percent"].rstrip("%"))
                     if disk_usage < 50:  # Plenty of disk space
-                        memory_gb = self._parse_memory_gb(device.get("memory_total"))
+                        memory_total = device.get("memory_total")
+                        memory_gb = self._parse_memory_gb(
+                            str(memory_total) if memory_total else ""
+                        )
 
                         if memory_gb >= 8:
                             suggestions["database_candidates"].append(
@@ -282,7 +301,10 @@ class NetworkSiteMap:
             # Upgrade recommendations
             cpu_cores = device.get("cpu_cores") or 0
             if cpu_cores <= 2:
-                memory_gb = self._parse_memory_gb(device.get("memory_total"))
+                memory_total = device.get("memory_total")
+                memory_gb = self._parse_memory_gb(
+                    str(memory_total) if memory_total else ""
+                )
 
                 if memory_gb <= 4:
                     suggestions["upgrade_recommendations"].append(

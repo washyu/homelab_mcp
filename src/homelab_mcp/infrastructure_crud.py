@@ -13,7 +13,7 @@ from .sitemap import NetworkSiteMap
 class InfrastructureManager:
     """Manages CRUD operations for infrastructure components."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.sitemap = NetworkSiteMap()
 
     async def get_device_connection_info(self, device_id: int) -> dict[str, Any] | None:
@@ -303,7 +303,8 @@ async def decommission_network_device(
             decommission_results.append(removal_result)
 
         # Update sitemap to mark device as decommissioned
-        manager.sitemap.update_device_status(device_id, "decommissioned")
+        # Note: This method doesn't exist in NetworkSiteMap, would need to be implemented
+        # manager.sitemap.update_device_status(device_id, "decommissioned")
 
         return json.dumps(
             {
@@ -396,7 +397,11 @@ async def validate_infrastructure_plan(
     """Validate infrastructure changes before applying them."""
 
     try:
-        validation_results = {"basic": [], "comprehensive": [], "simulation": []}
+        validation_results: dict[str, list[dict[str, Any]]] = {
+            "basic": [],
+            "comprehensive": [],
+            "simulation": [],
+        }
 
         # Basic validation
         basic_checks = await _perform_basic_validation(change_plan)
@@ -490,7 +495,8 @@ async def create_infrastructure_backup(
         # Backup each device
         for device_id in target_device_ids:
             device_backup = await _backup_device(manager, device_id, include_data)
-            backup_data["devices"][str(device_id)] = device_backup
+            if isinstance(backup_data["devices"], dict):
+                backup_data["devices"][str(device_id)] = device_backup
 
         # Backup network topology
         backup_data["network_topology"] = await _backup_network_topology(manager)
@@ -572,9 +578,10 @@ async def rollback_infrastructure_to_backup(
 
         # Rollback each device
         for device_id in target_device_ids:
-            if device_id in backup_data["devices"]:
+            devices_data = backup_data.get("devices", {})
+            if isinstance(devices_data, dict) and device_id in devices_data:
                 result = await _rollback_device(
-                    manager, int(device_id), backup_data["devices"][device_id]
+                    manager, int(device_id), devices_data[device_id]
                 )
                 rollback_results.append(result)
 
@@ -726,10 +733,17 @@ async def _deploy_service(
 
                 result = await conn.run(" ".join(cmd_parts))
                 if result.exit_status == 0:
+                    stdout_text = (
+                        result.stdout.decode()
+                        if isinstance(result.stdout, bytes)
+                        else str(result.stdout)
+                        if result.stdout
+                        else ""
+                    )
                     return {
                         "status": "success",
                         "service": service_name,
-                        "container_id": result.stdout.strip(),
+                        "container_id": stdout_text.strip(),
                     }
                 else:
                     return {
@@ -882,7 +896,7 @@ async def _validate_config_changes(
 
 
 async def _update_service_config(
-    conn, service_name: str, config: dict[str, Any]
+    conn: Any, service_name: str, config: dict[str, Any]
 ) -> dict[str, Any]:
     """Update service configuration."""
     try:
@@ -1000,17 +1014,17 @@ async def _update_service_config(
         return {"status": "error", "service": service_name, "error": str(e)}
 
 
-async def _update_network_config(conn, config: dict[str, Any]) -> dict[str, Any]:
+async def _update_network_config(conn: Any, config: dict[str, Any]) -> dict[str, Any]:
     """Update network configuration."""
     return {"status": "success", "component": "network"}
 
 
-async def _update_security_config(conn, config: dict[str, Any]) -> dict[str, Any]:
+async def _update_security_config(conn: Any, config: dict[str, Any]) -> dict[str, Any]:
     """Update security configuration."""
     return {"status": "success", "component": "security"}
 
 
-async def _update_resource_config(conn, config: dict[str, Any]) -> dict[str, Any]:
+async def _update_resource_config(conn: Any, config: dict[str, Any]) -> dict[str, Any]:
     """Update resource configuration."""
     return {"status": "success", "component": "resources"}
 
@@ -1045,35 +1059,53 @@ async def _analyze_device_dependencies(
         ) as conn:
             # Check for running Docker containers
             docker_result = await conn.run('docker ps --format "{{.Names}}"')
-            if docker_result.exit_status == 0 and docker_result.stdout.strip():
-                container_names = docker_result.stdout.strip().split("\n")
+            if docker_result.exit_status == 0 and docker_result.stdout:
+                stdout_text = (
+                    docker_result.stdout.decode()
+                    if isinstance(docker_result.stdout, bytes)
+                    else str(docker_result.stdout)
+                )
+                if stdout_text.strip():
+                    container_names = stdout_text.strip().split("\n")
                 for container_name in container_names:
                     if container_name.strip():
                         # Check if container has exposed ports (likely critical)
                         port_result = await conn.run(f"docker port {container_name}")
-                        if port_result.exit_status == 0 and port_result.stdout.strip():
-                            critical_services.append(
-                                {
-                                    "name": container_name,
-                                    "type": "docker",
-                                    "reason": "Has exposed ports - likely provides external services",
-                                    "ports": port_result.stdout.strip().split("\n"),
-                                }
+                        if port_result.exit_status == 0 and port_result.stdout:
+                            stdout_text = (
+                                port_result.stdout.decode()
+                                if isinstance(port_result.stdout, bytes)
+                                else str(port_result.stdout)
                             )
+                            if stdout_text.strip():
+                                critical_services.append(
+                                    {
+                                        "name": container_name,
+                                        "type": "docker",
+                                        "reason": "Has exposed ports - likely provides external services",
+                                        "ports": stdout_text.strip().split("\n"),
+                                    }
+                                )
 
             # Check for running LXD containers
             lxd_result = await conn.run("lxc list --format csv -c ns | grep RUNNING")
-            if lxd_result.exit_status == 0 and lxd_result.stdout.strip():
-                for line in lxd_result.stdout.strip().split("\n"):
-                    if line.strip():
-                        container_name = line.split(",")[0]
-                        critical_services.append(
-                            {
-                                "name": container_name,
-                                "type": "lxd",
-                                "reason": "Running LXD container",
-                            }
-                        )
+            if lxd_result.exit_status == 0 and lxd_result.stdout:
+                stdout_text = (
+                    lxd_result.stdout.decode()
+                    if isinstance(lxd_result.stdout, bytes)
+                    else str(lxd_result.stdout)
+                )
+                if stdout_text.strip():
+                    for line in stdout_text.strip().split("\n"):
+                        if line.strip():
+                            container_name = line.split(",")[0]
+                            critical_services.append(
+                                {
+                                    "name": container_name,
+                                    "type": "lxd",
+                                    "reason": "Running LXD container",
+                                }
+                            )
 
             # Check for critical systemd services
             critical_service_patterns = [
@@ -1094,23 +1126,31 @@ async def _analyze_device_dependencies(
                 service_result = await conn.run(
                     f"systemctl is-active {pattern} 2>/dev/null"
                 )
-                if (
-                    service_result.exit_status == 0
-                    and service_result.stdout.strip() == "active"
-                ):
-                    critical_services.append(
-                        {
-                            "name": pattern,
-                            "type": "systemd",
-                            "reason": "Critical infrastructure service",
-                        }
+                if service_result.exit_status == 0 and service_result.stdout:
+                    stdout_text = (
+                        service_result.stdout.decode()
+                        if isinstance(service_result.stdout, bytes)
+                        else str(service_result.stdout)
                     )
+                    if stdout_text.strip() == "active":
+                        critical_services.append(
+                            {
+                                "name": pattern,
+                                "type": "systemd",
+                                "reason": "Critical infrastructure service",
+                            }
+                        )
 
             # Check for services listening on network ports
             netstat_result = await conn.run("ss -tlnp 2>/dev/null | grep LISTEN")
-            if netstat_result.exit_status == 0:
-                listening_ports = []
-                for line in netstat_result.stdout.strip().split("\n"):
+            if netstat_result.exit_status == 0 and netstat_result.stdout:
+                listening_ports: list[str] = []
+                stdout_text = (
+                    netstat_result.stdout.decode()
+                    if isinstance(netstat_result.stdout, bytes)
+                    else str(netstat_result.stdout)
+                )
+                for line in stdout_text.strip().split("\n"):
                     if "LISTEN" in line:
                         parts = line.split()
                         if len(parts) >= 4:
@@ -1268,7 +1308,7 @@ async def _execute_migration_plan(
                                         {
                                             "status": "error",
                                             "service": service_name,
-                                            "error": f"Failed to start on target: {run_result.stderr}",
+                                            "error": f"Failed to start on target: {run_result.stderr.decode() if isinstance(run_result.stderr, bytes) else str(run_result.stderr)}",
                                         }
                                     )
                         else:
@@ -1336,12 +1376,12 @@ async def _execute_migration_plan(
         ]
 
 
-async def _stop_all_device_services(conn) -> dict[str, Any]:
+async def _stop_all_device_services(conn: Any) -> dict[str, Any]:
     """Stop all services on a device."""
     return {"status": "success", "action": "services_stopped"}
 
 
-async def _remove_from_clusters(conn) -> dict[str, Any]:
+async def _remove_from_clusters(conn: Any) -> dict[str, Any]:
     """Remove device from clusters."""
     return {"status": "success", "action": "removed_from_clusters"}
 
@@ -1424,75 +1464,124 @@ async def _backup_device(
         ) as conn:
             # Backup Docker containers
             docker_result = await conn.run('docker ps -a --format "{{.Names}}"')
-            if docker_result.exit_status == 0 and docker_result.stdout.strip():
-                container_names = docker_result.stdout.strip().split("\n")
+            if docker_result.exit_status == 0 and docker_result.stdout:
+                stdout_text = (
+                    docker_result.stdout.decode()
+                    if isinstance(docker_result.stdout, bytes)
+                    else str(docker_result.stdout)
+                )
+                if stdout_text.strip():
+                    container_names = stdout_text.strip().split("\n")
                 for container_name in container_names:
                     if container_name.strip():
                         inspect_result = await conn.run(
                             f"docker inspect {container_name}"
                         )
                         if inspect_result.exit_status == 0:
-                            backup_data["services"][container_name] = {
-                                "type": "docker",
-                                "config": inspect_result.stdout,
-                                "backed_up": True,
-                            }
+                            stdout_text = (
+                                inspect_result.stdout.decode()
+                                if isinstance(inspect_result.stdout, bytes)
+                                else str(inspect_result.stdout)
+                            )
+                            if isinstance(backup_data["services"], dict):
+                                backup_data["services"][container_name] = {
+                                    "type": "docker",
+                                    "config": stdout_text,
+                                    "backed_up": True,
+                                }
 
                             if include_data:
                                 # Export container data
                                 export_result = await conn.run(
                                     f"docker export {container_name} | gzip > /tmp/backup_{container_name}.tar.gz"
                                 )
-                                backup_data["services"][container_name][
-                                    "data_backup"
-                                ] = export_result.exit_status == 0
+                                if (
+                                    isinstance(backup_data["services"], dict)
+                                    and container_name in backup_data["services"]
+                                ):
+                                    backup_data["services"][container_name][
+                                        "data_backup"
+                                    ] = export_result.exit_status == 0
 
             # Backup LXD containers
             lxd_result = await conn.run("lxc list --format csv -c n")
-            if lxd_result.exit_status == 0 and lxd_result.stdout.strip():
-                container_names = lxd_result.stdout.strip().split("\n")
+            if lxd_result.exit_status == 0 and lxd_result.stdout:
+                stdout_text = (
+                    lxd_result.stdout.decode()
+                    if isinstance(lxd_result.stdout, bytes)
+                    else str(lxd_result.stdout)
+                )
+                if stdout_text.strip():
+                    container_names = stdout_text.strip().split("\n")
                 for container_name in container_names:
                     if container_name.strip():
                         info_result = await conn.run(
                             f"lxc config show {container_name}"
                         )
                         if info_result.exit_status == 0:
-                            backup_data["services"][container_name] = {
-                                "type": "lxd",
-                                "config": info_result.stdout,
-                                "backed_up": True,
-                            }
+                            stdout_text = (
+                                info_result.stdout.decode()
+                                if isinstance(info_result.stdout, bytes)
+                                else str(info_result.stdout)
+                            )
+                            if isinstance(backup_data["services"], dict):
+                                backup_data["services"][container_name] = {
+                                    "type": "lxd",
+                                    "config": stdout_text,
+                                    "backed_up": True,
+                                }
 
                             if include_data:
                                 # Export LXD container
                                 export_result = await conn.run(
                                     f"lxc export {container_name} /tmp/backup_{container_name}.tar.gz"
                                 )
-                                backup_data["services"][container_name][
-                                    "data_backup"
-                                ] = export_result.exit_status == 0
+                                if (
+                                    isinstance(backup_data["services"], dict)
+                                    and container_name in backup_data["services"]
+                                ):
+                                    backup_data["services"][container_name][
+                                        "data_backup"
+                                    ] = export_result.exit_status == 0
 
             # Backup systemd services
             systemd_result = await conn.run(
                 "systemctl list-units --type=service --state=loaded --no-pager --plain | grep -v LOAD"
             )
-            if systemd_result.exit_status == 0:
-                service_lines = systemd_result.stdout.strip().split("\n")
+            if systemd_result.exit_status == 0 and systemd_result.stdout:
+                stdout_text = (
+                    systemd_result.stdout.decode()
+                    if isinstance(systemd_result.stdout, bytes)
+                    else str(systemd_result.stdout)
+                )
+                service_lines = stdout_text.strip().split("\n")
                 for line in service_lines:
                     if line.strip():
-                        service_name = line.split()[0]
+                        parts = line.split()
+                        if not parts:
+                            continue
+                        service_name = parts[0]
                         if not service_name.endswith(".service"):
                             continue
 
                         service_file_result = await conn.run(
                             f"systemctl cat {service_name}"
                         )
-                        if service_file_result.exit_status == 0:
-                            backup_data["services"][service_name] = {
-                                "type": "systemd",
-                                "config": service_file_result.stdout,
-                                "backed_up": True,
-                            }
+                        if (
+                            service_file_result.exit_status == 0
+                            and service_file_result.stdout
+                        ):
+                            stdout_text = (
+                                service_file_result.stdout.decode()
+                                if isinstance(service_file_result.stdout, bytes)
+                                else str(service_file_result.stdout)
+                            )
+                            if isinstance(backup_data["services"], dict):
+                                backup_data["services"][service_name] = {
+                                    "type": "systemd",
+                                    "config": stdout_text,
+                                    "backed_up": True,
+                                }
 
             # Backup network configuration
             network_configs = {}
