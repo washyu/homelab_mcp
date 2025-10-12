@@ -228,8 +228,18 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Check PyPI token
+      id: check-token
+      run: |
+        if [ -n "${{ secrets.PYPI_API_TOKEN }}" ]; then
+          echo "has_token=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_token=false" >> $GITHUB_OUTPUT
+          echo "⚠️ PYPI_API_TOKEN not set, skipping PyPI publish"
+        fi
+
     - name: Publish to PyPI
-      if: ${{ secrets.PYPI_API_TOKEN }}
+      if: steps.check-token.outputs.has_token == 'true'
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
