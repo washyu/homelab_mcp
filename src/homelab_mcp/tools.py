@@ -4,7 +4,11 @@ import json
 import logging
 from typing import Any, Dict
 
-from .ssh_tools import ssh_discover_system, setup_remote_mcp_admin, verify_mcp_admin_access
+from .ssh_tools import (
+    ssh_discover_system,
+    setup_remote_mcp_admin,
+    verify_mcp_admin_access,
+)
 from .sitemap import NetworkSiteMap, discover_and_store, bulk_discover_and_store
 from .error_handling import timeout_wrapper, safe_json_response
 
@@ -19,30 +23,27 @@ TOOLS = {
         "inputSchema": {
             "type": "object",
             "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address"
-                },
+                "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
-                    "type": "string", 
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)"
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "key_path": {
                     "type": "string",
-                    "description": "Path to SSH private key"
+                    "description": "Path to SSH private key",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["hostname", "username"]
-        }
+            "required": ["hostname", "username"],
+        },
     },
     "setup_mcp_admin": {
         "description": "SSH into a remote system and setup mcp_admin user with admin permissions and SSH key access",
@@ -51,29 +52,29 @@ TOOLS = {
             "properties": {
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the target system"
+                    "description": "Hostname or IP address of the target system",
                 },
                 "username": {
                     "type": "string",
-                    "description": "Admin username to connect with (must have sudo access)"
+                    "description": "Admin username to connect with (must have sudo access)",
                 },
                 "password": {
                     "type": "string",
-                    "description": "Password for the admin user"
+                    "description": "Password for the admin user",
                 },
                 "force_update_key": {
                     "type": "boolean",
                     "description": "Force update SSH key even if mcp_admin already has keys (default: true)",
-                    "default": True
+                    "default": True,
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["hostname", "username", "password"]
-        }
+            "required": ["hostname", "username", "password"],
+        },
     },
     "verify_mcp_admin": {
         "description": "Verify SSH key access to mcp_admin account on a remote system",
@@ -82,46 +83,43 @@ TOOLS = {
             "properties": {
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the target system"
+                    "description": "Hostname or IP address of the target system",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["hostname"]
-        }
+            "required": ["hostname"],
+        },
     },
     "discover_and_map": {
         "description": "Discover a device via SSH and store it in the network site map database",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address"
-                },
+                "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
-                    "type": "string", 
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)"
+                    "type": "string",
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "key_path": {
                     "type": "string",
-                    "description": "Path to SSH private key"
+                    "description": "Path to SSH private key",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["hostname", "username"]
-        }
+            "required": ["hostname", "username"],
+        },
     },
     "bulk_discover_and_map": {
         "description": "Discover multiple devices via SSH and store them in the network site map database",
@@ -138,38 +136,26 @@ TOOLS = {
                             "username": {"type": "string"},
                             "password": {"type": "string"},
                             "key_path": {"type": "string"},
-                            "port": {"type": "integer", "default": 22}
+                            "port": {"type": "integer", "default": 22},
                         },
-                        "required": ["hostname", "username"]
-                    }
+                        "required": ["hostname", "username"],
+                    },
                 }
             },
-            "required": ["targets"]
-        }
+            "required": ["targets"],
+        },
     },
     "get_network_sitemap": {
         "description": "Get all discovered devices from the network site map database",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
     "analyze_network_topology": {
         "description": "Analyze the network topology and provide insights about the discovered devices",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
     "suggest_deployments": {
         "description": "Suggest optimal deployment locations based on current network topology and device capabilities",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
     "get_device_changes": {
         "description": "Get change history for a specific device",
@@ -178,16 +164,16 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the device"
+                    "description": "Database ID of the device",
                 },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of changes to return (default: 10)",
-                    "default": 10
-                }
+                    "default": 10,
+                },
             },
-            "required": ["device_id"]
-        }
+            "required": ["device_id"],
+        },
     },
     "deploy_infrastructure": {
         "description": "Deploy new infrastructure based on AI recommendations or user specifications",
@@ -204,34 +190,44 @@ TOOLS = {
                                 "type": "object",
                                 "properties": {
                                     "name": {"type": "string"},
-                                    "type": {"type": "string", "enum": ["docker", "lxd", "service"]},
+                                    "type": {
+                                        "type": "string",
+                                        "enum": ["docker", "lxd", "service"],
+                                    },
                                     "target_device_id": {"type": "integer"},
-                                    "config": {"type": "object"}
+                                    "config": {"type": "object"},
                                 },
-                                "required": ["name", "type", "target_device_id"]
-                            }
+                                "required": ["name", "type", "target_device_id"],
+                            },
                         },
                         "network_changes": {
                             "type": "array",
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "action": {"type": "string", "enum": ["create_vlan", "configure_firewall", "setup_routing"]},
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "create_vlan",
+                                            "configure_firewall",
+                                            "setup_routing",
+                                        ],
+                                    },
                                     "target_device_id": {"type": "integer"},
-                                    "config": {"type": "object"}
-                                }
-                            }
-                        }
-                    }
+                                    "config": {"type": "object"},
+                                },
+                            },
+                        },
+                    },
                 },
                 "validate_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Only validate the plan without executing"
-                }
+                    "description": "Only validate the plan without executing",
+                },
             },
-            "required": ["deployment_plan"]
-        }
+            "required": ["deployment_plan"],
+        },
     },
     "update_device_config": {
         "description": "Update configuration of an existing device",
@@ -240,7 +236,7 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the device to update"
+                    "description": "Database ID of the device to update",
                 },
                 "config_changes": {
                     "type": "object",
@@ -248,35 +244,35 @@ TOOLS = {
                     "properties": {
                         "services": {
                             "type": "object",
-                            "description": "Service configuration changes"
+                            "description": "Service configuration changes",
                         },
                         "network": {
                             "type": "object",
-                            "description": "Network configuration changes"
+                            "description": "Network configuration changes",
                         },
                         "security": {
                             "type": "object",
-                            "description": "Security configuration changes"
+                            "description": "Security configuration changes",
                         },
                         "resources": {
                             "type": "object",
-                            "description": "Resource allocation changes"
-                        }
-                    }
+                            "description": "Resource allocation changes",
+                        },
+                    },
                 },
                 "backup_before_change": {
                     "type": "boolean",
                     "default": True,
-                    "description": "Create backup before applying changes"
+                    "description": "Create backup before applying changes",
                 },
                 "validate_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Only validate changes without applying"
-                }
+                    "description": "Only validate changes without applying",
+                },
             },
-            "required": ["device_id", "config_changes"]
-        }
+            "required": ["device_id", "config_changes"],
+        },
     },
     "decommission_device": {
         "description": "Safely remove a device from the network infrastructure",
@@ -285,7 +281,7 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the device to decommission"
+                    "description": "Database ID of the device to decommission",
                 },
                 "migration_plan": {
                     "type": "object",
@@ -294,27 +290,27 @@ TOOLS = {
                         "target_devices": {
                             "type": "array",
                             "items": {"type": "integer"},
-                            "description": "Device IDs to migrate services to"
+                            "description": "Device IDs to migrate services to",
                         },
                         "service_mapping": {
                             "type": "object",
-                            "description": "Mapping of services to target devices"
-                        }
-                    }
+                            "description": "Mapping of services to target devices",
+                        },
+                    },
                 },
                 "force_removal": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Force removal without migration (data loss possible)"
+                    "description": "Force removal without migration (data loss possible)",
                 },
                 "validate_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Only validate decommission plan without executing"
-                }
+                    "description": "Only validate decommission plan without executing",
+                },
             },
-            "required": ["device_id"]
-        }
+            "required": ["device_id"],
+        },
     },
     "scale_services": {
         "description": "Scale services up or down based on resource analysis",
@@ -333,9 +329,9 @@ TOOLS = {
                                     "device_id": {"type": "integer"},
                                     "service_name": {"type": "string"},
                                     "target_replicas": {"type": "integer"},
-                                    "resource_allocation": {"type": "object"}
-                                }
-                            }
+                                    "resource_allocation": {"type": "object"},
+                                },
+                            },
                         },
                         "scale_down": {
                             "type": "array",
@@ -344,20 +340,20 @@ TOOLS = {
                                 "properties": {
                                     "device_id": {"type": "integer"},
                                     "service_name": {"type": "string"},
-                                    "target_replicas": {"type": "integer"}
-                                }
-                            }
-                        }
-                    }
+                                    "target_replicas": {"type": "integer"},
+                                },
+                            },
+                        },
+                    },
                 },
                 "validate_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Only validate scaling plan without executing"
-                }
+                    "description": "Only validate scaling plan without executing",
+                },
             },
-            "required": ["scaling_plan"]
-        }
+            "required": ["scaling_plan"],
+        },
     },
     "validate_infrastructure_changes": {
         "description": "Validate infrastructure changes before applying them",
@@ -366,17 +362,17 @@ TOOLS = {
             "properties": {
                 "change_plan": {
                     "type": "object",
-                    "description": "Infrastructure change plan to validate"
+                    "description": "Infrastructure change plan to validate",
                 },
                 "validation_level": {
                     "type": "string",
                     "enum": ["basic", "comprehensive", "simulation"],
                     "default": "comprehensive",
-                    "description": "Level of validation to perform"
-                }
+                    "description": "Level of validation to perform",
+                },
             },
-            "required": ["change_plan"]
-        }
+            "required": ["change_plan"],
+        },
     },
     "create_infrastructure_backup": {
         "description": "Create a backup of current infrastructure state",
@@ -387,25 +383,25 @@ TOOLS = {
                     "type": "string",
                     "enum": ["full", "partial", "device_specific"],
                     "default": "full",
-                    "description": "Scope of the backup"
+                    "description": "Scope of the backup",
                 },
                 "device_ids": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": "Specific device IDs to backup (for partial/device_specific)"
+                    "description": "Specific device IDs to backup (for partial/device_specific)",
                 },
                 "include_data": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Include application data in backup"
+                    "description": "Include application data in backup",
                 },
                 "backup_name": {
                     "type": "string",
-                    "description": "Name for the backup (auto-generated if not provided)"
-                }
+                    "description": "Name for the backup (auto-generated if not provided)",
+                },
             },
-            "required": []
-        }
+            "required": [],
+        },
     },
     "rollback_infrastructure_changes": {
         "description": "Rollback recent infrastructure changes",
@@ -414,27 +410,27 @@ TOOLS = {
             "properties": {
                 "backup_id": {
                     "type": "string",
-                    "description": "Backup ID to rollback to"
+                    "description": "Backup ID to rollback to",
                 },
                 "rollback_scope": {
                     "type": "string",
                     "enum": ["full", "partial", "device_specific"],
                     "default": "full",
-                    "description": "Scope of the rollback"
+                    "description": "Scope of the rollback",
                 },
                 "device_ids": {
                     "type": "array",
                     "items": {"type": "integer"},
-                    "description": "Specific device IDs to rollback (for partial/device_specific)"
+                    "description": "Specific device IDs to rollback (for partial/device_specific)",
                 },
                 "validate_only": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Only validate rollback plan without executing"
-                }
+                    "description": "Only validate rollback plan without executing",
+                },
             },
-            "required": ["backup_id"]
-        }
+            "required": ["backup_id"],
+        },
     },
     "deploy_vm": {
         "description": "Deploy a new VM/container on a specific device",
@@ -443,16 +439,16 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the target device"
+                    "description": "Database ID of the target device",
                 },
                 "platform": {
                     "type": "string",
                     "enum": ["docker", "lxd"],
-                    "description": "VM platform to use (docker or lxd)"
+                    "description": "VM platform to use (docker or lxd)",
                 },
                 "vm_name": {
                     "type": "string",
-                    "description": "Name for the new VM/container"
+                    "description": "Name for the new VM/container",
                 },
                 "vm_config": {
                     "type": "object",
@@ -460,31 +456,31 @@ TOOLS = {
                     "properties": {
                         "image": {
                             "type": "string",
-                            "description": "Container/VM image to use"
+                            "description": "Container/VM image to use",
                         },
                         "ports": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Port mappings (e.g., '80:80')"
+                            "description": "Port mappings (e.g., '80:80')",
                         },
                         "volumes": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Volume mounts (e.g., '/host/path:/container/path')"
+                            "description": "Volume mounts (e.g., '/host/path:/container/path')",
                         },
                         "environment": {
                             "type": "object",
-                            "description": "Environment variables"
+                            "description": "Environment variables",
                         },
                         "command": {
                             "type": "string",
-                            "description": "Command to run in container"
-                        }
-                    }
-                }
+                            "description": "Command to run in container",
+                        },
+                    },
+                },
             },
-            "required": ["device_id", "platform", "vm_name"]
-        }
+            "required": ["device_id", "platform", "vm_name"],
+        },
     },
     "control_vm": {
         "description": "Control VM state (start, stop, restart)",
@@ -493,25 +489,25 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the target device"
+                    "description": "Database ID of the target device",
                 },
                 "platform": {
                     "type": "string",
                     "enum": ["docker", "lxd"],
-                    "description": "VM platform"
+                    "description": "VM platform",
                 },
                 "vm_name": {
                     "type": "string",
-                    "description": "Name of the VM/container"
+                    "description": "Name of the VM/container",
                 },
                 "action": {
                     "type": "string",
                     "enum": ["start", "stop", "restart"],
-                    "description": "Action to perform"
-                }
+                    "description": "Action to perform",
+                },
             },
-            "required": ["device_id", "platform", "vm_name", "action"]
-        }
+            "required": ["device_id", "platform", "vm_name", "action"],
+        },
     },
     "get_vm_status": {
         "description": "Get detailed status of a specific VM",
@@ -520,20 +516,20 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the target device"
+                    "description": "Database ID of the target device",
                 },
                 "platform": {
                     "type": "string",
                     "enum": ["docker", "lxd"],
-                    "description": "VM platform"
+                    "description": "VM platform",
                 },
                 "vm_name": {
                     "type": "string",
-                    "description": "Name of the VM/container"
-                }
+                    "description": "Name of the VM/container",
+                },
             },
-            "required": ["device_id", "platform", "vm_name"]
-        }
+            "required": ["device_id", "platform", "vm_name"],
+        },
     },
     "list_vms": {
         "description": "List all VMs/containers on a device",
@@ -542,19 +538,16 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the target device"
+                    "description": "Database ID of the target device",
                 },
                 "platforms": {
                     "type": "array",
-                    "items": {
-                        "type": "string",
-                        "enum": ["docker", "lxd"]
-                    },
-                    "description": "Platforms to check (default: ['docker', 'lxd'])"
-                }
+                    "items": {"type": "string", "enum": ["docker", "lxd"]},
+                    "description": "Platforms to check (default: ['docker', 'lxd'])",
+                },
             },
-            "required": ["device_id"]
-        }
+            "required": ["device_id"],
+        },
     },
     "get_vm_logs": {
         "description": "Get logs from a specific VM/container",
@@ -563,25 +556,25 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the target device"
+                    "description": "Database ID of the target device",
                 },
                 "platform": {
                     "type": "string",
                     "enum": ["docker", "lxd"],
-                    "description": "VM platform"
+                    "description": "VM platform",
                 },
                 "vm_name": {
                     "type": "string",
-                    "description": "Name of the VM/container"
+                    "description": "Name of the VM/container",
                 },
                 "lines": {
                     "type": "integer",
                     "default": 100,
-                    "description": "Number of log lines to retrieve"
-                }
+                    "description": "Number of log lines to retrieve",
+                },
             },
-            "required": ["device_id", "platform", "vm_name"]
-        }
+            "required": ["device_id", "platform", "vm_name"],
+        },
     },
     "remove_vm": {
         "description": "Remove a VM/container from a device",
@@ -590,60 +583,57 @@ TOOLS = {
             "properties": {
                 "device_id": {
                     "type": "integer",
-                    "description": "Database ID of the target device"
+                    "description": "Database ID of the target device",
                 },
                 "platform": {
                     "type": "string",
                     "enum": ["docker", "lxd"],
-                    "description": "VM platform"
+                    "description": "VM platform",
                 },
                 "vm_name": {
                     "type": "string",
-                    "description": "Name of the VM/container"
+                    "description": "Name of the VM/container",
                 },
                 "force": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Force removal without graceful shutdown"
-                }
+                    "description": "Force removal without graceful shutdown",
+                },
             },
-            "required": ["device_id", "platform", "vm_name"]
-        }
+            "required": ["device_id", "platform", "vm_name"],
+        },
     },
     "ssh_execute_command": {
         "description": "Execute a command on a remote system via SSH",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address"
-                },
+                "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
                     "type": "string",
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)"
+                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "command": {
                     "type": "string",
-                    "description": "Command to execute on the remote system"
+                    "description": "Command to execute on the remote system",
                 },
                 "sudo": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Execute command with sudo privileges"
+                    "description": "Execute command with sudo privileges",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["hostname", "username", "command"]
-        }
+            "required": ["hostname", "username", "command"],
+        },
     },
     "update_mcp_admin_groups": {
         "description": "Update mcp_admin group memberships to include groups for installed services (docker, lxd, libvirt, kvm)",
@@ -652,32 +642,28 @@ TOOLS = {
             "properties": {
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the target system"
+                    "description": "Hostname or IP address of the target system",
                 },
                 "username": {
                     "type": "string",
-                    "description": "Admin username to connect with (must have sudo access)"
+                    "description": "Admin username to connect with (must have sudo access)",
                 },
                 "password": {
                     "type": "string",
-                    "description": "Password for the admin user"
+                    "description": "Password for the admin user",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["hostname", "username", "password"]
-        }
+            "required": ["hostname", "username", "password"],
+        },
     },
     "list_available_services": {
         "description": "List all available homelab services that can be installed",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
     "get_service_info": {
         "description": "Get detailed information about a specific service",
@@ -686,11 +672,11 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to get information about"
+                    "description": "Name of the service to get information about",
                 }
             },
-            "required": ["service_name"]
-        }
+            "required": ["service_name"],
+        },
     },
     "check_service_requirements": {
         "description": "Check if a device meets the requirements for a service installation",
@@ -699,29 +685,29 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to check requirements for"
+                    "description": "Name of the service to check requirements for",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the target device"
+                    "description": "Hostname or IP address of the target device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "install_service": {
         "description": "Install a homelab service on a target device",
@@ -730,33 +716,33 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to install (e.g., 'jellyfin', 'nextcloud')"
+                    "description": "Name of the service to install (e.g., 'jellyfin', 'nextcloud')",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the target device"
+                    "description": "Hostname or IP address of the target device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "config_override": {
                     "type": "object",
-                    "description": "Optional configuration overrides for the service"
+                    "description": "Optional configuration overrides for the service",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "get_service_status": {
         "description": "Get the current status of an installed service",
@@ -765,29 +751,29 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to check status for"
+                    "description": "Name of the service to check status for",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the device"
+                    "description": "Hostname or IP address of the device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "plan_terraform_service": {
         "description": "Generate a Terraform plan to preview changes without applying them",
@@ -796,33 +782,33 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to plan"
+                    "description": "Name of the service to plan",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the device"
+                    "description": "Hostname or IP address of the device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "config_override": {
                     "type": "object",
-                    "description": "Optional configuration overrides for the service"
+                    "description": "Optional configuration overrides for the service",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "destroy_terraform_service": {
         "description": "Destroy a Terraform-managed service and clean up all resources",
@@ -831,29 +817,29 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to destroy"
+                    "description": "Name of the service to destroy",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the device"
+                    "description": "Hostname or IP address of the device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "refresh_terraform_service": {
         "description": "Refresh Terraform state and detect configuration drift",
@@ -862,29 +848,29 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to refresh"
+                    "description": "Name of the service to refresh",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the device"
+                    "description": "Hostname or IP address of the device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "check_ansible_service": {
         "description": "Check the status of an Ansible-managed service deployment",
@@ -893,29 +879,29 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service to check"
+                    "description": "Name of the service to check",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the device"
+                    "description": "Hostname or IP address of the device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
+            "required": ["service_name", "hostname"],
+        },
     },
     "run_ansible_playbook": {
         "description": "Run an existing Ansible playbook for a service",
@@ -924,44 +910,44 @@ TOOLS = {
             "properties": {
                 "service_name": {
                     "type": "string",
-                    "description": "Name of the service playbook to run"
+                    "description": "Name of the service playbook to run",
                 },
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the device"
+                    "description": "Hostname or IP address of the device",
                 },
                 "username": {
                     "type": "string",
                     "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                    "default": "mcp_admin"
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)"
+                    "description": "SSH password (not needed for mcp_admin after setup)",
                 },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Ansible tags to run specific tasks"
+                    "description": "Ansible tags to run specific tasks",
                 },
                 "extra_vars": {
                     "type": "object",
-                    "description": "Extra variables to pass to the playbook"
+                    "description": "Extra variables to pass to the playbook",
                 },
                 "check_mode": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Run in check mode (dry run)"
+                    "description": "Run in check mode (dry run)",
                 },
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
-                    "default": 22
-                }
+                    "default": 22,
+                },
             },
-            "required": ["service_name", "hostname"]
-        }
-    }
+            "required": ["service_name", "hostname"],
+        },
+    },
 }
 
 
@@ -974,264 +960,291 @@ def get_available_tools() -> Dict[str, Dict[str, Any]]:
 async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a tool by name with the given arguments, with timeout protection."""
     logger.info(f"Executing tool: {tool_name}")
-    
+
     # Initialize sitemap instance
     sitemap = NetworkSiteMap()
-    
+
     if tool_name == "ssh_discover":
         result = await ssh_discover_system(**arguments)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "setup_mcp_admin":
         result = await setup_remote_mcp_admin(**arguments)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "verify_mcp_admin":
         result = await verify_mcp_admin_access(**arguments)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "discover_and_map":
         result = await discover_and_store(sitemap, **arguments)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "bulk_discover_and_map":
         result = await bulk_discover_and_store(sitemap, arguments["targets"])
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "get_network_sitemap":
         devices = sitemap.get_all_devices()
-        result = json.dumps({
-            "status": "success",
-            "total_devices": len(devices),
-            "devices": devices
-        }, indent=2)
+        result = json.dumps(
+            {"status": "success", "total_devices": len(devices), "devices": devices},
+            indent=2,
+        )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "analyze_network_topology":
         analysis = sitemap.analyze_network_topology()
-        result = json.dumps({
-            "status": "success",
-            "analysis": analysis
-        }, indent=2)
+        result = json.dumps({"status": "success", "analysis": analysis}, indent=2)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "suggest_deployments":
         suggestions = sitemap.suggest_deployments()
-        result = json.dumps({
-            "status": "success",
-            "suggestions": suggestions
-        }, indent=2)
+        result = json.dumps({"status": "success", "suggestions": suggestions}, indent=2)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "get_device_changes":
         changes = sitemap.get_device_changes(
-            arguments["device_id"],
-            arguments.get("limit", 10)
+            arguments["device_id"], arguments.get("limit", 10)
         )
-        result = json.dumps({
-            "status": "success",
-            "device_id": arguments["device_id"],
-            "changes": changes
-        }, indent=2)
+        result = json.dumps(
+            {
+                "status": "success",
+                "device_id": arguments["device_id"],
+                "changes": changes,
+            },
+            indent=2,
+        )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "deploy_infrastructure":
         from .infrastructure_crud import deploy_infrastructure_plan
+
         result = await deploy_infrastructure_plan(
             deployment_plan=arguments["deployment_plan"],
-            validate_only=arguments.get("validate_only", False)
+            validate_only=arguments.get("validate_only", False),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "update_device_config":
         from .infrastructure_crud import update_device_configuration
+
         result = await update_device_configuration(
             device_id=arguments["device_id"],
             config_changes=arguments["config_changes"],
             backup_before_change=arguments.get("backup_before_change", True),
-            validate_only=arguments.get("validate_only", False)
+            validate_only=arguments.get("validate_only", False),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "decommission_device":
         from .infrastructure_crud import decommission_network_device
+
         result = await decommission_network_device(
             device_id=arguments["device_id"],
             migration_plan=arguments.get("migration_plan"),
             force_removal=arguments.get("force_removal", False),
-            validate_only=arguments.get("validate_only", False)
+            validate_only=arguments.get("validate_only", False),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "scale_services":
         from .infrastructure_crud import scale_infrastructure_services
+
         result = await scale_infrastructure_services(
             scaling_plan=arguments["scaling_plan"],
-            validate_only=arguments.get("validate_only", False)
+            validate_only=arguments.get("validate_only", False),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "validate_infrastructure_changes":
         from .infrastructure_crud import validate_infrastructure_plan
+
         result = await validate_infrastructure_plan(
             change_plan=arguments["change_plan"],
-            validation_level=arguments.get("validation_level", "comprehensive")
+            validation_level=arguments.get("validation_level", "comprehensive"),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "create_infrastructure_backup":
         from .infrastructure_crud import create_infrastructure_backup
+
         result = await create_infrastructure_backup(
             backup_scope=arguments.get("backup_scope", "full"),
             device_ids=arguments.get("device_ids"),
             include_data=arguments.get("include_data", False),
-            backup_name=arguments.get("backup_name")
+            backup_name=arguments.get("backup_name"),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "rollback_infrastructure_changes":
         from .infrastructure_crud import rollback_infrastructure_to_backup
+
         result = await rollback_infrastructure_to_backup(
             backup_id=arguments["backup_id"],
             rollback_scope=arguments.get("rollback_scope", "full"),
             device_ids=arguments.get("device_ids"),
-            validate_only=arguments.get("validate_only", False)
+            validate_only=arguments.get("validate_only", False),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "deploy_vm":
         from .vm_operations import deploy_vm
+
         result = await deploy_vm(
             device_id=arguments["device_id"],
             platform=arguments["platform"],
             vm_name=arguments["vm_name"],
-            vm_config=arguments.get("vm_config", {})
+            vm_config=arguments.get("vm_config", {}),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "control_vm":
         from .vm_operations import control_vm_state
+
         result = await control_vm_state(
             device_id=arguments["device_id"],
             platform=arguments["platform"],
             vm_name=arguments["vm_name"],
-            action=arguments["action"]
+            action=arguments["action"],
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "get_vm_status":
         from .vm_operations import get_vm_status
+
         result = await get_vm_status(
             device_id=arguments["device_id"],
             platform=arguments["platform"],
-            vm_name=arguments["vm_name"]
+            vm_name=arguments["vm_name"],
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "list_vms":
         from .vm_operations import list_vms_on_device
+
         result = await list_vms_on_device(
-            device_id=arguments["device_id"],
-            platforms=arguments.get("platforms")
+            device_id=arguments["device_id"], platforms=arguments.get("platforms")
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "get_vm_logs":
         from .vm_operations import get_vm_logs
+
         result = await get_vm_logs(
             device_id=arguments["device_id"],
             platform=arguments["platform"],
             vm_name=arguments["vm_name"],
-            lines=arguments.get("lines", 100)
+            lines=arguments.get("lines", 100),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "remove_vm":
         from .vm_operations import remove_vm
+
         result = await remove_vm(
             device_id=arguments["device_id"],
             platform=arguments["platform"],
             vm_name=arguments["vm_name"],
-            force=arguments.get("force", False)
+            force=arguments.get("force", False),
         )
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "ssh_execute_command":
         from .ssh_tools import ssh_execute_command
+
         result = await ssh_execute_command(**arguments)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "update_mcp_admin_groups":
         from .ssh_tools import update_mcp_admin_groups
+
         result = await update_mcp_admin_groups(**arguments)
         return {"content": [{"type": "text", "text": result}]}
-    
+
     elif tool_name == "list_available_services":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         services = installer.get_available_services()
-        result = {
-            "available_services": services,
-            "count": len(services)
-        }
+        result = {"available_services": services, "count": len(services)}
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "get_service_info":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         service_info = installer.get_service_info(arguments["service_name"])
         if service_info:
-            return {"content": [{"type": "text", "text": json.dumps(service_info, indent=2)}]}
+            return {
+                "content": [
+                    {"type": "text", "text": json.dumps(service_info, indent=2)}
+                ]
+            }
         else:
-            return {"content": [{"type": "text", "text": f"Service '{arguments['service_name']}' not found"}]}
-    
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Service '{arguments['service_name']}' not found",
+                    }
+                ]
+            }
+
     elif tool_name == "check_service_requirements":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.check_service_requirements(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "install_service":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.install_service(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "get_service_status":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.get_service_status(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "plan_terraform_service":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.plan_terraform_service(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "destroy_terraform_service":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.destroy_terraform_service(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "refresh_terraform_service":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.refresh_terraform_service(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "check_ansible_service":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.check_ansible_service(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     elif tool_name == "run_ansible_playbook":
         from .service_installer import ServiceInstaller
+
         installer = ServiceInstaller()
         result = await installer.run_ansible_playbook(**arguments)
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-    
+
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
