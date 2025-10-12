@@ -167,7 +167,7 @@ def retry_on_failure(
 
 
 async def safe_json_response(
-    data: str | dict[str, Any], fallback_message: str = "Operation completed"
+    data: Any, fallback_message: str = "Operation completed"
 ) -> dict[str, Any]:
     """
     Safely create a JSON response, handling cases where data might be malformed.
