@@ -32,7 +32,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v7
       with:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
@@ -93,7 +93,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v7
       with:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
@@ -135,7 +135,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v7
       with:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
@@ -165,7 +165,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v7
       with:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
