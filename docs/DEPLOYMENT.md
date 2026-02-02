@@ -14,8 +14,8 @@ source ~/.local/bin/env
 ### **Lightning Fast Setup**
 ```bash
 # Clone the repository
-git clone https://github.com/washyu/mcp_python_server.git
-cd mcp_python_server
+git clone https://github.com/washyu/homelab_mcp.git
+cd homelab_mcp
 
 # Install dependencies and run (2-3 seconds!)
 uv sync
@@ -99,8 +99,8 @@ Location: `~/.config/claude-desktop/config.json` or `~/Library/Application Suppo
   "mcpServers": {
     "homelab": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/mcp_python_server", "python", "run_server.py"],
-      "cwd": "/path/to/mcp_python_server",
+      "args": ["run", "--project", "/path/to/homelab_mcp", "python", "run_server.py"],
+      "cwd": "/path/to/homelab_mcp",
       "env": {
         "PATH": "/Users/your-username/.local/bin:$PATH"
       }
@@ -181,7 +181,7 @@ sudo -u mcp curl -LsSf https://astral.sh/uv/install.sh | sudo -u mcp sh
 # Deploy application
 sudo mkdir -p /opt/homelab-mcp-server
 sudo chown mcp:mcp /opt/homelab-mcp-server
-sudo -u mcp git clone https://github.com/washyu/mcp_python_server.git /opt/homelab-mcp-server
+sudo -u mcp git clone https://github.com/washyu/homelab_mcp.git /opt/homelab-mcp-server
 cd /opt/homelab-mcp-server
 sudo -u mcp /home/mcp/.local/bin/uv sync
 

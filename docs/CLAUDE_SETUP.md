@@ -54,9 +54,9 @@ Once connected, you can ask Claude to:
      "mcpServers": {
        "homelab": {
          "command": "python3",
-         "args": ["/YOUR/ACTUAL/PATH/mcp_python_server/run_server.py"],
+         "args": ["/YOUR/ACTUAL/PATH/homelab_mcp/run_server.py"],
          "env": {
-           "PYTHONPATH": "/YOUR/ACTUAL/PATH/mcp_python_server/src"
+           "PYTHONPATH": "/YOUR/ACTUAL/PATH/homelab_mcp/src"
          }
        }
      }
@@ -210,7 +210,7 @@ Your backup includes:
 2. **Verify Python dependencies** are installed
 3. **Test the server manually**:
    ```bash
-   cd /path/to/mcp_python_server
+   cd /path/to/homelab_mcp
    python3 run_server.py
    # Should start without errors
    ```

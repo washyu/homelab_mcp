@@ -8,6 +8,38 @@ if TYPE_CHECKING:
     from .sitemap import NetworkSiteMap
 
 
+class HTTPConfig:
+    """HTTP transport configuration settings."""
+
+    def __init__(self) -> None:
+        self.enabled = os.getenv("MCP_HTTP_ENABLED", "false").lower() == "true"
+        self.host = os.getenv("MCP_HTTP_HOST", "0.0.0.0")
+        self.port = int(os.getenv("MCP_HTTP_PORT", "8080"))
+        self.api_key = os.getenv("MCP_API_KEY")
+        self.auth_enabled = os.getenv("MCP_AUTH_ENABLED", "true").lower() == "true"
+
+    def validate(self) -> list[str]:
+        """Validate HTTP configuration and return any errors."""
+        errors = []
+
+        # Port validation
+        if not (1 <= self.port <= 65535):
+            errors.append(f"MCP_HTTP_PORT must be between 1 and 65535, got {self.port}")
+
+        # API key validation when auth is enabled and HTTP is enabled
+        if self.enabled and self.auth_enabled and not self.api_key:
+            errors.append(
+                "MCP_API_KEY must be set when HTTP transport and authentication are enabled. "
+                'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+            )
+
+        # API key strength validation
+        if self.api_key and len(self.api_key) < 16:
+            errors.append("MCP_API_KEY should be at least 16 characters for security")
+
+        return errors
+
+
 class DatabaseConfig:
     """Database configuration settings."""
 
@@ -65,6 +97,7 @@ class MCPConfig:
 
     def __init__(self) -> None:
         self.database = DatabaseConfig()
+        self.http = HTTPConfig()
 
         # Server configuration
         self.debug = os.getenv("MCP_DEBUG", "false").lower() == "true"
@@ -108,6 +141,9 @@ class MCPConfig:
                     "PostgreSQL selected but psycopg2 is not installed. "
                     "Install with: pip install psycopg2-binary"
                 )
+
+        # HTTP validation
+        errors.extend(self.http.validate())
 
         # Timeout validation
         if self.ssh_timeout <= 0:
@@ -160,6 +196,15 @@ def print_config_info(config: MCPConfig | None = None) -> None:
     print(f"Log Level: {config.log_level}")
     print(f"SSH Timeout: {config.ssh_timeout}s")
     print(f"Discovery Batch Size: {config.discovery_batch_size}")
+
+    # HTTP configuration
+    print("\n=== HTTP Transport ===")
+    print(f"HTTP Enabled: {config.http.enabled}")
+    if config.http.enabled:
+        print(f"HTTP Host: {config.http.host}")
+        print(f"HTTP Port: {config.http.port}")
+        print(f"Auth Enabled: {config.http.auth_enabled}")
+        print("API Key: [CONFIGURED]" if config.http.api_key else "API Key: [NOT SET]")
 
     # Validate configuration
     errors = config.validate()

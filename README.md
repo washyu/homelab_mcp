@@ -1,8 +1,8 @@
 # 🏠 Homelab MCP Server
 
-[![CI](https://github.com/washyu/mcp_python_server/actions/workflows/ci.yml/badge.svg)](https://github.com/washyu/mcp_python_server/actions/workflows/ci.yml)
-[![Test Coverage](https://github.com/washyu/mcp_python_server/actions/workflows/test-coverage.yml/badge.svg)](https://github.com/washyu/mcp_python_server/actions/workflows/test-coverage.yml)
-[![codecov](https://codecov.io/gh/washyu/mcp_python_server/branch/main/graph/badge.svg)](https://codecov.io/gh/washyu/mcp_python_server)
+[![CI](https://github.com/washyu/homelab_mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/washyu/homelab_mcp/actions/workflows/ci.yml)
+[![Test Coverage](https://github.com/washyu/homelab_mcp/actions/workflows/test-coverage.yml/badge.svg)](https://github.com/washyu/homelab_mcp/actions/workflows/test-coverage.yml)
+[![codecov](https://codecov.io/gh/washyu/homelab_mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/washyu/homelab_mcp)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -17,8 +17,8 @@ A comprehensive Model Context Protocol (MCP) server that enables AI assistants t
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone and run (takes 3 seconds!)
-git clone https://github.com/washyu/mcp_python_server.git
-cd mcp_python_server
+git clone https://github.com/washyu/homelab_mcp.git
+cd homelab_mcp
 uv sync && uv run python run_server.py
 ```
 
@@ -336,16 +336,16 @@ Perfect for deploying complete AI homelab stacks like MCP + Ollama + Web UI:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone and run (takes 3 seconds!)
-git clone https://github.com/washyu/mcp_python_server.git
-cd mcp_python_server
+git clone https://github.com/washyu/homelab_mcp.git
+cd homelab_mcp
 uv sync && uv run python run_server.py
 ```
 
 ### **Traditional pip Installation**
 ```bash
 # Clone the repository
-git clone https://github.com/washyu/mcp_python_server.git
-cd mcp_python_server
+git clone https://github.com/washyu/homelab_mcp.git
+cd homelab_mcp
 
 # Create virtual environment
 python -m venv .venv
@@ -416,7 +416,7 @@ echo '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"ssh_discov
 
 This server is designed to work with AI assistants that support the Model Context Protocol.
 
-**🚀 For detailed Claude setup instructions, see [CLAUDE_SETUP.md](CLAUDE_SETUP.md)**
+**🚀 For detailed Claude setup instructions, see [CLAUDE_SETUP.md](docs/CLAUDE_SETUP.md)**
 
 **Recommended configuration for Claude Desktop (using uv):**
 
@@ -425,8 +425,8 @@ This server is designed to work with AI assistants that support the Model Contex
   "mcpServers": {
     "homelab": {
       "command": "/opt/homebrew/bin/uv",
-      "args": ["run", "python", "/Users/your-username/workspace/mcp_python_server/run_server.py"],
-      "cwd": "/Users/your-username/workspace/mcp_python_server"
+      "args": ["run", "python", "/Users/your-username/workspace/homelab_mcp/run_server.py"],
+      "cwd": "/Users/your-username/workspace/homelab_mcp"
     }
   }
 }
@@ -439,9 +439,9 @@ This server is designed to work with AI assistants that support the Model Contex
   "mcpServers": {
     "homelab": {
       "command": "python3",
-      "args": ["/path/to/your/mcp_python_server/run_server.py"],
+      "args": ["/path/to/your/homelab_mcp/run_server.py"],
       "env": {
-        "PYTHONPATH": "/path/to/your/mcp_python_server/src"
+        "PYTHONPATH": "/path/to/your/homelab_mcp/src"
       }
     }
   }
@@ -558,7 +558,7 @@ When `force_update_key` is true (default), the tool will:
 ### Project Structure
 
 ```
-mcp_python_server/
+homelab_mcp/
 ├── src/
 │   └── homelab_mcp/
 │       ├── __init__.py
@@ -586,9 +586,11 @@ mcp_python_server/
 │   └── conftest.py       # Test fixtures and setup
 ├── scripts/
 │   └── run-integration-tests.sh  # Test automation
-├── infrastructure/       # Infrastructure as code examples
-├── DEPLOYMENT.md         # uv deployment guide with performance comparisons
-├── CLAUDE_SETUP.md       # Claude Desktop integration guide
+├── docs/
+│   ├── CLAUDE_SETUP.md       # Claude Desktop integration guide
+│   ├── DEPLOYMENT.md         # uv deployment guide
+│   ├── QUALITY_ASSURANCE.md  # Quality assurance documentation
+│   └── WORKFLOWS.md          # Development workflows
 ├── pyproject.toml        # uv project configuration
 ├── uv.lock              # Dependency lock file
 └── run_server.py        # Entry point with debug diagnostics

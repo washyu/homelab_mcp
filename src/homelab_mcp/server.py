@@ -9,7 +9,10 @@ import logging
 import sys
 from typing import Any
 
+import uvicorn
+
 from .error_handling import health_checker
+from .http_transport import create_mcp_http_app
 from .ssh_tools import ensure_mcp_ssh_key
 from .tools import execute_tool, get_available_tools
 
@@ -233,11 +236,95 @@ class HomelabMCPServer:
 
         logger.info("MCP server shutdown complete")
 
+    async def run_http(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8080,
+        auth_enabled: bool = True,
+        api_key: str | None = None,
+        ssl_certfile: str | None = None,
+        ssl_keyfile: str | None = None,
+    ) -> None:
+        """
+        Run the MCP server using HTTP transport.
 
-async def main() -> None:
-    """Main entry point."""
+        Args:
+            host: Host to bind to (default: 0.0.0.0 for LAN access)
+            port: Port to listen on (default: 8080)
+            auth_enabled: Whether to enable API key authentication
+            api_key: Optional API key (uses MCP_API_KEY env var if not provided)
+            ssl_certfile: Path to SSL certificate file (enables HTTPS)
+            ssl_keyfile: Path to SSL private key file
+        """
+        protocol = "HTTPS" if ssl_certfile else "HTTP"
+        logger.info(f"Starting MCP {protocol} server on {host}:{port}")
+        logger.info(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
+
+        # Initialize SSH key on startup
+        if not self.ssh_key_initialized:
+            try:
+                await asyncio.wait_for(ensure_mcp_ssh_key(), timeout=10.0)
+                self.ssh_key_initialized = True
+            except TimeoutError:
+                logger.warning("SSH key initialization timed out, continuing anyway")
+
+        # Create the Starlette app
+        app = create_mcp_http_app(
+            server=self,
+            auth_enabled=auth_enabled,
+            api_key=api_key,
+        )
+
+        # Configure uvicorn
+        config = uvicorn.Config(
+            app=app,
+            host=host,
+            port=port,
+            log_level="info",
+            access_log=True,
+            ssl_certfile=ssl_certfile,
+            ssl_keyfile=ssl_keyfile,
+        )
+        server = uvicorn.Server(config)
+
+        # Run the server
+        await server.serve()
+
+
+async def main(
+    http_mode: bool = False,
+    host: str = "0.0.0.0",
+    port: int = 8080,
+    auth_enabled: bool = True,
+    api_key: str | None = None,
+    ssl_certfile: str | None = None,
+    ssl_keyfile: str | None = None,
+) -> None:
+    """
+    Main entry point.
+
+    Args:
+        http_mode: If True, run HTTP server instead of stdio
+        host: HTTP server host (only used in HTTP mode)
+        port: HTTP server port (only used in HTTP mode)
+        auth_enabled: Enable authentication (only used in HTTP mode)
+        api_key: API key for authentication (only used in HTTP mode)
+        ssl_certfile: Path to SSL certificate file (enables HTTPS)
+        ssl_keyfile: Path to SSL private key file
+    """
     server = HomelabMCPServer()
-    await server.run_stdio()
+
+    if http_mode:
+        await server.run_http(
+            host=host,
+            port=port,
+            auth_enabled=auth_enabled,
+            api_key=api_key,
+            ssl_certfile=ssl_certfile,
+            ssl_keyfile=ssl_keyfile,
+        )
+    else:
+        await server.run_stdio()
 
 
 if __name__ == "__main__":

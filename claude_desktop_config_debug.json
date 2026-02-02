@@ -3,9 +3,9 @@
     "homelab": {
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "run_server.py"],
-      "cwd": "/Users/shaun/workspace/mcp_python_server",
+      "cwd": "/Users/shaun/workspace/homelab_mcp",
       "env": {
-        "PYTHONPATH": "/Users/shaun/workspace/mcp_python_server/src"
+        "PYTHONPATH": "/Users/shaun/workspace/homelab_mcp/src"
       }
     }
   }

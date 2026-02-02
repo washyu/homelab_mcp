@@ -1,0 +1,54 @@
+[Unit]
+Description=Homelab MCP Server - AI-powered homelab infrastructure management
+Documentation=https://github.com/your-repo/homelab-mcp
+After=network.target
+
+[Service]
+Type=simple
+User=mcp
+Group=mcp
+
+# Working directory - adjust to your installation path
+WorkingDirectory=/opt/homelab-mcp
+
+# Command to start the server in HTTP mode
+# Adjust the path to your Python virtual environment
+ExecStart=/opt/homelab-mcp/.venv/bin/python run_server.py --http
+
+# Environment variables
+# IMPORTANT: Set your API key here or in an environment file
+Environment=MCP_HTTP_ENABLED=true
+Environment=MCP_HTTP_HOST=0.0.0.0
+Environment=MCP_HTTP_PORT=8080
+Environment=MCP_AUTH_ENABLED=true
+# Environment=MCP_API_KEY=your-secret-api-key-here
+
+# Alternative: Use an environment file for secrets
+# EnvironmentFile=/etc/homelab-mcp/env
+
+# Restart configuration
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Allow read-write to specific directories
+ReadWritePaths=/var/log/homelab-mcp
+ReadWritePaths=/home/mcp/.mcp
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=homelab-mcp
+
+[Install]
+WantedBy=multi-user.target

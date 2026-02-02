@@ -2,9 +2,9 @@
   "mcpServers": {
     "homelab": {
       "command": "python3",
-      "args": ["/Users/shaun/workspace/mcp_python_server/run_server.py"],
+      "args": ["/Users/shaun/workspace/homelab_mcp/run_server.py"],
       "env": {
-        "PYTHONPATH": "/Users/shaun/workspace/mcp_python_server/src"
+        "PYTHONPATH": "/Users/shaun/workspace/homelab_mcp/src"
       }
     }
   }
