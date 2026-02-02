@@ -191,13 +191,23 @@ async def test_ssh_discover_connection_timeout(mock_connect):
 
 
 @pytest.mark.asyncio
-async def test_ssh_discover_no_credentials():
+@patch("src.homelab_mcp.ssh_tools.get_database_adapter")
+async def test_ssh_discover_no_credentials(mock_get_db):
     """Test SSH discovery without password or key."""
+    # Mock database to return no stored credentials
+    mock_adapter = MagicMock()
+    mock_adapter.get_credential_by_hostname.return_value = None
+    mock_get_db.return_value = mock_adapter
+
     result = await ssh_discover_system(hostname="test-host", username="test-user")
 
     result_data = json.loads(result)
     assert result_data["status"] == "error"
-    assert "password or key_path must be provided" in result_data["error"]
+    # Updated error message since we now use credential resolver
+    assert (
+        "No credentials available" in result_data["error"]
+        or "register_server" in result_data["error"]
+    )
 
 
 @pytest.mark.asyncio

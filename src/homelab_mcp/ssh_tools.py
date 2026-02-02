@@ -2,11 +2,13 @@
 
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import asyncssh
 
+from .database import get_database_adapter
 from .error_handling import retry_on_failure, ssh_connection_wrapper
 
 # Configure logging
@@ -14,6 +16,100 @@ logger = logging.getLogger(__name__)
 
 # Get the path for storing SSH keys
 SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
+
+
+@dataclass
+class SSHCredentials:
+    """Resolved SSH credentials for connection."""
+
+    hostname: str
+    username: str
+    port: int = 22
+    key_path: str | None = None
+    password: str | None = None
+    credential_id: int | None = None  # Database ID if from stored credentials
+
+
+def resolve_ssh_credentials(
+    hostname: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+) -> SSHCredentials:
+    """
+    Resolve SSH credentials with priority order:
+    1. Explicit credentials passed to function (backward compatible)
+    2. Stored credentials from ssh_credentials table
+    3. Default mcp_admin key (if username is mcp_admin or None)
+
+    Args:
+        hostname: Target hostname or IP
+        username: SSH username (optional)
+        password: SSH password (optional)
+        key_path: Path to SSH key (optional)
+        port: SSH port (default 22)
+
+    Returns:
+        SSHCredentials with resolved connection parameters
+    """
+    # If explicit password or key_path provided, use those (backward compatible)
+    if password or key_path:
+        return SSHCredentials(
+            hostname=hostname,
+            username=username or "mcp_admin",
+            port=port,
+            key_path=key_path,
+            password=password,
+        )
+
+    # Try to find stored credentials
+    try:
+        db = get_database_adapter()
+        db.connect()
+        db.init_schema()
+
+        stored_cred = db.get_credential_by_hostname(hostname, username)
+        db.close()
+
+        if stored_cred:
+            logger.debug(f"Found stored credentials for {hostname}")
+            resolved_key_path = stored_cred.get("key_path")
+
+            # If no key_path stored and username is mcp_admin, use default MCP key
+            if not resolved_key_path and stored_cred.get("username") == "mcp_admin":
+                mcp_key = get_mcp_ssh_key_path()
+                if mcp_key.exists():
+                    resolved_key_path = str(mcp_key)
+
+            return SSHCredentials(
+                hostname=hostname,
+                username=stored_cred.get("username", "mcp_admin"),
+                port=stored_cred.get("port", 22),
+                key_path=resolved_key_path,
+                credential_id=stored_cred.get("id"),
+            )
+    except Exception as e:
+        logger.warning(f"Error looking up stored credentials: {e}")
+
+    # Fall back to default mcp_admin key if available
+    resolved_username = username or "mcp_admin"
+    if resolved_username == "mcp_admin":
+        mcp_key = get_mcp_ssh_key_path()
+        if mcp_key.exists():
+            return SSHCredentials(
+                hostname=hostname,
+                username=resolved_username,
+                port=port,
+                key_path=str(mcp_key),
+            )
+
+    # Return minimal credentials - will need password or explicit key
+    return SSHCredentials(
+        hostname=hostname,
+        username=resolved_username,
+        port=port,
+    )
 
 
 def get_mcp_ssh_key_path() -> Path:
@@ -317,36 +413,39 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
 @retry_on_failure(max_retries=1, delay_seconds=1.0)
 async def ssh_discover_system(
     hostname: str,
-    username: str,
+    username: str | None = None,
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
 ) -> str:
     """SSH into a system and gather hardware/system information."""
+    # Resolve credentials using priority order
+    creds = resolve_ssh_credentials(
+        hostname=hostname,
+        username=username,
+        password=password,
+        key_path=key_path,
+        port=port,
+    )
+
     # Connect via SSH
-    connect_kwargs = {
-        "host": hostname,
-        "port": port,
-        "username": username,
+    connect_kwargs: dict[str, Any] = {
+        "host": creds.hostname,
+        "port": creds.port,
+        "username": creds.username,
         "known_hosts": None,
         "connect_timeout": 10,
     }
 
-    if key_path:
-        connect_kwargs["client_keys"] = [key_path]
-    elif password:
-        connect_kwargs["password"] = password
-    elif username == "mcp_admin":
-        # Use MCP key for mcp_admin user if available
-        mcp_key_path = get_mcp_ssh_key_path()
-        if mcp_key_path.exists():
-            connect_kwargs["client_keys"] = [str(mcp_key_path)]
-        else:
-            raise ValueError(
-                "MCP SSH key not found and no password provided for mcp_admin"
-            )
+    if creds.key_path:
+        connect_kwargs["client_keys"] = [creds.key_path]
+    elif creds.password:
+        connect_kwargs["password"] = creds.password
     else:
-        raise ValueError("Either password or key_path must be provided")
+        raise ValueError(
+            f"No credentials available for {hostname}. "
+            "Register the server first with register_server or provide password/key_path."
+        )
 
     async with await asyncssh.connect(**connect_kwargs) as conn:
         system_info: dict[str, Any] = {}
@@ -552,47 +651,59 @@ async def ssh_discover_system(
 @ssh_connection_wrapper(timeout_seconds=20.0)
 async def ssh_execute_command(
     hostname: str,
-    username: str,
-    command: str,
+    username: str | None = None,
+    command: str = "",
     password: str | None = None,
     sudo: bool = False,
     port: int = 22,
     **kwargs: Any,
 ) -> str:
     """Execute a command on a remote system via SSH."""
-    client_keys = []
-
-    # Use MCP admin key if username is mcp_admin
-    if username == "mcp_admin":
-        mcp_key_path = await ensure_mcp_ssh_key()
-        if mcp_key_path:
-            client_keys = [mcp_key_path]
+    # Resolve credentials using priority order
+    creds = resolve_ssh_credentials(
+        hostname=hostname,
+        username=username,
+        password=password,
+        port=port,
+    )
 
     # Prepare connection options
-    connect_kwargs = {
-        "host": hostname,
-        "port": port,
-        "username": username,
+    connect_kwargs: dict[str, Any] = {
+        "host": creds.hostname,
+        "port": creds.port,
+        "username": creds.username,
         "known_hosts": None,
     }
 
-    if client_keys:
-        connect_kwargs["client_keys"] = client_keys
+    if creds.key_path:
+        connect_kwargs["client_keys"] = [creds.key_path]
 
-    if password:
-        connect_kwargs["password"] = password
+    if creds.password:
+        connect_kwargs["password"] = creds.password
+
+    # If no credentials available, try to fall back to default mcp_admin key
+    if "client_keys" not in connect_kwargs and "password" not in connect_kwargs:
+        if creds.username == "mcp_admin":
+            mcp_key_path = await ensure_mcp_ssh_key()
+            if mcp_key_path:
+                connect_kwargs["client_keys"] = [mcp_key_path]
+        else:
+            raise ValueError(
+                f"No credentials available for {hostname}. "
+                "Register the server first with register_server or provide password."
+            )
 
     async with asyncssh.connect(**connect_kwargs) as conn:
         # Prepare the command with sudo if requested
         if sudo:
-            if username == "mcp_admin":
+            if creds.username == "mcp_admin":
                 # mcp_admin has passwordless sudo
                 full_command = f"sudo {command}"
             else:
                 # Other users might need password for sudo
                 full_command = (
-                    f"echo '{password}' | sudo -S {command}"
-                    if password
+                    f"echo '{creds.password}' | sudo -S {command}"
+                    if creds.password
                     else f"sudo {command}"
                 )
         else:
@@ -771,3 +882,319 @@ async def update_mcp_admin_groups(
         {"status": "error", "hostname": hostname, "error": "Unexpected execution path"},
         indent=2,
     )
+
+
+# Server Registration Functions
+
+
+async def register_server(
+    hostname: str,
+    username: str = "mcp_admin",
+    key_path: str | None = None,
+    port: int = 22,
+    display_name: str | None = None,
+    verify_connection: bool = True,
+) -> str:
+    """
+    Register a server with SSH credentials for persistent access.
+
+    Args:
+        hostname: Hostname or IP address of the server
+        username: SSH username (default: mcp_admin)
+        key_path: Path to SSH private key (optional, uses default MCP key if None)
+        port: SSH port (default: 22)
+        display_name: Friendly name for the server (optional)
+        verify_connection: Whether to verify SSH connection before saving
+
+    Returns:
+        JSON string with registration result
+    """
+    try:
+        db = get_database_adapter()
+        db.connect()
+        db.init_schema()
+
+        # Check if server already registered
+        existing = db.get_credential_by_hostname(hostname, username)
+        if existing:
+            db.close()
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": f"Server {hostname} with username {username} is already registered",
+                    "existing_id": existing.get("id"),
+                },
+                indent=2,
+            )
+
+        # Determine key path to use
+        resolved_key_path = key_path
+        if not resolved_key_path and username == "mcp_admin":
+            mcp_key = get_mcp_ssh_key_path()
+            if mcp_key.exists():
+                resolved_key_path = str(mcp_key)
+
+        # Optionally verify connection before saving
+        last_verified = None
+        if verify_connection and resolved_key_path:
+            try:
+                connect_kwargs = {
+                    "host": hostname,
+                    "port": port,
+                    "username": username,
+                    "client_keys": [resolved_key_path],
+                    "known_hosts": None,
+                    "connect_timeout": 10,
+                }
+
+                async with await asyncssh.connect(**connect_kwargs) as conn:
+                    result = await conn.run("hostname", check=False)
+                    if result.exit_status == 0:
+                        last_verified = "verified"
+            except Exception as e:
+                db.close()
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": f"Connection verification failed: {e}",
+                        "hostname": hostname,
+                    },
+                    indent=2,
+                )
+
+        # Add credential to database
+        credential_id = db.add_credential(
+            hostname=hostname,
+            username=username,
+            key_path=resolved_key_path,
+            port=port,
+            display_name=display_name,
+        )
+
+        if last_verified:
+            db.update_last_verified(credential_id)
+
+        db.close()
+
+        return json.dumps(
+            {
+                "status": "success",
+                "message": f"Server {hostname} registered successfully",
+                "credential_id": credential_id,
+                "hostname": hostname,
+                "username": username,
+                "port": port,
+                "display_name": display_name,
+                "key_path": resolved_key_path,
+                "connection_verified": last_verified is not None,
+            },
+            indent=2,
+        )
+
+    except Exception as e:
+        return json.dumps(
+            {"status": "error", "error": str(e), "hostname": hostname}, indent=2
+        )
+
+
+def list_registered_servers(active_only: bool = True) -> str:
+    """
+    List all registered servers with their credentials.
+
+    Args:
+        active_only: Only show active servers (default: True)
+
+    Returns:
+        JSON string with list of registered servers
+    """
+    try:
+        db = get_database_adapter()
+        db.connect()
+        db.init_schema()
+
+        credentials = db.list_credentials(active_only=active_only)
+        db.close()
+
+        # Format for display
+        servers = []
+        for cred in credentials:
+            servers.append(
+                {
+                    "id": cred.get("id"),
+                    "hostname": cred.get("hostname"),
+                    "username": cred.get("username"),
+                    "port": cred.get("port"),
+                    "display_name": cred.get("display_name"),
+                    "is_active": bool(cred.get("is_active")),
+                    "last_verified": cred.get("last_verified"),
+                    "has_key": bool(cred.get("key_path")),
+                    "device_id": cred.get("device_id"),
+                }
+            )
+
+        return json.dumps(
+            {
+                "status": "success",
+                "total_servers": len(servers),
+                "servers": servers,
+            },
+            indent=2,
+        )
+
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+def update_server_credentials(
+    credential_id: int | None = None,
+    hostname: str | None = None,
+    **kwargs: Any,
+) -> str:
+    """
+    Update credentials for an existing registered server.
+
+    Args:
+        credential_id: ID of the credential to update (optional if hostname provided)
+        hostname: Hostname to look up (optional if credential_id provided)
+        **kwargs: Fields to update (username, key_path, port, display_name, is_active)
+
+    Returns:
+        JSON string with update result
+    """
+    try:
+        db = get_database_adapter()
+        db.connect()
+        db.init_schema()
+
+        # Find credential by ID or hostname
+        if credential_id:
+            cred = db.get_credential(credential_id)
+        elif hostname:
+            cred = db.get_credential_by_hostname(hostname)
+            if cred:
+                credential_id = cred.get("id")
+        else:
+            db.close()
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "Must provide either credential_id or hostname",
+                },
+                indent=2,
+            )
+
+        if not cred:
+            db.close()
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "Credential not found",
+                },
+                indent=2,
+            )
+
+        # Update the credential
+        assert credential_id is not None
+        success = db.update_credential(credential_id, **kwargs)
+        db.close()
+
+        if success:
+            return json.dumps(
+                {
+                    "status": "success",
+                    "message": "Credential updated successfully",
+                    "credential_id": credential_id,
+                    "updated_fields": list(kwargs.keys()),
+                },
+                indent=2,
+            )
+        else:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "No fields updated",
+                },
+                indent=2,
+            )
+
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+def remove_server(
+    credential_id: int | None = None,
+    hostname: str | None = None,
+) -> str:
+    """
+    Remove a server from the registered servers list.
+
+    Args:
+        credential_id: ID of the credential to remove (optional if hostname provided)
+        hostname: Hostname to look up (optional if credential_id provided)
+
+    Returns:
+        JSON string with removal result
+    """
+    try:
+        db = get_database_adapter()
+        db.connect()
+        db.init_schema()
+
+        # Find credential by ID or hostname
+        if credential_id:
+            cred = db.get_credential(credential_id)
+        elif hostname:
+            cred = db.get_credential_by_hostname(hostname)
+            if cred:
+                credential_id = cred.get("id")
+        else:
+            db.close()
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "Must provide either credential_id or hostname",
+                },
+                indent=2,
+            )
+
+        if not cred:
+            db.close()
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "Credential not found",
+                },
+                indent=2,
+            )
+
+        # Store info for response before deleting
+        removed_hostname = cred.get("hostname")
+        removed_username = cred.get("username")
+
+        # Delete the credential
+        assert credential_id is not None
+        success = db.delete_credential(credential_id)
+        db.close()
+
+        if success:
+            return json.dumps(
+                {
+                    "status": "success",
+                    "message": f"Server {removed_hostname} removed successfully",
+                    "credential_id": credential_id,
+                    "hostname": removed_hostname,
+                    "username": removed_username,
+                },
+                indent=2,
+            )
+        else:
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": "Failed to delete credential",
+                },
+                indent=2,
+            )
+
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)

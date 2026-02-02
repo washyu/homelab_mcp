@@ -67,6 +67,52 @@ class DatabaseAdapter(ABC):
         """Execute a query and return results."""
         pass
 
+    # SSH Credentials CRUD methods
+    @abstractmethod
+    def add_credential(
+        self,
+        hostname: str,
+        username: str = "mcp_admin",
+        key_path: str | None = None,
+        port: int = 22,
+        display_name: str | None = None,
+        device_id: int | None = None,
+    ) -> int:
+        """Add a new SSH credential record."""
+        pass
+
+    @abstractmethod
+    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
+        """Get a credential by its ID."""
+        pass
+
+    @abstractmethod
+    def get_credential_by_hostname(
+        self, hostname: str, username: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get credential by hostname and optionally username."""
+        pass
+
+    @abstractmethod
+    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
+        """Update a credential record."""
+        pass
+
+    @abstractmethod
+    def delete_credential(self, credential_id: int) -> bool:
+        """Delete a credential record."""
+        pass
+
+    @abstractmethod
+    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
+        """List all credentials."""
+        pass
+
+    @abstractmethod
+    def update_last_verified(self, credential_id: int) -> bool:
+        """Update the last_verified timestamp for a credential."""
+        pass
+
 
 class SQLiteAdapter(DatabaseAdapter):
     """SQLite database adapter."""
@@ -150,6 +196,25 @@ class SQLiteAdapter(DatabaseAdapter):
             )
         """)
 
+        # Create ssh_credentials table for persistent credential storage
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ssh_credentials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id INTEGER,
+                hostname TEXT NOT NULL,
+                username TEXT NOT NULL DEFAULT 'mcp_admin',
+                key_path TEXT,
+                port INTEGER DEFAULT 22,
+                display_name TEXT,
+                is_active INTEGER DEFAULT 1,
+                last_verified TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(hostname, username),
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
+            )
+        """)
+
         # Create indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
@@ -159,6 +224,16 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_history_device_id
             ON discovery_history (device_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
+            ON ssh_credentials (hostname)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
+            ON ssh_credentials (device_id)
         """)
 
         self.connection.commit()
@@ -359,6 +434,174 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return [dict(row) for row in cursor.fetchall()]
 
+    # SSH Credentials CRUD methods
+    def add_credential(
+        self,
+        hostname: str,
+        username: str = "mcp_admin",
+        key_path: str | None = None,
+        port: int = 22,
+        display_name: str | None = None,
+        device_id: int | None = None,
+    ) -> int:
+        """Add a new SSH credential record."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO ssh_credentials
+            (hostname, username, key_path, port, display_name, device_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (hostname, username, key_path, port, display_name, device_id),
+        )
+
+        self.connection.commit()
+        lastrowid = cursor.lastrowid
+        assert lastrowid is not None
+        return lastrowid
+
+    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
+        """Get a credential by its ID."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT * FROM ssh_credentials WHERE id = ?",
+            (credential_id,),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+
+    def get_credential_by_hostname(
+        self, hostname: str, username: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get credential by hostname and optionally username."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        if username:
+            cursor.execute(
+                """
+                SELECT * FROM ssh_credentials
+                WHERE hostname = ? AND username = ? AND is_active = 1
+            """,
+                (hostname, username),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM ssh_credentials
+                WHERE hostname = ? AND is_active = 1
+                ORDER BY id DESC LIMIT 1
+            """,
+                (hostname,),
+            )
+
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+
+    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
+        """Update a credential record."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+
+        # Build update query dynamically based on provided kwargs
+        allowed_fields = {
+            "hostname",
+            "username",
+            "key_path",
+            "port",
+            "display_name",
+            "device_id",
+            "is_active",
+        }
+        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not update_fields:
+            return False
+
+        # Add updated_at timestamp
+        set_clause = ", ".join(f"{k} = ?" for k in update_fields)
+        set_clause += ", updated_at = CURRENT_TIMESTAMP"
+        values = list(update_fields.values()) + [credential_id]
+
+        cursor = self.connection.cursor()
+        cursor.execute(
+            f"UPDATE ssh_credentials SET {set_clause} WHERE id = ?",
+            values,
+        )
+
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def delete_credential(self, credential_id: int) -> bool:
+        """Delete a credential record."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "DELETE FROM ssh_credentials WHERE id = ?",
+            (credential_id,),
+        )
+
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
+        """List all credentials."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        if active_only:
+            cursor.execute(
+                "SELECT * FROM ssh_credentials WHERE is_active = 1 ORDER BY hostname"
+            )
+        else:
+            cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_last_verified(self, credential_id: int) -> bool:
+        """Update the last_verified timestamp for a credential."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            UPDATE ssh_credentials
+            SET last_verified = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """,
+            (credential_id,),
+        )
+
+        self.connection.commit()
+        return cursor.rowcount > 0
+
 
 class PostgreSQLAdapter(DatabaseAdapter):
     """PostgreSQL database adapter with JSONB support."""
@@ -427,6 +670,24 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
         """)
 
+        # Create ssh_credentials table for persistent credential storage
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ssh_credentials (
+                id SERIAL PRIMARY KEY,
+                device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+                hostname VARCHAR(255) NOT NULL,
+                username VARCHAR(255) NOT NULL DEFAULT 'mcp_admin',
+                key_path TEXT,
+                port INTEGER DEFAULT 22,
+                display_name VARCHAR(255),
+                is_active BOOLEAN DEFAULT TRUE,
+                last_verified TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(hostname, username)
+            )
+        """)
+
         # Create indexes including JSONB indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
@@ -456,6 +717,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_history_data_gin
             ON discovery_history USING GIN (discovery_data)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
+            ON ssh_credentials (hostname)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
+            ON ssh_credentials (device_id)
         """)
 
         self.connection.commit()
@@ -691,6 +962,179 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(query)
 
         return [dict(row) for row in cursor.fetchall()]
+
+    # SSH Credentials CRUD methods
+    def add_credential(
+        self,
+        hostname: str,
+        username: str = "mcp_admin",
+        key_path: str | None = None,
+        port: int = 22,
+        display_name: str | None = None,
+        device_id: int | None = None,
+    ) -> int:
+        """Add a new SSH credential record."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO ssh_credentials
+            (hostname, username, key_path, port, display_name, device_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """,
+            (hostname, username, key_path, port, display_name, device_id),
+        )
+
+        result = cursor.fetchone()
+        assert result is not None
+        self.connection.commit()
+        credential_id_result: int = result[0]
+        return credential_id_result
+
+    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
+        """Get a credential by its ID."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            "SELECT * FROM ssh_credentials WHERE id = %s",
+            (credential_id,),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+
+    def get_credential_by_hostname(
+        self, hostname: str, username: str | None = None
+    ) -> dict[str, Any] | None:
+        """Get credential by hostname and optionally username."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if username:
+            cursor.execute(
+                """
+                SELECT * FROM ssh_credentials
+                WHERE hostname = %s AND username = %s AND is_active = TRUE
+            """,
+                (hostname, username),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM ssh_credentials
+                WHERE hostname = %s AND is_active = TRUE
+                ORDER BY id DESC LIMIT 1
+            """,
+                (hostname,),
+            )
+
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+
+    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
+        """Update a credential record."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+
+        # Build update query dynamically based on provided kwargs
+        allowed_fields = {
+            "hostname",
+            "username",
+            "key_path",
+            "port",
+            "display_name",
+            "device_id",
+            "is_active",
+        }
+        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not update_fields:
+            return False
+
+        # Add updated_at timestamp
+        set_clause = ", ".join(f"{k} = %s" for k in update_fields)
+        set_clause += ", updated_at = NOW()"
+        values = list(update_fields.values()) + [credential_id]
+
+        cursor = self.connection.cursor()
+        cursor.execute(
+            f"UPDATE ssh_credentials SET {set_clause} WHERE id = %s",
+            values,
+        )
+
+        self.connection.commit()
+        rowcount: int = cursor.rowcount
+        return rowcount > 0
+
+    def delete_credential(self, credential_id: int) -> bool:
+        """Delete a credential record."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "DELETE FROM ssh_credentials WHERE id = %s",
+            (credential_id,),
+        )
+
+        self.connection.commit()
+        rowcount: int = cursor.rowcount
+        return rowcount > 0
+
+    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
+        """List all credentials."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if active_only:
+            cursor.execute(
+                "SELECT * FROM ssh_credentials WHERE is_active = TRUE ORDER BY hostname"
+            )
+        else:
+            cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def update_last_verified(self, credential_id: int) -> bool:
+        """Update the last_verified timestamp for a credential."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            UPDATE ssh_credentials
+            SET last_verified = NOW(), updated_at = NOW()
+            WHERE id = %s
+        """,
+            (credential_id,),
+        )
+
+        self.connection.commit()
+        rowcount: int = cursor.rowcount
+        return rowcount > 0
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:

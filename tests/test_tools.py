@@ -13,11 +13,17 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 34
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, and Ansible tools
+        len(tools) == 38
+    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, and server registration tools
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
     assert "verify_mcp_admin" in tools
+
+    # Server registration tools
+    assert "register_server" in tools
+    assert "list_registered_servers" in tools
+    assert "update_server_credentials" in tools
+    assert "remove_server" in tools
 
     # New sitemap tools
     assert "discover_and_map" in tools

@@ -95,8 +95,14 @@ if __name__ == "__main__":
     # Debug output to stderr (will appear in logs)
     if args.http:
         protocol = "HTTPS" if args.ssl_cert else "HTTP"
-        print(f"MCP Server starting in {protocol} mode on {args.host}:{args.port}", file=sys.stderr)
-        print(f"Authentication: {'disabled' if args.no_auth else 'enabled'}", file=sys.stderr)
+        print(
+            f"MCP Server starting in {protocol} mode on {args.host}:{args.port}",
+            file=sys.stderr,
+        )
+        print(
+            f"Authentication: {'disabled' if args.no_auth else 'enabled'}",
+            file=sys.stderr,
+        )
         if args.ssl_cert:
             print(f"SSL: enabled (cert: {args.ssl_cert})", file=sys.stderr)
     else:
