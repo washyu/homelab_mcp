@@ -10,7 +10,7 @@ This document outlines a **Model Context Protocol (MCP) server** for AI-driven h
 - **User**: Provides high-level requirements ("I need a Jenkins server")
 
 **Example Workflow:**
-1. User: "Deploy an Ollama server with GPU acceleration"
+1. User: "Deploy an Ollama server for local LLM hosting"
 2. AI Agent queries MCP for available GPU nodes and current utilization
 3. AI Agent analyzes requirements and selects optimal configuration
 4. AI Agent uses MCP tools to deploy via Terraform + Ansible

@@ -8,7 +8,7 @@
 
 **AI-Powered VM Infrastructure Management with Advanced Service Installation Framework**
 
-A comprehensive Model Context Protocol (MCP) server that enables AI assistants to manage, deploy, and monitor homelab infrastructure through automated service installation, Terraform state management, AI accelerator support, and VM operations.
+A comprehensive Model Context Protocol (MCP) server that enables AI assistants to manage, deploy, and monitor homelab infrastructure through automated service installation, Terraform state management, and VM operations.
 
 ## 🚀 Quick Start
 
@@ -26,17 +26,11 @@ uv sync && uv run python run_server.py
 
 ### 🤖 **AI-Driven Service Installation**
 - **49 MCP Tools** for complete infrastructure lifecycle management
-- **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
+- **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, and more
 - **Proxmox Integration** with full API access and 400+ community scripts for discovery
 - **Terraform Support** with state management and clean resource tracking
 - **Automated Deployment** with requirement validation and health checking
-- **One-Command Installation**: *"Install Pi-hole on my homelab server with AI acceleration"*
-
-### 🧠 **AI Accelerator Support**
-- **Auto-Detection** of MemryX MX3, Coral Edge TPU, Hailo-8, Intel Neural Compute Stick
-- **Hardware Discovery** with USB/PCI device enumeration and classification
-- **Performance Optimization** for Pi 4/5 with memory and thermal management
-- **Real-time AI Applications** like Frigate NVR object detection and local LLM hosting
+- **One-Command Installation**: *"Install Pi-hole on my homelab server"*
 
 ### 🔧 **VM Infrastructure Management**
 - **SSH-based Discovery**: Gather comprehensive hardware/software information from any system
@@ -57,13 +51,13 @@ uv sync && uv run python run_server.py
 
 ## 🛠 Available Tools (41 Total)
 
-### 🤖 **AI & Machine Learning Tools (4)**
+### 🛠️ **Service Management Tools (4)**
 
 #### `list_available_services`
-List all available service templates including AI accelerator-optimized services.
+List all available service templates for homelab deployment.
 
 #### `install_service`
-Deploy services with automatic AI accelerator detection and optimization.
+Deploy services with automated configuration and validation.
 
 #### `plan_terraform_service`
 Generate Terraform execution plans to preview infrastructure changes without applying them.
@@ -71,31 +65,19 @@ Generate Terraform execution plans to preview infrastructure changes without app
 #### `destroy_terraform_service`
 Cleanly destroy Terraform-managed services and remove all associated resources.
 
-### 🧠 **AI Accelerator Services Available**
-
-#### **Frigate NVR** - AI-Powered Security Camera System
-- **Auto-detects** MemryX MX3, Coral TPU, Hailo-8, Intel NCS accelerators
-- **Real-time object detection** at 80+ FPS vs 4 FPS CPU-only
-- **Home Assistant integration** for smart home automation
-- **Perfect for Pi Camera modules and USB cameras**
-
-#### **AI Inference Server** - Custom AI Applications
-- **Multi-accelerator support** with automatic detection and fallback
-- **REST API** for image inference and performance benchmarking
-- **ONNX, TensorFlow Lite, OpenVINO** model format support
-- **Performance testing tools** to validate accelerator speedup
+### 📦 **Featured Services Available**
 
 #### **Ollama** - Local LLM Server
-- **Pi-optimized** for 4GB/8GB RAM configurations
-- **Model recommendations** (tinyllama, phi, mistral:7b based on available RAM)
-- **API integration ready** for future UI development
-- **Thermal and performance tuning** for sustained Pi workloads
+- **Self-hosted LLM deployment** for privacy-focused AI applications
+- **Model support** for tinyllama, phi, mistral, and other open-source models
+- **API integration** for chat interfaces and custom applications
+- **Resource-efficient** operation suitable for homelab environments
 
 #### **Home Assistant** - Smart Home Automation
-- **Pi GPIO integration** for sensors, relays, and hardware control
-- **Pi Camera module support** with motion detection
-- **Zigbee/Z-Wave hub capabilities** with USB dongles
-- **Energy monitoring** and mobile app integration
+- **GPIO integration** for Raspberry Pi sensors and control
+- **Zigbee/Z-Wave hub** capabilities with USB dongles
+- **Energy monitoring** and automation rules
+- **Mobile app integration** for remote access
 
 ### SSH & Admin Tools (5)
 
@@ -117,9 +99,8 @@ SSH into a remote system and gather comprehensive system information including:
 - **Memory usage** (total, available, used)
 - **Storage information** (disk usage, mount points)
 - **Network interfaces** (IPs, MAC addresses, link status)
-- **Hardware discovery**: USB devices (cameras, AI accelerators), PCI devices (network cards, GPUs), block devices (drives, partitions)
+- **Hardware discovery**: USB devices, PCI devices (network cards, GPUs), block devices (drives, partitions)
 - **Operating system** information and uptime
-- **AI accelerator detection**: MemryX MX3, Coral TPU, Hailo-8, Intel NCS
 
 **Note**: When using username `mcp_admin`, the tool automatically uses the MCP's SSH key if available. No password is required after running `setup_mcp_admin` on the target system.
 
@@ -327,41 +308,6 @@ Remove VMs or containers:
 
 **Authentication:** Supports both API tokens (no expiration) and username/password (2-hour sessions). Configure via environment variables or pass credentials per-call.
 
-## 🧠 AI Accelerator Performance
-
-### **Supported AI Hardware**
-| Accelerator | Performance | Power | Model Formats | Pi Compatibility |
-|-------------|-------------|-------|---------------|------------------|
-| **MemryX MX3** | 20+ TOPS | 3W | ONNX, Quantized ONNX | ✅ USB/PCIe |
-| **Coral Edge TPU** | 13 TOPS | 2W | TensorFlow Lite | ✅ USB/M.2 |
-| **Hailo-8** | 26 TOPS | 2.5W | ONNX, TensorFlow, PyTorch | ✅ USB/PCIe |
-| **Intel NCS2** | 1 TOPS | 1W | OpenVINO, ONNX | ✅ USB |
-
-### **Real-World Performance Benchmarks**
-*Tested on Raspberry Pi 4/5 with actual AI accelerators*
-
-| Task | MemryX MX3 | Coral TPU | Pi 4 CPU | Speedup |
-|------|------------|-----------|----------|---------|
-| **Object Detection (YOLOv5)** | 83 FPS | 45 FPS | 4 FPS | **20x faster** |
-| **Image Classification** | 250 FPS | 200 FPS | 5.5 FPS | **45x faster** |
-| **Face Detection** | 120 FPS | 80 FPS | 3 FPS | **40x faster** |
-| **Power Consumption** | 3W | 2W | 8W | **62% less** |
-
-### **Example AI Applications**
-```bash
-# Deploy Frigate NVR with automatic AI accelerator detection
-"Install Frigate NVR on my Pi to use the MemryX accelerator"
-
-# Set up custom AI inference server with benchmarking
-"Install AI inference server and test accelerator performance"
-
-# Deploy Ollama for local LLM hosting (7B models on Pi 5)
-"Install Ollama on my Pi 5 for local AI chat"
-
-# Set up Home Assistant with Pi GPIO and camera integration
-"Install Home Assistant for smart home automation with Pi camera"
-```
-
 ## 🏗️ Terraform vs SSH Commands
 
 ### **Why Terraform Integration Matters**
@@ -381,13 +327,13 @@ Remove VMs or containers:
 # Terraform (enterprise-grade, state-managed)
 "Install Pi-hole using Terraform with state management"
 
-# Both methods support the same services with automatic accelerator detection
+# Both methods support the same services
 ```
 
 ## 🎭 Ansible Configuration Management
 
 ### **Why Ansible for Multi-Service Deployments**
-Perfect for deploying complete AI homelab stacks like MCP + Ollama + Web UI:
+Perfect for deploying multi-service homelab stacks with complex dependencies:
 
 | Capability | Docker Compose | Terraform | Ansible | Best For |
 |------------|----------------|-----------|---------|----------|
@@ -414,7 +360,7 @@ Perfect for deploying complete AI homelab stacks like MCP + Ollama + Web UI:
 ```bash
 # One command deploys entire stack:
 # ✅ MCP Server as systemd service
-# ✅ Ollama with GPU/AI accelerator support
+# ✅ Ollama LLM server
 # ✅ Web UI with pre-configured API endpoints
 # ✅ Nginx reverse proxy with SSL ready
 # ✅ Firewall configuration
@@ -588,19 +534,19 @@ When `force_update_key` is true (default), the tool will:
 
 ## 🎯 Example Use Cases
 
-### **AI-Powered Homelab Setup**
+### **Homelab Service Deployment**
 ```bash
-# 1. Set up Pi with AI accelerator for object detection
-"Install Frigate NVR on my Raspberry Pi at 192.168.1.100 to use the MemryX accelerator"
+# 1. Deploy local LLM server
+"Install Ollama on my server for hosting Mistral 7B locally"
 
-# 2. Deploy local AI chat server
-"Install Ollama on my Pi 5 for hosting Mistral 7B locally"
+# 2. Set up smart home automation
+"Install Home Assistant on my Pi for smart home control"
 
-# 3. Set up smart home automation with GPIO
-"Install Home Assistant on my Pi for smart home control with camera integration"
+# 3. Create network-wide ad blocking
+"Install Pi-hole on my Pi for ad blocking with DNS configuration"
 
-# 4. Create network-wide ad blocking with travel hotspot support
-"Install Pi-hole on my Pi for ad blocking with hotspot configuration for travel"
+# 4. Deploy media server
+"Install Jellyfin on my server for media streaming"
 ```
 
 ### **Enterprise Infrastructure Management**
@@ -621,30 +567,24 @@ When `force_update_key` is true (default), the tool will:
 ### **Hardware Discovery and Optimization**
 ```bash
 # 1. Comprehensive hardware audit
-"Discover my Pi's hardware including USB devices, PCI cards, and AI accelerators"
+"Discover my server's hardware including USB devices and network cards"
 
-# 2. AI accelerator performance testing
-"Install AI inference server and benchmark my MemryX accelerator performance"
-
-# 3. Storage analysis
+# 2. Storage analysis
 "Analyze disk usage and performance across my homelab servers"
 
-# 4. Network device identification
+# 3. Network device identification
 "Show me all network adapters and their capabilities on my devices"
 ```
 
 ### **Development and Testing**
 ```bash
-# 1. Local AI development environment
-"Set up AI inference server for testing custom ONNX models"
-
-# 2. Container development platform
+# 1. Container development platform
 "Deploy development containers with persistent storage"
 
-# 3. Service monitoring and debugging
+# 2. Service monitoring and debugging
 "Check service status and show logs for troubleshooting"
 
-# 4. Infrastructure as code testing
+# 3. Infrastructure as code testing
 "Plan Terraform changes before applying to production"
 ```
 
@@ -666,9 +606,7 @@ homelab_mcp/
 │       ├── sitemap.py          # Network topology mapping
 │       ├── database.py         # SQLite database for device tracking
 │       └── service_templates/  # YAML service definitions
-│           ├── ollama.yaml         # Local LLM server (Pi-optimized)
-│           ├── frigate_nvr.yaml    # AI-powered security cameras
-│           ├── ai_inference.yaml   # Custom AI applications
+│           ├── ollama.yaml         # Local LLM server
 │           ├── homeassistant.yaml  # Smart home automation
 │           ├── pihole.yaml         # Network-wide ad blocking
 │           ├── pihole_terraform.yaml # Terraform-managed Pi-hole
