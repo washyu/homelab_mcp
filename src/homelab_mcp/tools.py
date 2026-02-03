@@ -5,6 +5,16 @@ import logging
 from typing import Any
 
 from .error_handling import timeout_wrapper
+from .proxmox_api import (
+    clone_proxmox_vm,
+    create_proxmox_lxc,
+    create_proxmox_vm,
+    delete_proxmox_vm,
+    get_proxmox_node_status,
+    get_proxmox_vm_status,
+    list_proxmox_resources,
+    manage_proxmox_vm,
+)
 from .proxmox_scripts import (
     execute_proxmox_script,
     get_script_details,
@@ -1154,6 +1164,285 @@ TOOLS = {
             "required": ["hostname", "script_name"],
         },
     },
+    "list_proxmox_resources": {
+        "description": "List all Proxmox cluster resources (VMs, containers, nodes, storage). Uses PROXMOX_HOST from environment if host not provided.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional, uses PROXMOX_HOST env var if not provided)",
+                },
+                "resource_type": {
+                    "type": "string",
+                    "description": "Filter by resource type",
+                    "enum": ["vm", "lxc", "node", "storage", "pool"],
+                },
+            },
+            "required": [],
+        },
+    },
+    "get_proxmox_node_status": {
+        "description": "Get detailed status of a Proxmox node (CPU, memory, uptime, etc.)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name (e.g., 'pve', 'proxmox')",
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional, uses PROXMOX_HOST env var)",
+                },
+            },
+            "required": ["node"],
+        },
+    },
+    "get_proxmox_vm_status": {
+        "description": "Get status of a specific VM or container",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name",
+                },
+                "vmid": {
+                    "type": "integer",
+                    "description": "VM or Container ID",
+                },
+                "vm_type": {
+                    "type": "string",
+                    "description": "Type: 'qemu' for VM or 'lxc' for container",
+                    "enum": ["qemu", "lxc"],
+                    "default": "qemu",
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional)",
+                },
+            },
+            "required": ["node", "vmid"],
+        },
+    },
+    "manage_proxmox_vm": {
+        "description": "Manage a VM or container (start, stop, shutdown, restart, suspend, resume)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name",
+                },
+                "vmid": {
+                    "type": "integer",
+                    "description": "VM or Container ID",
+                },
+                "action": {
+                    "type": "string",
+                    "description": "Action to perform",
+                    "enum": ["start", "stop", "shutdown", "restart", "suspend", "resume"],
+                },
+                "vm_type": {
+                    "type": "string",
+                    "description": "Type: 'qemu' for VM or 'lxc' for container",
+                    "enum": ["qemu", "lxc"],
+                    "default": "qemu",
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional)",
+                },
+            },
+            "required": ["node", "vmid", "action"],
+        },
+    },
+    "create_proxmox_lxc": {
+        "description": "Create a new LXC container on Proxmox",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name",
+                },
+                "vmid": {
+                    "type": "integer",
+                    "description": "Container ID (must be unique)",
+                },
+                "hostname": {
+                    "type": "string",
+                    "description": "Container hostname",
+                },
+                "ostemplate": {
+                    "type": "string",
+                    "description": "Template (e.g., 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst')",
+                    "default": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                },
+                "storage": {
+                    "type": "string",
+                    "description": "Storage for rootfs",
+                    "default": "local-lvm",
+                },
+                "memory": {
+                    "type": "integer",
+                    "description": "RAM in MB",
+                    "default": 512,
+                },
+                "cores": {
+                    "type": "integer",
+                    "description": "Number of CPU cores",
+                    "default": 1,
+                },
+                "rootfs_size": {
+                    "type": "integer",
+                    "description": "Root filesystem size in GB",
+                    "default": 8,
+                },
+                "password": {
+                    "type": "string",
+                    "description": "Root password",
+                },
+                "start": {
+                    "type": "boolean",
+                    "description": "Start container after creation",
+                    "default": False,
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional)",
+                },
+            },
+            "required": ["node", "vmid", "hostname"],
+        },
+    },
+    "create_proxmox_vm": {
+        "description": "Create a new VM (QEMU) on Proxmox",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name",
+                },
+                "vmid": {
+                    "type": "integer",
+                    "description": "VM ID (must be unique)",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "VM name",
+                },
+                "memory": {
+                    "type": "integer",
+                    "description": "RAM in MB",
+                    "default": 2048,
+                },
+                "cores": {
+                    "type": "integer",
+                    "description": "Number of CPU cores",
+                    "default": 2,
+                },
+                "disk_size": {
+                    "type": "integer",
+                    "description": "Disk size in GB",
+                    "default": 32,
+                },
+                "storage": {
+                    "type": "string",
+                    "description": "Storage for disks",
+                    "default": "local-lvm",
+                },
+                "iso": {
+                    "type": "string",
+                    "description": "ISO image to attach (e.g., 'local:iso/debian-12.iso')",
+                },
+                "start": {
+                    "type": "boolean",
+                    "description": "Start VM after creation",
+                    "default": False,
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional)",
+                },
+            },
+            "required": ["node", "vmid", "name"],
+        },
+    },
+    "clone_proxmox_vm": {
+        "description": "Clone a VM or container to create a new one",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name",
+                },
+                "vmid": {
+                    "type": "integer",
+                    "description": "Source VM/Container ID",
+                },
+                "new_vmid": {
+                    "type": "integer",
+                    "description": "New VM/Container ID",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "New VM name (optional)",
+                },
+                "full": {
+                    "type": "boolean",
+                    "description": "Full clone (true) or linked clone (false)",
+                    "default": True,
+                },
+                "vm_type": {
+                    "type": "string",
+                    "description": "Type: 'qemu' for VM or 'lxc' for container",
+                    "enum": ["qemu", "lxc"],
+                    "default": "qemu",
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional)",
+                },
+            },
+            "required": ["node", "vmid", "new_vmid"],
+        },
+    },
+    "delete_proxmox_vm": {
+        "description": "Delete a VM or container from Proxmox",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "string",
+                    "description": "Node name",
+                },
+                "vmid": {
+                    "type": "integer",
+                    "description": "VM/Container ID to delete",
+                },
+                "vm_type": {
+                    "type": "string",
+                    "description": "Type: 'qemu' for VM or 'lxc' for container",
+                    "enum": ["qemu", "lxc"],
+                    "default": "qemu",
+                },
+                "purge": {
+                    "type": "boolean",
+                    "description": "Remove from all related configurations",
+                    "default": False,
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Proxmox host (optional)",
+                },
+            },
+            "required": ["node", "vmid"],
+        },
+    },
 }
 
 
@@ -1529,6 +1818,92 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
             dry_run=arguments.get("dry_run", False),
         )
         return {"content": [{"type": "text", "text": json.dumps(exec_result, indent=2)}]}
+
+    elif tool_name == "list_proxmox_resources":
+        result = await list_proxmox_resources(
+            host=arguments.get("host"),
+            resource_type=arguments.get("resource_type"),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "get_proxmox_node_status":
+        result = await get_proxmox_node_status(
+            node=arguments["node"],
+            host=arguments.get("host"),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "get_proxmox_vm_status":
+        result = await get_proxmox_vm_status(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            host=arguments.get("host"),
+            vm_type=arguments.get("vm_type", "qemu"),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "manage_proxmox_vm":
+        result = await manage_proxmox_vm(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            action=arguments["action"],
+            host=arguments.get("host"),
+            vm_type=arguments.get("vm_type", "qemu"),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "create_proxmox_lxc":
+        result = await create_proxmox_lxc(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            hostname=arguments["hostname"],
+            host=arguments.get("host"),
+            ostemplate=arguments.get("ostemplate", "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"),
+            storage=arguments.get("storage", "local-lvm"),
+            memory=arguments.get("memory", 512),
+            cores=arguments.get("cores", 1),
+            rootfs_size=arguments.get("rootfs_size", 8),
+            password=arguments.get("password"),
+            start=arguments.get("start", False),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "create_proxmox_vm":
+        result = await create_proxmox_vm(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            name=arguments["name"],
+            host=arguments.get("host"),
+            memory=arguments.get("memory", 2048),
+            cores=arguments.get("cores", 2),
+            storage=arguments.get("storage", "local-lvm"),
+            disk_size=arguments.get("disk_size", 32),
+            iso=arguments.get("iso"),
+            start=arguments.get("start", False),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "clone_proxmox_vm":
+        result = await clone_proxmox_vm(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            new_vmid=arguments["new_vmid"],
+            host=arguments.get("host"),
+            name=arguments.get("name"),
+            full=arguments.get("full", True),
+            vm_type=arguments.get("vm_type", "qemu"),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "delete_proxmox_vm":
+        result = await delete_proxmox_vm(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            host=arguments.get("host"),
+            vm_type=arguments.get("vm_type", "qemu"),
+            purge=arguments.get("purge", False),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

@@ -25,9 +25,9 @@ uv sync && uv run python run_server.py
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Service Installation**
-- **41 MCP Tools** for complete infrastructure lifecycle management
+- **49 MCP Tools** for complete infrastructure lifecycle management
 - **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
-- **Proxmox Integration** with 400+ community scripts for instant container/VM deployment
+- **Proxmox Integration** with full API access and 400+ community scripts for instant deployment
 - **Terraform Support** with state management and clean resource tracking
 - **Automated Deployment** with requirement validation and health checking
 - **One-Command Installation**: *"Install Pi-hole on my homelab server with AI acceleration"*
@@ -258,6 +258,66 @@ Execute Proxmox community scripts on remote hosts:
 - One-command deployments: *"Install Podman on proxmox.local with 4 cores"*
 
 **Scripts provided by:** [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE) (MIT License)
+
+### Proxmox API Integration (8)
+
+Direct Proxmox API access for comprehensive cluster management:
+
+#### `list_proxmox_resources`
+List all cluster resources:
+- VMs, LXC containers, nodes, storage, pools
+- Filter by resource type
+- Real-time status and metrics
+- Uses PROXMOX_HOST from environment
+
+#### `get_proxmox_node_status`
+Get detailed node information:
+- CPU usage and specifications
+- Memory usage and capacity
+- Uptime and load averages
+- Disk and network statistics
+
+#### `get_proxmox_vm_status`
+Get specific VM/container status:
+- Resource usage (CPU, memory, disk, network)
+- Configuration details
+- Current state (running, stopped, suspended)
+- Supports both QEMU VMs and LXC containers
+
+#### `manage_proxmox_vm`
+Control VM/container lifecycle:
+- Actions: start, stop, shutdown, restart, suspend, resume
+- Graceful shutdowns vs forced stops
+- Real-time operation status
+
+#### `create_proxmox_lxc`
+Create new LXC containers:
+- Choose from available OS templates
+- Configure CPU cores, RAM, and disk
+- Network configuration
+- Storage selection
+
+#### `create_proxmox_vm`
+Create new QEMU VMs:
+- ISO or template-based deployment
+- Hardware configuration (CPU, RAM, disk, network)
+- Boot order and BIOS settings
+- SCSI/VirtIO storage options
+
+#### `clone_proxmox_vm`
+Clone existing VMs or containers:
+- Full or linked clones
+- New VMID assignment
+- Name and description customization
+- Fast template-based deployments
+
+#### `delete_proxmox_vm`
+Remove VMs or containers:
+- Clean resource deallocation
+- Confirmation safeguards
+- Disk cleanup options
+
+**Authentication:** Supports both API tokens (no expiration) and username/password (2-hour sessions). Configure via environment variables or pass credentials per-call.
 
 ## 🧠 AI Accelerator Performance
 
@@ -590,7 +650,7 @@ homelab_mcp/
 │   └── homelab_mcp/
 │       ├── __init__.py
 │       ├── server.py           # Main MCP server with JSON-RPC protocol
-│       ├── tools.py            # Tool registry and execution (34 tools)
+│       ├── tools.py            # Tool registry and execution (49 tools)
 │       ├── ssh_tools.py        # SSH discovery with hardware detection
 │       ├── service_installer.py # Service installation framework
 │       ├── infrastructure_crud.py # Infrastructure lifecycle management

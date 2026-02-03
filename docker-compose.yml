@@ -11,7 +11,7 @@ services:
       - "${MCP_HTTP_PORT:-8080}:8080"
     environment:
       # Authentication - REQUIRED: Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
-      - MCP_API_KEY=${MCP_API_KEY:?MCP_API_KEY is required. Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"}
+      - MCP_API_KEY=${MCP_API_KEY:?MCP_API_KEY required}
       - MCP_AUTH_ENABLED=${MCP_AUTH_ENABLED:-true}
       # Server configuration
       - MCP_HTTP_HOST=0.0.0.0
@@ -20,6 +20,12 @@ services:
       - MCP_DB_TYPE=${MCP_DB_TYPE:-sqlite}
       # SSH configuration (for remote device management)
       - SSH_KEY_PATH=/home/mcp/.ssh/mcp_admin_rsa
+      # Proxmox configuration (optional)
+      - PROXMOX_HOST=${PROXMOX_HOST}
+      - PROXMOX_API_TOKEN=${PROXMOX_API_TOKEN}
+      - PROXMOX_USER=${PROXMOX_USER}
+      - PROXMOX_PASSWORD=${PROXMOX_PASSWORD}
+      - PROXMOX_VERIFY_SSL=${PROXMOX_VERIFY_SSL:-false}
     volumes:
       # Persist database and SSH keys
       - mcp-data:/home/mcp/.homelab_mcp
