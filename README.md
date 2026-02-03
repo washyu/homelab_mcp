@@ -25,7 +25,7 @@ uv sync && uv run python run_server.py
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Service Installation**
-- **48 MCP Tools** for complete infrastructure lifecycle management
+- **49 MCP Tools** for complete infrastructure lifecycle management
 - **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
 - **Proxmox Integration** with full API access and 400+ community scripts for discovery
 - **Terraform Support** with state management and clean resource tracking
@@ -97,7 +97,19 @@ Cleanly destroy Terraform-managed services and remove all associated resources.
 - **Zigbee/Z-Wave hub capabilities** with USB dongles
 - **Energy monitoring** and mobile app integration
 
-### SSH & Admin Tools (4)
+### SSH & Admin Tools (5)
+
+#### `start_interactive_shell`
+Start an interactive web-based shell session on a remote system:
+- **Full TTY support** with xterm.js browser-based terminal
+- **Perfect for interactive scripts** like Proxmox community scripts that require user input
+- **Persistent sessions** with automatic cleanup after 30 minutes of inactivity
+- **Secure access** through API key authentication
+- Returns a URL to open the shell in your browser
+
+Example use case: Run Proxmox community scripts interactively, navigate the filesystem, edit files, or debug issues with a full terminal experience.
+
+**Note**: Uses registered SSH credentials or accepts username/password. Sessions are isolated and automatically cleaned up.
 
 #### `ssh_discover`
 SSH into a remote system and gather comprehensive system information including:
@@ -646,7 +658,7 @@ homelab_mcp/
 │   └── homelab_mcp/
 │       ├── __init__.py
 │       ├── server.py           # Main MCP server with JSON-RPC protocol
-│       ├── tools.py            # Tool registry and execution (48 tools)
+│       ├── tools.py            # Tool registry and execution (49 tools)
 │       ├── ssh_tools.py        # SSH discovery with hardware detection
 │       ├── service_installer.py # Service installation framework
 │       ├── infrastructure_crud.py # Infrastructure lifecycle management

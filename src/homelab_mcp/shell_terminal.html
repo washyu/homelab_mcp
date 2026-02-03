@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Shell - {{hostname}}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: monospace;
+            overflow: hidden;
+        }
+        #header {
+            background: #1e1e1e;
+            color: #fff;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #333;
+        }
+        #info {
+            font-size: 14px;
+        }
+        #status {
+            font-size: 12px;
+            padding: 5px 10px;
+            border-radius: 3px;
+            background: #2d5016;
+        }
+        #status.disconnected {
+            background: #7d1e1e;
+        }
+        #terminal-container {
+            position: absolute;
+            top: 50px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 10px;
+        }
+        #terminal {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div id="info">
+            <strong>Interactive Shell</strong> - {{username}}@{{hostname}}
+        </div>
+        <div id="status">Connected</div>
+    </div>
+    <div id="terminal-container">
+        <div id="terminal"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script>
+        const sessionId = '{{session_id}}';
+        const wsUrl = `ws://${window.location.host}/ws/shell/${sessionId}`;
+
+        // Initialize terminal
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+            theme: {
+                background: '#000000',
+                foreground: '#ffffff',
+            }
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+
+        // WebSocket connection
+        let ws;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+
+        function connect() {
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                reconnectAttempts = 0;
+                updateStatus('Connected', true);
+
+                // Send initial terminal size
+                const size = {
+                    type: 'resize',
+                    rows: term.rows,
+                    cols: term.cols
+                };
+                ws.send(JSON.stringify(size));
+            };
+
+            ws.onmessage = (event) => {
+                // Write output to terminal
+                term.write(event.data);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus('Error', false);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket closed');
+                updateStatus('Disconnected', false);
+
+                // Attempt reconnection
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(connect, 2000);
+                } else {
+                    term.write('\r\n\x1b[31mConnection lost. Please refresh the page.\x1b[0m\r\n');
+                }
+            };
+        }
+
+        // Handle terminal input
+        term.onData((data) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    type: 'input',
+                    data: data
+                };
+                ws.send(JSON.stringify(message));
+            }
+        });
+
+        // Handle terminal resize
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const size = {
+                    type: 'resize',
+                    rows: term.rows,
+                    cols: term.cols
+                };
+                ws.send(JSON.stringify(size));
+            }
+        });
+
+        function updateStatus(text, connected) {
+            const status = document.getElementById('status');
+            status.textContent = text;
+            status.className = connected ? '' : 'disconnected';
+        }
+
+        // Connect when page loads
+        connect();
+
+        // Focus terminal
+        term.focus();
+    </script>
+</body>
+</html>

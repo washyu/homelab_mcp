@@ -19,6 +19,7 @@ from .proxmox_scripts import (
     get_script_details,
     search_scripts,
 )
+from .shell_session import session_manager
 from .sitemap import NetworkSiteMap, bulk_discover_and_store, discover_and_store
 from .ssh_tools import (
     list_registered_servers,
@@ -651,6 +652,36 @@ TOOLS = {
                 },
             },
             "required": ["hostname", "username", "command"],
+        },
+    },
+    "start_interactive_shell": {
+        "description": "Start an interactive web-based shell session on a remote system. Opens a browser-based terminal with full TTY support for running interactive commands and scripts. Perfect for Proxmox community scripts or any interactive command-line tools.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname or IP address of the target system",
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (optional, uses registered credentials if available)",
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (optional, uses SSH keys if available)",
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22,
+                },
+                "initial_command": {
+                    "type": "string",
+                    "description": "Optional command to run automatically when shell starts (e.g., Proxmox script install command)",
+                },
+            },
+            "required": ["hostname"],
         },
     },
     "update_mcp_admin_groups": {
@@ -1596,6 +1627,42 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
 
         result = await ssh_execute_command(**arguments)
         return {"content": [{"type": "text", "text": result}]}
+
+    elif tool_name == "start_interactive_shell":
+        import os
+
+        # Get initial command if provided
+        initial_command = arguments.get("initial_command")
+
+        # Create shell session
+        session_id, session = await session_manager.create_session(
+            hostname=arguments["hostname"],
+            username=arguments.get("username"),
+            password=arguments.get("password"),
+            port=arguments.get("port", 22),
+            initial_command=initial_command,
+        )
+
+        # Get the MCP HTTP server host/port from environment or defaults
+        mcp_host = os.getenv("MCP_HTTP_HOST", "localhost")
+        mcp_port = os.getenv("MCP_HTTP_PORT", "8080")
+
+        # Build the shell URL
+        shell_url = f"http://{mcp_host}:{mcp_port}/shell/{session_id}"
+
+        message = f"Interactive shell started. Open this URL in your browser:\n{shell_url}\n\nSession will expire after 30 minutes of inactivity."
+        if initial_command:
+            message += f"\n\nInitial command executed:\n{initial_command}"
+
+        result = {
+            "status": "success",
+            "session_id": session_id,
+            "shell_url": shell_url,
+            "hostname": session.hostname,
+            "username": session.username,
+            "message": message,
+        }
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
     elif tool_name == "update_mcp_admin_groups":
         from .ssh_tools import update_mcp_admin_groups

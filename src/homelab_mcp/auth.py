@@ -58,11 +58,17 @@ class APIKeyAuth:
             await self.app(scope, receive, send)
             return
 
-        # Check if path is excluded from authentication (exact match)
+        # Check if path is excluded from authentication
         path = scope.get("path", "")
-        if path in self.exclude_paths:
-            await self.app(scope, receive, send)
-            return
+        for exclude_path in self.exclude_paths:
+            # Support both exact match and prefix match (if exclude_path ends with /)
+            if exclude_path.endswith("/"):
+                if path.startswith(exclude_path):
+                    await self.app(scope, receive, send)
+                    return
+            elif path == exclude_path:
+                await self.app(scope, receive, send)
+                return
 
         # Skip auth if disabled
         if not self.enabled:

@@ -19,11 +19,13 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
-from starlette.routing import Route
+from starlette.responses import HTMLResponse, JSONResponse, Response
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from .auth import APIKeyAuth
 from .error_handling import health_checker
+from .shell_session import session_manager
 
 if TYPE_CHECKING:
     from .server import HomelabMCPServer
@@ -227,6 +229,115 @@ class MCPHTTPTransport:
         status_code = 200 if health_status["status"] == "healthy" else 503
         return JSONResponse(health_status, status_code=status_code)
 
+    async def handle_shell_page(self, request: Request) -> Response:
+        """
+        Serve the interactive shell HTML page.
+
+        Args:
+            request: HTTP request with session_id in path
+
+        Returns:
+            HTML page with xterm.js terminal
+        """
+        session_id = request.path_params["session_id"]
+
+        # Get session to verify it exists and get connection info
+        session = session_manager.get_session(session_id)
+        if not session:
+            return JSONResponse(
+                {"error": "Session not found or expired"},
+                status_code=404
+            )
+
+        # Load HTML template
+        from pathlib import Path
+        template_path = Path(__file__).parent / "shell_terminal.html"
+        html_content = template_path.read_text()
+
+        # Replace template variables
+        html_content = html_content.replace("{{session_id}}", session_id)
+        html_content = html_content.replace("{{hostname}}", session.hostname)
+        html_content = html_content.replace("{{username}}", session.username)
+
+        return HTMLResponse(html_content)
+
+    async def handle_shell_websocket(self, websocket: WebSocket) -> None:
+        """
+        Handle WebSocket connection for interactive shell.
+
+        Args:
+            websocket: WebSocket connection
+        """
+        session_id = websocket.path_params["session_id"]
+
+        # Get session
+        session = session_manager.get_session(session_id)
+        if not session:
+            await websocket.close(code=1008, reason="Session not found")
+            return
+
+        # Accept WebSocket connection
+        await websocket.accept()
+        logger.info(f"WebSocket connected for session {session_id}")
+
+        # Send initial command if configured
+        if session.initial_command and session.process.stdin:
+            logger.info(f"Sending initial command for session {session_id}")
+            session.process.stdin.write(session.initial_command + "\n")
+
+        try:
+            # Start output reader task
+            async def read_output():
+                """Read output from shell and send to WebSocket."""
+                while True:
+                    try:
+                        if session.process.stdout:
+                            data = await session.process.stdout.read(4096)
+                            if data:
+                                text = data if isinstance(data, str) else data.decode("utf-8")
+                                await websocket.send_text(text)
+                            else:
+                                # EOF - process terminated
+                                break
+                    except Exception as e:
+                        logger.error(f"Error reading output: {e}")
+                        break
+                    await asyncio.sleep(0.01)
+
+            # Start output reader in background
+            output_task = asyncio.create_task(read_output())
+
+            # Handle incoming messages
+            while True:
+                message = await websocket.receive_text()
+                data = json.loads(message)
+
+                msg_type = data.get("type")
+
+                if msg_type == "input":
+                    # Send input to shell
+                    if session.process.stdin:
+                        session.process.stdin.write(data["data"])
+
+                elif msg_type == "resize":
+                    # Resize terminal
+                    rows = data.get("rows", 24)
+                    cols = data.get("cols", 80)
+                    await session_manager.resize_terminal(session_id, rows, cols)
+
+        except WebSocketDisconnect:
+            logger.info(f"WebSocket disconnected for session {session_id}")
+        except Exception as e:
+            logger.error(f"WebSocket error for session {session_id}: {e}")
+        finally:
+            # Cancel output reader
+            if 'output_task' in locals():
+                output_task.cancel()
+                try:
+                    await output_task
+                except asyncio.CancelledError:
+                    pass
+
     def create_app(self) -> Starlette | APIKeyAuth:
         """
         Create the Starlette ASGI application.
@@ -239,6 +350,8 @@ class MCPHTTPTransport:
             Route("/mcp", self.handle_mcp_sse, methods=["GET"]),
             Route("/health", self.handle_health, methods=["GET"]),
             Route("/", self._handle_root, methods=["GET"]),
+            Route("/shell/{session_id}", self.handle_shell_page, methods=["GET"]),
+            WebSocketRoute("/ws/shell/{session_id}", self.handle_shell_websocket),
         ]
 
         # Configure CORS middleware for cross-origin requests (e.g., OpenWebUI)
@@ -265,7 +378,7 @@ class MCPHTTPTransport:
                 app,
                 api_key=self.api_key,
                 enabled=self.auth_enabled,
-                exclude_paths=["/health", "/"],
+                exclude_paths=["/health", "/", "/shell/", "/ws/shell/"],
             )
 
         return app
@@ -281,6 +394,7 @@ class MCPHTTPTransport:
                 "endpoints": {
                     "mcp": "/mcp",
                     "health": "/health",
+                    "shell": "/shell/{session_id}",
                 },
             }
         )
@@ -288,6 +402,8 @@ class MCPHTTPTransport:
     async def _on_startup(self) -> None:
         """Handle application startup."""
         logger.info("MCP HTTP transport starting up")
+        # Start session cleanup task
+        session_manager.start_cleanup_task()
 
     async def _on_shutdown(self) -> None:
         """Handle application shutdown."""
