@@ -16,7 +16,6 @@ from .proxmox_api import (
     manage_proxmox_vm,
 )
 from .proxmox_scripts import (
-    execute_proxmox_script,
     get_script_details,
     search_scripts,
 )
@@ -1112,58 +1111,6 @@ TOOLS = {
             "required": ["script_name"],
         },
     },
-    "execute_proxmox_script": {
-        "description": "Execute a Proxmox community script on a Proxmox host via SSH. Installs containers, VMs, or services.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Proxmox host IP address or hostname",
-                },
-                "script_name": {
-                    "type": "string",
-                    "description": "Name of the script to execute (e.g. 'podman.sh', 'homeassistant.sh')",
-                },
-                "username": {
-                    "type": "string",
-                    "description": "SSH username (default: root)",
-                    "default": "root",
-                },
-                "password": {
-                    "type": "string",
-                    "description": "SSH password (if not using key authentication)",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
-                "category": {
-                    "type": "string",
-                    "description": "Optional category hint: 'ct', 'vm', 'install', 'misc'",
-                    "enum": ["ct", "vm", "install", "misc"],
-                },
-                "config": {
-                    "type": "object",
-                    "description": "Configuration overrides (e.g. {\"cpu\": 4, \"ram\": 4096, \"disk\": 32})",
-                    "properties": {
-                        "cpu": {"type": "integer", "description": "Number of CPU cores"},
-                        "ram": {"type": "integer", "description": "RAM in MB"},
-                        "disk": {"type": "integer", "description": "Disk size in GB"},
-                        "os": {"type": "string", "description": "Operating system"},
-                        "version": {"type": "string", "description": "OS version"},
-                    },
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "description": "If true, show what would be executed without actually running it",
-                    "default": False,
-                },
-            },
-            "required": ["hostname", "script_name"],
-        },
-    },
     "list_proxmox_resources": {
         "description": "List all Proxmox cluster resources (VMs, containers, nodes, storage). Uses PROXMOX_HOST from environment if host not provided.",
         "inputSchema": {
@@ -1805,19 +1752,6 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
                 "message": f"Script '{arguments['script_name']}' not found",
             }
         return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-
-    elif tool_name == "execute_proxmox_script":
-        exec_result = await execute_proxmox_script(
-            hostname=arguments["hostname"],
-            script_name=arguments["script_name"],
-            username=arguments.get("username", "root"),
-            password=arguments.get("password"),
-            port=arguments.get("port", 22),
-            category=arguments.get("category"),
-            config=arguments.get("config"),
-            dry_run=arguments.get("dry_run", False),
-        )
-        return {"content": [{"type": "text", "text": json.dumps(exec_result, indent=2)}]}
 
     elif tool_name == "list_proxmox_resources":
         result = await list_proxmox_resources(

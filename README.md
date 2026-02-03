@@ -25,9 +25,9 @@ uv sync && uv run python run_server.py
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Service Installation**
-- **49 MCP Tools** for complete infrastructure lifecycle management
+- **48 MCP Tools** for complete infrastructure lifecycle management
 - **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
-- **Proxmox Integration** with full API access and 400+ community scripts for instant deployment
+- **Proxmox Integration** with full API access and 400+ community scripts for discovery
 - **Terraform Support** with state management and clean resource tracking
 - **Automated Deployment** with requirement validation and health checking
 - **One-Command Installation**: *"Install Pi-hole on my homelab server with AI acceleration"*
@@ -233,7 +233,9 @@ Remove a VM/container from a device:
 - Data preservation options
 - Cleanup of associated resources
 
-### Proxmox Community Scripts Integration (3)
+### Proxmox Community Scripts Integration (2)
+
+Discover and get information about 400+ community-maintained Proxmox installation scripts:
 
 #### `search_proxmox_scripts`
 Search the Proxmox community scripts repository:
@@ -247,15 +249,9 @@ Get detailed information about a specific script:
 - CPU, RAM, and disk requirements
 - OS and version specifications
 - Tags and categorization
-- Script preview and download URL
+- Script preview and download URL with command to run
 
-#### `execute_proxmox_script`
-Execute Proxmox community scripts on remote hosts:
-- Automated installation via SSH
-- Custom resource allocation (override defaults)
-- Dry-run mode to preview changes
-- Support for containers, VMs, and system utilities
-- One-command deployments: *"Install Podman on proxmox.local with 4 cores"*
+**Note:** Script execution is not automated because these scripts are interactive and require user input during installation. The AI can help you find the right script and show its requirements, then you run it manually from the Proxmox web shell where you can respond to prompts.
 
 **Scripts provided by:** [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE) (MIT License)
 
@@ -650,7 +646,7 @@ homelab_mcp/
 │   └── homelab_mcp/
 │       ├── __init__.py
 │       ├── server.py           # Main MCP server with JSON-RPC protocol
-│       ├── tools.py            # Tool registry and execution (49 tools)
+│       ├── tools.py            # Tool registry and execution (48 tools)
 │       ├── ssh_tools.py        # SSH discovery with hardware detection
 │       ├── service_installer.py # Service installation framework
 │       ├── infrastructure_crud.py # Infrastructure lifecycle management
@@ -745,7 +741,7 @@ TOOLS["new_tool"] = {
 
 ### Proxmox Community Scripts
 
-This project integrates with the excellent [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE) repository to provide automated installation scripts for Proxmox VE containers and virtual machines.
+This project integrates with the excellent [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE) repository to help users discover installation scripts for Proxmox VE containers and virtual machines.
 
 **Attribution:**
 - **Project**: Proxmox VE Helper-Scripts
@@ -754,19 +750,20 @@ This project integrates with the excellent [community-scripts/ProxmoxVE](https:/
 - **License**: MIT License
 - **Website**: https://helper-scripts.com
 
-The Proxmox script integration tools (`search_proxmox_scripts`, `get_proxmox_script_info`, `execute_proxmox_script`) fetch and execute scripts from their repository with proper attribution. All scripts are copyright of their respective authors and distributed under the MIT License.
+The Proxmox script integration tools (`search_proxmox_scripts`, `get_proxmox_script_info`) provide discovery and information about scripts from their repository. All scripts are copyright of their respective authors and distributed under the MIT License.
 
-**What we use:**
-- Script discovery and metadata parsing
-- Direct script execution via SSH on Proxmox hosts
-- Configuration customization (CPU, RAM, disk allocation)
+**What we provide:**
+- Script discovery and search functionality
+- Metadata parsing (CPU, RAM, disk requirements)
+- Download URLs and installation commands
 
 **We do not:**
 - Host or redistribute their scripts
 - Modify their script content
 - Claim authorship of their work
+- Automate script execution (scripts are interactive and require user input)
 
-All scripts are fetched directly from their GitHub repository at runtime, ensuring you always get the latest versions with all community updates and security fixes.
+All script information is fetched directly from their GitHub repository at runtime, ensuring you always get the latest versions with all community updates and security fixes.
 
 Thank you to tteck and all contributors for maintaining this invaluable resource for the Proxmox community!
 
