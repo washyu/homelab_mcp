@@ -25,8 +25,9 @@ uv sync && uv run python run_server.py
 ## ✨ Key Features
 
 ### 🤖 **AI-Driven Service Installation**
-- **34 MCP Tools** for complete infrastructure lifecycle management
+- **41 MCP Tools** for complete infrastructure lifecycle management
 - **Service Templates** for Jellyfin, Pi-hole, Ollama, Home Assistant, Frigate NVR, and more
+- **Proxmox Integration** with 400+ community scripts for instant container/VM deployment
 - **Terraform Support** with state management and clean resource tracking
 - **Automated Deployment** with requirement validation and health checking
 - **One-Command Installation**: *"Install Pi-hole on my homelab server with AI acceleration"*
@@ -54,7 +55,7 @@ uv sync && uv run python run_server.py
 - **Reproducible Builds**: Lock files ensure consistent deployments across environments
 - **Zero Configuration**: Dependencies and virtual environments handled automatically
 
-## 🛠 Available Tools (34 Total)
+## 🛠 Available Tools (41 Total)
 
 ### 🤖 **AI & Machine Learning Tools (4)**
 
@@ -231,6 +232,32 @@ Remove a VM/container from a device:
 - Graceful or forced removal
 - Data preservation options
 - Cleanup of associated resources
+
+### Proxmox Community Scripts Integration (3)
+
+#### `search_proxmox_scripts`
+Search the Proxmox community scripts repository:
+- Search by keyword (docker, homeassistant, pihole, etc.)
+- Filter by category (containers, VMs, installers)
+- Optional metadata fetching for resource requirements
+- Access to 400+ community-maintained installation scripts
+
+#### `get_proxmox_script_info`
+Get detailed information about a specific script:
+- CPU, RAM, and disk requirements
+- OS and version specifications
+- Tags and categorization
+- Script preview and download URL
+
+#### `execute_proxmox_script`
+Execute Proxmox community scripts on remote hosts:
+- Automated installation via SSH
+- Custom resource allocation (override defaults)
+- Dry-run mode to preview changes
+- Support for containers, VMs, and system utilities
+- One-command deployments: *"Install Podman on proxmox.local with 4 cores"*
+
+**Scripts provided by:** [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE) (MIT License)
 
 ## 🧠 AI Accelerator Performance
 
@@ -653,6 +680,35 @@ TOOLS["new_tool"] = {
 3. Add the execution case in `execute_tool()` function
 
 4. Write tests for the new tool
+
+## Acknowledgments
+
+### Proxmox Community Scripts
+
+This project integrates with the excellent [community-scripts/ProxmoxVE](https://github.com/community-scripts/ProxmoxVE) repository to provide automated installation scripts for Proxmox VE containers and virtual machines.
+
+**Attribution:**
+- **Project**: Proxmox VE Helper-Scripts
+- **Repository**: https://github.com/community-scripts/ProxmoxVE
+- **Author**: tteck (tteckster) and community contributors
+- **License**: MIT License
+- **Website**: https://helper-scripts.com
+
+The Proxmox script integration tools (`search_proxmox_scripts`, `get_proxmox_script_info`, `execute_proxmox_script`) fetch and execute scripts from their repository with proper attribution. All scripts are copyright of their respective authors and distributed under the MIT License.
+
+**What we use:**
+- Script discovery and metadata parsing
+- Direct script execution via SSH on Proxmox hosts
+- Configuration customization (CPU, RAM, disk allocation)
+
+**We do not:**
+- Host or redistribute their scripts
+- Modify their script content
+- Claim authorship of their work
+
+All scripts are fetched directly from their GitHub repository at runtime, ensuring you always get the latest versions with all community updates and security fixes.
+
+Thank you to tteck and all contributors for maintaining this invaluable resource for the Proxmox community!
 
 ## License
 

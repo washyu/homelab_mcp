@@ -5,6 +5,11 @@ import logging
 from typing import Any
 
 from .error_handling import timeout_wrapper
+from .proxmox_scripts import (
+    execute_proxmox_script,
+    get_script_details,
+    search_scripts,
+)
 from .sitemap import NetworkSiteMap, bulk_discover_and_store, discover_and_store
 from .ssh_tools import (
     list_registered_servers,
@@ -1056,6 +1061,99 @@ TOOLS = {
             "required": [],
         },
     },
+    "search_proxmox_scripts": {
+        "description": "Search Proxmox community installation scripts from the community-scripts/ProxmoxVE repository",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (matches script name, e.g. 'home assistant', 'docker', 'pihole')",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional category filter: 'ct' (containers), 'vm' (virtual machines), 'install' (utilities), 'misc'",
+                    "enum": ["ct", "vm", "install", "misc"],
+                },
+                "include_metadata": {
+                    "type": "boolean",
+                    "description": "If true, fetch and parse script metadata (CPU, RAM, disk requirements, tags). Slower but more detailed.",
+                    "default": False,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    "get_proxmox_script_info": {
+        "description": "Get detailed information about a specific Proxmox community script",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "script_name": {
+                    "type": "string",
+                    "description": "Name of the script file (e.g. 'homeassistant.sh', 'docker.sh')",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional category hint to speed up search: 'ct', 'vm', 'install', 'misc'",
+                    "enum": ["ct", "vm", "install", "misc"],
+                },
+            },
+            "required": ["script_name"],
+        },
+    },
+    "execute_proxmox_script": {
+        "description": "Execute a Proxmox community script on a Proxmox host via SSH. Installs containers, VMs, or services.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Proxmox host IP address or hostname",
+                },
+                "script_name": {
+                    "type": "string",
+                    "description": "Name of the script to execute (e.g. 'podman.sh', 'homeassistant.sh')",
+                },
+                "username": {
+                    "type": "string",
+                    "description": "SSH username (default: root)",
+                    "default": "root",
+                },
+                "password": {
+                    "type": "string",
+                    "description": "SSH password (if not using key authentication)",
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "SSH port (default: 22)",
+                    "default": 22,
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional category hint: 'ct', 'vm', 'install', 'misc'",
+                    "enum": ["ct", "vm", "install", "misc"],
+                },
+                "config": {
+                    "type": "object",
+                    "description": "Configuration overrides (e.g. {\"cpu\": 4, \"ram\": 4096, \"disk\": 32})",
+                    "properties": {
+                        "cpu": {"type": "integer", "description": "Number of CPU cores"},
+                        "ram": {"type": "integer", "description": "RAM in MB"},
+                        "disk": {"type": "integer", "description": "Disk size in GB"},
+                        "os": {"type": "string", "description": "Operating system"},
+                        "version": {"type": "string", "description": "OS version"},
+                    },
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, show what would be executed without actually running it",
+                    "default": False,
+                },
+            },
+            "required": ["hostname", "script_name"],
+        },
+    },
 }
 
 
@@ -1389,6 +1487,48 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
     elif tool_name == "remove_server":
         result = remove_server(**arguments)
         return {"content": [{"type": "text", "text": result}]}
+
+    elif tool_name == "search_proxmox_scripts":
+        results = await search_scripts(
+            query=arguments["query"],
+            category=arguments.get("category"),
+            include_metadata=arguments.get("include_metadata", False),
+        )
+        # Format the results nicely
+        result = {
+            "status": "success",
+            "query": arguments["query"],
+            "total_found": len(results),
+            "scripts": results,
+        }
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "get_proxmox_script_info":
+        details = await get_script_details(
+            script_name=arguments["script_name"],
+            category=arguments.get("category"),
+        )
+        if details:
+            result = {"status": "success", "script": details}
+        else:
+            result = {
+                "status": "error",
+                "message": f"Script '{arguments['script_name']}' not found",
+            }
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+    elif tool_name == "execute_proxmox_script":
+        exec_result = await execute_proxmox_script(
+            hostname=arguments["hostname"],
+            script_name=arguments["script_name"],
+            username=arguments.get("username", "root"),
+            password=arguments.get("password"),
+            port=arguments.get("port", 22),
+            category=arguments.get("category"),
+            config=arguments.get("config"),
+            dry_run=arguments.get("dry_run", False),
+        )
+        return {"content": [{"type": "text", "text": json.dumps(exec_result, indent=2)}]}
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
