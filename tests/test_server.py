@@ -52,8 +52,8 @@ async def test_tools_list():
 
     tools = response["result"]["tools"]
     assert (
-        len(tools) == 38
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, and server registration tools
+        len(tools) == 49
+    )  # All tools including SSH, network, infrastructure, VM, service, credential, and Proxmox tools
 
     # Check tool names and descriptions
     tool_names = [tool.get("description") for tool in tools]
