@@ -9,9 +9,7 @@ from .base import VMProvider
 class DockerProvider(VMProvider):
     """Docker implementation of VM provider."""
 
-    async def deploy_vm(
-        self, conn: Any, vm_name: str, vm_config: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def deploy_vm(self, conn: Any, vm_name: str, vm_config: dict[str, Any]) -> dict[str, Any]:
         """Deploy a new Docker container."""
         try:
             # Check if container already exists
@@ -59,9 +57,7 @@ class DockerProvider(VMProvider):
                 container_id = deploy_result["stdout"].strip()
 
                 # Get container details
-                inspect_result = await self._run_command(
-                    conn, f"docker inspect {vm_name}"
-                )
+                inspect_result = await self._run_command(conn, f"docker inspect {vm_name}")
                 if inspect_result["exit_status"] == 0:
                     container_info = json.loads(inspect_result["stdout"])[0]
 
@@ -72,18 +68,12 @@ class DockerProvider(VMProvider):
                             "container_id": container_id,
                             "image": image,
                             "network": network,
-                            "ports": container_info.get("NetworkSettings", {}).get(
-                                "Ports", {}
-                            ),
-                            "container_status": container_info.get("State", {}).get(
-                                "Status", "unknown"
-                            ),
+                            "ports": container_info.get("NetworkSettings", {}).get("Ports", {}),
+                            "container_status": container_info.get("State", {}).get("Status", "unknown"),
                         },
                     )
                 else:
-                    return self._format_success(
-                        "deploy", vm_name, {"container_id": container_id}
-                    )
+                    return self._format_success("deploy", vm_name, {"container_id": container_id})
             else:
                 return self._format_error("deploy", vm_name, deploy_result["stderr"])
 
@@ -103,9 +93,7 @@ class DockerProvider(VMProvider):
                     vm_name,
                     {
                         "message": "Container started successfully",
-                        "container_status": status_result.get(
-                            "container_status", "unknown"
-                        ),
+                        "container_status": status_result.get("container_status", "unknown"),
                     },
                 )
             else:
@@ -120,9 +108,7 @@ class DockerProvider(VMProvider):
             result = await self._run_command(conn, f"docker stop {vm_name}")
 
             if result["exit_status"] == 0:
-                return self._format_success(
-                    "stop", vm_name, {"message": "Container stopped successfully"}
-                )
+                return self._format_success("stop", vm_name, {"message": "Container stopped successfully"})
             else:
                 return self._format_error("stop", vm_name, result["stderr"])
 
@@ -142,9 +128,7 @@ class DockerProvider(VMProvider):
                     vm_name,
                     {
                         "message": "Container restarted successfully",
-                        "container_status": status_result.get(
-                            "container_status", "unknown"
-                        ),
+                        "container_status": status_result.get("container_status", "unknown"),
                     },
                 )
             else:
@@ -174,8 +158,7 @@ class DockerProvider(VMProvider):
                     "image": container_info.get("Config", {}).get("Image", ""),
                     "ports": container_info.get("NetworkSettings", {}).get("Ports", {}),
                     "mounts": [
-                        mount["Source"] + ":" + mount["Destination"]
-                        for mount in container_info.get("Mounts", [])
+                        mount["Source"] + ":" + mount["Destination"] for mount in container_info.get("Mounts", [])
                     ],
                 }
             else:
@@ -224,14 +207,10 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return {"status": "error", "platform": "docker", "error": str(e)}
 
-    async def get_vm_logs(
-        self, conn: Any, vm_name: str, lines: int = 100
-    ) -> dict[str, Any]:
+    async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
         """Get Docker container logs."""
         try:
-            result = await self._run_command(
-                conn, f"docker logs --tail {lines} {vm_name}"
-            )
+            result = await self._run_command(conn, f"docker logs --tail {lines} {vm_name}")
 
             if result["exit_status"] == 0:
                 return {
@@ -247,9 +226,7 @@ class DockerProvider(VMProvider):
         except Exception as e:
             return self._format_error("get_logs", vm_name, str(e))
 
-    async def remove_vm(
-        self, conn: Any, vm_name: str, force: bool = False
-    ) -> dict[str, Any]:
+    async def remove_vm(self, conn: Any, vm_name: str, force: bool = False) -> dict[str, Any]:
         """Remove a Docker container."""
         try:
             # Stop container first if it's running (unless force is used)

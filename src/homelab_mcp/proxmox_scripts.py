@@ -78,11 +78,7 @@ def _parse_script_metadata(content: str) -> dict[str, Any]:
         if line.strip().startswith("#") and not line.strip().startswith("#!"):
             # Remove # and extra spaces
             desc = line.strip().lstrip("#").strip()
-            if (
-                desc
-                and not desc.startswith("Copyright")
-                and not desc.startswith("License")
-            ):
+            if desc and not desc.startswith("Copyright") and not desc.startswith("License"):
                 description_lines.append(desc)
 
     if description_lines:
@@ -190,9 +186,7 @@ async def search_scripts(
         # If including metadata, also check tags
         if include_metadata:
             try:
-                content = await _fetch_script_content(
-                    script["category"], script["name"]
-                )
+                content = await _fetch_script_content(script["category"], script["name"])
                 metadata = _parse_script_metadata(content)
 
                 # Check tags

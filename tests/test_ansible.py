@@ -235,9 +235,7 @@ services:
             yaml.dump(self.ansible_template, f)
 
         # Patch templates directory
-        self.patcher = patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        )
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
         self.patcher.start()
 
         # Create service installer
@@ -257,12 +255,8 @@ services:
         # Mock Ansible runner
         mock_runner = MockAnsibleRunner(success=True, tasks_run=8)
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner
-        ):
-            with patch.object(
-                self.installer, "check_service_requirements"
-            ) as mock_check:
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner):
+            with patch.object(self.installer, "check_service_requirements") as mock_check:
                 mock_check.return_value = {"requirements_met": True}
 
                 # Test variables for substitution
@@ -298,12 +292,8 @@ services:
             failed_task="Deploy Docker Compose configuration",
         )
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner
-        ):
-            with patch.object(
-                self.installer, "check_service_requirements"
-            ) as mock_check:
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner):
+            with patch.object(self.installer, "check_service_requirements") as mock_check:
                 mock_check.return_value = {"requirements_met": True}
 
                 result = await self.installer.install_service(
@@ -333,14 +323,10 @@ services:
             "log_level": "DEBUG",
         }
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner"
-        ) as mock_runner_class:
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner") as mock_runner_class:
             mock_runner_class.return_value = mock_runner
 
-            with patch.object(
-                self.installer, "check_service_requirements"
-            ) as mock_check:
+            with patch.object(self.installer, "check_service_requirements") as mock_check:
                 mock_check.return_value = {"requirements_met": True}
 
                 result = await self.installer.install_service(
@@ -355,11 +341,7 @@ services:
                 mock_runner_class.assert_called_once()
 
                 # Check that variables were properly merged with defaults and template variables
-                (
-                    mock_runner.run_playbook.call_args
-                    if hasattr(mock_runner.run_playbook, "call_args")
-                    else None
-                )
+                (mock_runner.run_playbook.call_args if hasattr(mock_runner.run_playbook, "call_args") else None)
                 # In real implementation, this would verify variable substitution
 
                 assert result["status"] == "success"
@@ -377,18 +359,12 @@ services:
 
         mock_runner = MockAnsibleRunner(success=True, tasks_run=8)
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner
-        ):
-            with patch.object(
-                self.installer, "check_service_requirements"
-            ) as mock_check:
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner):
+            with patch.object(self.installer, "check_service_requirements") as mock_check:
                 mock_check.return_value = {"requirements_met": True}
 
                 # Mock template rendering
-                with patch(
-                    "src.homelab_mcp.service_installer.render_template"
-                ) as mock_render:
+                with patch("src.homelab_mcp.service_installer.render_template") as mock_render:
                     mock_render.return_value = """version: '3.8'
 services:
   test-service:
@@ -538,14 +514,10 @@ class TestAnsiblePlaybookRunner:
         for config in host_configs:
             # This would test inventory generation in actual implementation
             # Mock the inventory generation function
-            with patch(
-                "src.homelab_mcp.service_installer.generate_ansible_inventory"
-            ) as mock_gen:
+            with patch("src.homelab_mcp.service_installer.generate_ansible_inventory") as mock_gen:
                 mock_gen.return_value = config["expected_inventory"]
 
-                inventory = mock_gen(
-                    config["hostname"], config["username"], config["port"]
-                )
+                inventory = mock_gen(config["hostname"], config["username"], config["port"])
                 assert inventory == config["expected_inventory"]
 
     @pytest.mark.asyncio
@@ -662,9 +634,7 @@ class TestAnsibleServiceTemplateProcessing:
         with open(template_file, "w") as f:
             yaml.dump(complex_template, f)
 
-        with patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        ):
+        with patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir):
             installer = ServiceInstaller()
             info = installer.get_service_info("multi-tier-app")
 
@@ -717,9 +687,7 @@ class TestAnsibleServiceTemplateProcessing:
         with open(template_file, "w") as f:
             yaml.dump(conditional_template, f)
 
-        with patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        ):
+        with patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir):
             installer = ServiceInstaller()
             info = installer.get_service_info("conditional-service")
 
@@ -734,11 +702,7 @@ class TestAnsibleServiceTemplateProcessing:
             assert ssl_task is not None
 
             http_task = next(
-                (
-                    t
-                    for t in tasks
-                    if "not ssl_enabled | bool" in str(t.get("when", ""))
-                ),
+                (t for t in tasks if "not ssl_enabled | bool" in str(t.get("when", ""))),
                 None,
             )
             assert http_task is not None
@@ -781,9 +745,7 @@ class TestAnsibleServiceTemplateProcessing:
         with open(template_file, "w") as f:
             yaml.dump(loop_template, f)
 
-        with patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        ):
+        with patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir):
             installer = ServiceInstaller()
             info = installer.get_service_info("multi-instance-service")
 
@@ -811,9 +773,7 @@ class TestAnsibleIntegrationScenarios:
         # Test high availability deployment scenario
         mock_runner = MockAnsibleRunner(success=True, tasks_run=4)  # 3 nodes + 1 LB
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner
-        ):
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner):
             # This would test the actual HA deployment logic
             pass
 
@@ -822,13 +782,9 @@ class TestAnsibleIntegrationScenarios:
         """Test deploying a database cluster with Ansible."""
 
         # Test database cluster deployment scenario
-        mock_runner = MockAnsibleRunner(
-            success=True, tasks_run=3
-        )  # 1 master + 2 replicas
+        mock_runner = MockAnsibleRunner(success=True, tasks_run=3)  # 1 master + 2 replicas
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner
-        ):
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner):
             # This would test the actual database cluster deployment logic
             pass
 
@@ -837,12 +793,8 @@ class TestAnsibleIntegrationScenarios:
         """Test deploying a complete monitoring stack with Ansible."""
 
         # Test monitoring stack deployment
-        mock_runner = MockAnsibleRunner(
-            success=True, tasks_run=4
-        )  # 3 containers + 1 config
+        mock_runner = MockAnsibleRunner(success=True, tasks_run=4)  # 3 containers + 1 config
 
-        with patch(
-            "src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner
-        ):
+        with patch("src.homelab_mcp.service_installer.AnsibleRunner", return_value=mock_runner):
             # This would test the actual monitoring stack deployment logic
             pass

@@ -79,34 +79,18 @@ class TestSSHIntegration:
             "Success: mcp_admin user created",
             "User already exists",
         ]
-        assert (
-            setup_data["mcp_admin_setup"]["sudo_access"]
-            == "Success: Added to sudo group"
-        )
+        assert setup_data["mcp_admin_setup"]["sudo_access"] == "Success: Added to sudo group"
         assert "Success: SSH key" in setup_data["mcp_admin_setup"]["ssh_key"]
-        assert (
-            setup_data["mcp_admin_setup"]["passwordless_sudo"]
-            == "Success: Passwordless sudo enabled"
-        )
-        assert (
-            setup_data["mcp_admin_setup"]["test_access"]
-            == "Success: mcp_admin access verified"
-        )
+        assert setup_data["mcp_admin_setup"]["passwordless_sudo"] == "Success: Passwordless sudo enabled"
+        assert setup_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin access verified"
 
         # Step 2: Verify access works
-        verify_result = await verify_mcp_admin_access(
-            hostname=container_info["hostname"], port=container_info["port"]
-        )
+        verify_result = await verify_mcp_admin_access(hostname=container_info["hostname"], port=container_info["port"])
 
         verify_data = json.loads(verify_result)
         assert verify_data["status"] == "success"
-        assert (
-            verify_data["mcp_admin"]["ssh_access"] == "Success: Connected with SSH key"
-        )
-        assert (
-            verify_data["mcp_admin"]["sudo_access"]
-            == "Success: Passwordless sudo working"
-        )
+        assert verify_data["mcp_admin"]["ssh_access"] == "Success: Connected with SSH key"
+        assert verify_data["mcp_admin"]["sudo_access"] == "Success: Passwordless sudo working"
         assert verify_data["mcp_admin"]["username"] == "mcp_admin"
 
         # Step 3: Use ssh_discover with mcp_admin (no password needed)
@@ -181,9 +165,7 @@ class TestSSHIntegration:
             f.write(original_key)
 
         # Verify access still works
-        verify_result = await verify_mcp_admin_access(
-            hostname=container_info["hostname"], port=container_info["port"]
-        )
+        verify_result = await verify_mcp_admin_access(hostname=container_info["hostname"], port=container_info["port"])
 
         verify_data = json.loads(verify_result)
         assert verify_data["status"] == "success"
@@ -245,9 +227,7 @@ class TestSSHIntegration:
         assert "authentication failed" in discover_data1["error"].lower()
 
         # Test 2: Verify mcp_admin access when not set up
-        verify_result = await verify_mcp_admin_access(
-            hostname=container_info["hostname"], port=container_info["port"]
-        )
+        verify_result = await verify_mcp_admin_access(hostname=container_info["hostname"], port=container_info["port"])
 
         verify_data = json.loads(verify_result)
         assert verify_data["status"] == "error"

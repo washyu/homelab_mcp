@@ -50,9 +50,7 @@ async def handle_suggest_deployments(arguments: dict[str, Any]) -> dict[str, Any
 async def handle_get_device_changes(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle get_device_changes tool."""
     sitemap = NetworkSiteMap()
-    changes = sitemap.get_device_changes(
-        arguments["device_id"], arguments.get("limit", 10)
-    )
+    changes = sitemap.get_device_changes(arguments["device_id"], arguments.get("limit", 10))
     result = json.dumps(
         {
             "status": "success",

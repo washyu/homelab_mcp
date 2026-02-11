@@ -49,9 +49,7 @@ class SSEResponse(Response):
         headers["Cache-Control"] = "no-cache"
         headers["Connection"] = "keep-alive"
         headers["X-Accel-Buffering"] = "no"
-        super().__init__(
-            content=content, status_code=status_code, headers=headers, **kwargs
-        )
+        super().__init__(content=content, status_code=status_code, headers=headers, **kwargs)
 
 
 class MCPHTTPTransport:
@@ -244,9 +242,7 @@ class MCPHTTPTransport:
         # Get session to verify it exists and get connection info
         session = session_manager.get_session(session_id)
         if not session:
-            return JSONResponse(
-                {"error": "Session not found or expired"}, status_code=404
-            )
+            return JSONResponse({"error": "Session not found or expired"}, status_code=404)
 
         # Load HTML template
         from pathlib import Path
@@ -294,11 +290,7 @@ class MCPHTTPTransport:
                         if session.process.stdout:
                             data = await session.process.stdout.read(4096)
                             if data:
-                                text = (
-                                    data
-                                    if isinstance(data, str)
-                                    else data.decode("utf-8")
-                                )
+                                text = data if isinstance(data, str) else data.decode("utf-8")
                                 await websocket.send_text(text)
                             else:
                                 # EOF - process terminated

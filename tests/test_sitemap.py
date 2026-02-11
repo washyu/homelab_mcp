@@ -49,9 +49,7 @@ def sample_ssh_discovery_success():
                     "use_percent": "45%",
                     "mount": "/",
                 },
-                "network": [
-                    {"name": "eth0", "state": "UP", "addresses": ["192.168.1.100"]}
-                ],
+                "network": [{"name": "eth0", "state": "UP", "addresses": ["192.168.1.100"]}],
                 "uptime": "up 5 days, 2 hours, 30 minutes",
                 "os": "Ubuntu 22.04.3 LTS",
             },
@@ -103,9 +101,7 @@ class TestNetworkSiteMap:
         devices = sitemap.get_all_devices()
         assert devices == []
 
-    def test_parse_discovery_output_success(
-        self, sitemap, sample_ssh_discovery_success
-    ):
+    def test_parse_discovery_output_success(self, sitemap, sample_ssh_discovery_success):
         """Test parsing successful SSH discovery output."""
         device = sitemap.parse_discovery_output(sample_ssh_discovery_success)
 
@@ -192,9 +188,7 @@ class TestNetworkSiteMap:
         assert len(changes) == 1
         assert changes[0]["data"]["hostname"] == "test-server"
 
-    def test_store_discovery_history_duplicate_detection(
-        self, sitemap, sample_ssh_discovery_success
-    ):
+    def test_store_discovery_history_duplicate_detection(self, sitemap, sample_ssh_discovery_success):
         """Test that duplicate discovery data is not stored."""
         device = sitemap.parse_discovery_output(sample_ssh_discovery_success)
         device_id = sitemap.store_device(device)
@@ -217,9 +211,7 @@ class TestNetworkSiteMap:
         assert analysis["operating_systems"] == {}
         assert analysis["network_segments"] == {}
 
-    def test_analyze_network_topology_with_devices(
-        self, sitemap, sample_ssh_discovery_success
-    ):
+    def test_analyze_network_topology_with_devices(self, sitemap, sample_ssh_discovery_success):
         """Test network analysis with devices."""
         # Add a successful device
         device = sitemap.parse_discovery_output(sample_ssh_discovery_success)
@@ -276,9 +268,7 @@ class TestNetworkSiteMap:
 
         # Should suggest this server for load balancing and database
         assert len(suggestions["load_balancer_candidates"]) == 1
-        assert (
-            suggestions["load_balancer_candidates"][0]["hostname"] == "high-spec-server"
-        )
+        assert suggestions["load_balancer_candidates"][0]["hostname"] == "high-spec-server"
         assert len(suggestions["database_candidates"]) == 1
         assert suggestions["database_candidates"][0]["hostname"] == "high-spec-server"
         assert len(suggestions["monitoring_targets"]) == 1
@@ -289,21 +279,15 @@ class TestAsyncFunctions:
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.ssh_tools.ssh_discover_system")
-    async def test_discover_and_store(
-        self, mock_ssh_discover, temp_db, sample_ssh_discovery_success
-    ):
+    async def test_discover_and_store(self, mock_ssh_discover, temp_db, sample_ssh_discovery_success):
         """Test discover_and_store function."""
         mock_ssh_discover.return_value = sample_ssh_discovery_success
 
         sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
-        result = await discover_and_store(
-            sitemap, hostname="test-host", username="test-user", password="test-pass"
-        )
+        result = await discover_and_store(sitemap, hostname="test-host", username="test-user", password="test-pass")
 
         # Verify SSH discovery was called
-        mock_ssh_discover.assert_called_once_with(
-            "test-host", "test-user", "test-pass", None, 22
-        )
+        mock_ssh_discover.assert_called_once_with("test-host", "test-user", "test-pass", None, 22)
 
         # Verify result
         result_data = json.loads(result)
@@ -344,9 +328,7 @@ class TestAsyncFunctions:
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.sitemap.discover_and_store")
-    async def test_bulk_discover_and_store_with_errors(
-        self, mock_discover_and_store, temp_db
-    ):
+    async def test_bulk_discover_and_store_with_errors(self, mock_discover_and_store, temp_db):
         """Test bulk discovery handling errors."""
         # Mock one success, one failure
         mock_discover_and_store.side_effect = [
@@ -384,15 +366,11 @@ class TestDatabaseOperations:
         cursor = sitemap.db_adapter.connection.cursor()
 
         # Check that devices table exists
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='devices'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")
         assert cursor.fetchone() is not None
 
         # Check that discovery_history table exists
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
         assert cursor.fetchone() is not None
 
         # Check that indexes exist

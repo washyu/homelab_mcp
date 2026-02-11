@@ -114,18 +114,14 @@ Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"
     mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
 
     # Execute discovery
-    result = await ssh_discover_system(
-        hostname="test-host", username="test-user", password="test-pass"
-    )
+    result = await ssh_discover_system(hostname="test-host", username="test-user", password="test-pass")
 
     # Parse result
     result_data = json.loads(result)
 
     # Verify structure
     assert result_data["status"] == "success"
-    assert (
-        result_data["hostname"] == "raspberrypi"
-    )  # Actual hostname from remote system
+    assert result_data["hostname"] == "raspberrypi"  # Actual hostname from remote system
     assert result_data["connection_ip"] == "test-host"  # IP used to connect
     assert "data" in result_data
 
@@ -163,9 +159,7 @@ async def test_ssh_discover_auth_failure(mock_connect):
     """Test SSH discovery with authentication failure."""
     mock_connect.side_effect = asyncssh.misc.PermissionDenied("Authentication failed")
 
-    result = await ssh_discover_system(
-        hostname="test-host", username="test-user", password="wrong-pass"
-    )
+    result = await ssh_discover_system(hostname="test-host", username="test-user", password="wrong-pass")
 
     result_data = json.loads(result)
     assert result_data["status"] == "error"
@@ -180,9 +174,7 @@ async def test_ssh_discover_connection_timeout(mock_connect):
 
     mock_connect.side_effect = TimeoutError()
 
-    result = await ssh_discover_system(
-        hostname="unreachable-host", username="test-user", password="test-pass"
-    )
+    result = await ssh_discover_system(hostname="unreachable-host", username="test-user", password="test-pass")
 
     result_data = json.loads(result)
     assert result_data["status"] == "error"
@@ -204,10 +196,7 @@ async def test_ssh_discover_no_credentials(mock_get_db):
     result_data = json.loads(result)
     assert result_data["status"] == "error"
     # Updated error message since we now use credential resolver
-    assert (
-        "No credentials available" in result_data["error"]
-        or "register_server" in result_data["error"]
-    )
+    assert "No credentials available" in result_data["error"] or "register_server" in result_data["error"]
 
 
 @pytest.mark.asyncio
@@ -228,9 +217,7 @@ async def test_ssh_discover_with_key_path(mock_connect):
     mock_conn.run.return_value = mock_result
 
     # Execute discovery with key
-    await ssh_discover_system(
-        hostname="test-host", username="test-user", key_path="/path/to/key"
-    )
+    await ssh_discover_system(hostname="test-host", username="test-user", key_path="/path/to/key")
 
     # Verify connect was called with key
     mock_connect.assert_called_once()
@@ -243,9 +230,7 @@ async def test_ssh_discover_with_key_path(mock_connect):
 @patch("src.homelab_mcp.ssh_tools.SSH_KEY_DIR")
 @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
 @patch("src.homelab_mcp.ssh_tools.asyncssh.generate_private_key")
-async def test_ensure_mcp_ssh_key_creates_new(
-    mock_generate, mock_get_path, mock_key_dir
-):
+async def test_ensure_mcp_ssh_key_creates_new(mock_generate, mock_get_path, mock_key_dir):
     """Test SSH key generation when keys don't exist."""
     # Setup mock paths
     mock_key_path = MagicMock()
@@ -273,14 +258,10 @@ async def test_ensure_mcp_ssh_key_creates_new(
         result = await ensure_mcp_ssh_key()
 
         # Verify key generation with comment parameter
-        mock_generate.assert_called_once_with(
-            "ssh-rsa", key_size=2048, comment="mcp_admin@homelab"
-        )
+        mock_generate.assert_called_once_with("ssh-rsa", key_size=2048, comment="mcp_admin@homelab")
 
         # Verify directory creation
-        mock_key_dir.mkdir.assert_called_once_with(
-            parents=True, exist_ok=True, mode=0o700
-        )
+        mock_key_dir.mkdir.assert_called_once_with(parents=True, exist_ok=True, mode=0o700)
 
         # Verify file writes
         mock_key_path.write_bytes.assert_called_once_with(b"private_key_data")
@@ -407,31 +388,18 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     assert result_data["status"] == "success"
     assert result_data["hostname"] == "test-host"
     assert "mcp_admin_setup" in result_data
-    assert (
-        result_data["mcp_admin_setup"]["user_creation"]
-        == "Success: mcp_admin user created"
-    )
-    assert (
-        result_data["mcp_admin_setup"]["sudo_access"] == "Success: Added to sudo group"
-    )
+    assert result_data["mcp_admin_setup"]["user_creation"] == "Success: mcp_admin user created"
+    assert result_data["mcp_admin_setup"]["sudo_access"] == "Success: Added to sudo group"
     assert result_data["mcp_admin_setup"]["ssh_key"] == "Success: SSH key installed"
-    assert (
-        result_data["mcp_admin_setup"]["passwordless_sudo"]
-        == "Success: Passwordless sudo enabled"
-    )
-    assert (
-        result_data["mcp_admin_setup"]["test_access"]
-        == "Success: mcp_admin access verified"
-    )
+    assert result_data["mcp_admin_setup"]["passwordless_sudo"] == "Success: Passwordless sudo enabled"
+    assert result_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin access verified"
 
 
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
-async def test_setup_remote_mcp_admin_user_exists(
-    mock_connect, mock_path, mock_ensure_key
-):
+async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup when user already exists."""
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
@@ -568,9 +536,7 @@ async def test_verify_mcp_admin_access_success(mock_connect, mock_key_path):
     assert result_data["hostname"] == "test-server"
     assert result_data["connection_ip"] == "test-host"
     assert result_data["mcp_admin"]["ssh_access"] == "Success: Connected with SSH key"
-    assert (
-        result_data["mcp_admin"]["sudo_access"] == "Success: Passwordless sudo working"
-    )
+    assert result_data["mcp_admin"]["sudo_access"] == "Success: Passwordless sudo working"
     assert result_data["mcp_admin"]["username"] == "mcp_admin"
     assert result_data["mcp_admin"]["groups"] == ["mcp_admin", "sudo"]
     assert result_data["mcp_admin"]["service_groups"] == []
@@ -656,9 +622,7 @@ async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path)
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
-async def test_setup_remote_mcp_admin_force_update_key(
-    mock_connect, mock_path, mock_ensure_key
-):
+async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup with force key update."""
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
@@ -745,9 +709,7 @@ async def test_setup_remote_mcp_admin_force_update_key(
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
-async def test_setup_remote_mcp_admin_no_force_update(
-    mock_connect, mock_path, mock_ensure_key
-):
+async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup without forcing key update."""
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
@@ -799,9 +761,7 @@ async def test_setup_remote_mcp_admin_no_force_update(
     mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
 
     # Execute with force_update_key=False
-    result = await setup_remote_mcp_admin(
-        "test-host", "admin", "password", force_update_key=False
-    )
+    result = await setup_remote_mcp_admin("test-host", "admin", "password", force_update_key=False)
 
     # Parse result
     result_data = json.loads(result)

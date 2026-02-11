@@ -35,9 +35,7 @@ class MockDevice:
             "disk_use_percent": "45%",
             "os_info": "Ubuntu 22.04.3 LTS",
             "uptime": "up 5 days, 2 hours",
-            "network_interfaces": json.dumps(
-                [{"name": "eth0", "addresses": ["192.168.1.100"]}]
-            ),
+            "network_interfaces": json.dumps([{"name": "eth0", "addresses": ["192.168.1.100"]}]),
         }
 
     @staticmethod
@@ -76,9 +74,7 @@ class TestDatabaseMigrator:
         self.mock_target.store_device.side_effect = [10, 20]  # New device IDs
 
         # Mock history migration
-        with patch.object(
-            self.migrator, "_migrate_device_history"
-        ) as mock_migrate_history:
+        with patch.object(self.migrator, "_migrate_device_history") as mock_migrate_history:
             migrated_count, error_count = self.migrator.migrate_devices()
 
         # Verify results
@@ -90,9 +86,7 @@ class TestDatabaseMigrator:
 
         # Verify devices were stored in target
         assert self.mock_target.store_device.call_count == 2
-        self.mock_target.store_device.assert_has_calls(
-            [call(devices[0]), call(devices[1])]
-        )
+        self.mock_target.store_device.assert_has_calls([call(devices[0]), call(devices[1])])
 
         # Verify history migration was called
         assert mock_migrate_history.call_count == 2
@@ -126,12 +120,8 @@ class TestDatabaseMigrator:
 
         with patch.object(self.migrator, "_migrate_device_history"):
             with patch("src.homelab_mcp.migration.datetime") as mock_datetime:
-                mock_datetime.now.return_value.isoformat.return_value = (
-                    "2024-01-02T00:00:00"
-                )
-                mock_datetime.fromisoformat.side_effect = ValueError(
-                    "Invalid timestamp"
-                )
+                mock_datetime.now.return_value.isoformat.return_value = "2024-01-02T00:00:00"
+                mock_datetime.fromisoformat.side_effect = ValueError("Invalid timestamp")
 
                 migrated_count, error_count = self.migrator.migrate_devices()
 
@@ -181,9 +171,7 @@ class TestDatabaseMigrator:
             self.migrator._migrate_device_history(source_device_id, target_device_id)
 
         # Verify source was queried
-        self.mock_source.get_device_changes.assert_called_once_with(
-            source_device_id, limit=1000
-        )
+        self.mock_source.get_device_changes.assert_called_once_with(source_device_id, limit=1000)
 
         # Verify history was stored in target
         self.mock_target.store_discovery_history.assert_called_once()
@@ -221,9 +209,7 @@ class TestDatabaseMigrator:
         target_device_id = 10
 
         # Mock source to raise exception
-        self.mock_source.get_device_changes.side_effect = Exception(
-            "Source database error"
-        )
+        self.mock_source.get_device_changes.side_effect = Exception("Source database error")
 
         with patch("builtins.print"):  # Suppress warning printing
             # Should not raise exception, just log warning
@@ -247,18 +233,14 @@ class TestDatabaseMigrator:
         self.mock_target.get_all_devices.return_value = target_devices
 
         with patch("builtins.print"):  # Suppress output
-            with patch(
-                "random.sample", return_value=source_devices[:1]
-            ):  # Sample first device
+            with patch("random.sample", return_value=source_devices[:1]):  # Sample first device
                 result = self.migrator.verify_migration()
 
         assert result is True
 
     def test_verify_migration_count_mismatch(self):
         """Test migration verification with device count mismatch."""
-        self.mock_source.get_all_devices.return_value = [
-            MockDevice.create_sample_device(1)
-        ]
+        self.mock_source.get_all_devices.return_value = [MockDevice.create_sample_device(1)]
         self.mock_target.get_all_devices.return_value = []  # Empty target
 
         with patch("builtins.print"):  # Suppress output
@@ -316,9 +298,7 @@ class TestMigrationFunctions:
     @patch("src.homelab_mcp.migration.SQLiteAdapter")
     @patch("src.homelab_mcp.migration.PostgreSQLAdapter")
     @patch("src.homelab_mcp.migration.DatabaseMigrator")
-    def test_migrate_sqlite_to_postgresql_success(
-        self, mock_migrator_class, mock_pg_adapter, mock_sqlite_adapter
-    ):
+    def test_migrate_sqlite_to_postgresql_success(self, mock_migrator_class, mock_pg_adapter, mock_sqlite_adapter):
         """Test successful SQLite to PostgreSQL migration."""
         # Setup mocks
         mock_sqlite = MagicMock()
@@ -343,9 +323,7 @@ class TestMigrationFunctions:
         }
 
         with patch("builtins.print"):  # Suppress output
-            result = migrate_sqlite_to_postgresql(
-                sqlite_path, postgres_params, dry_run=False
-            )
+            result = migrate_sqlite_to_postgresql(sqlite_path, postgres_params, dry_run=False)
 
         assert result is True
 
@@ -670,9 +648,7 @@ class TestMigrationIntegration:
         # Create migrator and run migration
         migrator = DatabaseMigrator(mock_source, mock_target)
 
-        with patch(
-            "src.homelab_mcp.migration.calculate_data_hash", return_value="test-hash"
-        ):
+        with patch("src.homelab_mcp.migration.calculate_data_hash", return_value="test-hash"):
             with patch("builtins.print"):  # Suppress output
                 # Migrate devices
                 migrated_count, error_count = migrator.migrate_devices()

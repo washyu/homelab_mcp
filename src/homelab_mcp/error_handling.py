@@ -30,9 +30,7 @@ class MCPConnectionError(Exception):
     pass
 
 
-def timeout_wrapper(
-    timeout_seconds: float = 30.0, default_response: dict[str, Any] | None = None
-) -> Callable[[F], F]:
+def timeout_wrapper(timeout_seconds: float = 30.0, default_response: dict[str, Any] | None = None) -> Callable[[F], F]:
     """
     Decorator to wrap async functions with timeout protection.
 
@@ -46,9 +44,7 @@ def timeout_wrapper(
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 # Apply timeout to the function execution
-                result = await asyncio.wait_for(
-                    func(*args, **kwargs), timeout=timeout_seconds
-                )
+                result = await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
                 return result
             except TimeoutError:
                 error_msg = f"Operation '{func.__name__}' timed out after {timeout_seconds} seconds"
@@ -133,9 +129,7 @@ def retry_on_failure(
                         await asyncio.sleep(delay)
                         delay *= backoff_multiplier
                     else:
-                        logger.error(
-                            f"All {max_retries + 1} attempts failed for '{func.__name__}'"
-                        )
+                        logger.error(f"All {max_retries + 1} attempts failed for '{func.__name__}'")
                         break
                 except Exception as e:
                     # Check if this is an SSH-specific error that should bubble up
@@ -166,9 +160,7 @@ def retry_on_failure(
     return decorator
 
 
-async def safe_json_response(
-    data: Any, fallback_message: str = "Operation completed"
-) -> dict[str, Any]:
+async def safe_json_response(data: Any, fallback_message: str = "Operation completed") -> dict[str, Any]:
     """
     Safely create a JSON response, handling cases where data might be malformed.
 
@@ -237,9 +229,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> str:
             try:
-                result = await asyncio.wait_for(
-                    func(*args, **kwargs), timeout=timeout_seconds
-                )
+                result = await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
                 # Return successful result as-is (should be JSON string)
                 return str(result)
             except TimeoutError:
@@ -291,9 +281,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                 hostname = kwargs.get("hostname", "unknown")
 
                 # Check for authentication-specific errors
-                if "PermissionDenied" in str(type(e)) or "Authentication failed" in str(
-                    e
-                ):
+                if "PermissionDenied" in str(type(e)) or "Authentication failed" in str(e):
                     error_response = json.dumps(
                         {
                             "status": "error",
@@ -347,8 +335,7 @@ class HealthChecker:
 
         return {
             "status": "healthy"
-            if (self.request_count == 0)
-            or (self.error_count < self.request_count * 0.5)
+            if (self.request_count == 0) or (self.error_count < self.request_count * 0.5)
             else "degraded",
             "uptime_seconds": uptime,
             "total_requests": self.request_count,

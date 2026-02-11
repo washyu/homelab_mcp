@@ -30,9 +30,7 @@ class TestSSHCredentialsDatabase:
     def test_ssh_credentials_table_created(self, adapter):
         """Test that ssh_credentials table is created during init_schema."""
         cursor = adapter.connection.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'")
         assert cursor.fetchone() is not None
 
     def test_add_credential(self, adapter):

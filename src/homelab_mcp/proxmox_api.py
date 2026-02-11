@@ -188,9 +188,7 @@ def get_proxmox_client(
 
     # Must have either API token or username+password
     if not api_token and not (username and password):
-        raise ValueError(
-            "Must provide either PROXMOX_API_TOKEN or PROXMOX_USER+PROXMOX_PASSWORD"
-        )
+        raise ValueError("Must provide either PROXMOX_API_TOKEN or PROXMOX_USER+PROXMOX_PASSWORD")
 
     return ProxmoxAPIClient(
         host=host,

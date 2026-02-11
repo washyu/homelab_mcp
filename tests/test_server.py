@@ -127,9 +127,7 @@ async def test_ssh_discover_tool_missing_params():
     assert response["id"] == 6
     # Should get either direct error or error in content
     has_error = "error" in response or (
-        "result" in response
-        and "content" in response["result"]
-        and "error" in str(response["result"]["content"])
+        "result" in response and "content" in response["result"] and "error" in str(response["result"]["content"])
     )
     assert has_error
 
@@ -185,9 +183,7 @@ async def test_server_timeout_handling():
         assert response["id"] == 8
         # Should get either direct error or error in content
         has_error = "error" in response or (
-            "result" in response
-            and "content" in response["result"]
-            and "error" in str(response["result"]["content"])
+            "result" in response and "content" in response["result"] and "error" in str(response["result"]["content"])
         )
         assert has_error
 
@@ -219,9 +215,7 @@ async def test_server_ssh_key_timeout(mock_ensure_key):
         assert response["id"] == 9
         # Should get either direct error or error in content
         has_error = "error" in response or (
-            "result" in response
-            and "content" in response["result"]
-            and "error" in str(response["result"]["content"])
+            "result" in response and "content" in response["result"] and "error" in str(response["result"]["content"])
         )
         assert has_error
 
@@ -284,8 +278,6 @@ async def test_server_exception_handling():
         assert response["id"] == 12
         # Should get either direct error or error in content
         has_error = "error" in response or (
-            "result" in response
-            and "content" in response["result"]
-            and "error" in str(response["result"]["content"])
+            "result" in response and "content" in response["result"] and "error" in str(response["result"]["content"])
         )
         assert has_error

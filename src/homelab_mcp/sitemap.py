@@ -37,13 +37,9 @@ class NetworkDevice:
 class NetworkSiteMap:
     """Manages the network site map database."""
 
-    def __init__(
-        self, db_path: str | None = None, db_type: str | None = None, **db_kwargs: Any
-    ):
+    def __init__(self, db_path: str | None = None, db_type: str | None = None, **db_kwargs: Any):
         """Initialize the site map with database connection."""
-        self.db_adapter = get_database_adapter(
-            db_type=db_type, db_path=db_path, **db_kwargs
-        )
+        self.db_adapter = get_database_adapter(db_type=db_type, db_path=db_path, **db_kwargs)
         self._init_database()
 
     def _init_database(self) -> None:
@@ -129,9 +125,7 @@ class NetworkSiteMap:
         """Get all devices from the database."""
         return self.db_adapter.get_all_devices()
 
-    def get_device_changes(
-        self, device_id: int, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    def get_device_changes(self, device_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Get change history for a specific device."""
         return self.db_adapter.get_device_changes(device_id, limit)
 
@@ -160,16 +154,12 @@ class NetworkSiteMap:
             # OS distribution
             os_info = device.get("os_info", "Unknown")
             if isinstance(analysis["operating_systems"], dict):
-                analysis["operating_systems"][os_info] = (
-                    analysis["operating_systems"].get(os_info, 0) + 1
-                )
+                analysis["operating_systems"][os_info] = analysis["operating_systems"].get(os_info, 0) + 1
 
             # CPU models
             cpu_model = device.get("cpu_model", "Unknown")
             if isinstance(analysis["cpu_architectures"], dict):
-                analysis["cpu_architectures"][cpu_model] = (
-                    analysis["cpu_architectures"].get(cpu_model, 0) + 1
-                )
+                analysis["cpu_architectures"][cpu_model] = analysis["cpu_architectures"].get(cpu_model, 0) + 1
 
             # Network segments (by IP prefix)
             connection_ip = device.get("connection_ip", "")
@@ -257,9 +247,7 @@ class NetworkSiteMap:
             cpu_cores = device.get("cpu_cores") or 0
             if cpu_cores >= 4:
                 memory_total = device.get("memory_total")
-                memory_gb = self._parse_memory_gb(
-                    str(memory_total) if memory_total else ""
-                )
+                memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
 
                 if memory_gb >= 4:
                     suggestions["load_balancer_candidates"].append(
@@ -275,9 +263,7 @@ class NetworkSiteMap:
                     disk_usage = int(device["disk_use_percent"].rstrip("%"))
                     if disk_usage < 50:  # Plenty of disk space
                         memory_total = device.get("memory_total")
-                        memory_gb = self._parse_memory_gb(
-                            str(memory_total) if memory_total else ""
-                        )
+                        memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
 
                         if memory_gb >= 8:
                             suggestions["database_candidates"].append(
@@ -302,9 +288,7 @@ class NetworkSiteMap:
             cpu_cores = device.get("cpu_cores") or 0
             if cpu_cores <= 2:
                 memory_total = device.get("memory_total")
-                memory_gb = self._parse_memory_gb(
-                    str(memory_total) if memory_total else ""
-                )
+                memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
 
                 if memory_gb <= 4:
                     suggestions["upgrade_recommendations"].append(
@@ -329,9 +313,7 @@ async def discover_and_store(
     from .ssh_tools import ssh_discover_system
 
     # Perform discovery
-    discovery_result = await ssh_discover_system(
-        hostname, username, password, key_path, port
-    )
+    discovery_result = await ssh_discover_system(hostname, username, password, key_path, port)
 
     # Parse and store the result
     device = sitemap.parse_discovery_output(discovery_result)
@@ -350,9 +332,7 @@ async def discover_and_store(
     )
 
 
-async def bulk_discover_and_store(
-    sitemap: NetworkSiteMap, targets: list[dict[str, Any]]
-) -> str:
+async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[str, Any]]) -> str:
     """Discover multiple devices and store them in the site map."""
     results = []
 

@@ -96,9 +96,7 @@ async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]
         vmid=arguments["vmid"],
         hostname=arguments["hostname"],
         host=arguments.get("host"),
-        ostemplate=arguments.get(
-            "ostemplate", "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
-        ),
+        ostemplate=arguments.get("ostemplate", "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"),
         storage=arguments.get("storage", "local-lvm"),
         memory=arguments.get("memory", 512),
         cores=arguments.get("cores", 1),

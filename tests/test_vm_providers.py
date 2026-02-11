@@ -54,9 +54,7 @@ class TestDockerProvider:
                     [
                         {
                             "State": {"Status": "running"},
-                            "NetworkSettings": {
-                                "Ports": {"80/tcp": [{"HostPort": "8080"}]}
-                            },
+                            "NetworkSettings": {"Ports": {"80/tcp": [{"HostPort": "8080"}]}},
                             "Config": {"Image": "nginx:latest"},
                         }
                     ]
@@ -82,9 +80,7 @@ class TestDockerProvider:
     async def test_deploy_vm_already_exists(self):
         """Test deployment when container already exists."""
         # Mock container already exists
-        self.mock_conn.run = AsyncMock(
-            return_value=MagicMock(exit_status=0, stdout="container exists", stderr="")
-        )
+        self.mock_conn.run = AsyncMock(return_value=MagicMock(exit_status=0, stdout="container exists", stderr=""))
 
         result = await self.provider.deploy_vm(self.mock_conn, "existing-container", {})
 
@@ -101,9 +97,7 @@ class TestDockerProvider:
             # Status check (via get_vm_status)
             MagicMock(
                 exit_status=0,
-                stdout=json.dumps(
-                    [{"State": {"Status": "running", "Running": True, "Pid": 1234}}]
-                ),
+                stdout=json.dumps([{"State": {"Status": "running", "Running": True, "Pid": 1234}}]),
                 stderr="",
             ),
         ]
@@ -117,9 +111,7 @@ class TestDockerProvider:
     @pytest.mark.asyncio
     async def test_stop_vm_success(self):
         """Test successful VM stop."""
-        self.mock_conn.run = AsyncMock(
-            return_value=MagicMock(exit_status=0, stdout="test-container", stderr="")
-        )
+        self.mock_conn.run = AsyncMock(return_value=MagicMock(exit_status=0, stdout="test-container", stderr=""))
 
         result = await self.provider.stop_vm(self.mock_conn, "test-container")
 
@@ -176,9 +168,7 @@ class TestDockerProvider:
             MagicMock(exit_status=0, stdout="test-container", stderr=""),
         ]
 
-        result = await self.provider.remove_vm(
-            self.mock_conn, "test-container", force=False
-        )
+        result = await self.provider.remove_vm(self.mock_conn, "test-container", force=False)
 
         assert result["status"] == "success"
         assert result["vm_name"] == "test-container"
@@ -317,9 +307,7 @@ class TestVMProviderBase:
         mock_conn = AsyncMock()
 
         # Mock successful start
-        mock_conn.run = AsyncMock(
-            return_value=MagicMock(exit_status=0, stdout="container", stderr="")
-        )
+        mock_conn.run = AsyncMock(return_value=MagicMock(exit_status=0, stdout="container", stderr=""))
 
         # Test start action
         with patch.object(provider, "get_vm_status") as mock_status:

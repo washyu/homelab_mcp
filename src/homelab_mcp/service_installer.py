@@ -16,9 +16,7 @@ TEMPLATES_DIR = Path(__file__).parent / "service_templates"
 class AnsibleRunner:
     """Runner for executing Ansible playbooks."""
 
-    def __init__(
-        self, playbook_path: str, inventory_path: str, variables: dict | None = None
-    ):
+    def __init__(self, playbook_path: str, inventory_path: str, variables: dict | None = None):
         self.playbook_path = playbook_path
         self.inventory_path = inventory_path
         self.variables = variables or {}
@@ -56,9 +54,7 @@ class AnsibleRunner:
             return self.results
 
 
-def generate_ansible_inventory(
-    hostname: str, username: str, config: dict | None = None
-) -> str:
+def generate_ansible_inventory(hostname: str, username: str, config: dict | None = None) -> str:
     """Generate Ansible inventory content."""
     inventory = f"""[servers]
 {hostname} ansible_user={username} ansible_ssh_private_key_file=~/.ssh/mcp_admin_rsa
@@ -147,9 +143,7 @@ class ServiceInstaller:
                 )
 
                 port_data = json.loads(port_result)
-                port_available = (
-                    port_data.get("exit_code", 1) != 0
-                )  # Port is free if command fails
+                port_available = port_data.get("exit_code", 1) != 0  # Port is free if command fails
                 checks_dict = results.get("checks", {})
                 if isinstance(checks_dict, dict):
                     checks_dict[f"port_{port}"] = {
@@ -163,9 +157,7 @@ class ServiceInstaller:
         # Check available memory
         if "memory_gb" in requirements:
             cmd = "free -m | grep '^Mem:' | awk '{print $2}'"
-            mem_result = await ssh_execute_command(
-                hostname=hostname, username=username, password=password, command=cmd
-            )
+            mem_result = await ssh_execute_command(hostname=hostname, username=username, password=password, command=cmd)
 
             mem_data = json.loads(mem_result)
             if mem_data.get("exit_code") == 0:
@@ -223,9 +215,7 @@ class ServiceInstaller:
         service = self.templates[service_name]
 
         # Check requirements first
-        req_check = await self.check_service_requirements(
-            service_name, hostname, username, password
-        )
+        req_check = await self.check_service_requirements(service_name, hostname, username, password)
 
         if not req_check["requirements_met"]:
             return {
@@ -254,9 +244,7 @@ class ServiceInstaller:
                 service_name, service, hostname, username, password, config_override
             )
         elif install_method == "iso_installation":
-            return await self._install_iso_service(
-                service_name, service, hostname, username, password, config_override
-            )
+            return await self._install_iso_service(service_name, service, hostname, username, password, config_override)
         else:
             return {
                 "status": "error",
@@ -443,9 +431,7 @@ class ServiceInstaller:
                 step_list.append(
                     {
                         "step": "verify_service",
-                        "status": "success"
-                        if status_data.get("exit_code") == 0
-                        else "warning",
+                        "status": "success" if status_data.get("exit_code") == 0 else "warning",
                         "container_status": status_data.get("output", ""),
                     }
                 )
@@ -462,9 +448,7 @@ class ServiceInstaller:
         except Exception as e:
             step_list = results.setdefault("steps", [])
             if isinstance(step_list, list):
-                step_list.append(
-                    {"step": "exception", "status": "fail", "error": str(e)}
-                )
+                step_list.append({"step": "exception", "status": "fail", "error": str(e)})
             return {"status": "error", "results": results}
 
     async def _install_script_service(
@@ -489,11 +473,7 @@ class ServiceInstaller:
         result = base_config.copy()
 
         for key, value in override.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._merge_config(result[key], value)
             else:
                 result[key] = value
@@ -618,9 +598,7 @@ class ServiceInstaller:
                 step_list.append(
                     {
                         "step": "create_workspace",
-                        "status": "success"
-                        if json.loads(mkdir_result).get("exit_code") == 0
-                        else "fail",
+                        "status": "success" if json.loads(mkdir_result).get("exit_code") == 0 else "fail",
                     }
                 )
 
@@ -634,16 +612,12 @@ class ServiceInstaller:
             main_tf_content = main_tf_content.replace("{{service_name}}", service_name)
 
             # Write main.tf
-            await self._write_remote_file(
-                hostname, username, password, f"{tf_dir}/main.tf", main_tf_content
-            )
+            await self._write_remote_file(hostname, username, password, f"{tf_dir}/main.tf", main_tf_content)
 
             # Generate variables.tf if variables are defined
             if "variables" in tf_config:
                 variables_tf = self._generate_variables_tf(tf_config["variables"])
-                await self._write_remote_file(
-                    hostname, username, password, f"{tf_dir}/variables.tf", variables_tf
-                )
+                await self._write_remote_file(hostname, username, password, f"{tf_dir}/variables.tf", variables_tf)
 
                 # Generate terraform.tfvars
                 tfvars = self._generate_tfvars(
@@ -653,24 +627,16 @@ class ServiceInstaller:
                     username,
                     password,
                 )
-                await self._write_remote_file(
-                    hostname, username, password, f"{tf_dir}/terraform.tfvars", tfvars
-                )
+                await self._write_remote_file(hostname, username, password, f"{tf_dir}/terraform.tfvars", tfvars)
 
             # Generate backend configuration
             if "backend" in tf_config:
-                backend_tf = self._generate_backend_tf(
-                    tf_config["backend"], service_name, hostname
-                )
-                await self._write_remote_file(
-                    hostname, username, password, f"{tf_dir}/backend.tf", backend_tf
-                )
+                backend_tf = self._generate_backend_tf(tf_config["backend"], service_name, hostname)
+                await self._write_remote_file(hostname, username, password, f"{tf_dir}/backend.tf", backend_tf)
 
             step_list = results.setdefault("steps", [])
             if isinstance(step_list, list):
-                step_list.append(
-                    {"step": "generate_terraform_files", "status": "success"}
-                )
+                step_list.append({"step": "generate_terraform_files", "status": "success"})
 
             # Step 4: Terraform init
             init_result = await ssh_execute_command(
@@ -686,9 +652,7 @@ class ServiceInstaller:
                 step_list.append(
                     {
                         "step": "terraform_init",
-                        "status": "success"
-                        if init_data.get("exit_code") == 0
-                        else "fail",
+                        "status": "success" if init_data.get("exit_code") == 0 else "fail",
                         "output": init_data.get("output", ""),
                     }
                 )
@@ -710,9 +674,7 @@ class ServiceInstaller:
                 step_list.append(
                     {
                         "step": "terraform_plan",
-                        "status": "success"
-                        if plan_data.get("exit_code") == 0
-                        else "fail",
+                        "status": "success" if plan_data.get("exit_code") == 0 else "fail",
                     }
                 )
 
@@ -733,9 +695,7 @@ class ServiceInstaller:
                 step_list.append(
                     {
                         "step": "terraform_apply",
-                        "status": "success"
-                        if apply_data.get("exit_code") == 0
-                        else "fail",
+                        "status": "success" if apply_data.get("exit_code") == 0 else "fail",
                     }
                 )
 
@@ -759,11 +719,7 @@ class ServiceInstaller:
                     pass
 
             # Step 8: Save state backup if configured
-            if (
-                tf_config.get("state_management", {})
-                .get("backup", {})
-                .get("enabled", True)
-            ):
+            if tf_config.get("state_management", {}).get("backup", {}).get("enabled", True):
                 backup_result = await self._backup_terraform_state(
                     hostname,
                     username,
@@ -792,9 +748,7 @@ class ServiceInstaller:
         except Exception as e:
             step_list = results.setdefault("steps", [])
             if isinstance(step_list, list):
-                step_list.append(
-                    {"step": "exception", "status": "fail", "error": str(e)}
-                )
+                step_list.append({"step": "exception", "status": "fail", "error": str(e)})
             return {"status": "error", "results": results}
 
     async def _write_remote_file(
@@ -812,9 +766,7 @@ class ServiceInstaller:
         # Use printf to avoid issues with special characters
         write_cmd = f"printf '%s' '{escaped_content}' > {remote_path}"
 
-        result = await ssh_execute_command(
-            hostname=hostname, username=username, password=password, command=write_cmd
-        )
+        result = await ssh_execute_command(hostname=hostname, username=username, password=password, command=write_cmd)
 
         data = json.loads(result)
         return bool(data.get("exit_code") == 0)
@@ -847,12 +799,8 @@ class ServiceInstaller:
 
             if "validation" in var_config:
                 var_block += "  validation {\n"
-                validation_values = ", ".join(
-                    [f'"{v}"' for v in var_config["validation"]]
-                )
-                var_block += (
-                    f"    condition = contains([{validation_values}], var.{var_name})\n"
-                )
+                validation_values = ", ".join([f'"{v}"' for v in var_config["validation"]])
+                var_block += f"    condition = contains([{validation_values}], var.{var_name})\n"
                 var_block += f'    error_message = "Invalid value for {var_name}. Must be one of: {", ".join(var_config["validation"])}"\n'
                 var_block += "  }\n"
 
@@ -908,16 +856,12 @@ class ServiceInstaller:
 
         return "\n".join(content)
 
-    def _generate_backend_tf(
-        self, backend_config: dict, service_name: str, hostname: str
-    ) -> str:
+    def _generate_backend_tf(self, backend_config: dict, service_name: str, hostname: str) -> str:
         """Generate backend.tf for state management."""
         backend_type = backend_config.get("type", "local")
 
         if backend_type == "local":
-            path = backend_config.get(
-                "path", f"/opt/terraform-states/{service_name}-{hostname}.tfstate"
-            )
+            path = backend_config.get("path", f"/opt/terraform-states/{service_name}-{hostname}.tfstate")
             # Replace template variables
             path = path.replace("{{service_name}}", service_name)
             path = path.replace("{{hostname}}", hostname)
@@ -931,9 +875,7 @@ class ServiceInstaller:
         elif backend_type == "s3":
             config = backend_config.get("config", {})
             bucket = config.get("bucket", "terraform-states")
-            key = config.get(
-                "key", f"services/{service_name}/{hostname}/terraform.tfstate"
-            )
+            key = config.get("key", f"services/{service_name}/{hostname}/terraform.tfstate")
             # Replace template variables
             key = key.replace("{{service_name}}", service_name)
             key = key.replace("{{hostname}}", hostname)
@@ -980,9 +922,7 @@ class ServiceInstaller:
 
         # Copy state file to backup
         backup_cmd = f"cp {state_path} {backup_path}"
-        result = await ssh_execute_command(
-            hostname=hostname, username=username, password=password, command=backup_cmd
-        )
+        result = await ssh_execute_command(hostname=hostname, username=username, password=password, command=backup_cmd)
 
         data = json.loads(result)
         return bool(data.get("exit_code") == 0)
@@ -1185,9 +1125,7 @@ sudo chown -R {username}:{username} {ansible_dir}
             }
 
         # Generate inventory file
-        inventory_content = self._generate_ansible_inventory(
-            hostname, username, config_override
-        )
+        inventory_content = self._generate_ansible_inventory(hostname, username, config_override)
         inventory_result = await ssh_execute_command(
             hostname=hostname,
             username=username,
@@ -1204,9 +1142,7 @@ sudo chown -R {username}:{username} {ansible_dir}
             }
 
         # Generate playbook
-        playbook_content = self._generate_ansible_playbook(
-            service, service_name, config_override
-        )
+        playbook_content = self._generate_ansible_playbook(service, service_name, config_override)
         playbook_result = await ssh_execute_command(
             hostname=hostname,
             username=username,
@@ -1280,9 +1216,7 @@ fi
         if config_override and config_override.get("debug", False):
             run_cmd += " -vvv"
 
-        run_result = await ssh_execute_command(
-            hostname=hostname, username=username, password=password, command=run_cmd
-        )
+        run_result = await ssh_execute_command(hostname=hostname, username=username, password=password, command=run_cmd)
 
         run_data = json.loads(run_result)
 
@@ -1295,9 +1229,7 @@ fi
             "playbook_path": f"{ansible_dir}/playbooks/{service_name}.yml",
         }
 
-    def _generate_ansible_inventory(
-        self, hostname: str, username: str, config_override: dict | None
-    ) -> str:
+    def _generate_ansible_inventory(self, hostname: str, username: str, config_override: dict | None) -> str:
         """Generate Ansible inventory file."""
         inventory = f"""[homelab]
 {hostname} ansible_user={username} ansible_ssh_private_key_file=~/.ssh/mcp_admin_rsa
@@ -1315,9 +1247,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
         return inventory
 
-    def _generate_ansible_playbook(
-        self, service: dict, service_name: str, config_override: dict | None
-    ) -> str:
+    def _generate_ansible_playbook(self, service: dict, service_name: str, config_override: dict | None) -> str:
         """Generate Ansible playbook from service template."""
         ansible_config = service.get("installation", {}).get("ansible", {})
 
@@ -1383,9 +1313,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
         return task_str + "\n"
 
-    def _generate_ansible_vars(
-        self, service: dict, config_override: dict | None
-    ) -> str:
+    def _generate_ansible_vars(self, service: dict, config_override: dict | None) -> str:
         """Generate Ansible variables file."""
         vars_content = "---\n# Service configuration variables\n\n"
 
@@ -1473,9 +1401,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
             "ansible_dir": ansible_dir,
             "playbook_path": playbook_path,
             "ansible_installed": ansible_installed,
-            "ansible_version": ansible_data.get("output", "").split("\n")[0]
-            if ansible_installed
-            else None,
+            "ansible_version": ansible_data.get("output", "").split("\n")[0] if ansible_installed else None,
             "files_info": info_data.get("output", ""),
         }
 
@@ -1493,9 +1419,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
         ansible_dir = f"/opt/ansible/{service_name}"
 
         # Check if playbook exists
-        check_result = await self.check_ansible_service(
-            service_name, hostname, username, password
-        )
+        check_result = await self.check_ansible_service(service_name, hostname, username, password)
         if check_result["status"] != "deployed":
             return check_result
 
@@ -1519,9 +1443,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
         cmd += " -v"
 
         # Run the playbook
-        run_result = await ssh_execute_command(
-            hostname=hostname, username=username, password=password, command=cmd
-        )
+        run_result = await ssh_execute_command(hostname=hostname, username=username, password=password, command=cmd)
 
         run_data = json.loads(run_result)
 
@@ -1561,9 +1483,7 @@ ansible_ssh_common_args='-o StrictHostKeyChecking=no'
                 "download_url": download_url,
                 "requirements": requirements,
                 "installation_steps": installation_steps,
-                "installation_type": installation_config.get(
-                    "installation_type", "bare_metal_or_vm"
-                ),
+                "installation_type": installation_config.get("installation_type", "bare_metal_or_vm"),
                 "target_hostname": hostname,
                 "next_steps": [
                     "Download the ISO from the provided URL",

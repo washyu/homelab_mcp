@@ -29,9 +29,7 @@ class InfrastructureManager:
         return None
 
 
-async def deploy_infrastructure_plan(
-    deployment_plan: dict[str, Any], validate_only: bool = False
-) -> str:
+async def deploy_infrastructure_plan(deployment_plan: dict[str, Any], validate_only: bool = False) -> str:
     """Deploy new infrastructure based on AI recommendations or user specifications."""
 
     try:
@@ -55,10 +53,7 @@ async def deploy_infrastructure_plan(
                     "validation_result": validation_result,
                     "estimated_duration": "15-30 minutes",
                     "affected_devices": len(
-                        {
-                            service.get("target_device_id")
-                            for service in deployment_plan.get("services", [])
-                        }
+                        {service.get("target_device_id") for service in deployment_plan.get("services", [])}
                     ),
                 }
             )
@@ -79,18 +74,12 @@ async def deploy_infrastructure_plan(
         # Update sitemap with new infrastructure
         await _update_sitemap_after_deployment(manager, deployment_results)
 
-        successful_deployments = [
-            r for r in deployment_results if r.get("status") == "success"
-        ]
-        failed_deployments = [
-            r for r in deployment_results if r.get("status") == "error"
-        ]
+        successful_deployments = [r for r in deployment_results if r.get("status") == "success"]
+        failed_deployments = [r for r in deployment_results if r.get("status") == "error"]
 
         return json.dumps(
             {
-                "status": "success"
-                if len(failed_deployments) == 0
-                else "partial_success",
+                "status": "success" if len(failed_deployments) == 0 else "partial_success",
                 "message": f"Deployed {len(successful_deployments)} components successfully",
                 "successful_deployments": len(successful_deployments),
                 "failed_deployments": len(failed_deployments),
@@ -151,18 +140,14 @@ async def update_device_configuration(
                     "message": "Configuration changes validated successfully",
                     "validation_result": validation_result,
                     "affected_services": validation_result.get("affected_services", []),
-                    "estimated_downtime": validation_result.get(
-                        "estimated_downtime", "None"
-                    ),
+                    "estimated_downtime": validation_result.get("estimated_downtime", "None"),
                 }
             )
 
         # Create backup if requested
         backup_id = None
         if backup_before_change:
-            backup_result = await create_infrastructure_backup(
-                backup_scope="device_specific", device_ids=[device_id]
-            )
+            backup_result = await create_infrastructure_backup(backup_scope="device_specific", device_ids=[device_id])
             backup_data = json.loads(backup_result)
             if backup_data.get("status") == "success":
                 backup_id = backup_data.get("backup_id")
@@ -178,9 +163,7 @@ async def update_device_configuration(
             # Apply service configuration changes
             if "services" in config_changes:
                 for service_name, service_config in config_changes["services"].items():
-                    result = await _update_service_config(
-                        conn, service_name, service_config
-                    )
+                    result = await _update_service_config(conn, service_name, service_config)
                     change_results.append(result)
 
             # Apply network configuration changes
@@ -195,9 +178,7 @@ async def update_device_configuration(
 
             # Apply resource allocation changes
             if "resources" in config_changes:
-                result = await _update_resource_config(
-                    conn, config_changes["resources"]
-                )
+                result = await _update_resource_config(conn, config_changes["resources"])
                 change_results.append(result)
 
         # Update sitemap with changes
@@ -252,11 +233,7 @@ async def decommission_network_device(
         # Analyze device dependencies
         dependencies = await _analyze_device_dependencies(manager, device_id)
 
-        if (
-            dependencies["critical_services"]
-            and not migration_plan
-            and not force_removal
-        ):
+        if dependencies["critical_services"] and not migration_plan and not force_removal:
             return json.dumps(
                 {
                     "status": "error",
@@ -273,9 +250,7 @@ async def decommission_network_device(
                     "message": "Decommission plan validated",
                     "dependencies": dependencies,
                     "migration_required": len(dependencies["critical_services"]) > 0,
-                    "estimated_migration_time": "30-60 minutes"
-                    if migration_plan
-                    else "N/A",
+                    "estimated_migration_time": "30-60 minutes" if migration_plan else "N/A",
                 }
             )
 
@@ -283,9 +258,7 @@ async def decommission_network_device(
 
         # Execute migration plan if provided
         if migration_plan and not force_removal:
-            migration_results = await _execute_migration_plan(
-                manager, device_id, migration_plan
-            )
+            migration_results = await _execute_migration_plan(manager, device_id, migration_plan)
             decommission_results.extend(migration_results)
 
         # Remove device from active service
@@ -323,14 +296,10 @@ async def decommission_network_device(
         )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Device decommissioning failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Device decommissioning failed: {str(e)}"})
 
 
-async def scale_infrastructure_services(
-    scaling_plan: dict[str, Any], validate_only: bool = False
-) -> str:
+async def scale_infrastructure_services(scaling_plan: dict[str, Any], validate_only: bool = False) -> str:
     """Scale services up or down based on resource analysis."""
 
     try:
@@ -369,9 +338,7 @@ async def scale_infrastructure_services(
             result = await _scale_service_down(manager, scale_down)
             scaling_results.append(result)
 
-        successful_scaling = [
-            r for r in scaling_results if r.get("status") == "success"
-        ]
+        successful_scaling = [r for r in scaling_results if r.get("status") == "success"]
         failed_scaling = [r for r in scaling_results if r.get("status") == "error"]
 
         return json.dumps(
@@ -386,14 +353,10 @@ async def scale_infrastructure_services(
         )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Service scaling failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Service scaling failed: {str(e)}"})
 
 
-async def validate_infrastructure_plan(
-    change_plan: dict[str, Any], validation_level: str = "comprehensive"
-) -> str:
+async def validate_infrastructure_plan(change_plan: dict[str, Any], validation_level: str = "comprehensive") -> str:
     """Validate infrastructure changes before applying them."""
 
     try:
@@ -422,9 +385,7 @@ async def validate_infrastructure_plan(
             if checks:
                 all_checks.extend(checks)
 
-        failed_checks = [
-            check for check in all_checks if not check.get("passed", False)
-        ]
+        failed_checks = [check for check in all_checks if not check.get("passed", False)]
         warning_checks = [check for check in all_checks if check.get("warning", False)]
 
         return json.dumps(
@@ -463,10 +424,7 @@ async def create_infrastructure_backup(
         manager = InfrastructureManager()
 
         # Generate backup ID
-        backup_id = (
-            backup_name
-            or f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
-        )
+        backup_id = backup_name or f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}"
 
         backup_data = {
             "backup_id": backup_id,
@@ -521,9 +479,7 @@ async def create_infrastructure_backup(
         )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Infrastructure backup failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Infrastructure backup failed: {str(e)}"})
 
 
 async def rollback_infrastructure_to_backup(
@@ -541,9 +497,7 @@ async def rollback_infrastructure_to_backup(
             with open(backup_path) as f:
                 backup_data = json.load(f)
         except FileNotFoundError:
-            return json.dumps(
-                {"status": "error", "message": f"Backup {backup_id} not found"}
-            )
+            return json.dumps({"status": "error", "message": f"Backup {backup_id} not found"})
 
         if validate_only:
             return json.dumps(
@@ -553,9 +507,7 @@ async def rollback_infrastructure_to_backup(
                     "backup_id": backup_id,
                     "backup_created": backup_data.get("created_at"),
                     "rollback_scope": rollback_scope,
-                    "devices_to_rollback": len(device_ids)
-                    if device_ids
-                    else len(backup_data.get("devices", {})),
+                    "devices_to_rollback": len(device_ids) if device_ids else len(backup_data.get("devices", {})),
                     "estimated_duration": "20-45 minutes",
                 }
             )
@@ -580,21 +532,15 @@ async def rollback_infrastructure_to_backup(
         for device_id in target_device_ids:
             devices_data = backup_data.get("devices", {})
             if isinstance(devices_data, dict) and device_id in devices_data:
-                result = await _rollback_device(
-                    manager, int(device_id), devices_data[device_id]
-                )
+                result = await _rollback_device(manager, int(device_id), devices_data[device_id])
                 rollback_results.append(result)
 
-        successful_rollbacks = [
-            r for r in rollback_results if r.get("status") == "success"
-        ]
+        successful_rollbacks = [r for r in rollback_results if r.get("status") == "success"]
         failed_rollbacks = [r for r in rollback_results if r.get("status") == "error"]
 
         return json.dumps(
             {
-                "status": "success"
-                if len(failed_rollbacks) == 0
-                else "partial_success",
+                "status": "success" if len(failed_rollbacks) == 0 else "partial_success",
                 "message": f"Rolled back {len(successful_rollbacks)} devices successfully",
                 "backup_id": backup_id,
                 "rollback_scope": rollback_scope,
@@ -606,9 +552,7 @@ async def rollback_infrastructure_to_backup(
         )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Infrastructure rollback failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Infrastructure rollback failed: {str(e)}"})
 
 
 # Helper functions (simplified implementations)
@@ -632,9 +576,7 @@ async def _validate_deployment_plan(plan: dict[str, Any]) -> dict[str, Any]:
             if "type" not in service:
                 service_errors.append(f"Service {i}: 'type' is required")
             elif service["type"] not in ["docker", "lxd", "service"]:
-                service_errors.append(
-                    f"Service {i}: type must be 'docker', 'lxd', or 'service'"
-                )
+                service_errors.append(f"Service {i}: type must be 'docker', 'lxd', or 'service'")
             if "target_device_id" not in service:
                 service_errors.append(f"Service {i}: 'target_device_id' is required")
 
@@ -642,25 +584,19 @@ async def _validate_deployment_plan(plan: dict[str, Any]) -> dict[str, Any]:
             if service.get("type") == "docker":
                 config = service.get("config", {})
                 if "image" not in config:
-                    warnings.append(
-                        f"Service {i}: Docker image not specified, will use default"
-                    )
+                    warnings.append(f"Service {i}: Docker image not specified, will use default")
 
                 # Validate port mappings
                 ports = config.get("ports", [])
                 for port in ports:
                     if ":" not in str(port):
-                        service_errors.append(
-                            f"Service {i}: Invalid port mapping '{port}' (expected 'host:container')"
-                        )
+                        service_errors.append(f"Service {i}: Invalid port mapping '{port}' (expected 'host:container')")
 
             # Service-specific validation
             elif service.get("type") == "service":
                 config = service.get("config", {})
                 if "service_file" not in config:
-                    service_errors.append(
-                        f"Service {i}: 'service_file' is required for systemd services"
-                    )
+                    service_errors.append(f"Service {i}: 'service_file' is required for systemd services")
 
             errors.extend(service_errors)
 
@@ -674,9 +610,7 @@ async def _validate_deployment_plan(plan: dict[str, Any]) -> dict[str, Any]:
                 "configure_firewall",
                 "setup_routing",
             ]:
-                errors.append(
-                    f"Network change {i}: Invalid action '{change['action']}'"
-                )
+                errors.append(f"Network change {i}: Invalid action '{change['action']}'")
 
             if "target_device_id" not in change:
                 errors.append(f"Network change {i}: 'target_device_id' is required")
@@ -684,9 +618,7 @@ async def _validate_deployment_plan(plan: dict[str, Any]) -> dict[str, Any]:
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 
 
-async def _deploy_service(
-    manager: InfrastructureManager, service: dict[str, Any]
-) -> dict[str, Any]:
+async def _deploy_service(manager: InfrastructureManager, service: dict[str, Any]) -> dict[str, Any]:
     """Deploy a single service."""
     try:
         device_id = service["target_device_id"]
@@ -782,9 +714,7 @@ async def _deploy_service(
                     }
 
                 # Write service file
-                await conn.run(
-                    f'echo "{service_file}" | sudo tee /etc/systemd/system/{service_name}.service'
-                )
+                await conn.run(f'echo "{service_file}" | sudo tee /etc/systemd/system/{service_name}.service')
                 await conn.run("sudo systemctl daemon-reload")
                 await conn.run(f"sudo systemctl enable {service_name}")
                 result = await conn.run(f"sudo systemctl start {service_name}")
@@ -817,23 +747,17 @@ async def _deploy_service(
         }
 
 
-async def _apply_network_change(
-    manager: InfrastructureManager, change: dict[str, Any]
-) -> dict[str, Any]:
+async def _apply_network_change(manager: InfrastructureManager, change: dict[str, Any]) -> dict[str, Any]:
     """Apply a network configuration change."""
     return {"status": "success", "change": change["action"]}
 
 
-async def _update_sitemap_after_deployment(
-    manager: InfrastructureManager, results: list[dict[str, Any]]
-) -> None:
+async def _update_sitemap_after_deployment(manager: InfrastructureManager, results: list[dict[str, Any]]) -> None:
     """Update sitemap after deployment."""
     pass
 
 
-async def _validate_config_changes(
-    changes: dict[str, Any], device_id: int
-) -> dict[str, Any]:
+async def _validate_config_changes(changes: dict[str, Any], device_id: int) -> dict[str, Any]:
     """Validate configuration changes."""
     errors = []
     warnings = []
@@ -847,9 +771,7 @@ async def _validate_config_changes(
 
             if "type" in service_config:
                 if service_config["type"] not in ["docker", "lxd", "systemd"]:
-                    errors.append(
-                        f"Invalid service type '{service_config['type']}' for {service_name}"
-                    )
+                    errors.append(f"Invalid service type '{service_config['type']}' for {service_name}")
 
             # Docker validation
             if service_config.get("type") == "docker":
@@ -858,9 +780,7 @@ async def _validate_config_changes(
                 if "ports" in service_config:
                     for port in service_config["ports"]:
                         if ":" not in str(port):
-                            errors.append(
-                                f"Invalid port mapping '{port}' for {service_name}"
-                            )
+                            errors.append(f"Invalid port mapping '{port}' for {service_name}")
 
     # Validate network changes
     if "network" in changes:
@@ -895,9 +815,7 @@ async def _validate_config_changes(
     }
 
 
-async def _update_service_config(
-    conn: Any, service_name: str, config: dict[str, Any]
-) -> dict[str, Any]:
+async def _update_service_config(conn: Any, service_name: str, config: dict[str, Any]) -> dict[str, Any]:
     """Update service configuration."""
     try:
         service_type = config.get("type", "docker")
@@ -952,9 +870,7 @@ async def _update_service_config(
             # Update systemd service configuration
             service_file = config.get("service_file", "")
             if service_file:
-                await conn.run(
-                    f'echo "{service_file}" | sudo tee /etc/systemd/system/{service_name}.service'
-                )
+                await conn.run(f'echo "{service_file}" | sudo tee /etc/systemd/system/{service_name}.service')
                 await conn.run("sudo systemctl daemon-reload")
                 result = await conn.run(f"sudo systemctl restart {service_name}")
 
@@ -1036,9 +952,7 @@ async def _rediscover_device_after_changes(
     pass
 
 
-async def _analyze_device_dependencies(
-    manager: InfrastructureManager, device_id: int
-) -> dict[str, Any]:
+async def _analyze_device_dependencies(manager: InfrastructureManager, device_id: int) -> dict[str, Any]:
     """Analyze device dependencies."""
     try:
         connection_info = await manager.get_device_connection_info(device_id)
@@ -1091,9 +1005,7 @@ async def _analyze_device_dependencies(
             lxd_result = await conn.run("lxc list --format csv -c ns | grep RUNNING")
             if lxd_result.exit_status == 0 and lxd_result.stdout:
                 stdout_text = (
-                    lxd_result.stdout.decode()
-                    if isinstance(lxd_result.stdout, bytes)
-                    else str(lxd_result.stdout)
+                    lxd_result.stdout.decode() if isinstance(lxd_result.stdout, bytes) else str(lxd_result.stdout)
                 )
                 if stdout_text.strip():
                     for line in stdout_text.strip().split("\n"):
@@ -1123,9 +1035,7 @@ async def _analyze_device_dependencies(
             ]
 
             for pattern in critical_service_patterns:
-                service_result = await conn.run(
-                    f"systemctl is-active {pattern} 2>/dev/null"
-                )
+                service_result = await conn.run(f"systemctl is-active {pattern} 2>/dev/null")
                 if service_result.exit_status == 0 and service_result.stdout:
                     stdout_text = (
                         service_result.stdout.decode()
@@ -1218,18 +1128,14 @@ async def _execute_migration_plan(
     try:
         source_connection_info = await manager.get_device_connection_info(device_id)
         if not source_connection_info:
-            return [
-                {"status": "error", "error": f"Source device {device_id} not found"}
-            ]
+            return [{"status": "error", "error": f"Source device {device_id} not found"}]
 
         service_mapping = plan.get("service_mapping", {})
 
         for service_name, target_device_id in service_mapping.items():
             try:
                 # Get target device connection info
-                target_connection_info = await manager.get_device_connection_info(
-                    target_device_id
-                )
+                target_connection_info = await manager.get_device_connection_info(target_device_id)
                 if not target_connection_info:
                     results.append(
                         {
@@ -1247,14 +1153,10 @@ async def _execute_migration_plan(
                     known_hosts=None,
                 ) as source_conn:
                     # Get Docker container configuration
-                    inspect_result = await source_conn.run(
-                        f"docker inspect {service_name}"
-                    )
+                    inspect_result = await source_conn.run(f"docker inspect {service_name}")
                     if inspect_result.exit_status == 0:
                         # Export container and configuration
-                        await source_conn.run(
-                            f"docker commit {service_name} {service_name}_migration"
-                        )
+                        await source_conn.run(f"docker commit {service_name} {service_name}_migration")
                         save_result = await source_conn.run(
                             f"docker save {service_name}_migration | gzip > /tmp/{service_name}_migration.tar.gz"
                         )
@@ -1267,26 +1169,20 @@ async def _execute_migration_plan(
                                 known_hosts=None,
                             ) as target_conn:
                                 # Transfer container image
-                                async with (
-                                    source_conn.start_sftp_client() as source_sftp
-                                ):
+                                async with source_conn.start_sftp_client() as source_sftp:
                                     await source_sftp.get(
                                         f"/tmp/{service_name}_migration.tar.gz",
                                         f"/tmp/{service_name}_migration.tar.gz",
                                     )
 
-                                async with (
-                                    target_conn.start_sftp_client() as target_sftp
-                                ):
+                                async with target_conn.start_sftp_client() as target_sftp:
                                     await target_sftp.put(
                                         f"/tmp/{service_name}_migration.tar.gz",
                                         f"/tmp/{service_name}_migration.tar.gz",
                                     )
 
                                 # Load and start container on target
-                                await target_conn.run(
-                                    f"gunzip -c /tmp/{service_name}_migration.tar.gz | docker load"
-                                )
+                                await target_conn.run(f"gunzip -c /tmp/{service_name}_migration.tar.gz | docker load")
                                 run_result = await target_conn.run(
                                     f"docker run -d --name {service_name} {service_name}_migration"
                                 )
@@ -1364,16 +1260,12 @@ async def _execute_migration_plan(
                             )
 
             except Exception as e:
-                results.append(
-                    {"status": "error", "service": service_name, "error": str(e)}
-                )
+                results.append({"status": "error", "service": service_name, "error": str(e)})
 
         return results
 
     except Exception as e:
-        return [
-            {"status": "error", "error": f"Migration plan execution failed: {str(e)}"}
-        ]
+        return [{"status": "error", "error": f"Migration plan execution failed: {str(e)}"}]
 
 
 async def _stop_all_device_services(conn: Any) -> dict[str, Any]:
@@ -1391,9 +1283,7 @@ async def _validate_scaling_plan(plan: dict[str, Any]) -> dict[str, Any]:
     return {"valid": True, "errors": [], "resource_impact": {}}
 
 
-async def _scale_service_up(
-    manager: InfrastructureManager, scale_up: dict[str, Any]
-) -> dict[str, Any]:
+async def _scale_service_up(manager: InfrastructureManager, scale_up: dict[str, Any]) -> dict[str, Any]:
     """Scale a service up."""
     return {
         "status": "success",
@@ -1402,9 +1292,7 @@ async def _scale_service_up(
     }
 
 
-async def _scale_service_down(
-    manager: InfrastructureManager, scale_down: dict[str, Any]
-) -> dict[str, Any]:
+async def _scale_service_down(manager: InfrastructureManager, scale_down: dict[str, Any]) -> dict[str, Any]:
     """Scale a service down."""
     return {
         "status": "success",
@@ -1435,9 +1323,7 @@ def _generate_validation_recommendations(checks: list[dict[str, Any]]) -> list[s
     return ["All validations passed"]
 
 
-async def _backup_device(
-    manager: InfrastructureManager, device_id: int, include_data: bool
-) -> dict[str, Any]:
+async def _backup_device(manager: InfrastructureManager, device_id: int, include_data: bool) -> dict[str, Any]:
     """Backup a single device."""
     try:
         connection_info = await manager.get_device_connection_info(device_id)
@@ -1474,9 +1360,7 @@ async def _backup_device(
                     container_names = stdout_text.strip().split("\n")
                 for container_name in container_names:
                     if container_name.strip():
-                        inspect_result = await conn.run(
-                            f"docker inspect {container_name}"
-                        )
+                        inspect_result = await conn.run(f"docker inspect {container_name}")
                         if inspect_result.exit_status == 0:
                             stdout_text = (
                                 inspect_result.stdout.decode()
@@ -1499,25 +1383,21 @@ async def _backup_device(
                                     isinstance(backup_data["services"], dict)
                                     and container_name in backup_data["services"]
                                 ):
-                                    backup_data["services"][container_name][
-                                        "data_backup"
-                                    ] = export_result.exit_status == 0
+                                    backup_data["services"][container_name]["data_backup"] = (
+                                        export_result.exit_status == 0
+                                    )
 
             # Backup LXD containers
             lxd_result = await conn.run("lxc list --format csv -c n")
             if lxd_result.exit_status == 0 and lxd_result.stdout:
                 stdout_text = (
-                    lxd_result.stdout.decode()
-                    if isinstance(lxd_result.stdout, bytes)
-                    else str(lxd_result.stdout)
+                    lxd_result.stdout.decode() if isinstance(lxd_result.stdout, bytes) else str(lxd_result.stdout)
                 )
                 if stdout_text.strip():
                     container_names = stdout_text.strip().split("\n")
                 for container_name in container_names:
                     if container_name.strip():
-                        info_result = await conn.run(
-                            f"lxc config show {container_name}"
-                        )
+                        info_result = await conn.run(f"lxc config show {container_name}")
                         if info_result.exit_status == 0:
                             stdout_text = (
                                 info_result.stdout.decode()
@@ -1540,9 +1420,9 @@ async def _backup_device(
                                     isinstance(backup_data["services"], dict)
                                     and container_name in backup_data["services"]
                                 ):
-                                    backup_data["services"][container_name][
-                                        "data_backup"
-                                    ] = export_result.exit_status == 0
+                                    backup_data["services"][container_name]["data_backup"] = (
+                                        export_result.exit_status == 0
+                                    )
 
             # Backup systemd services
             systemd_result = await conn.run(
@@ -1564,13 +1444,8 @@ async def _backup_device(
                         if not service_name.endswith(".service"):
                             continue
 
-                        service_file_result = await conn.run(
-                            f"systemctl cat {service_name}"
-                        )
-                        if (
-                            service_file_result.exit_status == 0
-                            and service_file_result.stdout
-                        ):
+                        service_file_result = await conn.run(f"systemctl cat {service_name}")
+                        if service_file_result.exit_status == 0 and service_file_result.stdout:
                             stdout_text = (
                                 service_file_result.stdout.decode()
                                 if isinstance(service_file_result.stdout, bytes)
@@ -1594,9 +1469,7 @@ async def _backup_device(
                 network_configs["interfaces"] = interfaces_result.stdout
 
             # Firewall rules
-            ufw_result = await conn.run(
-                'sudo ufw status numbered 2>/dev/null || echo "UFW not available"'
-            )
+            ufw_result = await conn.run('sudo ufw status numbered 2>/dev/null || echo "UFW not available"')
             if ufw_result.exit_status == 0:
                 network_configs["firewall"] = ufw_result.stdout
 

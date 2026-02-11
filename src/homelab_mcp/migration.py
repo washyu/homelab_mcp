@@ -148,9 +148,7 @@ class DatabaseMigrator:
                 if "last_seen" in device and isinstance(device["last_seen"], str):
                     # Convert ISO string to datetime if needed
                     try:
-                        datetime.fromisoformat(
-                            device["last_seen"].replace("Z", "+00:00")
-                        )
+                        datetime.fromisoformat(device["last_seen"].replace("Z", "+00:00"))
                     except ValueError:
                         # If parsing fails, use current time
                         device["last_seen"] = datetime.now().isoformat()
@@ -168,19 +166,13 @@ class DatabaseMigrator:
                     print(f"  Migrated {migrated_count} devices...")
 
             except Exception as e:
-                print(
-                    f"  ERROR migrating device {device.get('hostname', 'unknown')}: {e}"
-                )
+                print(f"  ERROR migrating device {device.get('hostname', 'unknown')}: {e}")
                 error_count += 1
 
-        print(
-            f"Device migration complete: {migrated_count} migrated, {error_count} errors"
-        )
+        print(f"Device migration complete: {migrated_count} migrated, {error_count} errors")
         return migrated_count, error_count
 
-    def _migrate_device_history(
-        self, source_device_id: int, target_device_id: int
-    ) -> None:
+    def _migrate_device_history(self, source_device_id: int, target_device_id: int) -> None:
         """Migrate discovery history for a specific device."""
         try:
             changes = self.source.get_device_changes(source_device_id, limit=1000)
@@ -196,14 +188,10 @@ class DatabaseMigrator:
                 data_hash = calculate_data_hash(discovery_data)
 
                 # Store in target database
-                self.target.store_discovery_history(
-                    target_device_id, discovery_data, data_hash
-                )
+                self.target.store_discovery_history(target_device_id, discovery_data, data_hash)
 
         except Exception as e:
-            print(
-                f"    Warning: Could not migrate history for device {source_device_id}: {e}"
-            )
+            print(f"    Warning: Could not migrate history for device {source_device_id}: {e}")
 
     def verify_migration(self) -> bool:
         """Verify that migration was successful."""
@@ -244,9 +232,7 @@ class DatabaseMigrator:
             key_fields = ["hostname", "connection_ip", "status", "cpu_model", "os_info"]
             for field in key_fields:
                 if source_device.get(field) != target_device.get(field):
-                    print(
-                        f"ERROR: Field mismatch for {source_device['hostname']}.{field}"
-                    )
+                    print(f"ERROR: Field mismatch for {source_device['hostname']}.{field}")
                     return False
 
         print("✓ Migration verification successful")
@@ -277,9 +263,7 @@ def migrate_sqlite_to_postgresql(
     if postgres_params is None:
         postgres_params = config.database.postgres_config
 
-    print(
-        f"Target PostgreSQL: {postgres_params['host']}:{postgres_params['port']}/{postgres_params['database']}"
-    )
+    print(f"Target PostgreSQL: {postgres_params['host']}:{postgres_params['port']}/{postgres_params['database']}")
 
     if dry_run:
         print("DRY RUN MODE - No changes will be made to target database")
@@ -348,9 +332,7 @@ def setup_postgresql_database(postgres_params: dict[str, Any] | None = None) -> 
         postgres_params = config.database.postgres_config
 
     try:
-        print(
-            f"Connecting to PostgreSQL at {postgres_params['host']}:{postgres_params['port']}"
-        )
+        print(f"Connecting to PostgreSQL at {postgres_params['host']}:{postgres_params['port']}")
 
         adapter = PostgreSQLAdapter(postgres_params)
         adapter.connect()
@@ -415,9 +397,7 @@ def main() -> None:
     """Command-line interface for migration utilities."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Database migration utilities for Homelab MCP"
-    )
+    parser = argparse.ArgumentParser(description="Database migration utilities for Homelab MCP")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Setup command
@@ -429,20 +409,12 @@ def main() -> None:
     setup_parser.add_argument("--password", required=True, help="Database password")
 
     # Migrate command
-    migrate_parser = subparsers.add_parser(
-        "migrate", help="Migrate from SQLite to PostgreSQL"
-    )
+    migrate_parser = subparsers.add_parser("migrate", help="Migrate from SQLite to PostgreSQL")
     migrate_parser.add_argument("--sqlite-path", help="Path to SQLite database")
-    migrate_parser.add_argument(
-        "--dry-run", action="store_true", help="Test migration without making changes"
-    )
+    migrate_parser.add_argument("--dry-run", action="store_true", help="Test migration without making changes")
     migrate_parser.add_argument("--host", default="localhost", help="PostgreSQL host")
-    migrate_parser.add_argument(
-        "--port", type=int, default=5432, help="PostgreSQL port"
-    )
-    migrate_parser.add_argument(
-        "--database", default="homelab_mcp", help="Database name"
-    )
+    migrate_parser.add_argument("--port", type=int, default=5432, help="PostgreSQL port")
+    migrate_parser.add_argument("--database", default="homelab_mcp", help="Database name")
     migrate_parser.add_argument("--user", default="postgres", help="Database user")
     migrate_parser.add_argument("--password", required=True, help="Database password")
 

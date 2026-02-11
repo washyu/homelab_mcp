@@ -41,15 +41,11 @@ class TestSQLiteAdapter:
         cursor = adapter.connection.cursor()
 
         # Check devices table
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='devices'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")
         assert cursor.fetchone() is not None
 
         # Check discovery_history table
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'"
-        )
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
         assert cursor.fetchone() is not None
 
         adapter.close()
@@ -65,9 +61,7 @@ class TestSQLiteAdapter:
             "cpu_cores": 8,
             "memory_total": "16G",
             "os_info": "Ubuntu 22.04",
-            "network_interfaces": json.dumps(
-                [{"name": "eth0", "addresses": ["192.168.1.10"]}]
-            ),
+            "network_interfaces": json.dumps([{"name": "eth0", "addresses": ["192.168.1.10"]}]),
         }
 
         # Store device

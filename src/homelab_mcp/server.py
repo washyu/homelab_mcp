@@ -47,9 +47,7 @@ class HomelabMCPServer:
                     except TimeoutError:
                         logger.error("SSH key initialization timed out")
                         health_checker.record_error("timeout")
-                        return self._error_response(
-                            request_id, "SSH key initialization timed out"
-                        )
+                        return self._error_response(request_id, "SSH key initialization timed out")
 
                 return self._success_response(
                     request_id,
@@ -75,9 +73,7 @@ class HomelabMCPServer:
 
                 if tool_name not in self.tools:
                     health_checker.record_error("invalid_tool")
-                    return self._error_response(
-                        request_id, f"Unknown tool: {tool_name}"
-                    )
+                    return self._error_response(request_id, f"Unknown tool: {tool_name}")
 
                 # Execute tool with timeout protection
                 try:
@@ -112,9 +108,7 @@ class HomelabMCPServer:
         """Create a successful JSON-RPC response."""
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
-    def _error_response(
-        self, request_id: Any, message: str, code: int = -32603
-    ) -> dict[str, Any]:
+    def _error_response(self, request_id: Any, message: str, code: int = -32603) -> dict[str, Any]:
         """Create an error JSON-RPC response."""
         return {
             "jsonrpc": "2.0",
@@ -137,16 +131,12 @@ class HomelabMCPServer:
             try:
                 # Read line from stdin with timeout to prevent hanging
                 try:
-                    line_bytes = await asyncio.wait_for(
-                        reader.readline(), timeout=300.0
-                    )  # 5 minute timeout
+                    line_bytes = await asyncio.wait_for(reader.readline(), timeout=300.0)  # 5 minute timeout
                     if not line_bytes:
                         logger.info("EOF received, shutting down server")
                         break
                 except TimeoutError:
-                    logger.warning(
-                        "No input received for 5 minutes, server still running"
-                    )
+                    logger.warning("No input received for 5 minutes, server still running")
                     continue
 
                 line = line_bytes.decode("utf-8").strip()
@@ -158,16 +148,12 @@ class HomelabMCPServer:
                     request = json.loads(line)
                 except json.JSONDecodeError as e:
                     logger.error(f"Invalid JSON received: {str(e)}")
-                    error_response = self._error_response(
-                        None, f"Invalid JSON: {str(e)}", -32700
-                    )
+                    error_response = self._error_response(None, f"Invalid JSON: {str(e)}", -32700)
                     print(json.dumps(error_response))
                     sys.stdout.flush()
                     consecutive_errors += 1
                     if consecutive_errors >= max_consecutive_errors:
-                        logger.error(
-                            f"Too many consecutive errors ({consecutive_errors}), shutting down"
-                        )
+                        logger.error(f"Too many consecutive errors ({consecutive_errors}), shutting down")
                         break
                     continue
 
@@ -209,16 +195,12 @@ class HomelabMCPServer:
                 logger.info("Received interrupt signal, shutting down gracefully")
                 break
             except Exception as e:
-                logger.error(
-                    f"Unexpected error in server loop: {str(e)}", exc_info=True
-                )
+                logger.error(f"Unexpected error in server loop: {str(e)}", exc_info=True)
                 consecutive_errors += 1
 
                 # Try to send error response if we can identify the request
                 try:
-                    error_response = self._error_response(
-                        None, f"Server error: {str(e)}", -32603
-                    )
+                    error_response = self._error_response(None, f"Server error: {str(e)}", -32603)
                     print(json.dumps(error_response))
                     sys.stdout.flush()
                 except Exception:
@@ -226,9 +208,7 @@ class HomelabMCPServer:
 
                 # If too many consecutive errors, shut down to prevent infinite loop
                 if consecutive_errors >= max_consecutive_errors:
-                    logger.error(
-                        f"Too many consecutive errors ({consecutive_errors}), shutting down"
-                    )
+                    logger.error(f"Too many consecutive errors ({consecutive_errors}), shutting down")
                     break
 
                 # Brief pause before continuing to avoid rapid error loops

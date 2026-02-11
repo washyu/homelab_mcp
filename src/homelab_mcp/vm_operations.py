@@ -28,9 +28,7 @@ class VMManager:
         return None
 
 
-async def deploy_vm(
-    device_id: int, platform: str, vm_name: str, vm_config: dict[str, Any]
-) -> str:
+async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict[str, Any]) -> str:
     """Deploy a new VM/container on a specific device."""
     try:
         manager = VMManager()
@@ -60,14 +58,10 @@ async def deploy_vm(
     except ValueError as e:
         return json.dumps({"status": "error", "message": str(e)})
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"VM deployment failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"VM deployment failed: {str(e)}"})
 
 
-async def control_vm_state(
-    device_id: int, platform: str, vm_name: str, action: str
-) -> str:
+async def control_vm_state(device_id: int, platform: str, vm_name: str, action: str) -> str:
     """Control VM state (start, stop, restart)."""
     try:
         manager = VMManager()
@@ -97,9 +91,7 @@ async def control_vm_state(
     except ValueError as e:
         return json.dumps({"status": "error", "message": str(e)})
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"VM control failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"VM control failed: {str(e)}"})
 
 
 async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
@@ -132,9 +124,7 @@ async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
     except ValueError as e:
         return json.dumps({"status": "error", "message": str(e)})
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Failed to get VM status: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Failed to get VM status: {str(e)}"})
 
 
 async def list_vms_on_device(device_id: int, platforms: list[str] | None = None) -> str:
@@ -204,14 +194,10 @@ async def list_vms_on_device(device_id: int, platforms: list[str] | None = None)
             )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Failed to list VMs: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Failed to list VMs: {str(e)}"})
 
 
-async def get_vm_logs(
-    device_id: int, platform: str, vm_name: str, lines: int = 100
-) -> str:
+async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 100) -> str:
     """Get logs from a specific VM."""
     try:
         manager = VMManager()
@@ -241,14 +227,10 @@ async def get_vm_logs(
     except ValueError as e:
         return json.dumps({"status": "error", "message": str(e)})
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"Failed to get VM logs: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"Failed to get VM logs: {str(e)}"})
 
 
-async def remove_vm(
-    device_id: int, platform: str, vm_name: str, force: bool = False
-) -> str:
+async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = False) -> str:
     """Remove a VM/container from a device."""
     try:
         manager = VMManager()
@@ -278,6 +260,4 @@ async def remove_vm(
     except ValueError as e:
         return json.dumps({"status": "error", "message": str(e)})
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "message": f"VM removal failed: {str(e)}"}
-        )
+        return json.dumps({"status": "error", "message": f"VM removal failed: {str(e)}"})

@@ -65,9 +65,7 @@ def test_container(docker_client):
         time.sleep(2)
 
     if not ssh_ready:
-        raise RuntimeError(
-            "Container SSH service failed to start or respond to asyncssh connections"
-        )
+        raise RuntimeError("Container SSH service failed to start or respond to asyncssh connections")
 
     yield {
         "container": container,
@@ -80,9 +78,7 @@ def test_container(docker_client):
     }
 
     # Cleanup
-    subprocess.run(
-        ["docker-compose", "-f", str(compose_file), "down", "-v"], cwd=project_root
-    )
+    subprocess.run(["docker-compose", "-f", str(compose_file), "down", "-v"], cwd=project_root)
 
 
 @pytest.fixture

@@ -193,9 +193,7 @@ class TestDiscoveryToAnalysisWorkflow:
     """Test complete discovery to analysis workflow."""
 
     @pytest.mark.asyncio
-    async def test_discovery_storage_analysis_workflow(
-        self, full_stack_env, mock_network
-    ):
+    async def test_discovery_storage_analysis_workflow(self, full_stack_env, mock_network):
         """Test complete workflow: Discovery → Storage → Analysis."""
 
         # Mock SSH discovery for multiple devices
@@ -252,9 +250,7 @@ class TestDiscoveryToAnalysisWorkflow:
             assert len(deployment_suggestions["load_balancer_candidates"]) >= 1
 
             # High-spec db-server should be suggested for database
-            db_candidates = [
-                c["hostname"] for c in deployment_suggestions["database_candidates"]
-            ]
+            db_candidates = [c["hostname"] for c in deployment_suggestions["database_candidates"]]
             assert "db-server-01" in db_candidates
 
             # Step 5: Test change tracking over time
@@ -294,15 +290,10 @@ class TestDiscoveryToAnalysisWorkflow:
 
             # Count successful vs failed discoveries
             successful = sum(
-                1
-                for r in result["results"]
-                if r.get("discovery_status") == "success"
-                or r.get("status") == "success"
+                1 for r in result["results"] if r.get("discovery_status") == "success" or r.get("status") == "success"
             )
             failed = sum(
-                1
-                for r in result["results"]
-                if r.get("discovery_status") == "error" or r.get("status") == "error"
+                1 for r in result["results"] if r.get("discovery_status") == "error" or r.get("status") == "error"
             )
 
             assert successful >= 3  # At least 3 should succeed
@@ -320,9 +311,7 @@ class TestDiscoveryToServiceDeploymentWorkflow:
             return mock_network.get_device_discovery_result(hostname)
 
         # Mock service installation
-        def mock_install_service(
-            service_name, hostname, username, password, variables=None
-        ):
+        def mock_install_service(service_name, hostname, username, password, variables=None):
             return {
                 "status": "success",
                 "service": service_name,
@@ -339,9 +328,7 @@ class TestDiscoveryToServiceDeploymentWorkflow:
             "src.homelab_mcp.ssh_tools.ssh_discover_system",
             side_effect=mock_ssh_discover,
         ):
-            with patch.object(
-                ServiceInstaller, "install_service", side_effect=mock_install_service
-            ):
+            with patch.object(ServiceInstaller, "install_service", side_effect=mock_install_service):
                 # Step 1: Discover and store web server
                 discovery_result_json = await discover_and_store(
                     full_stack_env.sitemap,
@@ -369,9 +356,7 @@ class TestDiscoveryToServiceDeploymentWorkflow:
                 installer = ServiceInstaller()
 
                 # Mock that nginx service template exists
-                with patch.object(
-                    installer, "get_available_services", return_value=["nginx"]
-                ):
+                with patch.object(installer, "get_available_services", return_value=["nginx"]):
                     with patch.object(
                         installer,
                         "check_service_requirements",
@@ -406,26 +391,20 @@ class TestDiscoveryToServiceDeploymentWorkflow:
                 assert len(full_stack_env.deployed_services) == 1
 
     @pytest.mark.asyncio
-    async def test_multi_device_service_orchestration(
-        self, full_stack_env, mock_network
-    ):
+    async def test_multi_device_service_orchestration(self, full_stack_env, mock_network):
         """Test orchestrating services across multiple devices."""
 
         def mock_ssh_discover(hostname, username, password, port=22, key_path=None):
             return mock_network.get_device_discovery_result(hostname)
 
-        def mock_install_service(
-            service_name, hostname, username, password, variables=None
-        ):
+        def mock_install_service(service_name, hostname, username, password, variables=None):
             service_configs = {
                 "nginx": {"ports": ["80:80"], "type": "web"},
                 "postgres": {"ports": ["5432:5432"], "type": "database"},
                 "redis": {"ports": ["6379:6379"], "type": "cache"},
             }
 
-            config = service_configs.get(
-                service_name, {"ports": ["8000:8000"], "type": "service"}
-            )
+            config = service_configs.get(service_name, {"ports": ["8000:8000"], "type": "service"})
 
             return {
                 "status": "success",
@@ -439,9 +418,7 @@ class TestDiscoveryToServiceDeploymentWorkflow:
             "src.homelab_mcp.ssh_tools.ssh_discover_system",
             side_effect=mock_ssh_discover,
         ):
-            with patch.object(
-                ServiceInstaller, "install_service", side_effect=mock_install_service
-            ):
+            with patch.object(ServiceInstaller, "install_service", side_effect=mock_install_service):
                 # Step 1: Discover all devices
                 discovery_targets = ["web-server-01", "db-server-01", "nas-server-01"]
 
@@ -473,21 +450,15 @@ class TestDiscoveryToServiceDeploymentWorkflow:
                         return_value={"requirements_met": True},
                     ):
                         # Deploy web service on web server
-                        web_result = await installer.install_service(
-                            "nginx", "web-server-01", "admin", "pass"
-                        )
+                        web_result = await installer.install_service("nginx", "web-server-01", "admin", "pass")
                         full_stack_env.add_deployed_service(web_result)
 
                         # Deploy database on high-spec server
-                        db_result = await installer.install_service(
-                            "postgres", "db-server-01", "admin", "pass"
-                        )
+                        db_result = await installer.install_service("postgres", "db-server-01", "admin", "pass")
                         full_stack_env.add_deployed_service(db_result)
 
                         # Deploy cache on web server (low resource usage)
-                        cache_result = await installer.install_service(
-                            "redis", "web-server-01", "admin", "pass"
-                        )
+                        cache_result = await installer.install_service("redis", "web-server-01", "admin", "pass")
                         full_stack_env.add_deployed_service(cache_result)
 
                 # Verify orchestrated deployment
@@ -501,21 +472,15 @@ class TestDiscoveryToServiceDeploymentWorkflow:
                         service_by_host[hostname] = []
                     service_by_host[hostname].append(service["service"])
 
-                assert (
-                    "postgres" in service_by_host["db-server-01"]
-                )  # Database on high-spec server
-                assert (
-                    "nginx" in service_by_host["web-server-01"]
-                )  # Web service on web server
+                assert "postgres" in service_by_host["db-server-01"]  # Database on high-spec server
+                assert "nginx" in service_by_host["web-server-01"]  # Web service on web server
 
 
 class TestServiceToVMDeploymentWorkflow:
     """Test workflow from service deployment to VM management."""
 
     @pytest.mark.asyncio
-    async def test_service_to_vm_deployment_workflow(
-        self, full_stack_env, mock_network
-    ):
+    async def test_service_to_vm_deployment_workflow(self, full_stack_env, mock_network):
         """Test complete workflow: Service Deployment → VM Deployment."""
 
         def mock_ssh_discover(hostname, username, password, port=22, key_path=None):
@@ -550,9 +515,7 @@ class TestServiceToVMDeploymentWorkflow:
             "src.homelab_mcp.ssh_tools.ssh_discover_system",
             side_effect=mock_ssh_discover,
         ):
-            with patch(
-                "src.homelab_mcp.vm_operations.deploy_vm", side_effect=mock_deploy_vm
-            ):
+            with patch("src.homelab_mcp.vm_operations.deploy_vm", side_effect=mock_deploy_vm):
                 with patch(
                     "src.homelab_mcp.vm_operations.get_vm_status",
                     side_effect=mock_get_vm_status,
@@ -575,9 +538,7 @@ class TestServiceToVMDeploymentWorkflow:
                         "environment": {"ENV": "production"},
                     }
 
-                    vm_result_json = await deploy_vm(
-                        device_id, "docker", "web-service-vm", vm_config
-                    )
+                    vm_result_json = await deploy_vm(device_id, "docker", "web-service-vm", vm_config)
                     vm_result = json.loads(vm_result_json)
 
                     assert vm_result["status"] == "success"
@@ -587,9 +548,7 @@ class TestServiceToVMDeploymentWorkflow:
                     full_stack_env.add_deployed_vm(vm_result)
 
                     # Step 3: Verify VM status
-                    status_result_json = await get_vm_status(
-                        device_id, "docker", "web-service-vm"
-                    )
+                    status_result_json = await get_vm_status(device_id, "docker", "web-service-vm")
                     status_result = json.loads(status_result_json)
 
                     assert status_result["status"] == "success"
@@ -646,9 +605,7 @@ class TestEndToEndWorkflowWithMCPTools:
                 "content": [
                     {
                         "type": "text",
-                        "text": mock_network.get_device_discovery_result(
-                            args["hostname"]
-                        ),
+                        "text": mock_network.get_device_discovery_result(args["hostname"]),
                     }
                 ]
             },
@@ -929,11 +886,7 @@ class TestEndToEndWorkflowWithMCPTools:
                     ]
                 }
             else:
-                return {
-                    "content": [
-                        {"type": "text", "text": json.dumps({"status": "success"})}
-                    ]
-                }
+                return {"content": [{"type": "text", "text": json.dumps({"status": "success"})}]}
 
         with patch("src.homelab_mcp.tools.execute_tool", side_effect=mock_execute_tool):
             # Step 1: Discover monitoring target
@@ -956,9 +909,7 @@ class TestEndToEndWorkflowWithMCPTools:
                         "platform": "docker",
                         "vm_name": f"{tool}-monitoring",
                         "vm_config": {
-                            "image": f"prom/{tool}:latest"
-                            if tool != "grafana"
-                            else "grafana/grafana:latest",
+                            "image": f"prom/{tool}:latest" if tool != "grafana" else "grafana/grafana:latest",
                             "ports": ["9090:9090"]
                             if tool == "prometheus"
                             else ["3000:3000"]
@@ -980,9 +931,7 @@ class TestEndToEndWorkflowWithMCPTools:
             assert len(full_stack_env.deployed_vms) == 4
 
             # Verify all monitoring tools are deployed
-            deployed_tools = [
-                vm["vm_name"].split("-")[0] for vm in full_stack_env.deployed_vms
-            ]
+            deployed_tools = [vm["vm_name"].split("-")[0] for vm in full_stack_env.deployed_vms]
             for tool in monitoring_tools:
                 assert tool in deployed_tools
 
@@ -991,9 +940,7 @@ class TestErrorRecoveryAndRollback:
     """Test error recovery and rollback scenarios."""
 
     @pytest.mark.asyncio
-    async def test_partial_deployment_failure_recovery(
-        self, full_stack_env, mock_network
-    ):
+    async def test_partial_deployment_failure_recovery(self, full_stack_env, mock_network):
         """Test recovery from partial deployment failures."""
 
         deployment_attempts = []
@@ -1052,11 +999,7 @@ class TestErrorRecoveryAndRollback:
                     ]
                 }
             else:
-                return {
-                    "content": [
-                        {"type": "text", "text": json.dumps({"status": "success"})}
-                    ]
-                }
+                return {"content": [{"type": "text", "text": json.dumps({"status": "success"})}]}
 
         with patch("src.homelab_mcp.tools.execute_tool", side_effect=mock_execute_tool):
             # Discover device
@@ -1096,9 +1039,7 @@ class TestErrorRecoveryAndRollback:
     async def test_discovery_failure_handling(self, full_stack_env, mock_network):
         """Test handling of discovery failures in bulk operations."""
 
-        def mock_ssh_discover_with_failures(
-            hostname, username, password, port=22, key_path=None
-        ):
+        def mock_ssh_discover_with_failures(hostname, username, password, port=22, key_path=None):
             if hostname == "unreachable-host":
                 return json.dumps(
                     {
@@ -1142,15 +1083,10 @@ class TestErrorRecoveryAndRollback:
 
             # Count successes and failures
             successes = sum(
-                1
-                for r in result["results"]
-                if r.get("discovery_status") == "success"
-                or r.get("status") == "success"
+                1 for r in result["results"] if r.get("discovery_status") == "success" or r.get("status") == "success"
             )
             failures = sum(
-                1
-                for r in result["results"]
-                if r.get("discovery_status") == "error" or r.get("status") == "error"
+                1 for r in result["results"] if r.get("discovery_status") == "error" or r.get("status") == "error"
             )
 
             assert successes == 2  # web-server-01 and db-server-01
@@ -1182,9 +1118,7 @@ async def test_complete_homelab_lifecycle(full_stack_env, mock_network):
     def mock_ssh_discover(hostname, username, password, port=22, key_path=None):
         return mock_network.get_device_discovery_result(hostname)
 
-    with patch(
-        "src.homelab_mcp.ssh_tools.ssh_discover_system", side_effect=mock_ssh_discover
-    ):
+    with patch("src.homelab_mcp.ssh_tools.ssh_discover_system", side_effect=mock_ssh_discover):
         # Phase 1: Infrastructure Discovery
         discovery_targets = ["web-server-01", "db-server-01", "nas-server-01"]
 

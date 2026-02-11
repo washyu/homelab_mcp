@@ -226,9 +226,7 @@ class TestGetProxmoxClient:
     def test_client_missing_host(self):
         """Test client creation without host."""
         # WHEN/THEN: Should raise ValueError if no host
-        with pytest.raises(
-            ValueError, match="Proxmox host must be provided or set in PROXMOX_HOST"
-        ):
+        with pytest.raises(ValueError, match="Proxmox host must be provided or set in PROXMOX_HOST"):
             get_proxmox_client()
 
     @patch.dict(
@@ -377,10 +375,7 @@ class TestGetProxmoxNodeStatus:
         result = await get_proxmox_node_status(node="bad_node")
 
         assert result["status"] == "error"
-        assert (
-            "bad_node" in result["message"]
-            or "failed to get address" in result["message"]
-        )
+        assert "bad_node" in result["message"] or "failed to get address" in result["message"]
 
         mock_client.get.assert_called_once_with(
             "/nodes/bad_node/status",
@@ -542,9 +537,7 @@ class TestManageProxmoxVM:
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/shutdown", {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/shutdown", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -561,9 +554,7 @@ class TestManageProxmoxVM:
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/reboot", {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/reboot", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -597,9 +588,7 @@ class TestManageProxmoxVM:
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/suspend", {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/suspend", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -616,9 +605,7 @@ class TestManageProxmoxVM:
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/resume", {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/resume", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -643,9 +630,7 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve", vmid=101, action="start", vm_type="lxc"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=101, action="start", vm_type="lxc")
 
         assert result["status"] == "success"
         assert result["action"] == "start"
@@ -670,10 +655,7 @@ class TestCreateProxmoxLXC:
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert (
-            "LXC container" in result["message"]
-            and "created successfully" in result["message"]
-        )
+        assert "LXC container" in result["message"] and "created successfully" in result["message"]
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
@@ -699,17 +681,12 @@ class TestCreateProxmoxLXC:
         mock_get_client.return_value = mock_client
         mock_client.post_return_value = {"data", "OK"}
 
-        result = await create_proxmox_lxc(
-            node="pve", vmid=999, hostname="test_lxc", password="test1!"
-        )
+        result = await create_proxmox_lxc(node="pve", vmid=999, hostname="test_lxc", password="test1!")
 
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert (
-            "LXC container" in result["message"]
-            and "created successfully" in result["message"]
-        )
+        assert "LXC container" in result["message"] and "created successfully" in result["message"]
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
@@ -746,10 +723,7 @@ class TestCreateProxmoxLXC:
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert (
-            "LXC container" in result["message"]
-            and "created successfully" in result["message"]
-        )
+        assert "LXC container" in result["message"] and "created successfully" in result["message"]
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
@@ -776,16 +750,11 @@ class TestCreateProxmoxLXC:
         mock_get_client.return_value = mock_client
         mock_client.post_return_value = {"data", "OK"}
 
-        result = await create_proxmox_lxc(
-            node="pve", vmid=999, hostname="test_lxc", start=1
-        )
+        result = await create_proxmox_lxc(node="pve", vmid=999, hostname="test_lxc", start=1)
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert (
-            "LXC container" in result["message"]
-            and "created successfully" in result["message"]
-        )
+        assert "LXC container" in result["message"] and "created successfully" in result["message"]
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
@@ -823,10 +792,7 @@ class TestCreateProxmoxLXC:
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert (
-            "LXC container" in result["message"]
-            and "created successfully" in result["message"]
-        )
+        assert "LXC container" in result["message"] and "created successfully" in result["message"]
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
@@ -852,16 +818,11 @@ class TestCreateProxmoxLXC:
         mock_get_client.return_value = mock_client
         mock_client.post_return_value = {"data", "OK"}
 
-        result = await create_proxmox_lxc(
-            node="pve", vmid=999, hostname="test_lxc", unprivileged=0
-        )
+        result = await create_proxmox_lxc(node="pve", vmid=999, hostname="test_lxc", unprivileged=0)
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert (
-            "LXC container" in result["message"]
-            and "created successfully" in result["message"]
-        )
+        assert "LXC container" in result["message"] and "created successfully" in result["message"]
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",

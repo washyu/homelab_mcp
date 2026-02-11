@@ -167,9 +167,7 @@ class TestDatabaseConfig:
             mock_mcp_dir.mkdir = MagicMock()
 
             # Return string when converting to str
-            mock_db_path.__str__ = MagicMock(
-                return_value="/current/dir/.mcp/sitemap.db"
-            )
+            mock_db_path.__str__ = MagicMock(return_value="/current/dir/.mcp/sitemap.db")
 
             mock_cwd.return_value = mock_current_dir
 
@@ -263,9 +261,7 @@ class TestMCPConfig:
         for env_value, expected in test_cases:
             os.environ["MCP_DEBUG"] = env_value
             config = MCPConfig()
-            expected_msg = (
-                f"Failed for '{env_value}', expected {expected}, got {config.debug}"
-            )
+            expected_msg = f"Failed for '{env_value}', expected {expected}, got {config.debug}"
             assert config.debug is expected, expected_msg
 
     def test_validate_success(self):
@@ -295,10 +291,7 @@ class TestMCPConfig:
         errors = config.validate()
 
         assert len(errors) >= 1
-        assert any(
-            "PostgreSQL is selected but not properly configured" in error
-            for error in errors
-        )
+        assert any("PostgreSQL is selected but not properly configured" in error for error in errors)
 
     def test_validate_invalid_timeouts(self):
         """Test validation errors for invalid timeout values."""
@@ -310,9 +303,7 @@ class TestMCPConfig:
 
         assert len(errors) >= 2
         assert any("SSH_TIMEOUT must be greater than 0" in error for error in errors)
-        assert any(
-            "DISCOVERY_TIMEOUT must be greater than 0" in error for error in errors
-        )
+        assert any("DISCOVERY_TIMEOUT must be greater than 0" in error for error in errors)
 
     def test_validate_postgresql_missing_psycopg2(self):
         """Test validation error when psycopg2 is not installed."""
@@ -325,9 +316,7 @@ class TestMCPConfig:
         config = MCPConfig()
 
         # Patch the import inside validate method
-        with patch(
-            "builtins.__import__", side_effect=ImportError("No module named 'psycopg2'")
-        ):
+        with patch("builtins.__import__", side_effect=ImportError("No module named 'psycopg2'")):
             errors = config.validate()
 
         assert len(errors) >= 1

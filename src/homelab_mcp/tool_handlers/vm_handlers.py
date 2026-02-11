@@ -46,9 +46,7 @@ async def handle_get_vm_status(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_list_vms(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle list_vms tool."""
-    result = await list_vms_on_device(
-        device_id=arguments["device_id"], platforms=arguments.get("platforms")
-    )
+    result = await list_vms_on_device(device_id=arguments["device_id"], platforms=arguments.get("platforms"))
     return {"content": [{"type": "text", "text": result}]}
 
 

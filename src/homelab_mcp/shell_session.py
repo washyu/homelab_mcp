@@ -57,9 +57,7 @@ class ShellSessionManager:
         """Remove sessions that have exceeded timeout."""
         now = time.time()
         expired = [
-            session_id
-            for session_id, session in self.sessions.items()
-            if now - session.last_activity > SESSION_TIMEOUT
+            session_id for session_id, session in self.sessions.items() if now - session.last_activity > SESSION_TIMEOUT
         ]
 
         for session_id in expired:
@@ -177,9 +175,7 @@ class ShellSessionManager:
         if session and session.process.stdout:
             try:
                 # Non-blocking read
-                data = await asyncio.wait_for(
-                    session.process.stdout.read(4096), timeout=0.1
-                )
+                data = await asyncio.wait_for(session.process.stdout.read(4096), timeout=0.1)
                 return data if isinstance(data, str) else data.decode("utf-8")
             except TimeoutError:
                 return None

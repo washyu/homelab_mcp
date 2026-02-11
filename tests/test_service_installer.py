@@ -30,9 +30,7 @@ class TestServiceInstaller:
                 "method": "docker-compose",
                 "compose": {
                     "version": "3.8",
-                    "services": {
-                        "test": {"image": "nginx:latest", "ports": ["8080:80"]}
-                    },
+                    "services": {"test": {"image": "nginx:latest", "ports": ["8080:80"]}},
                 },
             },
         }
@@ -44,9 +42,7 @@ class TestServiceInstaller:
             yaml.dump(self.sample_template, f)
 
         # Patch the templates directory
-        self.patcher = patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        )
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -158,9 +154,7 @@ class TestServiceInstaller:
                         }
                     )
                 else:
-                    return json.dumps(
-                        {"status": "success", "exit_code": 0, "output": ""}
-                    )
+                    return json.dumps({"status": "success", "exit_code": 0, "output": ""})
 
             mock_ssh.side_effect = command_handler
 
@@ -190,27 +184,21 @@ class TestServiceInstaller:
             mock_check.return_value = {"requirements_met": True, "checks": {}}
 
             # Mock Docker Compose installation
-            with patch.object(
-                self.installer, "_install_docker_compose_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_docker_compose_service") as mock_install:
                 mock_install.return_value = {
                     "status": "success",
                     "service": "test-service",
                     "method": "docker-compose",
                 }
 
-                result = await self.installer.install_service(
-                    "test-service", "test-host", "test-user", "test-pass"
-                )
+                result = await self.installer.install_service("test-service", "test-host", "test-user", "test-pass")
 
                 assert result["status"] == "success"
                 assert result["service"] == "test-service"
                 assert result["method"] == "docker-compose"
 
                 # Verify requirement check was called
-                mock_check.assert_called_once_with(
-                    "test-service", "test-host", "test-user", "test-pass"
-                )
+                mock_check.assert_called_once_with("test-service", "test-host", "test-user", "test-pass")
 
     @pytest.mark.asyncio
     async def test_install_service_requirements_not_met(self):
@@ -221,9 +209,7 @@ class TestServiceInstaller:
                 "checks": {"port_8080": {"status": "fail"}},
             }
 
-            result = await self.installer.install_service(
-                "test-service", "test-host", "test-user", "test-pass"
-            )
+            result = await self.installer.install_service("test-service", "test-host", "test-user", "test-pass")
 
             assert result["status"] == "error"
             assert "Requirements not met" in result["error"]
@@ -232,9 +218,7 @@ class TestServiceInstaller:
     @pytest.mark.asyncio
     async def test_install_service_unknown_service(self):
         """Test installing unknown service."""
-        result = await self.installer.install_service(
-            "unknown-service", "test-host", "test-user", "test-pass"
-        )
+        result = await self.installer.install_service("unknown-service", "test-host", "test-user", "test-pass")
 
         assert result["status"] == "error"
         assert "Unknown service" in result["error"]
@@ -246,9 +230,7 @@ class TestServiceInstaller:
 
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
             # Mock successful command execution
-            mock_ssh.return_value = json.dumps(
-                {"status": "success", "exit_code": 0, "output": "Success"}
-            )
+            mock_ssh.return_value = json.dumps({"status": "success", "exit_code": 0, "output": "Success"})
 
             result = await self.installer._install_docker_compose_service(
                 "test-service",
@@ -343,9 +325,7 @@ class TestServiceInstallerIntegration:
             )
 
             # Check requirements
-            result = await installer.check_service_requirements(
-                service_name, "test-host", "test-user", "test-pass"
-            )
+            result = await installer.check_service_requirements(service_name, "test-host", "test-user", "test-pass")
 
             assert "requirements_met" in result
             assert "checks" in result
@@ -443,9 +423,7 @@ class TestServiceInstallerAnsibleMethod:
             yaml.dump(self.ansible_template, f)
 
         # Patch the templates directory
-        self.patcher = patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        )
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -465,9 +443,7 @@ class TestServiceInstallerAnsibleMethod:
             mock_check.return_value = {"requirements_met": True, "checks": {}}
 
             # Mock Ansible installation
-            with patch.object(
-                self.installer, "_install_ansible_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_ansible_service") as mock_install:
                 mock_install.return_value = {
                     "status": "success",
                     "service": "ansible-service",
@@ -480,9 +456,7 @@ class TestServiceInstallerAnsibleMethod:
                     },
                 }
 
-                result = await self.installer.install_service(
-                    "ansible-service", "test-host", "test-user", "test-pass"
-                )
+                result = await self.installer.install_service("ansible-service", "test-host", "test-user", "test-pass")
 
                 assert result["status"] == "success"
                 assert result["method"] == "ansible"
@@ -500,9 +474,7 @@ class TestServiceInstallerAnsibleMethod:
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
 
-            with patch.object(
-                self.installer, "_install_ansible_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_ansible_service") as mock_install:
                 mock_install.return_value = {
                     "status": "success",
                     "variables_applied": variables,
@@ -523,9 +495,7 @@ class TestServiceInstallerAnsibleMethod:
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
 
-            with patch.object(
-                self.installer, "_install_ansible_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_ansible_service") as mock_install:
                 mock_install.return_value = {
                     "status": "error",
                     "error": "Ansible playbook failed at task 'Deploy service'",
@@ -538,9 +508,7 @@ class TestServiceInstallerAnsibleMethod:
                     },
                 }
 
-                result = await self.installer.install_service(
-                    "ansible-service", "test-host", "test-user", "test-pass"
-                )
+                result = await self.installer.install_service("ansible-service", "test-host", "test-user", "test-pass")
 
                 assert result["status"] == "error"
                 assert "playbook failed" in result["error"].lower()
@@ -607,9 +575,7 @@ class TestServiceInstallerScriptMethod:
             yaml.dump(self.script_template, f)
 
         # Patch the templates directory
-        self.patcher = patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        )
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -627,9 +593,7 @@ class TestServiceInstallerScriptMethod:
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
 
-            with patch.object(
-                self.installer, "_install_script_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_script_service") as mock_install:
                 mock_install.return_value = {
                     "status": "success",
                     "service": "script-service",
@@ -641,9 +605,7 @@ class TestServiceInstallerScriptMethod:
                     },
                 }
 
-                result = await self.installer.install_service(
-                    "script-service", "test-host", "test-user", "test-pass"
-                )
+                result = await self.installer.install_service("script-service", "test-host", "test-user", "test-pass")
 
                 assert result["status"] == "success"
                 assert result["method"] == "script"
@@ -655,9 +617,7 @@ class TestServiceInstallerScriptMethod:
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
 
-            with patch.object(
-                self.installer, "_install_script_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_script_service") as mock_install:
                 mock_install.return_value = {
                     "status": "error",
                     "error": "Command failed: sudo apt-get install -y curl",
@@ -666,9 +626,7 @@ class TestServiceInstallerScriptMethod:
                     "stderr": "Package not found",
                 }
 
-                result = await self.installer.install_service(
-                    "script-service", "test-host", "test-user", "test-pass"
-                )
+                result = await self.installer.install_service("script-service", "test-host", "test-user", "test-pass")
 
                 assert result["status"] == "error"
                 assert "Command failed" in result["error"]
@@ -735,9 +693,7 @@ class TestServiceInstallerVariableSubstitution:
             yaml.dump(self.variable_template, f)
 
         # Patch the templates directory
-        self.patcher = patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        )
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -764,9 +720,7 @@ class TestServiceInstallerVariableSubstitution:
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
 
-            with patch.object(
-                self.installer, "_install_docker_compose_service"
-            ) as mock_install:
+            with patch.object(self.installer, "_install_docker_compose_service") as mock_install:
                 mock_install.return_value = {"status": "success"}
 
                 await self.installer.install_service(
@@ -868,9 +822,7 @@ class TestServiceInstallerISOMethod:
             yaml.dump(self.iso_template, f)
 
         # Patch the templates directory
-        self.patcher = patch(
-            "src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir
-        )
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -904,9 +856,7 @@ class TestServiceInstallerISOMethod:
                     ],
                 }
 
-                result = await self.installer.install_service(
-                    "truenas-iso", "test-host", "test-user", "test-pass"
-                )
+                result = await self.installer.install_service("truenas-iso", "test-host", "test-user", "test-pass")
 
                 assert result["status"] == "guidance_provided"
                 assert result["method"] == "iso_installation"

@@ -105,14 +105,10 @@ class TestDeployInfrastructurePlan:
             "network_changes": [],
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud._validate_deployment_plan"
-        ) as mock_validate:
+        with patch("src.homelab_mcp.infrastructure_crud._validate_deployment_plan") as mock_validate:
             mock_validate.return_value = {"valid": True, "errors": []}
 
-            result = await deploy_infrastructure_plan(
-                deployment_plan, validate_only=True
-            )
+            result = await deploy_infrastructure_plan(deployment_plan, validate_only=True)
             result_data = json.loads(result)
 
             assert result_data["status"] == "success"
@@ -132,9 +128,7 @@ class TestDeployInfrastructurePlan:
             ]
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud._validate_deployment_plan"
-        ) as mock_validate:
+        with patch("src.homelab_mcp.infrastructure_crud._validate_deployment_plan") as mock_validate:
             mock_validate.return_value = {
                 "valid": False,
                 "errors": ["Missing target_device_id", "Missing service type"],
@@ -161,26 +155,18 @@ class TestDeployInfrastructurePlan:
             "network_changes": [],
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud._validate_deployment_plan"
-        ) as mock_validate:
+        with patch("src.homelab_mcp.infrastructure_crud._validate_deployment_plan") as mock_validate:
             mock_validate.return_value = {"valid": True, "errors": []}
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._deploy_service"
-            ) as mock_deploy:
+            with patch("src.homelab_mcp.infrastructure_crud._deploy_service") as mock_deploy:
                 mock_deploy.return_value = {
                     "status": "success",
                     "service": "nginx",
                     "device_id": 1,
                 }
 
-                with patch(
-                    "src.homelab_mcp.infrastructure_crud._update_sitemap_after_deployment"
-                ):
-                    result = await deploy_infrastructure_plan(
-                        deployment_plan, validate_only=False
-                    )
+                with patch("src.homelab_mcp.infrastructure_crud._update_sitemap_after_deployment"):
+                    result = await deploy_infrastructure_plan(deployment_plan, validate_only=False)
                     result_data = json.loads(result)
 
                     assert result_data["status"] == "success"
@@ -199,9 +185,7 @@ class TestUpdateDeviceConfiguration:
             "network": {"ports": ["80:80", "443:443"]},
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.get_device_connection_info = AsyncMock(
                 return_value={
@@ -211,33 +195,23 @@ class TestUpdateDeviceConfiguration:
                 }
             )
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._validate_config_changes"
-            ) as mock_validate:
+            with patch("src.homelab_mcp.infrastructure_crud._validate_config_changes") as mock_validate:
                 mock_validate.return_value = {"valid": True, "errors": []}
 
-                with patch(
-                    "src.homelab_mcp.infrastructure_crud.create_infrastructure_backup"
-                ) as mock_backup:
-                    mock_backup.return_value = json.dumps(
-                        {"status": "success", "backup_id": "backup_123"}
-                    )
+                with patch("src.homelab_mcp.infrastructure_crud.create_infrastructure_backup") as mock_backup:
+                    mock_backup.return_value = json.dumps({"status": "success", "backup_id": "backup_123"})
 
                     with patch("asyncssh.connect") as mock_connect:
                         mock_conn = AsyncMock()
                         mock_connect.return_value.__aenter__.return_value = mock_conn
 
-                        with patch(
-                            "src.homelab_mcp.infrastructure_crud._update_service_config"
-                        ) as mock_update:
+                        with patch("src.homelab_mcp.infrastructure_crud._update_service_config") as mock_update:
                             mock_update.return_value = {
                                 "status": "success",
                                 "service": "nginx",
                             }
 
-                            result = await update_device_configuration(
-                                1, config_changes
-                            )
+                            result = await update_device_configuration(1, config_changes)
                             result_data = json.loads(result)
 
                             assert result_data["status"] == "success"
@@ -248,9 +222,7 @@ class TestUpdateDeviceConfiguration:
     @pytest.mark.asyncio
     async def test_update_device_configuration_device_not_found(self):
         """Test updating configuration for non-existent device."""
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.get_device_connection_info = AsyncMock(return_value=None)
 
@@ -265,17 +237,13 @@ class TestUpdateDeviceConfiguration:
         """Test configuration validation without applying changes."""
         config_changes = {"services": {"nginx": {"replicas": 3}}}
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.get_device_connection_info = AsyncMock(
                 return_value={"hostname": "192.168.1.100", "username": "mcp_admin"}
             )
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._validate_config_changes"
-            ) as mock_validate:
+            with patch("src.homelab_mcp.infrastructure_crud._validate_config_changes") as mock_validate:
                 mock_validate.return_value = {
                     "valid": True,
                     "errors": [],
@@ -283,9 +251,7 @@ class TestUpdateDeviceConfiguration:
                     "estimated_downtime": "30 seconds",
                 }
 
-                result = await update_device_configuration(
-                    1, config_changes, validate_only=True
-                )
+                result = await update_device_configuration(1, config_changes, validate_only=True)
                 result_data = json.loads(result)
 
                 assert result_data["status"] == "success"
@@ -302,23 +268,17 @@ class TestScaleServices:
         """Test successful service scaling."""
         scaling_config = {
             "device_id": 1,
-            "services": {
-                "web-service": {"replicas": 3, "cpu": "500m", "memory": "512Mi"}
-            },
+            "services": {"web-service": {"replicas": 3, "cpu": "500m", "memory": "512Mi"}},
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud._validate_scaling_plan"
-        ) as mock_validate:
+        with patch("src.homelab_mcp.infrastructure_crud._validate_scaling_plan") as mock_validate:
             mock_validate.return_value = {
                 "valid": True,
                 "errors": [],
                 "resource_impact": {"cpu_impact": "low", "memory_impact": "medium"},
             }
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._scale_service_up"
-            ) as mock_scale:
+            with patch("src.homelab_mcp.infrastructure_crud._scale_service_up") as mock_scale:
                 mock_scale.return_value = {
                     "status": "success",
                     "service": "web-service",
@@ -341,9 +301,7 @@ class TestScaleServices:
             },
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud._validate_scaling_plan"
-        ) as mock_validate:
+        with patch("src.homelab_mcp.infrastructure_crud._validate_scaling_plan") as mock_validate:
             mock_validate.return_value = {
                 "valid": False,
                 "errors": [
@@ -391,9 +349,7 @@ class TestValidateInfrastructureChanges:
             "changes": [{"type": "deploy", "service": "web-app", "replicas": 2}],
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud._perform_comprehensive_validation"
-        ) as mock_comp:
+        with patch("src.homelab_mcp.infrastructure_crud._perform_comprehensive_validation") as mock_comp:
             mock_comp.return_value = [
                 {
                     "name": "dependency_check",
@@ -407,9 +363,7 @@ class TestValidateInfrastructureChanges:
                 },
             ]
 
-            result = await validate_infrastructure_plan(
-                changes, validation_level="comprehensive"
-            )
+            result = await validate_infrastructure_plan(changes, validation_level="comprehensive")
             result_data = json.loads(result)
 
             assert result_data["status"] == "success"
@@ -422,26 +376,20 @@ class TestBackupAndRestore:
     @pytest.mark.asyncio
     async def test_create_infrastructure_backup_full(self):
         """Test creating a full infrastructure backup."""
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.sitemap.get_all_devices.return_value = [
                 {"id": 1, "hostname": "device1"},
                 {"id": 2, "hostname": "device2"},
             ]
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._backup_device"
-            ) as mock_backup_device:
+            with patch("src.homelab_mcp.infrastructure_crud._backup_device") as mock_backup_device:
                 mock_backup_device.return_value = {
                     "hostname": "device1",
                     "status": "success",
                 }
 
-                with patch(
-                    "src.homelab_mcp.infrastructure_crud._backup_network_topology"
-                ) as mock_backup_topo:
+                with patch("src.homelab_mcp.infrastructure_crud._backup_network_topology") as mock_backup_topo:
                     mock_backup_topo.return_value = {"topology": "test"}
 
                     with patch("builtins.open", mock_open()):
@@ -457,23 +405,17 @@ class TestBackupAndRestore:
     async def test_create_infrastructure_backup_partial(self):
         """Test creating a partial infrastructure backup."""
         with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager"):
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._backup_device"
-            ) as mock_backup_device:
+            with patch("src.homelab_mcp.infrastructure_crud._backup_device") as mock_backup_device:
                 mock_backup_device.return_value = {
                     "hostname": "device1",
                     "status": "success",
                 }
 
-                with patch(
-                    "src.homelab_mcp.infrastructure_crud._backup_network_topology"
-                ) as mock_backup_topo:
+                with patch("src.homelab_mcp.infrastructure_crud._backup_network_topology") as mock_backup_topo:
                     mock_backup_topo.return_value = {"topology": "test"}
 
                     with patch("builtins.open", mock_open()):
-                        result = await create_infrastructure_backup(
-                            backup_scope="partial", device_ids=[1, 2]
-                        )
+                        result = await create_infrastructure_backup(backup_scope="partial", device_ids=[1, 2])
                         result_data = json.loads(result)
 
                         assert result_data["status"] == "success"
@@ -493,18 +435,14 @@ class TestBackupAndRestore:
         }
 
         with patch("builtins.open", mock_open(read_data=json.dumps(mock_backup_data))):
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._rollback_device"
-            ) as mock_rollback:
+            with patch("src.homelab_mcp.infrastructure_crud._rollback_device") as mock_rollback:
                 mock_rollback.return_value = {
                     "status": "success",
                     "device_id": 1,
                     "restored_services": 2,
                 }
 
-                result = await rollback_infrastructure_to_backup(
-                    backup_id=backup_id, rollback_scope="full"
-                )
+                result = await rollback_infrastructure_to_backup(backup_id=backup_id, rollback_scope="full")
                 result_data = json.loads(result)
 
                 assert result_data["status"] == "success"
@@ -523,9 +461,7 @@ class TestBackupAndRestore:
         }
 
         with patch("builtins.open", mock_open(read_data=json.dumps(mock_backup_data))):
-            result = await rollback_infrastructure_to_backup(
-                backup_id=backup_id, validate_only=True
-            )
+            result = await rollback_infrastructure_to_backup(backup_id=backup_id, validate_only=True)
             result_data = json.loads(result)
 
             assert result_data["status"] == "success"
@@ -536,12 +472,8 @@ class TestBackupAndRestore:
     async def test_rollback_infrastructure_changes_backup_not_found(self):
         """Test rollback with non-existent backup."""
         # Mock FileNotFoundError for non-existent backup
-        with patch(
-            "builtins.open", side_effect=FileNotFoundError("Backup file not found")
-        ):
-            result = await rollback_infrastructure_to_backup(
-                backup_id="nonexistent_backup"
-            )
+        with patch("builtins.open", side_effect=FileNotFoundError("Backup file not found")):
+            result = await rollback_infrastructure_to_backup(backup_id="nonexistent_backup")
             result_data = json.loads(result)
 
             assert result_data["status"] == "error"
@@ -561,9 +493,7 @@ class TestDecommissionDevice:
             "force": False,
         }
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.get_device_connection_info = AsyncMock(
                 return_value={
@@ -573,9 +503,7 @@ class TestDecommissionDevice:
                 }
             )
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._analyze_device_dependencies"
-            ) as mock_analyze:
+            with patch("src.homelab_mcp.infrastructure_crud._analyze_device_dependencies") as mock_analyze:
                 mock_analyze.return_value = {
                     "critical_services": [],
                     "dependent_devices": [],
@@ -585,17 +513,13 @@ class TestDecommissionDevice:
                     mock_conn = AsyncMock()
                     mock_connect.return_value.__aenter__.return_value = mock_conn
 
-                    with patch(
-                        "src.homelab_mcp.infrastructure_crud._stop_all_device_services"
-                    ) as mock_stop:
+                    with patch("src.homelab_mcp.infrastructure_crud._stop_all_device_services") as mock_stop:
                         mock_stop.return_value = {
                             "status": "success",
                             "stopped_services": ["database"],
                         }
 
-                        with patch(
-                            "src.homelab_mcp.infrastructure_crud._remove_from_clusters"
-                        ) as mock_remove:
+                        with patch("src.homelab_mcp.infrastructure_crud._remove_from_clusters") as mock_remove:
                             mock_remove.return_value = {"status": "success"}
 
                             result = await decommission_network_device(
@@ -612,9 +536,7 @@ class TestDecommissionDevice:
         """Test decommissioning device with critical dependencies."""
         device_config = {"device_id": 1, "force": False}
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.get_device_connection_info = AsyncMock(
                 return_value={
@@ -624,9 +546,7 @@ class TestDecommissionDevice:
                 }
             )
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._analyze_device_dependencies"
-            ) as mock_analyze:
+            with patch("src.homelab_mcp.infrastructure_crud._analyze_device_dependencies") as mock_analyze:
                 mock_analyze.return_value = {
                     "critical_services": ["primary-database"],
                     "dependent_devices": [],
@@ -646,9 +566,7 @@ class TestDecommissionDevice:
         """Test force decommissioning despite dependencies."""
         device_config = {"device_id": 1, "force": True, "acknowledge_data_loss": True}
 
-        with patch(
-            "src.homelab_mcp.infrastructure_crud.InfrastructureManager"
-        ) as MockManager:
+        with patch("src.homelab_mcp.infrastructure_crud.InfrastructureManager") as MockManager:
             mock_manager = MockManager.return_value
             mock_manager.get_device_connection_info = AsyncMock(
                 return_value={
@@ -658,9 +576,7 @@ class TestDecommissionDevice:
                 }
             )
 
-            with patch(
-                "src.homelab_mcp.infrastructure_crud._analyze_device_dependencies"
-            ) as mock_analyze:
+            with patch("src.homelab_mcp.infrastructure_crud._analyze_device_dependencies") as mock_analyze:
                 mock_analyze.return_value = {
                     "critical_services": ["service1", "service2"],
                     "dependent_devices": [],
@@ -670,17 +586,13 @@ class TestDecommissionDevice:
                     mock_conn = AsyncMock()
                     mock_connect.return_value.__aenter__.return_value = mock_conn
 
-                    with patch(
-                        "src.homelab_mcp.infrastructure_crud._stop_all_device_services"
-                    ) as mock_stop:
+                    with patch("src.homelab_mcp.infrastructure_crud._stop_all_device_services") as mock_stop:
                         mock_stop.return_value = {
                             "status": "success",
                             "stopped_services": ["service1", "service2"],
                         }
 
-                        with patch(
-                            "src.homelab_mcp.infrastructure_crud._remove_from_clusters"
-                        ) as mock_remove:
+                        with patch("src.homelab_mcp.infrastructure_crud._remove_from_clusters") as mock_remove:
                             mock_remove.return_value = {"status": "success"}
 
                             result = await decommission_network_device(

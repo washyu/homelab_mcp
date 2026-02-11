@@ -47,23 +47,17 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def store_discovery_history(
-        self, device_id: int, discovery_data: str, data_hash: str
-    ) -> None:
+    def store_discovery_history(self, device_id: int, discovery_data: str, data_hash: str) -> None:
         """Store discovery history record."""
         pass
 
     @abstractmethod
-    def get_device_changes(
-        self, device_id: int, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    def get_device_changes(self, device_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Get change history for a device."""
         pass
 
     @abstractmethod
-    def execute_query(
-        self, query: str, params: tuple | None = None
-    ) -> list[dict[str, Any]]:
+    def execute_query(self, query: str, params: tuple | None = None) -> list[dict[str, Any]]:
         """Execute a query and return results."""
         pass
 
@@ -87,9 +81,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_credential_by_hostname(
-        self, hostname: str, username: str | None = None
-    ) -> dict[str, Any] | None:
+    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
         """Get credential by hostname and optionally username."""
         pass
 
@@ -350,9 +342,7 @@ class SQLiteAdapter(DatabaseAdapter):
             # Parse network interfaces JSON
             if device_dict.get("network_interfaces"):
                 try:
-                    device_dict["network_interfaces"] = json.loads(
-                        device_dict["network_interfaces"]
-                    )
+                    device_dict["network_interfaces"] = json.loads(device_dict["network_interfaces"])
                 except json.JSONDecodeError:
                     device_dict["network_interfaces"] = []
 
@@ -360,9 +350,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return devices
 
-    def store_discovery_history(
-        self, device_id: int, discovery_data: str, data_hash: str
-    ) -> None:
+    def store_discovery_history(self, device_id: int, discovery_data: str, data_hash: str) -> None:
         """Store discovery history in SQLite."""
         if not self.connection:
             self.connect()
@@ -390,9 +378,7 @@ class SQLiteAdapter(DatabaseAdapter):
             )
             self.connection.commit()
 
-    def get_device_changes(
-        self, device_id: int, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    def get_device_changes(self, device_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Get device change history from SQLite."""
         if not self.connection:
             self.connect()
@@ -418,9 +404,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return changes
 
-    def execute_query(
-        self, query: str, params: tuple | None = None
-    ) -> list[dict[str, Any]]:
+    def execute_query(self, query: str, params: tuple | None = None) -> list[dict[str, Any]]:
         """Execute a query and return results."""
         if not self.connection:
             self.connect()
@@ -482,9 +466,7 @@ class SQLiteAdapter(DatabaseAdapter):
             return dict(row)
         return None
 
-    def get_credential_by_hostname(
-        self, hostname: str, username: str | None = None
-    ) -> dict[str, Any] | None:
+    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
         """Get credential by hostname and optionally username."""
         if not self.connection:
             self.connect()
@@ -575,9 +557,7 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor = self.connection.cursor()
 
         if active_only:
-            cursor.execute(
-                "SELECT * FROM ssh_credentials WHERE is_active = 1 ORDER BY hostname"
-            )
+            cursor.execute("SELECT * FROM ssh_credentials WHERE is_active = 1 ORDER BY hostname")
         else:
             cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
 
@@ -860,18 +840,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         "memory_total": system_info.get("memory", {}).get("total"),
                         "memory_used": system_info.get("memory", {}).get("used"),
                         "memory_free": system_info.get("memory", {}).get("free"),
-                        "memory_available": system_info.get("memory", {}).get(
-                            "available"
-                        ),
-                        "disk_filesystem": system_info.get("disk", {}).get(
-                            "filesystem"
-                        ),
+                        "memory_available": system_info.get("memory", {}).get("available"),
+                        "disk_filesystem": system_info.get("disk", {}).get("filesystem"),
                         "disk_size": system_info.get("disk", {}).get("size"),
                         "disk_used": system_info.get("disk", {}).get("used"),
                         "disk_available": system_info.get("disk", {}).get("available"),
-                        "disk_use_percent": system_info.get("disk", {}).get(
-                            "use_percent"
-                        ),
+                        "disk_use_percent": system_info.get("disk", {}).get("use_percent"),
                         "disk_mount": system_info.get("disk", {}).get("mount"),
                         "uptime": system_info.get("uptime"),
                         "os_info": system_info.get("os"),
@@ -882,9 +856,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         return devices
 
-    def store_discovery_history(
-        self, device_id: int, discovery_data: str, data_hash: str
-    ) -> None:
+    def store_discovery_history(self, device_id: int, discovery_data: str, data_hash: str) -> None:
         """Store discovery history in PostgreSQL."""
         if not self.connection:
             self.connect()
@@ -918,9 +890,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
             self.connection.commit()
 
-    def get_device_changes(
-        self, device_id: int, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    def get_device_changes(self, device_id: int, limit: int = 10) -> list[dict[str, Any]]:
         """Get device change history from PostgreSQL."""
         if not self.connection:
             self.connect()
@@ -947,9 +917,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         return changes
 
-    def execute_query(
-        self, query: str, params: tuple | None = None
-    ) -> list[dict[str, Any]]:
+    def execute_query(self, query: str, params: tuple | None = None) -> list[dict[str, Any]]:
         """Execute a query and return results."""
         if not self.connection:
             self.connect()
@@ -1013,9 +981,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
             return dict(row)
         return None
 
-    def get_credential_by_hostname(
-        self, hostname: str, username: str | None = None
-    ) -> dict[str, Any] | None:
+    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
         """Get credential by hostname and optionally username."""
         if not self.connection:
             self.connect()
@@ -1108,9 +1074,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         if active_only:
-            cursor.execute(
-                "SELECT * FROM ssh_credentials WHERE is_active = TRUE ORDER BY hostname"
-            )
+            cursor.execute("SELECT * FROM ssh_credentials WHERE is_active = TRUE ORDER BY hostname")
         else:
             cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
 
@@ -1145,10 +1109,7 @@ def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseA
 
     if db_type.lower() == "postgresql":
         if not POSTGRESQL_AVAILABLE:
-            raise ImportError(
-                "PostgreSQL support requires psycopg2. "
-                "Install it with: pip install psycopg2-binary"
-            )
+            raise ImportError("PostgreSQL support requires psycopg2. Install it with: pip install psycopg2-binary")
         return PostgreSQLAdapter(kwargs.get("connection_params"))
     elif db_type.lower() == "sqlite":
         return SQLiteAdapter(kwargs.get("db_path"))

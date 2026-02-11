@@ -112,12 +112,8 @@ class MCPConfig:
         self.discovery_timeout = int(os.getenv("DISCOVERY_TIMEOUT", "300"))  # 5 minutes
 
         # Feature flags
-        self.enable_postgresql = (
-            os.getenv("ENABLE_POSTGRESQL", "false").lower() == "true"
-        )
-        self.enable_resource_pools = (
-            os.getenv("ENABLE_RESOURCE_POOLS", "false").lower() == "true"
-        )
+        self.enable_postgresql = os.getenv("ENABLE_POSTGRESQL", "false").lower() == "true"
+        self.enable_resource_pools = os.getenv("ENABLE_RESOURCE_POOLS", "false").lower() == "true"
 
     def validate(self) -> list[str]:
         """Validate configuration and return any errors."""
@@ -138,8 +134,7 @@ class MCPConfig:
                     raise ImportError("psycopg2 not found")
             except ImportError:
                 errors.append(
-                    "PostgreSQL selected but psycopg2 is not installed. "
-                    "Install with: pip install psycopg2-binary"
+                    "PostgreSQL selected but psycopg2 is not installed. Install with: pip install psycopg2-binary"
                 )
 
         # HTTP validation
@@ -184,11 +179,7 @@ def print_config_info(config: MCPConfig | None = None) -> None:
         print(f"PostgreSQL Host: {pg_config['host']}:{pg_config['port']}")
         print(f"PostgreSQL Database: {pg_config['database']}")
         print(f"PostgreSQL User: {pg_config['user']}")
-        print(
-            "PostgreSQL Password: [CONFIGURED]"
-            if pg_config["password"]
-            else "PostgreSQL Password: [NOT SET]"
-        )
+        print("PostgreSQL Password: [CONFIGURED]" if pg_config["password"] else "PostgreSQL Password: [NOT SET]")
     else:
         print(f"SQLite Path: {config.database.sqlite_path}")
 

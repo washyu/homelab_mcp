@@ -8,9 +8,7 @@ class VMProvider(ABC):
     """Abstract base class for VM/container providers."""
 
     @abstractmethod
-    async def deploy_vm(
-        self, conn: Any, vm_name: str, vm_config: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def deploy_vm(self, conn: Any, vm_name: str, vm_config: dict[str, Any]) -> dict[str, Any]:
         """Deploy a new VM/container."""
         pass
 
@@ -40,16 +38,12 @@ class VMProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_vm_logs(
-        self, conn: Any, vm_name: str, lines: int = 100
-    ) -> dict[str, Any]:
+    async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
         """Get logs from a VM/container."""
         pass
 
     @abstractmethod
-    async def remove_vm(
-        self, conn: Any, vm_name: str, force: bool = False
-    ) -> dict[str, Any]:
+    async def remove_vm(self, conn: Any, vm_name: str, force: bool = False) -> dict[str, Any]:
         """Remove a VM/container."""
         pass
 
@@ -78,9 +72,7 @@ class VMProvider(ABC):
             "error": error,
         }
 
-    def _format_success(
-        self, operation: str, vm_name: str, details: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def _format_success(self, operation: str, vm_name: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
         """Format success response consistently."""
         result = {"status": "success", "operation": operation, "vm_name": vm_name}
         if details:

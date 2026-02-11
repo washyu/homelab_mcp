@@ -62,9 +62,7 @@ class TestVMOperations:
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
     @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
-    async def test_deploy_vm_success(
-        self, mock_connect, mock_get_provider, mock_manager_class
-    ):
+    async def test_deploy_vm_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM deployment."""
         # Setup mocks
         mock_manager = MagicMock()
@@ -101,9 +99,7 @@ class TestVMOperations:
         assert result["platform"] == "docker"
 
         # Verify calls
-        mock_provider.deploy_vm.assert_called_once_with(
-            mock_conn, "test-nginx", vm_config
-        )
+        mock_provider.deploy_vm.assert_called_once_with(mock_conn, "test-nginx", vm_config)
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     async def test_deploy_vm_device_not_found(self, mock_manager_class):
@@ -121,9 +117,7 @@ class TestVMOperations:
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
     @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
-    async def test_control_vm_state_success(
-        self, mock_connect, mock_get_provider, mock_manager_class
-    ):
+    async def test_control_vm_state_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM state control."""
         # Setup mocks
         mock_manager = MagicMock()
@@ -159,16 +153,12 @@ class TestVMOperations:
         assert result["device_id"] == 1
         assert result["platform"] == "docker"
 
-        mock_provider.control_vm.assert_called_once_with(
-            mock_conn, "test-container", "start"
-        )
+        mock_provider.control_vm.assert_called_once_with(mock_conn, "test-container", "start")
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
     @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
-    async def test_get_vm_status_success(
-        self, mock_connect, mock_get_provider, mock_manager_class
-    ):
+    async def test_get_vm_status_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM status retrieval."""
         # Setup mocks
         mock_manager = MagicMock()
@@ -208,9 +198,7 @@ class TestVMOperations:
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
     @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
-    async def test_list_vms_on_device_success(
-        self, mock_connect, mock_get_provider, mock_manager_class
-    ):
+    async def test_list_vms_on_device_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM listing on device."""
         # Setup mocks
         mock_manager = MagicMock()
@@ -252,9 +240,7 @@ class TestVMOperations:
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
     @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
-    async def test_get_vm_logs_success(
-        self, mock_connect, mock_get_provider, mock_manager_class
-    ):
+    async def test_get_vm_logs_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM log retrieval."""
         # Setup mocks
         mock_manager = MagicMock()
@@ -295,9 +281,7 @@ class TestVMOperations:
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
     @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
-    async def test_remove_vm_success(
-        self, mock_connect, mock_get_provider, mock_manager_class
-    ):
+    async def test_remove_vm_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM removal."""
         # Setup mocks
         mock_manager = MagicMock()
@@ -335,9 +319,7 @@ class TestVMOperations:
         assert result["device_id"] == 1
         assert result["platform"] == "docker"
 
-        mock_provider.remove_vm.assert_called_once_with(
-            mock_conn, "test-container", False
-        )
+        mock_provider.remove_vm.assert_called_once_with(mock_conn, "test-container", False)
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")

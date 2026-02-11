@@ -130,9 +130,7 @@ async def ensure_mcp_ssh_key() -> str:
         return str(key_path)
 
     # Generate new SSH key pair
-    key = asyncssh.generate_private_key(
-        "ssh-rsa", key_size=2048, comment="mcp_admin@homelab"
-    )
+    key = asyncssh.generate_private_key("ssh-rsa", key_size=2048, comment="mcp_admin@homelab")
 
     # Save private key
     key_path.write_bytes(key.export_private_key())
@@ -186,9 +184,7 @@ async def setup_remote_mcp_admin(
                 await conn.run("sudo rm -rf /home/mcp_admin", check=False)
 
                 # Create mcp_admin user
-                create_user = await conn.run(
-                    "sudo useradd -m -s /bin/bash -G sudo mcp_admin", check=False
-                )
+                create_user = await conn.run("sudo useradd -m -s /bin/bash -G sudo mcp_admin", check=False)
                 if create_user.exit_status != 0:
                     stderr_text = (
                         create_user.stderr.decode()
@@ -199,23 +195,17 @@ async def setup_remote_mcp_admin(
                 else:
                     setup_results["user_creation"] = "Success: mcp_admin user created"
                     # Ensure proper ownership of home directory
-                    await conn.run(
-                        "sudo chown -R mcp_admin:mcp_admin /home/mcp_admin", check=False
-                    )
+                    await conn.run("sudo chown -R mcp_admin:mcp_admin /home/mcp_admin", check=False)
             else:
                 setup_results["user_creation"] = "User already exists"
 
             # Ensure mcp_admin is in sudo group
-            sudo_group = await conn.run(
-                "sudo usermod -a -G sudo mcp_admin", check=False
-            )
+            sudo_group = await conn.run("sudo usermod -a -G sudo mcp_admin", check=False)
             if sudo_group.exit_status == 0:
                 setup_results["sudo_access"] = "Success: Added to sudo group"
             else:
                 stderr_text = (
-                    sudo_group.stderr.decode()
-                    if isinstance(sudo_group.stderr, bytes)
-                    else str(sudo_group.stderr)
+                    sudo_group.stderr.decode() if isinstance(sudo_group.stderr, bytes) else str(sudo_group.stderr)
                 )
                 setup_results["sudo_access"] = f"Failed: {stderr_text}"
 
@@ -233,9 +223,7 @@ async def setup_remote_mcp_admin(
                 # Setup SSH directory (more robust approach)
                 # First ensure the home directory exists and has proper ownership
                 await conn.run("sudo mkdir -p /home/mcp_admin", check=False)
-                await conn.run(
-                    "sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False
-                )
+                await conn.run("sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
 
                 # Create .ssh directory as root, then change ownership
                 mkdir_cmd = await conn.run(
@@ -247,13 +235,9 @@ async def setup_remote_mcp_admin(
 
                 if mkdir_cmd.exit_status != 0:
                     stderr_text = (
-                        mkdir_cmd.stderr.decode()
-                        if isinstance(mkdir_cmd.stderr, bytes)
-                        else str(mkdir_cmd.stderr)
+                        mkdir_cmd.stderr.decode() if isinstance(mkdir_cmd.stderr, bytes) else str(mkdir_cmd.stderr)
                     )
-                    setup_results["ssh_key"] = (
-                        f"Failed to create .ssh directory: {stderr_text}"
-                    )
+                    setup_results["ssh_key"] = f"Failed to create .ssh directory: {stderr_text}"
                 else:
                     if force_update_key and key_exists:
                         # Remove old MCP keys (those with mcp_admin@ comment)
@@ -278,9 +262,7 @@ async def setup_remote_mcp_admin(
                             setup_results["ssh_key"] = "Success: SSH key installed"
                     else:
                         stderr_text = (
-                            add_key.stderr.decode()
-                            if isinstance(add_key.stderr, bytes)
-                            else str(add_key.stderr)
+                            add_key.stderr.decode() if isinstance(add_key.stderr, bytes) else str(add_key.stderr)
                         )
                         setup_results["ssh_key"] = f"Failed: {stderr_text}"
 
@@ -291,9 +273,7 @@ async def setup_remote_mcp_admin(
             )
 
             if sudoers_setup.exit_status == 0:
-                setup_results["passwordless_sudo"] = (
-                    "Success: Passwordless sudo enabled"
-                )
+                setup_results["passwordless_sudo"] = "Success: Passwordless sudo enabled"
             else:
                 stderr_text = (
                     sudoers_setup.stderr.decode()
@@ -308,9 +288,7 @@ async def setup_remote_mcp_admin(
                 setup_results["test_access"] = "Success: mcp_admin access verified"
             else:
                 stderr_text = (
-                    test_conn.stderr.decode()
-                    if isinstance(test_conn.stderr, bytes)
-                    else str(test_conn.stderr)
+                    test_conn.stderr.decode() if isinstance(test_conn.stderr, bytes) else str(test_conn.stderr)
                 )
                 setup_results["test_access"] = f"Failed: {stderr_text}"
 
@@ -326,9 +304,7 @@ async def setup_remote_mcp_admin(
         )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "hostname": hostname, "error": str(e)}, indent=2
-        )
+        return json.dumps({"status": "error", "hostname": hostname, "error": str(e)}, indent=2)
 
 
 @ssh_connection_wrapper(timeout_seconds=15.0)
@@ -384,9 +360,7 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
                 user_groups = groups_output.split()
 
         # Check which service groups the user belongs to
-        service_groups = [
-            g for g in user_groups if g in ["docker", "lxd", "libvirt", "kvm"]
-        ]
+        service_groups = [g for g in user_groups if g in ["docker", "lxd", "libvirt", "kvm"]]
 
     return json.dumps(
         {
@@ -395,12 +369,8 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
             "connection_ip": hostname,
             "mcp_admin": {
                 "ssh_access": "Success: Connected with SSH key",
-                "sudo_access": "Success: Passwordless sudo working"
-                if sudo_access
-                else "Failed: No sudo access",
-                "username": cast(str, whoami_result.stdout).strip()
-                if whoami_result.stdout
-                else "unknown",
+                "sudo_access": "Success: Passwordless sudo working" if sudo_access else "Failed: No sudo access",
+                "username": cast(str, whoami_result.stdout).strip() if whoami_result.stdout else "unknown",
                 "groups": user_groups,
                 "service_groups": service_groups,
             },
@@ -462,9 +432,7 @@ async def ssh_discover_system(
             if cpu_result.exit_status == 0 and cpu_result.stdout:
                 cpu_info["count"] = int(cast(str, cpu_result.stdout).strip())
 
-            cpu_model_result = await conn.run(
-                'grep "model name" /proc/cpuinfo | head -1', check=False
-            )
+            cpu_model_result = await conn.run('grep "model name" /proc/cpuinfo | head -1', check=False)
             if cpu_model_result.exit_status == 0 and cpu_model_result.stdout:
                 model_line = cast(str, cpu_model_result.stdout).strip()
                 if ":" in model_line:
@@ -517,9 +485,7 @@ async def ssh_discover_system(
                             }
                             for addr_info in iface.get("addr_info", []):
                                 if addr_info.get("family") in ["inet", "inet6"]:
-                                    iface_info["addresses"].append(
-                                        addr_info.get("local")
-                                    )
+                                    iface_info["addresses"].append(addr_info.get("local"))
                             if iface_info["addresses"]:
                                 network_info.append(iface_info)
                     system_info["network"] = network_info
@@ -533,9 +499,7 @@ async def ssh_discover_system(
                 system_info["uptime"] = cast(str, uptime_result.stdout).strip()
 
             # Get OS information
-            os_result = await conn.run(
-                "cat /etc/os-release | grep PRETTY_NAME", check=False
-            )
+            os_result = await conn.run("cat /etc/os-release | grep PRETTY_NAME", check=False)
             if os_result.exit_status == 0 and os_result.stdout:
                 os_line = cast(str, os_result.stdout).strip()
                 if "=" in os_line:
@@ -555,9 +519,7 @@ async def ssh_discover_system(
                                 "device": parts[3].rstrip(":"),
                                 "vendor_id": parts[5].split(":")[0],
                                 "product_id": parts[5].split(":")[1],
-                                "description": parts[6]
-                                if len(parts) > 6
-                                else "Unknown",
+                                "description": parts[6] if len(parts) > 6 else "Unknown",
                             }
                             usb_devices.append(usb_device_info)
             if usb_devices:
@@ -584,17 +546,11 @@ async def ssh_discover_system(
                                 or "wireless" in parts[2].lower()
                             ):
                                 pci_device_info["type"] = "network"
-                            elif (
-                                "vga" in parts[1].lower()
-                                or "display" in parts[1].lower()
-                            ):
+                            elif "vga" in parts[1].lower() or "display" in parts[1].lower():
                                 pci_device_info["type"] = "graphics"
                             elif "usb" in parts[1].lower() or "usb" in parts[2].lower():
                                 pci_device_info["type"] = "usb_controller"
-                            elif (
-                                "sata" in parts[1].lower()
-                                or "storage" in parts[1].lower()
-                            ):
+                            elif "sata" in parts[1].lower() or "storage" in parts[1].lower():
                                 pci_device_info["type"] = "storage"
                             pci_devices.append(pci_device_info)
             if pci_devices:
@@ -602,9 +558,7 @@ async def ssh_discover_system(
 
             # Get block devices (drives)
             block_devices: list[dict[str, Any]] = []
-            lsblk_result = await conn.run(
-                "lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL 2>/dev/null", check=False
-            )
+            lsblk_result = await conn.run("lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL 2>/dev/null", check=False)
             if lsblk_result.exit_status == 0 and lsblk_result.stdout:
                 try:
                     lsblk_data = json.loads(cast(str, lsblk_result.stdout))
@@ -626,9 +580,7 @@ async def ssh_discover_system(
                                                 "size": child.get("size"),
                                                 "mountpoint": child.get("mountpoint"),
                                             }
-                                            partitions_list = block_device_info.get(
-                                                "partitions", []
-                                            )
+                                            partitions_list = block_device_info.get("partitions", [])
                                             if isinstance(partitions_list, list):
                                                 partitions_list.append(partition_info)
                                 block_devices.append(block_device_info)
@@ -701,11 +653,7 @@ async def ssh_execute_command(
                 full_command = f"sudo {command}"
             else:
                 # Other users might need password for sudo
-                full_command = (
-                    f"echo '{creds.password}' | sudo -S {command}"
-                    if creds.password
-                    else f"sudo {command}"
-                )
+                full_command = f"echo '{creds.password}' | sudo -S {command}" if creds.password else f"sudo {command}"
         else:
             full_command = command
 
@@ -714,18 +662,10 @@ async def ssh_execute_command(
 
         output = []
         if result.stdout:
-            stdout_text = (
-                result.stdout.decode()
-                if isinstance(result.stdout, bytes)
-                else str(result.stdout)
-            )
+            stdout_text = result.stdout.decode() if isinstance(result.stdout, bytes) else str(result.stdout)
             output.append(f"Output:\n{stdout_text.strip()}")
         if result.stderr:
-            stderr_text = (
-                result.stderr.decode()
-                if isinstance(result.stderr, bytes)
-                else str(result.stderr)
-            )
+            stderr_text = result.stderr.decode() if isinstance(result.stderr, bytes) else str(result.stderr)
             output.append(f"Error:\n{stderr_text.strip()}")
 
     return json.dumps(
@@ -734,17 +674,13 @@ async def ssh_execute_command(
             "hostname": hostname,
             "command": command,
             "exit_code": result.exit_status,
-            "output": "\n\n".join(output)
-            if output
-            else "Command executed successfully (no output)",
+            "output": "\n\n".join(output) if output else "Command executed successfully (no output)",
         },
         indent=2,
     )
 
 
-async def update_mcp_admin_groups(
-    hostname: str, username: str, password: str, port: int = 22
-) -> str:
+async def update_mcp_admin_groups(hostname: str, username: str, password: str, port: int = 22) -> str:
     """Update mcp_admin group memberships to include service management groups."""
     try:
         # Connect via SSH with admin credentials
@@ -823,16 +759,12 @@ async def update_mcp_admin_groups(
                     continue
 
                 # Add user to group
-                add_group = await conn.run(
-                    f"sudo usermod -a -G {group} mcp_admin", check=False
-                )
+                add_group = await conn.run(f"sudo usermod -a -G {group} mcp_admin", check=False)
                 if add_group.exit_status == 0:
                     added_groups.append(group)
                 else:
                     stderr_text = (
-                        add_group.stderr.decode()
-                        if isinstance(add_group.stderr, bytes)
-                        else str(add_group.stderr)
+                        add_group.stderr.decode() if isinstance(add_group.stderr, bytes) else str(add_group.stderr)
                     )
                     failed_groups.append(f"{group}: {stderr_text}")
 
@@ -859,9 +791,7 @@ async def update_mcp_admin_groups(
                 if docker_test.exit_status == 0:
                     results["docker_access"] = "Success: mcp_admin can access Docker"
                 else:
-                    results["docker_access"] = (
-                        "Failed: Docker access test failed (may need to logout/login)"
-                    )
+                    results["docker_access"] = "Failed: Docker access test failed (may need to logout/login)"
 
             return json.dumps(
                 {
@@ -874,9 +804,7 @@ async def update_mcp_admin_groups(
             )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "hostname": hostname, "error": str(e)}, indent=2
-        )
+        return json.dumps({"status": "error", "hostname": hostname, "error": str(e)}, indent=2)
     # This should never be reached, but mypy requires it
     return json.dumps(
         {"status": "error", "hostname": hostname, "error": "Unexpected execution path"},
@@ -992,9 +920,7 @@ async def register_server(
         )
 
     except Exception as e:
-        return json.dumps(
-            {"status": "error", "error": str(e), "hostname": hostname}, indent=2
-        )
+        return json.dumps({"status": "error", "error": str(e), "hostname": hostname}, indent=2)
 
 
 def list_registered_servers(active_only: bool = True) -> str:

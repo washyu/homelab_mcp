@@ -55,9 +55,7 @@ class TestSitemapIntegration:
                     "use_percent": "45%",
                     "mount": "/",
                 },
-                "network": [
-                    {"name": "eth0", "state": "UP", "addresses": ["192.168.1.100"]}
-                ],
+                "network": [{"name": "eth0", "state": "UP", "addresses": ["192.168.1.100"]}],
                 "uptime": "up 5 days, 2 hours, 30 minutes",
                 "os": "Ubuntu 22.04.3 LTS",
             },
@@ -135,9 +133,7 @@ class TestSitemapIntegration:
                         "use_percent": "45%",
                         "mount": "/",
                     },
-                    "network": [
-                        {"name": "eth0", "state": "UP", "addresses": ["192.168.1.10"]}
-                    ],
+                    "network": [{"name": "eth0", "state": "UP", "addresses": ["192.168.1.10"]}],
                     "uptime": "up 10 days, 5 hours",
                     "os": "Ubuntu 20.04.6 LTS",
                 },
@@ -162,9 +158,7 @@ class TestSitemapIntegration:
                         "use_percent": "40%",
                         "mount": "/",
                     },
-                    "network": [
-                        {"name": "ens3", "state": "UP", "addresses": ["192.168.1.20"]}
-                    ],
+                    "network": [{"name": "ens3", "state": "UP", "addresses": ["192.168.1.20"]}],
                     "uptime": "up 30 days, 12 hours",
                     "os": "Ubuntu 22.04.3 LTS",
                 },
@@ -197,11 +191,7 @@ class TestSitemapIntegration:
             assert len(sitemap_data["devices"]) == 3
 
             # Verify device data
-            hostnames = [
-                device["hostname"]
-                for device in sitemap_data["devices"]
-                if device["hostname"]
-            ]
+            hostnames = [device["hostname"] for device in sitemap_data["devices"] if device["hostname"]]
             assert "web-server-01" in hostnames
             assert "db-server-01" in hostnames
 
@@ -226,14 +216,10 @@ class TestSitemapIntegration:
 
             assert suggestions_data["status"] == "success"
             suggestions = suggestions_data["suggestions"]
-            assert (
-                len(suggestions["monitoring_targets"]) == 2
-            )  # Only successful devices
+            assert len(suggestions["monitoring_targets"]) == 2  # Only successful devices
 
             # High-spec db-server should be in load balancer and database candidates
-            lb_candidates = [
-                c["hostname"] for c in suggestions["load_balancer_candidates"]
-            ]
+            lb_candidates = [c["hostname"] for c in suggestions["load_balancer_candidates"]]
             db_candidates = [c["hostname"] for c in suggestions["database_candidates"]]
             assert "db-server-01" in lb_candidates  # 16 cores, 64G RAM
             assert "db-server-01" in db_candidates  # Low disk usage, high RAM
@@ -284,9 +270,7 @@ class TestSitemapIntegration:
         assert "Success" in verify_data["mcp_admin"]["ssh_access"]
 
         # Step 3: Discover and store device information
-        discovery_result = await discover_and_store(
-            sitemap, hostname=hostname, username="mcp_admin", port=ssh_port
-        )
+        discovery_result = await discover_and_store(sitemap, hostname=hostname, username="mcp_admin", port=ssh_port)
 
         discovery_data = json.loads(discovery_result)
         assert discovery_data["status"] == "success"
@@ -334,9 +318,7 @@ class TestSitemapIntegration:
         admin_pass = container_info["admin_pass"]
 
         # Setup mcp_admin first
-        await setup_remote_mcp_admin(
-            hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port
-        )
+        await setup_remote_mcp_admin(hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port)
 
         # Create bulk targets - same container with different approaches
         targets = [
@@ -361,8 +343,7 @@ class TestSitemapIntegration:
         successful_discoveries = sum(
             1
             for result in bulk_data["results"]
-            if result.get("discovery_status") == "success"
-            or result.get("status") == "success"
+            if result.get("discovery_status") == "success" or result.get("status") == "success"
         )
         assert successful_discoveries >= 1
 
@@ -384,9 +365,7 @@ class TestSitemapIntegration:
         admin_pass = container_info["admin_pass"]
 
         # Setup mcp_admin first
-        await setup_remote_mcp_admin(
-            hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port
-        )
+        await setup_remote_mcp_admin(hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port)
 
         # Test discover_and_map tool
         discover_result = await execute_tool(
@@ -440,9 +419,7 @@ class TestSitemapIntegration:
         assert len(suggestions_data["suggestions"]["monitoring_targets"]) >= 1
 
         # Test get_device_changes tool
-        changes_result = await execute_tool(
-            "get_device_changes", {"device_id": device_id, "limit": 5}
-        )
+        changes_result = await execute_tool("get_device_changes", {"device_id": device_id, "limit": 5})
         changes_text = changes_result["content"][0]["text"]
         changes_data = json.loads(changes_text)
 
@@ -460,15 +437,11 @@ class TestSitemapIntegration:
         admin_pass = container_info["admin_pass"]
 
         # Setup mcp_admin
-        await setup_remote_mcp_admin(
-            hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port
-        )
+        await setup_remote_mcp_admin(hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port)
 
         # First sitemap instance - discover and store
         sitemap1 = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
-        discovery_result1 = await discover_and_store(
-            sitemap1, hostname=hostname, username="mcp_admin", port=ssh_port
-        )
+        discovery_result1 = await discover_and_store(sitemap1, hostname=hostname, username="mcp_admin", port=ssh_port)
 
         discovery_data1 = json.loads(discovery_result1)
         assert discovery_data1["status"] == "success"
@@ -485,9 +458,7 @@ class TestSitemapIntegration:
         assert devices2[0]["hostname"] == devices1[0]["hostname"]
 
         # Discover same device again - should update, not create new
-        discovery_result2 = await discover_and_store(
-            sitemap2, hostname=hostname, username="mcp_admin", port=ssh_port
-        )
+        discovery_result2 = await discover_and_store(sitemap2, hostname=hostname, username="mcp_admin", port=ssh_port)
 
         discovery_data2 = json.loads(discovery_result2)
         assert discovery_data2["status"] == "success"
@@ -565,13 +536,9 @@ class TestSitemapIntegration:
         admin_pass = container_info["admin_pass"]
 
         # Setup and discover
-        await setup_remote_mcp_admin(
-            hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port
-        )
+        await setup_remote_mcp_admin(hostname=hostname, username=admin_user, password=admin_pass, port=ssh_port)
 
-        await discover_and_store(
-            sitemap, hostname=hostname, username="mcp_admin", port=ssh_port
-        )
+        await discover_and_store(sitemap, hostname=hostname, username="mcp_admin", port=ssh_port)
 
         # Get device info for verification
         devices = sitemap.get_all_devices()
@@ -598,12 +565,8 @@ class TestSitemapIntegration:
         cpu_cores = device["cpu_cores"] or 0
         if cpu_cores >= 4:
             # Should be suggested for load balancing if it has enough cores
-            lb_candidates = [
-                c["hostname"] for c in suggestions["load_balancer_candidates"]
-            ]
-            if device["memory_total"] and (
-                "G" in device["memory_total"] or "Gi" in device["memory_total"]
-            ):
+            lb_candidates = [c["hostname"] for c in suggestions["load_balancer_candidates"]]
+            if device["memory_total"] and ("G" in device["memory_total"] or "Gi" in device["memory_total"]):
                 memory_str = device["memory_total"]
                 # Handle both "G" and "Gi" suffixes
                 if memory_str.endswith("Gi"):

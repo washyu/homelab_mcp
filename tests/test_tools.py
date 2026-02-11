@@ -108,9 +108,7 @@ async def test_execute_ssh_discover(mock_ssh_discover):
     assert result["content"][0]["type"] == "text"
 
     # Verify the SSH function was called with correct arguments
-    mock_ssh_discover.assert_called_once_with(
-        hostname="test-host", username="test-user", password="test-pass"
-    )
+    mock_ssh_discover.assert_called_once_with(hostname="test-host", username="test-user", password="test-pass")
 
 
 @pytest.mark.asyncio
@@ -170,9 +168,7 @@ async def test_execute_bulk_discover_and_map(mock_bulk_discover):
     assert result["content"][0]["type"] == "text"
 
     # Verify the function was called with targets
-    mock_bulk_discover.assert_called_once_with(
-        mock_bulk_discover.call_args[0][0], targets
-    )
+    mock_bulk_discover.assert_called_once_with(mock_bulk_discover.call_args[0][0], targets)
 
 
 @pytest.mark.asyncio
@@ -235,15 +231,9 @@ async def test_execute_suggest_deployments(mock_sitemap_class):
     # Mock the sitemap instance and its methods
     mock_sitemap = MagicMock()
     mock_sitemap.suggest_deployments.return_value = {
-        "load_balancer_candidates": [
-            {"hostname": "high-spec-server", "reason": "8 cores, 16G RAM"}
-        ],
-        "database_candidates": [
-            {"hostname": "storage-server", "reason": "Low disk usage (20%), 32G RAM"}
-        ],
-        "monitoring_targets": [
-            {"hostname": "server1", "connection_ip": "192.168.1.10"}
-        ],
+        "load_balancer_candidates": [{"hostname": "high-spec-server", "reason": "8 cores, 16G RAM"}],
+        "database_candidates": [{"hostname": "storage-server", "reason": "Low disk usage (20%), 32G RAM"}],
+        "monitoring_targets": [{"hostname": "server1", "connection_ip": "192.168.1.10"}],
         "upgrade_recommendations": [],
     }
     mock_sitemap_class.return_value = mock_sitemap
@@ -325,9 +315,7 @@ def test_sitemap_tool_schemas():
 
 
 @pytest.mark.asyncio
-@patch(
-    "src.homelab_mcp.tool_handlers.infrastructure_handlers.deploy_infrastructure_plan"
-)
+@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.deploy_infrastructure_plan")
 async def test_execute_deploy_infrastructure(mock_deploy):
     """Test executing deploy_infrastructure tool."""
     mock_response = json.dumps(
@@ -361,15 +349,11 @@ async def test_execute_deploy_infrastructure(mock_deploy):
     assert result["content"][0]["type"] == "text"
 
     # Verify the function was called
-    mock_deploy.assert_called_once_with(
-        deployment_plan=deployment_plan, validate_only=False
-    )
+    mock_deploy.assert_called_once_with(deployment_plan=deployment_plan, validate_only=False)
 
 
 @pytest.mark.asyncio
-@patch(
-    "src.homelab_mcp.tool_handlers.infrastructure_handlers.update_device_configuration"
-)
+@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.update_device_configuration")
 async def test_execute_update_device_config(mock_update):
     """Test executing update_device_config tool."""
     mock_response = json.dumps(
@@ -417,9 +401,7 @@ async def test_execute_update_device_config(mock_update):
 
 
 @pytest.mark.asyncio
-@patch(
-    "src.homelab_mcp.tool_handlers.infrastructure_handlers.create_infrastructure_backup"
-)
+@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.create_infrastructure_backup")
 async def test_execute_create_backup(mock_backup):
     """Test executing create_infrastructure_backup tool."""
     mock_response = json.dumps(
@@ -433,18 +415,14 @@ async def test_execute_create_backup(mock_backup):
     )
     mock_backup.return_value = mock_response
 
-    result = await execute_tool(
-        "create_infrastructure_backup", {"backup_scope": "full", "include_data": False}
-    )
+    result = await execute_tool("create_infrastructure_backup", {"backup_scope": "full", "include_data": False})
 
     assert "content" in result
     assert len(result["content"]) > 0
     assert result["content"][0]["type"] == "text"
 
     # Verify the function was called
-    mock_backup.assert_called_once_with(
-        backup_scope="full", device_ids=None, include_data=False, backup_name=None
-    )
+    mock_backup.assert_called_once_with(backup_scope="full", device_ids=None, include_data=False, backup_name=None)
 
 
 def test_crud_tool_schemas():
@@ -521,9 +499,7 @@ async def test_execute_deploy_vm(mock_deploy_vm):
     assert result["content"][0]["type"] == "text"
 
     # Verify the function was called
-    mock_deploy_vm.assert_called_once_with(
-        device_id=1, platform="docker", vm_name="test-nginx", vm_config=vm_config
-    )
+    mock_deploy_vm.assert_called_once_with(device_id=1, platform="docker", vm_name="test-nginx", vm_config=vm_config)
 
 
 @pytest.mark.asyncio
@@ -556,9 +532,7 @@ async def test_execute_control_vm(mock_control_vm):
     assert result["content"][0]["type"] == "text"
 
     # Verify the function was called
-    mock_control_vm.assert_called_once_with(
-        device_id=1, platform="docker", vm_name="test-container", action="start"
-    )
+    mock_control_vm.assert_called_once_with(device_id=1, platform="docker", vm_name="test-container", action="start")
 
 
 @pytest.mark.asyncio
@@ -579,9 +553,7 @@ async def test_execute_list_vms(mock_list_vms):
     )
     mock_list_vms.return_value = mock_response
 
-    result = await execute_tool(
-        "list_vms", {"device_id": 1, "platforms": ["docker", "lxd"]}
-    )
+    result = await execute_tool("list_vms", {"device_id": 1, "platforms": ["docker", "lxd"]})
 
     assert "content" in result
     assert len(result["content"]) > 0
@@ -622,9 +594,7 @@ async def test_execute_get_vm_logs(mock_get_logs):
     assert result["content"][0]["type"] == "text"
 
     # Verify the function was called
-    mock_get_logs.assert_called_once_with(
-        device_id=1, platform="docker", vm_name="test-container", lines=100
-    )
+    mock_get_logs.assert_called_once_with(device_id=1, platform="docker", vm_name="test-container", lines=100)
 
 
 def test_vm_tool_schemas():

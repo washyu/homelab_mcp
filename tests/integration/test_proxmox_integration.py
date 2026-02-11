@@ -120,18 +120,14 @@ async def test_vm_lifecycle_end_to_end():
 
         # STEP 2: Start the container
         print(f"\n[2/5] Starting container {test_vmid}...")
-        start_result = await manage_proxmox_vm(
-            node=test_node, vmid=test_vmid, action="start", vm_type="lxc"
-        )
+        start_result = await manage_proxmox_vm(node=test_node, vmid=test_vmid, action="start", vm_type="lxc")
 
         assert start_result["status"] == "success", f"Start failed: {start_result}"
         print("✅ Container started")
 
         # STEP 3: Check status (should be running)
         print("\n[3/5] Checking status...")
-        status_result = await get_proxmox_vm_status(
-            node=test_node, vmid=test_vmid, vm_type="lxc"
-        )
+        status_result = await get_proxmox_vm_status(node=test_node, vmid=test_vmid, vm_type="lxc")
 
         assert status_result["status"] == "success"
         # This will catch if Proxmox changes status field names!
@@ -140,18 +136,14 @@ async def test_vm_lifecycle_end_to_end():
 
         # STEP 4: Stop the container
         print("\n[4/5] Stopping container...")
-        stop_result = await manage_proxmox_vm(
-            node=test_node, vmid=test_vmid, action="stop", vm_type="lxc"
-        )
+        stop_result = await manage_proxmox_vm(node=test_node, vmid=test_vmid, action="stop", vm_type="lxc")
 
         assert stop_result["status"] == "success", f"Stop failed: {stop_result}"
         print("✅ Container stopped")
 
         # STEP 5: Delete the container
         print("\n[5/5] Deleting container...")
-        delete_result = await delete_proxmox_vm(
-            node=test_node, vmid=test_vmid, vm_type="lxc"
-        )
+        delete_result = await delete_proxmox_vm(node=test_node, vmid=test_vmid, vm_type="lxc")
 
         assert delete_result["status"] == "success", f"Delete failed: {delete_result}"
         print("✅ Container deleted")
