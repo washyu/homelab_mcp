@@ -231,8 +231,8 @@ async def list_proxmox_resources(
             "resources": resources,
         }
 
-    except Exception as e:
-        logger.error(f"Error listing Proxmox resources: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error listing Proxmox resources: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to list resources: {str(e)}",
@@ -264,8 +264,8 @@ async def get_proxmox_node_status(
             "data": status,
         }
 
-    except Exception as e:
-        logger.error(f"Error getting node status: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error getting node status: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to get node status: {str(e)}",
@@ -303,8 +303,8 @@ async def get_proxmox_vm_status(
             "data": status,
         }
 
-    except Exception as e:
-        logger.error(f"Error getting VM status: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error getting VM status: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to get VM status: {str(e)}",
@@ -319,12 +319,12 @@ async def manage_proxmox_vm(
     vm_type: str = "qemu",
 ) -> dict[str, Any]:
     """
-    Manage a VM or container (start, stop, restart, shutdown).
+    Manage a VM or container (start, stop, shutdown, reboot, reset, suspend, resume).
 
     Args:
         node: Node name
         vmid: VM/Container ID
-        action: Action to perform ('start', 'stop', 'shutdown', 'restart', 'suspend', 'resume')
+        action: Action to perform ('start', 'stop', 'shutdown', 'reboot', 'reset', 'suspend', 'resume')
         host: Proxmox host (optional)
         vm_type: 'qemu' for VM or 'lxc' for container
 
@@ -333,7 +333,7 @@ async def manage_proxmox_vm(
     """
     client = get_proxmox_client(host=host)
 
-    valid_actions = ["start", "stop", "shutdown", "restart", "suspend", "resume"]
+    valid_actions = ["start", "stop", "shutdown", "reboot", "reset", "suspend", "resume"]
     if action not in valid_actions:
         return {
             "status": "error",
@@ -352,8 +352,8 @@ async def manage_proxmox_vm(
             "data": result,
         }
 
-    except Exception as e:
-        logger.error(f"Error managing VM: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error managing VM: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to {action} VM: {str(e)}",
@@ -436,8 +436,8 @@ async def create_proxmox_lxc(
             "data": result,
         }
 
-    except Exception as e:
-        logger.error(f"Error creating LXC container: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error creating LXC container: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to create LXC container: {str(e)}",
@@ -522,8 +522,8 @@ async def create_proxmox_vm(
             "data": result,
         }
 
-    except Exception as e:
-        logger.error(f"Error creating VM: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error creating VM: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to create VM: {str(e)}",
@@ -576,8 +576,8 @@ async def clone_proxmox_vm(
             "data": result,
         }
 
-    except Exception as e:
-        logger.error(f"Error cloning VM: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error cloning VM: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to clone VM: {str(e)}",
@@ -628,8 +628,8 @@ async def delete_proxmox_vm(
             "data": result,
         }
 
-    except Exception as e:
-        logger.error(f"Error deleting VM: {str(e)}")
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error deleting VM: %s", str(e))
         return {
             "status": "error",
             "message": f"Failed to delete VM: {str(e)}",

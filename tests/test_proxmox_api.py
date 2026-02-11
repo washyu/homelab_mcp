@@ -9,7 +9,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiohttp import ClientResponseError
+from aiohttp import ClientError, ClientResponseError
 from aioresponses import aioresponses
 
 from src.homelab_mcp.proxmox_api import (
@@ -331,7 +331,7 @@ class TestListProxmoxResources:
         # GIVEN: Mock client that raises an exception
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
-        mock_client.get.side_effect = Exception("Connection timeout")
+        mock_client.get.side_effect = ClientError("Connection timeout")
 
         # WHEN: Listing resources
         result = await list_proxmox_resources()
@@ -380,7 +380,7 @@ class TestGetProxmoxNodeStatus:
         """Test error handling with invalid node name."""
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
-        mock_client.get.side_effect = Exception("hostname lookup 'bad_node' failed - failed to get address info for: bad_node: Name or service not known\n")
+        mock_client.get.side_effect = ClientError("hostname lookup 'bad_node' failed - failed to get address info for: bad_node: Name or service not known\n")
 
         result = await get_proxmox_node_status(
             node="bad_node"
@@ -399,7 +399,7 @@ class TestGetProxmoxNodeStatus:
         """Test API error handling."""
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
-        mock_client.get.side_effect = Exception("Connection timeout")
+        mock_client.get.side_effect = ClientError("Connection timeout")
 
         # WHEN: Listing resources
         result = await get_proxmox_node_status(
@@ -472,7 +472,7 @@ class TestGetProxmoxVMStatus:
         # GIVEN: Mock client that raises exception
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
-        mock_client.get.side_effect = Exception("VM 999 does not exist")
+        mock_client.get.side_effect = ClientError("VM 999 does not exist")
 
         # WHEN: Getting status of non-existent VM
         result = await get_proxmox_vm_status(node="pve", vmid=999)
@@ -1066,7 +1066,7 @@ class TestCreateProxmoxVM:
         # GIVEN: Mock client that fails
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
-        mock_client.post.side_effect = Exception("Storage 'local-lvm' does not exist")
+        mock_client.post.side_effect = ClientError("Storage 'local-lvm' does not exist")
 
         # WHEN: Creating VM with invalid storage
         result = await create_proxmox_vm(
