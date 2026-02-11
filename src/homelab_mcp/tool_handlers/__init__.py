@@ -1,6 +1,7 @@
 """Tool handler registry - maps tool names to handler functions."""
 
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from .credential_handlers import (
     handle_list_registered_servers,

@@ -122,7 +122,15 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                 "action": {
                     "type": "string",
                     "description": "Action to perform",
-                    "enum": ["start", "stop", "shutdown", "reboot", "reset", "suspend", "resume"],
+                    "enum": [
+                        "start",
+                        "stop",
+                        "shutdown",
+                        "reboot",
+                        "reset",
+                        "suspend",
+                        "resume",
+                    ],
                 },
                 "vm_type": {
                     "type": "string",

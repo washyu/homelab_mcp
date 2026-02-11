@@ -5,8 +5,6 @@ Provides access to the community-scripts/ProxmoxVE GitHub repository
 for discovering and using Proxmox installation scripts.
 """
 
-import asyncio
-import json
 import logging
 import re
 from typing import Any
@@ -29,7 +27,7 @@ async def _fetch_github_api(url: str) -> dict[str, Any] | list[dict[str, Any]]:
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             response.raise_for_status()
-            return await response.json()
+            return await response.json()  # type: ignore[no-any-return]
 
 
 async def _fetch_script_content(category: str, script_name: str) -> str:
@@ -80,7 +78,11 @@ def _parse_script_metadata(content: str) -> dict[str, Any]:
         if line.strip().startswith("#") and not line.strip().startswith("#!"):
             # Remove # and extra spaces
             desc = line.strip().lstrip("#").strip()
-            if desc and not desc.startswith("Copyright") and not desc.startswith("License"):
+            if (
+                desc
+                and not desc.startswith("Copyright")
+                and not desc.startswith("License")
+            ):
                 description_lines.append(desc)
 
     if description_lines:
@@ -123,13 +125,15 @@ async def list_scripts_in_category(category: str) -> list[dict[str, Any]]:
         scripts = []
         for item in contents:
             if item["type"] == "file" and item["name"].endswith(".sh"):
-                scripts.append({
-                    "name": item["name"],
-                    "path": item["path"],
-                    "download_url": item["download_url"],
-                    "size": item["size"],
-                    "category": category,
-                })
+                scripts.append(
+                    {
+                        "name": item["name"],
+                        "path": item["path"],
+                        "download_url": item["download_url"],
+                        "size": item["size"],
+                        "category": category,
+                    }
+                )
 
         # Cache the results
         _script_cache[cache_key] = scripts
@@ -186,7 +190,9 @@ async def search_scripts(
         # If including metadata, also check tags
         if include_metadata:
             try:
-                content = await _fetch_script_content(script["category"], script["name"])
+                content = await _fetch_script_content(
+                    script["category"], script["name"]
+                )
                 metadata = _parse_script_metadata(content)
 
                 # Check tags

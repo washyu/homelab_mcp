@@ -325,7 +325,9 @@ def test_sitemap_tool_schemas():
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.deploy_infrastructure_plan")
+@patch(
+    "src.homelab_mcp.tool_handlers.infrastructure_handlers.deploy_infrastructure_plan"
+)
 async def test_execute_deploy_infrastructure(mock_deploy):
     """Test executing deploy_infrastructure tool."""
     mock_response = json.dumps(
@@ -365,7 +367,9 @@ async def test_execute_deploy_infrastructure(mock_deploy):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.update_device_configuration")
+@patch(
+    "src.homelab_mcp.tool_handlers.infrastructure_handlers.update_device_configuration"
+)
 async def test_execute_update_device_config(mock_update):
     """Test executing update_device_config tool."""
     mock_response = json.dumps(
@@ -413,7 +417,9 @@ async def test_execute_update_device_config(mock_update):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.create_infrastructure_backup")
+@patch(
+    "src.homelab_mcp.tool_handlers.infrastructure_handlers.create_infrastructure_backup"
+)
 async def test_execute_create_backup(mock_backup):
     """Test executing create_infrastructure_backup tool."""
     mock_response = json.dumps(

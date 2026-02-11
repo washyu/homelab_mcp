@@ -34,7 +34,7 @@ async def handle_get_service_info(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_check_service_requirements(
-    arguments: dict[str, Any]
+    arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle check_service_requirements tool."""
     installer = ServiceInstaller()
@@ -90,4 +90,6 @@ async def handle_run_ansible_playbook(arguments: dict[str, Any]) -> dict[str, An
     """Handle run_ansible_playbook tool."""
     installer = ServiceInstaller()
     playbook_result = await installer.run_ansible_playbook(**arguments)
-    return {"content": [{"type": "text", "text": json.dumps(playbook_result, indent=2)}]}
+    return {
+        "content": [{"type": "text", "text": json.dumps(playbook_result, indent=2)}]
+    }

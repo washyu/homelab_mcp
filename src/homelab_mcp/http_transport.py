@@ -245,12 +245,12 @@ class MCPHTTPTransport:
         session = session_manager.get_session(session_id)
         if not session:
             return JSONResponse(
-                {"error": "Session not found or expired"},
-                status_code=404
+                {"error": "Session not found or expired"}, status_code=404
             )
 
         # Load HTML template
         from pathlib import Path
+
         template_path = Path(__file__).parent / "shell_terminal.html"
         html_content = template_path.read_text()
 
@@ -287,14 +287,18 @@ class MCPHTTPTransport:
 
         try:
             # Start output reader task
-            async def read_output():
+            async def read_output() -> None:
                 """Read output from shell and send to WebSocket."""
                 while True:
                     try:
                         if session.process.stdout:
                             data = await session.process.stdout.read(4096)
                             if data:
-                                text = data if isinstance(data, str) else data.decode("utf-8")
+                                text = (
+                                    data
+                                    if isinstance(data, str)
+                                    else data.decode("utf-8")
+                                )
                                 await websocket.send_text(text)
                             else:
                                 # EOF - process terminated
@@ -331,7 +335,7 @@ class MCPHTTPTransport:
             logger.error(f"WebSocket error for session {session_id}: {e}")
         finally:
             # Cancel output reader
-            if 'output_task' in locals():
+            if "output_task" in locals():
                 output_task.cancel()
                 try:
                     await output_task

@@ -133,7 +133,7 @@ class ProxmoxAPIClient:
                 if "data" not in result:
                     raise ValueError(f"Invalid API response: {result}")
 
-                return result["data"]
+                return result["data"]  # type: ignore[no-any-return]
 
     async def get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         """Make a GET request."""
@@ -333,7 +333,15 @@ async def manage_proxmox_vm(
     """
     client = get_proxmox_client(host=host)
 
-    valid_actions = ["start", "stop", "shutdown", "reboot", "reset", "suspend", "resume"]
+    valid_actions = [
+        "start",
+        "stop",
+        "shutdown",
+        "reboot",
+        "reset",
+        "suspend",
+        "resume",
+    ]
     if action not in valid_actions:
         return {
             "status": "error",

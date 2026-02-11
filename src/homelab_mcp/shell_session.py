@@ -165,9 +165,7 @@ class ShellSessionManager:
         if session and session.process.stdin:
             session.process.stdin.write(data)
 
-    async def resize_terminal(
-        self, session_id: str, rows: int, cols: int
-    ) -> None:
+    async def resize_terminal(self, session_id: str, rows: int, cols: int) -> None:
         """Resize terminal."""
         session = self.get_session(session_id)
         if session:
@@ -183,7 +181,7 @@ class ShellSessionManager:
                     session.process.stdout.read(4096), timeout=0.1
                 )
                 return data if isinstance(data, str) else data.decode("utf-8")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return None
             except Exception as e:
                 logger.error(f"Error reading output: {e}")

@@ -54,7 +54,7 @@ async def handle_scale_services(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_validate_infrastructure_changes(
-    arguments: dict[str, Any]
+    arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle validate_infrastructure_changes tool."""
     result = await validate_infrastructure_plan(
@@ -65,7 +65,7 @@ async def handle_validate_infrastructure_changes(
 
 
 async def handle_create_infrastructure_backup(
-    arguments: dict[str, Any]
+    arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle create_infrastructure_backup tool."""
     result = await create_infrastructure_backup(
@@ -78,7 +78,7 @@ async def handle_create_infrastructure_backup(
 
 
 async def handle_rollback_infrastructure_changes(
-    arguments: dict[str, Any]
+    arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle rollback_infrastructure_changes tool."""
     result = await rollback_infrastructure_to_backup(

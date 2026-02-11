@@ -4,12 +4,11 @@ Tests for Proxmox API integration.
 Tests the Proxmox VE API client and all Proxmox management tools.
 """
 
-import json
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from aiohttp import ClientError, ClientResponseError
+from aiohttp import ClientError
 from aioresponses import aioresponses
 
 from src.homelab_mcp.proxmox_api import (
@@ -24,7 +23,6 @@ from src.homelab_mcp.proxmox_api import (
     list_proxmox_resources,
     manage_proxmox_vm,
 )
-
 
 
 class TestProxmoxAPIClient:
@@ -113,7 +111,6 @@ class TestProxmoxAPIClient:
         assert cookies["PVEAuthCookie"] == "PVE-ticket-12345"
 
 
-
 class TestProxmoxAuthentication:
     """Test Proxmox authentication flows."""
 
@@ -175,7 +172,7 @@ class TestProxmoxAuthentication:
             import aiohttp
 
             connector = aiohttp.TCPConnector(ssl=False)
-            with pytest.raises(Exception):  # aiohttp will raise ClientResponseError
+            with pytest.raises(aiohttp.ClientResponseError):
                 async with aiohttp.ClientSession(connector=connector) as session:
                     await client._authenticate(session)
 
@@ -192,7 +189,6 @@ class TestProxmoxAuthentication:
         async with aiohttp.ClientSession(connector=connector) as session:
             with pytest.raises(ValueError, match="Username and password required"):
                 await client._authenticate(session)
-
 
 
 class TestGetProxmoxClient:
@@ -265,7 +261,6 @@ class TestGetProxmoxClient:
 
             # THEN: Should use explicit parameters
             assert client.host == "explicit-host.local"
-
 
 
 class TestListProxmoxResources:
@@ -341,7 +336,6 @@ class TestListProxmoxResources:
         assert "Connection timeout" in result["message"]
 
 
-
 class TestGetProxmoxNodeStatus:
     """Test get_proxmox_node_status function."""
 
@@ -359,20 +353,16 @@ class TestGetProxmoxNodeStatus:
             "loadavg": [1, 1, 1],
             "memory": {},
             "pveversion": "1.2.3.4.5",
-            "rootfs": {}
+            "rootfs": {},
         }
 
-        result = await get_proxmox_node_status(
-            node="pve"
-        )
+        result = await get_proxmox_node_status(node="pve")
 
         assert result["status"] == "success"
         assert result["node"] == "pve"
         assert len(result["data"]) > 0
 
-        mock_client.get.assert_called_once_with(
-            "/nodes/pve/status"
-        )
+        mock_client.get.assert_called_once_with("/nodes/pve/status")
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -380,14 +370,17 @@ class TestGetProxmoxNodeStatus:
         """Test error handling with invalid node name."""
         mock_client = AsyncMock()
         mock_get_client.return_value = mock_client
-        mock_client.get.side_effect = ClientError("hostname lookup 'bad_node' failed - failed to get address info for: bad_node: Name or service not known\n")
-
-        result = await get_proxmox_node_status(
-            node="bad_node"
+        mock_client.get.side_effect = ClientError(
+            "hostname lookup 'bad_node' failed - failed to get address info for: bad_node: Name or service not known\n"
         )
 
+        result = await get_proxmox_node_status(node="bad_node")
+
         assert result["status"] == "error"
-        assert "bad_node" in result["message"] or "failed to get address" in result["message"]
+        assert (
+            "bad_node" in result["message"]
+            or "failed to get address" in result["message"]
+        )
 
         mock_client.get.assert_called_once_with(
             "/nodes/bad_node/status",
@@ -402,9 +395,7 @@ class TestGetProxmoxNodeStatus:
         mock_client.get.side_effect = ClientError("Connection timeout")
 
         # WHEN: Listing resources
-        result = await get_proxmox_node_status(
-            node="pve"
-        )
+        result = await get_proxmox_node_status(node="pve")
 
         # THEN: Should return error response
         assert result["status"] == "error"
@@ -510,21 +501,14 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="start"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="start")
 
         assert result["status"] == "success"
         assert result["action"] == "start"
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/start",
-            {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/start", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -534,21 +518,14 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="stop"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="stop")
 
         assert result["status"] == "success"
         assert result["action"] == "stop"
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/stop",
-            {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/stop", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -558,11 +535,7 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="shutdown"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="shutdown")
 
         assert result["status"] == "success"
         assert result["action"] == "shutdown"
@@ -570,8 +543,7 @@ class TestManageProxmoxVM:
         assert result["vmid"] == 100
 
         mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/shutdown",
-            {}
+            "/nodes/pve/qemu/100/status/shutdown", {}
         )
 
     @pytest.mark.asyncio
@@ -582,11 +554,7 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="reboot"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="reboot")
 
         assert result["status"] == "success"
         assert result["action"] == "reboot"
@@ -594,8 +562,7 @@ class TestManageProxmoxVM:
         assert result["vmid"] == 100
 
         mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/reboot",
-            {}
+            "/nodes/pve/qemu/100/status/reboot", {}
         )
 
     @pytest.mark.asyncio
@@ -606,21 +573,14 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="reset"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="reset")
 
         assert result["status"] == "success"
         assert result["action"] == "reset"
         assert result["node"] == "pve"
         assert result["vmid"] == 100
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/reset",
-            {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/reset", {})
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -630,11 +590,7 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="suspend"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="suspend")
 
         assert result["status"] == "success"
         assert result["action"] == "suspend"
@@ -642,8 +598,7 @@ class TestManageProxmoxVM:
         assert result["vmid"] == 100
 
         mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/suspend",
-            {}
+            "/nodes/pve/qemu/100/status/suspend", {}
         )
 
     @pytest.mark.asyncio
@@ -654,11 +609,7 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {"data": "OK"}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="resume"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="resume")
 
         assert result["status"] == "success"
         assert result["action"] == "resume"
@@ -666,8 +617,7 @@ class TestManageProxmoxVM:
         assert result["vmid"] == 100
 
         mock_client.post.assert_called_once_with(
-            "/nodes/pve/qemu/100/status/resume",
-            {}
+            "/nodes/pve/qemu/100/status/resume", {}
         )
 
     @pytest.mark.asyncio
@@ -678,11 +628,7 @@ class TestManageProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post.return_value = {}
 
-        result = await manage_proxmox_vm(
-            node="pve",
-            vmid=100,
-            action="restart"
-        )
+        result = await manage_proxmox_vm(node="pve", vmid=100, action="restart")
 
         assert result["status"] == "error"
         assert "Invalid action." in result["message"]
@@ -698,10 +644,7 @@ class TestManageProxmoxVM:
         mock_client.post.return_value = {"data": "OK"}
 
         result = await manage_proxmox_vm(
-            node="pve",
-            vmid=101,
-            action="start",
-            vm_type="lxc"
+            node="pve", vmid=101, action="start", vm_type="lxc"
         )
 
         assert result["status"] == "success"
@@ -709,10 +652,7 @@ class TestManageProxmoxVM:
         assert result["node"] == "pve"
         assert result["vmid"] == 101
 
-        mock_client.post.assert_called_once_with(
-            "/nodes/pve/lxc/101/status/start",
-            {}
-        )
+        mock_client.post.assert_called_once_with("/nodes/pve/lxc/101/status/start", {})
 
 
 class TestCreateProxmoxLXC:
@@ -726,30 +666,29 @@ class TestCreateProxmoxLXC:
         mock_get_client.return_value = mock_client
         mock_client.post_return_value = {"data", "OK"}
 
-        result = await create_proxmox_lxc(
-            node="pve",
-            vmid=999,
-            hostname="test_lxc"
-        )
-        assert result['status'] == "success"
+        result = await create_proxmox_lxc(node="pve", vmid=999, hostname="test_lxc")
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert "LXC container" in result["message"] and "created successfully" in result["message"]
+        assert (
+            "LXC container" in result["message"]
+            and "created successfully" in result["message"]
+        )
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
             {
-                'vmid': 999,
-                'hostname': 'test_lxc',
-                'ostemplate': 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst',
-                'storage': 'local-lvm',
-                'memory': 512,
-                'swap': 512,
-                'cores': 1,
-                'rootfs': 'local-lvm:8',
-                'unprivileged': 1,
-                'start': 0
-            }
+                "vmid": 999,
+                "hostname": "test_lxc",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                "storage": "local-lvm",
+                "memory": 512,
+                "swap": 512,
+                "cores": 1,
+                "rootfs": "local-lvm:8",
+                "unprivileged": 1,
+                "start": 0,
+            },
         )
 
     @pytest.mark.asyncio
@@ -761,32 +700,32 @@ class TestCreateProxmoxLXC:
         mock_client.post_return_value = {"data", "OK"}
 
         result = await create_proxmox_lxc(
-            node="pve",
-            vmid=999,
-            hostname="test_lxc",
-            password="test1!"
+            node="pve", vmid=999, hostname="test_lxc", password="test1!"
         )
 
-        assert result['status'] == "success"
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert "LXC container" in result["message"] and "created successfully" in result["message"]
+        assert (
+            "LXC container" in result["message"]
+            and "created successfully" in result["message"]
+        )
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
             {
-                'vmid': 999,
-                'hostname': 'test_lxc',
-                'ostemplate': 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst',
-                'storage': 'local-lvm',
-                'memory': 512,
-                'swap': 512,
-                'cores': 1,
-                'rootfs': 'local-lvm:8',
-                'unprivileged': 1,
-                'start': 0,
-                'password': 'test1!'
-            }
+                "vmid": 999,
+                "hostname": "test_lxc",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                "storage": "local-lvm",
+                "memory": 512,
+                "swap": 512,
+                "cores": 1,
+                "rootfs": "local-lvm:8",
+                "unprivileged": 1,
+                "start": 0,
+                "password": "test1!",
+            },
         )
 
     @pytest.mark.asyncio
@@ -801,30 +740,32 @@ class TestCreateProxmoxLXC:
             node="pve",
             vmid=999,
             hostname="test_lxc",
-            ssh_public_keys="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMpj96/+MCP_ADMIN mcp_admin@homelab_mcp"
-
+            ssh_public_keys="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMpj96/+MCP_ADMIN mcp_admin@homelab_mcp",
         )
 
-        assert result['status'] == "success"
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert "LXC container" in result["message"] and "created successfully" in result["message"]
+        assert (
+            "LXC container" in result["message"]
+            and "created successfully" in result["message"]
+        )
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
             {
-                'vmid': 999,
-                'hostname': 'test_lxc',
-                'ostemplate': 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst',
-                'storage': 'local-lvm',
-                'memory': 512,
-                'swap': 512,
-                'cores': 1,
-                'rootfs': 'local-lvm:8',
-                'unprivileged': 1,
-                'start': 0,
-                'ssh-public-keys': 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMpj96/+MCP_ADMIN mcp_admin@homelab_mcp'
-            }
+                "vmid": 999,
+                "hostname": "test_lxc",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                "storage": "local-lvm",
+                "memory": 512,
+                "swap": 512,
+                "cores": 1,
+                "rootfs": "local-lvm:8",
+                "unprivileged": 1,
+                "start": 0,
+                "ssh-public-keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMpj96/+MCP_ADMIN mcp_admin@homelab_mcp",
+            },
         )
 
     @pytest.mark.asyncio
@@ -836,30 +777,30 @@ class TestCreateProxmoxLXC:
         mock_client.post_return_value = {"data", "OK"}
 
         result = await create_proxmox_lxc(
-            node="pve",
-            vmid=999,
-            hostname="test_lxc",
-            start=1
+            node="pve", vmid=999, hostname="test_lxc", start=1
         )
-        assert result['status'] == "success"
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert "LXC container" in result["message"] and "created successfully" in result["message"]
+        assert (
+            "LXC container" in result["message"]
+            and "created successfully" in result["message"]
+        )
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
             {
-                'vmid': 999,
-                'hostname': 'test_lxc',
-                'ostemplate': 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst',
-                'storage': 'local-lvm',
-                'memory': 512,
-                'swap': 512,
-                'cores': 1,
-                'rootfs': 'local-lvm:8',
-                'unprivileged': 1,
-                'start': 1
-            }
+                "vmid": 999,
+                "hostname": "test_lxc",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                "storage": "local-lvm",
+                "memory": 512,
+                "swap": 512,
+                "cores": 1,
+                "rootfs": "local-lvm:8",
+                "unprivileged": 1,
+                "start": 1,
+            },
         )
 
     @pytest.mark.asyncio
@@ -878,27 +819,29 @@ class TestCreateProxmoxLXC:
             memory=2048,
             swap=256,
             cores=8,
-
         )
-        assert result['status'] == "success"
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert "LXC container" in result["message"] and "created successfully" in result["message"]
+        assert (
+            "LXC container" in result["message"]
+            and "created successfully" in result["message"]
+        )
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
             {
-                'vmid': 999,
-                'hostname': 'test_lxc',
-                'ostemplate': 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst',
-                'storage': 'local-lvm',
-                'memory': 2048,
-                'swap': 256,
-                'cores': 8,
-                'rootfs': 'local-lvm:8',
-                'unprivileged': 1,
-                'start': 0
-            }
+                "vmid": 999,
+                "hostname": "test_lxc",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                "storage": "local-lvm",
+                "memory": 2048,
+                "swap": 256,
+                "cores": 8,
+                "rootfs": "local-lvm:8",
+                "unprivileged": 1,
+                "start": 0,
+            },
         )
 
     @pytest.mark.asyncio
@@ -910,31 +853,30 @@ class TestCreateProxmoxLXC:
         mock_client.post_return_value = {"data", "OK"}
 
         result = await create_proxmox_lxc(
-            node="pve",
-            vmid=999,
-            hostname="test_lxc",
-            unprivileged=0
-
+            node="pve", vmid=999, hostname="test_lxc", unprivileged=0
         )
-        assert result['status'] == "success"
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
-        assert "LXC container" in result["message"] and "created successfully" in result["message"]
+        assert (
+            "LXC container" in result["message"]
+            and "created successfully" in result["message"]
+        )
 
         mock_client.post.assert_called_once_with(
             "/nodes/pve/lxc",
             {
-                'vmid': 999,
-                'hostname': 'test_lxc',
-                'ostemplate': 'local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst',
-                'storage': 'local-lvm',
-                'memory': 512,
-                'swap': 512,
-                'cores': 1,
-                'rootfs': 'local-lvm:8',
-                'unprivileged': 0,
-                'start': 0
-            }
+                "vmid": 999,
+                "hostname": "test_lxc",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+                "storage": "local-lvm",
+                "memory": 512,
+                "swap": 512,
+                "cores": 1,
+                "rootfs": "local-lvm:8",
+                "unprivileged": 0,
+                "start": 0,
+            },
         )
 
 
@@ -949,13 +891,9 @@ class TestCreateProxmoxVM:
         mock_get_client.return_value = mock_client
         mock_client.post_return_value = {"data", "OK"}
 
-        result = await create_proxmox_vm(
-            node="pve",
-            vmid=999,
-            name="test_vm"
-        )
+        result = await create_proxmox_vm(node="pve", vmid=999, name="test_vm")
 
-        assert result['status'] == "success"
+        assert result["status"] == "success"
         assert result["node"] == "pve"
         assert result["vmid"] == 999
         assert "VM" in result["message"] and "created successfully" in result["message"]
@@ -963,17 +901,16 @@ class TestCreateProxmoxVM:
         mock_client.post.assert_called_once_with(
             "/nodes/pve/qemu",
             {
-                'vmid': 999,
-                'name': 'test_vm',
-                'memory': 2048,
-                'cores': 2,
-                'sockets': 1,
-                'scsi0': 'local-lvm:32',
-                'net0': 'virtio,bridge=vmbr0',
-                'ostype': 'l26'
-            }
+                "vmid": 999,
+                "name": "test_vm",
+                "memory": 2048,
+                "cores": 2,
+                "sockets": 1,
+                "scsi0": "local-lvm:32",
+                "net0": "virtio,bridge=vmbr0",
+                "ostype": "l26",
+            },
         )
-
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
