@@ -13,8 +13,8 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 38
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, and server registration tools
+        len(tools) == 49
+    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, and Proxmox tools
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
     assert "verify_mcp_admin" in tools
@@ -81,7 +81,7 @@ async def test_execute_unknown_tool():
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.ssh_discover_system")
+@patch("src.homelab_mcp.tool_handlers.ssh_handlers.ssh_discover_system")
 async def test_execute_ssh_discover(mock_ssh_discover):
     """Test executing ssh_discover tool."""
     # Mock the SSH discovery response
@@ -114,7 +114,7 @@ async def test_execute_ssh_discover(mock_ssh_discover):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.discover_and_store")
+@patch("src.homelab_mcp.tool_handlers.network_handlers.discover_and_store")
 async def test_execute_discover_and_map(mock_discover_and_store):
     """Test executing discover_and_map tool."""
     # Mock the discover and store response
@@ -142,7 +142,7 @@ async def test_execute_discover_and_map(mock_discover_and_store):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.bulk_discover_and_store")
+@patch("src.homelab_mcp.tool_handlers.network_handlers.bulk_discover_and_store")
 async def test_execute_bulk_discover_and_map(mock_bulk_discover):
     """Test executing bulk_discover_and_map tool."""
     # Mock the bulk discovery response
@@ -176,7 +176,7 @@ async def test_execute_bulk_discover_and_map(mock_bulk_discover):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.NetworkSiteMap")
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
 async def test_execute_get_network_sitemap(mock_sitemap_class):
     """Test executing get_network_sitemap tool."""
     # Mock the sitemap instance and its methods
@@ -201,7 +201,7 @@ async def test_execute_get_network_sitemap(mock_sitemap_class):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.NetworkSiteMap")
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
 async def test_execute_analyze_network_topology(mock_sitemap_class):
     """Test executing analyze_network_topology tool."""
     # Mock the sitemap instance and its methods
@@ -229,7 +229,7 @@ async def test_execute_analyze_network_topology(mock_sitemap_class):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.NetworkSiteMap")
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
 async def test_execute_suggest_deployments(mock_sitemap_class):
     """Test executing suggest_deployments tool."""
     # Mock the sitemap instance and its methods
@@ -262,7 +262,7 @@ async def test_execute_suggest_deployments(mock_sitemap_class):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.tools.NetworkSiteMap")
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
 async def test_execute_get_device_changes(mock_sitemap_class):
     """Test executing get_device_changes tool."""
     # Mock the sitemap instance and its methods
@@ -325,7 +325,7 @@ def test_sitemap_tool_schemas():
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.infrastructure_crud.deploy_infrastructure_plan")
+@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.deploy_infrastructure_plan")
 async def test_execute_deploy_infrastructure(mock_deploy):
     """Test executing deploy_infrastructure tool."""
     mock_response = json.dumps(
@@ -365,7 +365,7 @@ async def test_execute_deploy_infrastructure(mock_deploy):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.infrastructure_crud.update_device_configuration")
+@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.update_device_configuration")
 async def test_execute_update_device_config(mock_update):
     """Test executing update_device_config tool."""
     mock_response = json.dumps(
@@ -413,7 +413,7 @@ async def test_execute_update_device_config(mock_update):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.infrastructure_crud.create_infrastructure_backup")
+@patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.create_infrastructure_backup")
 async def test_execute_create_backup(mock_backup):
     """Test executing create_infrastructure_backup tool."""
     mock_response = json.dumps(
@@ -480,7 +480,7 @@ def test_crud_tool_schemas():
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.vm_operations.deploy_vm")
+@patch("src.homelab_mcp.tool_handlers.vm_handlers.deploy_vm")
 async def test_execute_deploy_vm(mock_deploy_vm):
     """Test executing deploy_vm tool."""
     mock_response = json.dumps(
@@ -521,7 +521,7 @@ async def test_execute_deploy_vm(mock_deploy_vm):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.vm_operations.control_vm_state")
+@patch("src.homelab_mcp.tool_handlers.vm_handlers.control_vm_state")
 async def test_execute_control_vm(mock_control_vm):
     """Test executing control_vm tool."""
     mock_response = json.dumps(
@@ -556,7 +556,7 @@ async def test_execute_control_vm(mock_control_vm):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.vm_operations.list_vms_on_device")
+@patch("src.homelab_mcp.tool_handlers.vm_handlers.list_vms_on_device")
 async def test_execute_list_vms(mock_list_vms):
     """Test executing list_vms tool."""
     mock_response = json.dumps(
@@ -586,7 +586,7 @@ async def test_execute_list_vms(mock_list_vms):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.vm_operations.get_vm_logs")
+@patch("src.homelab_mcp.tool_handlers.vm_handlers.get_vm_logs")
 async def test_execute_get_vm_logs(mock_get_logs):
     """Test executing get_vm_logs tool."""
     mock_response = json.dumps(
