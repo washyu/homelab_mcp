@@ -5,9 +5,8 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-import asyncssh
-
 from .sitemap import NetworkSiteMap
+from .ssh_connection import ssh_connect
 
 
 class InfrastructureManager:
@@ -153,10 +152,9 @@ async def update_device_configuration(
                 backup_id = backup_data.get("backup_id")
 
         # Apply configuration changes
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             change_results = []
 
@@ -262,10 +260,9 @@ async def decommission_network_device(
             decommission_results.extend(migration_results)
 
         # Remove device from active service
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             # Stop all services
             stop_result = await _stop_all_device_services(conn)
@@ -630,10 +627,9 @@ async def _deploy_service(manager: InfrastructureManager, service: dict[str, Any
                 "error": f"Device {device_id} not found",
             }
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             service_type = service["type"]
             service_name = service["name"]
@@ -966,10 +962,9 @@ async def _analyze_device_dependencies(manager: InfrastructureManager, device_id
         critical_services = []
         dependent_devices = []
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             # Check for running Docker containers
             docker_result = await conn.run('docker ps --format "{{.Names}}"')
@@ -1147,10 +1142,9 @@ async def _execute_migration_plan(
                     continue
 
                 # Connect to source device to get service configuration
-                async with asyncssh.connect(
-                    source_connection_info["hostname"],
+                async with await ssh_connect(
+                    hostname=source_connection_info["hostname"],
                     username=source_connection_info["username"],
-                    known_hosts=None,
                 ) as source_conn:
                     # Get Docker container configuration
                     inspect_result = await source_conn.run(f"docker inspect {service_name}")
@@ -1163,10 +1157,9 @@ async def _execute_migration_plan(
 
                         if save_result.exit_status == 0:
                             # Connect to target device
-                            async with asyncssh.connect(
-                                target_connection_info["hostname"],
+                            async with await ssh_connect(
+                                hostname=target_connection_info["hostname"],
                                 username=target_connection_info["username"],
-                                known_hosts=None,
                             ) as target_conn:
                                 # Transfer container image
                                 async with source_conn.start_sftp_client() as source_sftp:
@@ -1225,10 +1218,9 @@ async def _execute_migration_plan(
                             )
                             if copy_result.exit_status == 0:
                                 # Start on target and stop on source
-                                async with asyncssh.connect(
-                                    target_connection_info["hostname"],
+                                async with await ssh_connect(
+                                    hostname=target_connection_info["hostname"],
                                     username=target_connection_info["username"],
-                                    known_hosts=None,
                                 ) as target_conn:
                                     await target_conn.run(f"lxc start {service_name}")
 
@@ -1343,10 +1335,9 @@ async def _backup_device(manager: InfrastructureManager, device_id: int, include
             "backed_up_at": datetime.now().isoformat(),
         }
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             # Backup Docker containers
             docker_result = await conn.run('docker ps -a --format "{{.Names}}"')

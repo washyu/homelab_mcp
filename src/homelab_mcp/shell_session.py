@@ -5,10 +5,10 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
 
 import asyncssh
 
+from .ssh_connection import ssh_connect
 from .ssh_tools import resolve_ssh_credentials
 
 logger = logging.getLogger(__name__)
@@ -93,23 +93,15 @@ class ShellSessionManager:
             port=port,
         )
 
-        # Prepare connection options
-        connect_kwargs: dict[str, Any] = {
-            "host": creds.hostname,
-            "port": creds.port,
-            "username": creds.username,
-            "known_hosts": None,
-        }
-
-        if creds.key_path:
-            connect_kwargs["client_keys"] = [creds.key_path]
-
-        if creds.password:
-            connect_kwargs["password"] = creds.password
-
         # Connect and start PTY session
         logger.info(f"Creating shell session for {creds.username}@{hostname}")
-        connection = await asyncssh.connect(**connect_kwargs)
+        connection = await ssh_connect(
+            hostname=creds.hostname,
+            username=creds.username,
+            port=creds.port,
+            password=creds.password,
+            key_path=creds.key_path,
+        )
 
         # Start interactive shell with PTY
         process = await connection.create_process(

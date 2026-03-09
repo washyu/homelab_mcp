@@ -3,9 +3,8 @@
 import json
 from typing import Any
 
-import asyncssh
-
 from .sitemap import NetworkSiteMap
+from .ssh_connection import ssh_connect
 from .vm_providers import get_vm_provider
 
 
@@ -44,10 +43,9 @@ async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict
 
         provider = get_vm_provider(platform)
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             result = await provider.deploy_vm(conn, vm_name, vm_config)
             result["device_id"] = device_id
@@ -77,10 +75,9 @@ async def control_vm_state(device_id: int, platform: str, vm_name: str, action: 
 
         provider = get_vm_provider(platform)
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             result = await provider.control_vm(conn, vm_name, action)
             result["device_id"] = device_id
@@ -110,10 +107,9 @@ async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
 
         provider = get_vm_provider(platform)
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             result = await provider.get_vm_status(conn, vm_name)
             result["device_id"] = device_id
@@ -144,10 +140,9 @@ async def list_vms_on_device(device_id: int, platforms: list[str] | None = None)
         if platforms is None:
             platforms = ["docker", "lxd"]
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             all_vms = []
             platform_results = {}
@@ -213,10 +208,9 @@ async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 
 
         provider = get_vm_provider(platform)
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             result = await provider.get_vm_logs(conn, vm_name, lines)
             result["device_id"] = device_id
@@ -246,10 +240,9 @@ async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = F
 
         provider = get_vm_provider(platform)
 
-        async with asyncssh.connect(
-            connection_info["hostname"],
+        async with await ssh_connect(
+            hostname=connection_info["hostname"],
             username=connection_info["username"],
-            known_hosts=None,
         ) as conn:
             result = await provider.remove_vm(conn, vm_name, force)
             result["device_id"] = device_id

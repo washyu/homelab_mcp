@@ -61,7 +61,7 @@ class TestVMOperations:
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
-    @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
+    @patch("src.homelab_mcp.vm_operations.ssh_connect", new_callable=AsyncMock)
     async def test_deploy_vm_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM deployment."""
         # Setup mocks
@@ -116,7 +116,7 @@ class TestVMOperations:
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
-    @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
+    @patch("src.homelab_mcp.vm_operations.ssh_connect", new_callable=AsyncMock)
     async def test_control_vm_state_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM state control."""
         # Setup mocks
@@ -157,7 +157,7 @@ class TestVMOperations:
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
-    @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
+    @patch("src.homelab_mcp.vm_operations.ssh_connect", new_callable=AsyncMock)
     async def test_get_vm_status_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM status retrieval."""
         # Setup mocks
@@ -197,7 +197,7 @@ class TestVMOperations:
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
-    @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
+    @patch("src.homelab_mcp.vm_operations.ssh_connect", new_callable=AsyncMock)
     async def test_list_vms_on_device_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM listing on device."""
         # Setup mocks
@@ -239,7 +239,7 @@ class TestVMOperations:
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
-    @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
+    @patch("src.homelab_mcp.vm_operations.ssh_connect", new_callable=AsyncMock)
     async def test_get_vm_logs_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM log retrieval."""
         # Setup mocks
@@ -280,7 +280,7 @@ class TestVMOperations:
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
-    @patch("src.homelab_mcp.vm_operations.asyncssh.connect")
+    @patch("src.homelab_mcp.vm_operations.ssh_connect", new_callable=AsyncMock)
     async def test_remove_vm_success(self, mock_connect, mock_get_provider, mock_manager_class):
         """Test successful VM removal."""
         # Setup mocks
