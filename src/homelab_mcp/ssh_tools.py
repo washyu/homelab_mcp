@@ -10,6 +10,7 @@ import asyncssh
 
 from .database import get_database_adapter
 from .error_handling import retry_on_failure, ssh_connection_wrapper
+from .log_filter import sanitize_error
 from .ssh_connection import ssh_connect
 
 # Configure logging
@@ -301,7 +302,7 @@ async def setup_remote_mcp_admin(
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "hostname": hostname, "error": str(e)}, indent=2)
+        return json.dumps({"status": "error", "hostname": hostname, "error": sanitize_error(e)}, indent=2)
 
 
 @ssh_connection_wrapper(timeout_seconds=15.0)
@@ -780,7 +781,7 @@ async def update_mcp_admin_groups(hostname: str, username: str, password: str, p
             )
 
     except Exception as e:
-        return json.dumps({"status": "error", "hostname": hostname, "error": str(e)}, indent=2)
+        return json.dumps({"status": "error", "hostname": hostname, "error": sanitize_error(e)}, indent=2)
     # This should never be reached, but mypy requires it
     return json.dumps(
         {"status": "error", "hostname": hostname, "error": "Unexpected execution path"},
@@ -892,7 +893,7 @@ async def register_server(
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "error": str(e), "hostname": hostname}, indent=2)
+        return json.dumps({"status": "error", "error": sanitize_error(e), "hostname": hostname}, indent=2)
 
 
 def list_registered_servers(active_only: bool = True) -> str:
@@ -940,7 +941,7 @@ def list_registered_servers(active_only: bool = True) -> str:
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+        return json.dumps({"status": "error", "error": sanitize_error(e)}, indent=2)
 
 
 def update_server_credentials(
@@ -1016,7 +1017,7 @@ def update_server_credentials(
             )
 
     except Exception as e:
-        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+        return json.dumps({"status": "error", "error": sanitize_error(e)}, indent=2)
 
 
 def remove_server(
@@ -1095,4 +1096,4 @@ def remove_server(
             )
 
     except Exception as e:
-        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+        return json.dumps({"status": "error", "error": sanitize_error(e)}, indent=2)

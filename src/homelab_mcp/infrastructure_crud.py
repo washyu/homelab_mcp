@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from .log_filter import sanitize_error
 from .sitemap import NetworkSiteMap
 from .ssh_connection import ssh_connect
 
@@ -96,7 +97,7 @@ async def deploy_infrastructure_plan(deployment_plan: dict[str, Any], validate_o
         return json.dumps(
             {
                 "status": "error",
-                "message": f"Infrastructure deployment failed: {str(e)}",
+                "message": f"Infrastructure deployment failed: {sanitize_error(e)}",
             }
         )
 
@@ -202,7 +203,7 @@ async def update_device_configuration(
         return json.dumps(
             {
                 "status": "error",
-                "message": f"Device configuration update failed: {str(e)}",
+                "message": f"Device configuration update failed: {sanitize_error(e)}",
             }
         )
 
@@ -293,7 +294,7 @@ async def decommission_network_device(
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Device decommissioning failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Device decommissioning failed: {sanitize_error(e)}"})
 
 
 async def scale_infrastructure_services(scaling_plan: dict[str, Any], validate_only: bool = False) -> str:
@@ -350,7 +351,7 @@ async def scale_infrastructure_services(scaling_plan: dict[str, Any], validate_o
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Service scaling failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Service scaling failed: {sanitize_error(e)}"})
 
 
 async def validate_infrastructure_plan(change_plan: dict[str, Any], validation_level: str = "comprehensive") -> str:
@@ -404,7 +405,7 @@ async def validate_infrastructure_plan(change_plan: dict[str, Any], validation_l
         return json.dumps(
             {
                 "status": "error",
-                "message": f"Infrastructure validation failed: {str(e)}",
+                "message": f"Infrastructure validation failed: {sanitize_error(e)}",
             }
         )
 
@@ -476,7 +477,7 @@ async def create_infrastructure_backup(
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Infrastructure backup failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Infrastructure backup failed: {sanitize_error(e)}"})
 
 
 async def rollback_infrastructure_to_backup(
@@ -549,7 +550,7 @@ async def rollback_infrastructure_to_backup(
         )
 
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Infrastructure rollback failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Infrastructure rollback failed: {sanitize_error(e)}"})
 
 
 # Helper functions (simplified implementations)
@@ -739,7 +740,7 @@ async def _deploy_service(manager: InfrastructureManager, service: dict[str, Any
         return {
             "status": "error",
             "service": service.get("name", "unknown"),
-            "error": str(e),
+            "error": sanitize_error(e),
         }
 
 
@@ -923,7 +924,7 @@ async def _update_service_config(conn: Any, service_name: str, config: dict[str,
             }
 
     except Exception as e:
-        return {"status": "error", "service": service_name, "error": str(e)}
+        return {"status": "error", "service": service_name, "error": sanitize_error(e)}
 
 
 async def _update_network_config(conn: Any, config: dict[str, Any]) -> dict[str, Any]:
@@ -1111,7 +1112,7 @@ async def _analyze_device_dependencies(manager: InfrastructureManager, device_id
         }
 
     except Exception as e:
-        return {"critical_services": [], "dependent_devices": [], "error": str(e)}
+        return {"critical_services": [], "dependent_devices": [], "error": sanitize_error(e)}
 
 
 async def _execute_migration_plan(
@@ -1252,12 +1253,12 @@ async def _execute_migration_plan(
                             )
 
             except Exception as e:
-                results.append({"status": "error", "service": service_name, "error": str(e)})
+                results.append({"status": "error", "service": service_name, "error": sanitize_error(e)})
 
         return results
 
     except Exception as e:
-        return [{"status": "error", "error": f"Migration plan execution failed: {str(e)}"}]
+        return [{"status": "error", "error": f"Migration plan execution failed: {sanitize_error(e)}"}]
 
 
 async def _stop_all_device_services(conn: Any) -> dict[str, Any]:
@@ -1489,7 +1490,7 @@ async def _backup_device(manager: InfrastructureManager, device_id: int, include
         return backup_data
 
     except Exception as e:
-        return {"device_id": device_id, "backed_up": False, "error": str(e)}
+        return {"device_id": device_id, "backed_up": False, "error": sanitize_error(e)}
 
 
 async def _backup_network_topology(manager: InfrastructureManager) -> dict[str, Any]:

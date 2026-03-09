@@ -7,6 +7,7 @@ from typing import Any
 
 import yaml
 
+from .log_filter import sanitize_error
 from .ssh_tools import ssh_execute_command
 
 # Service templates directory
@@ -48,7 +49,7 @@ class AnsibleRunner:
             self.results = {
                 "return_code": -1,
                 "stdout": "",
-                "stderr": str(e),
+                "stderr": sanitize_error(e),
                 "success": False,
             }
             return self.results
@@ -448,7 +449,7 @@ class ServiceInstaller:
         except Exception as e:
             step_list = results.setdefault("steps", [])
             if isinstance(step_list, list):
-                step_list.append({"step": "exception", "status": "fail", "error": str(e)})
+                step_list.append({"step": "exception", "status": "fail", "error": sanitize_error(e)})
             return {"status": "error", "results": results}
 
     async def _install_script_service(
@@ -748,7 +749,7 @@ class ServiceInstaller:
         except Exception as e:
             step_list = results.setdefault("steps", [])
             if isinstance(step_list, list):
-                step_list.append({"step": "exception", "status": "fail", "error": str(e)})
+                step_list.append({"step": "exception", "status": "fail", "error": sanitize_error(e)})
             return {"status": "error", "results": results}
 
     async def _write_remote_file(

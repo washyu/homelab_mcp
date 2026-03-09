@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from .database import calculate_data_hash, get_database_adapter
+from .log_filter import sanitize_error
 
 
 @dataclass
@@ -108,7 +109,7 @@ class NetworkSiteMap:
                 connection_ip="unknown",
                 last_seen=datetime.now().isoformat(),
                 status="error",
-                error_message=f"JSON parse error: {str(e)}",
+                error_message=f"JSON parse error: {sanitize_error(e)}",
             )
 
     def store_device(self, device: NetworkDevice) -> int:
@@ -352,7 +353,7 @@ async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[st
                 {
                     "status": "error",
                     "hostname": target.get("hostname", "unknown"),
-                    "error": str(e),
+                    "error": sanitize_error(e),
                 }
             )
 
