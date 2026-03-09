@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Entry point for running the Homelab MCP server."""
+"""Entry point for running the Homelab MCP server.
+
+Supports two transport modes:
+  - stdio (default): for Claude Desktop and other stdio-based MCP clients
+  - HTTP (--http): for OpenWebUI and network-based MCP clients
+"""
+
+from __future__ import annotations
 
 import argparse
 import asyncio
 import os
 import sys
-
-from src.homelab_mcp.server import main
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,6 +94,42 @@ Environment Variables:
     return parser.parse_args()
 
 
+async def run_stdio() -> None:
+    """Run the MCP server in stdio mode using the SDK transport."""
+    from mcp.server.stdio import stdio_server
+
+    from src.homelab_mcp.server import server
+
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
+async def run_http(
+    host: str = "0.0.0.0",
+    port: int = 8080,
+    ssl_certfile: str | None = None,
+    ssl_keyfile: str | None = None,
+) -> None:
+    """Run the MCP server in HTTP mode using the SDK transport."""
+    import uvicorn
+
+    from src.homelab_mcp.http_app import create_http_app
+
+    app = create_http_app()
+
+    config = uvicorn.Config(
+        app=app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=True,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
+    )
+    uvi_server = uvicorn.Server(config)
+    await uvi_server.serve()
+
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -112,17 +153,17 @@ if __name__ == "__main__":
     print(f"Python executable: {sys.executable}", file=sys.stderr)
 
     try:
-        asyncio.run(
-            main(
-                http_mode=args.http,
-                host=args.host,
-                port=args.port,
-                auth_enabled=not args.no_auth,
-                api_key=args.api_key,
-                ssl_certfile=args.ssl_cert,
-                ssl_keyfile=args.ssl_key,
+        if args.http:
+            asyncio.run(
+                run_http(
+                    host=args.host,
+                    port=args.port,
+                    ssl_certfile=args.ssl_cert,
+                    ssl_keyfile=args.ssl_key,
+                )
             )
-        )
+        else:
+            asyncio.run(run_stdio())
     except KeyboardInterrupt:
         print("\nServer stopped by user", file=sys.stderr)
         sys.exit(0)
