@@ -17,6 +17,7 @@ from mcp.server.lowlevel import Server
 from .config import MCPConfig, get_config
 from .log_filter import CredentialFilter
 from .resource_manager import ResourceManager
+from .tool_annotations import get_tool_annotations
 from .tool_handlers import get_tool_handler
 from .tool_schemas import get_all_tool_schemas
 
@@ -88,6 +89,7 @@ async def handle_list_tools() -> list[types.Tool]:
                 name=name,
                 description=schema.get("description", ""),
                 inputSchema=schema.get("inputSchema", {"type": "object", "properties": {}}),
+                annotations=get_tool_annotations(name),
             )
         )
     return tools
