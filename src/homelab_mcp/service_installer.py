@@ -1,9 +1,12 @@
 """Service installation framework for homelab applications."""
 
 import json
+import logging
 import subprocess
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import yaml
 
@@ -461,12 +464,58 @@ class ServiceInstaller:
         password: str | None,
         config_override: dict | None,
     ) -> dict[str, Any]:
-        """Install a service using shell scripts."""
-        # TODO: Implement script-based installation
-        return {
-            "status": "error",
-            "error": "Script-based installation not yet implemented",
-        }
+        """Install a service using shell scripts.
+
+        Reads the installation_script from the service template, passes
+        config_override as environment variables (not string substitution
+        to prevent injection), and executes via SSH with a 5-minute timeout.
+        """
+        installation = service.get("installation", {})
+        script_content = installation.get("installation_script", "")
+
+        if not script_content:
+            return {
+                "status": "error",
+                "service": service_name,
+                "error": f"No installation script in template for {service_name}",
+            }
+
+        # Build environment variable export block from config_override
+        env_lines: list[str] = []
+        if config_override:
+            for key, value in config_override.items():
+                # Single-quote value and escape embedded single quotes to prevent shell injection
+                safe_value = str(value).replace("'", "'\\''")
+                env_lines.append(f"export {key}='{safe_value}'")
+
+        env_block = "\n".join(env_lines)
+        full_command = f"{env_block}\n{script_content}" if env_block else script_content
+
+        try:
+            result_json = await ssh_execute_command(
+                hostname=hostname,
+                username=username,
+                password=password,
+                command=full_command,
+                timeout=300.0,
+            )
+
+            try:
+                parsed_result = json.loads(result_json)
+            except (json.JSONDecodeError, TypeError):
+                parsed_result = {"raw_output": result_json}
+
+            return {
+                "status": "success",
+                "service": service_name,
+                "output": parsed_result,
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "service": service_name,
+                "error": sanitize_error(e),
+            }
 
     def _merge_config(self, base_config: dict, override: dict) -> dict:
         """Merge configuration override with base configuration."""
@@ -717,7 +766,7 @@ class ServiceInstaller:
                     outputs = json.loads(outputs_data.get("output", "{}"))
                     results["terraform_outputs"] = outputs
                 except json.JSONDecodeError:
-                    pass
+                    logger.debug("Failed to parse terraform output JSON for service %s", service_name)
 
             # Step 8: Save state backup if configured
             if tf_config.get("state_management", {}).get("backup", {}).get("enabled", True):
