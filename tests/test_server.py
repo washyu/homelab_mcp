@@ -319,3 +319,62 @@ async def test_signal_handling_stdio_mode() -> None:
     assert "signal" in source.lower() or "shutdown" in source.lower(), (
         "run_stdio should implement signal handling for graceful shutdown"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tool annotations tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_all_tools_have_annotations() -> None:
+    """Every tool returned by handle_list_tools has annotations with required hints set."""
+    tools = await handle_list_tools()
+    for tool in tools:
+        assert tool.annotations is not None, f"Tool {tool.name} missing annotations"
+        assert tool.annotations.readOnlyHint is not None, (
+            f"Tool {tool.name} missing readOnlyHint"
+        )
+        assert tool.annotations.destructiveHint is not None, (
+            f"Tool {tool.name} missing destructiveHint"
+        )
+        assert tool.annotations.idempotentHint is not None, (
+            f"Tool {tool.name} missing idempotentHint"
+        )
+
+
+@pytest.mark.asyncio
+async def test_annotation_count_matches_tool_count() -> None:
+    """TOOL_ANNOTATIONS dict has exactly the same keys as get_all_tool_schemas()."""
+    from src.homelab_mcp.tool_annotations import TOOL_ANNOTATIONS
+    from src.homelab_mcp.tool_schemas import get_all_tool_schemas
+
+    schemas = get_all_tool_schemas()
+    assert set(TOOL_ANNOTATIONS.keys()) == set(schemas.keys()), (
+        f"Mismatch: annotations={set(TOOL_ANNOTATIONS.keys()) - set(schemas.keys())}, "
+        f"schemas={set(schemas.keys()) - set(TOOL_ANNOTATIONS.keys())}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_only_tools_not_destructive() -> None:
+    """Tools marked readOnlyHint=True must have destructiveHint=False."""
+    tools = await handle_list_tools()
+    for tool in tools:
+        assert tool.annotations is not None
+        if tool.annotations.readOnlyHint is True:
+            assert tool.annotations.destructiveHint is False, (
+                f"Tool {tool.name} is read-only but also marked destructive"
+            )
+
+
+@pytest.mark.asyncio
+async def test_destructive_tools_not_read_only() -> None:
+    """Tools marked destructiveHint=True must have readOnlyHint=False."""
+    tools = await handle_list_tools()
+    for tool in tools:
+        assert tool.annotations is not None
+        if tool.annotations.destructiveHint is True:
+            assert tool.annotations.readOnlyHint is False, (
+                f"Tool {tool.name} is destructive but also marked read-only"
+            )
