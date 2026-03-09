@@ -11,6 +11,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
+from .log_filter import sanitize_error
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,7 +73,7 @@ def timeout_wrapper(timeout_seconds: float = 30.0, default_response: dict[str, A
                     ]
                 }
             except Exception as e:
-                error_msg = f"Unexpected error in '{func.__name__}': {str(e)}"
+                error_msg = f"Unexpected error in '{func.__name__}': {sanitize_error(e)}"
                 logger.error(error_msg, exc_info=True)
 
                 return {
@@ -124,7 +126,7 @@ def retry_on_failure(
                     last_exception = e
                     if attempt < max_retries:
                         logger.warning(
-                            f"Attempt {attempt + 1}/{max_retries + 1} failed for '{func.__name__}': {str(e)}. Retrying in {delay}s..."
+                            f"Attempt {attempt + 1}/{max_retries + 1} failed for '{func.__name__}': {sanitize_error(e)}. Retrying in {delay}s..."
                         )
                         await asyncio.sleep(delay)
                         delay *= backoff_multiplier
@@ -137,12 +139,13 @@ def retry_on_failure(
                         # Let SSH wrapper handle SSH-specific errors
                         raise e
                     # Don't retry on other non-connection errors
-                    logger.error(f"Non-retryable error in '{func.__name__}': {str(e)}")
+                    logger.error(f"Non-retryable error in '{func.__name__}': {sanitize_error(e)}")
                     last_exception = e  # type: ignore[assignment]
                     break
 
             # If we get here, all retries failed
-            error_msg = f"Operation '{func.__name__}' failed after {max_retries + 1} attempts: {str(last_exception)}"
+            last_err_msg = sanitize_error(last_exception) if last_exception else "unknown error"
+            error_msg = f"Operation '{func.__name__}' failed after {max_retries + 1} attempts: {last_err_msg}"
             error_response = json.dumps(
                 {
                     "status": "error",
@@ -203,11 +206,11 @@ async def safe_json_response(data: Any, fallback_message: str = "Operation compl
         return {"content": [{"type": "text", "text": response_text}]}
 
     except Exception as e:
-        logger.error(f"Failed to create JSON response: {str(e)}")
+        logger.error(f"Failed to create JSON response: {sanitize_error(e)}")
         fallback_response = json.dumps(
             {
                 "status": "error",
-                "error": f"Response formatting failed: {str(e)}",
+                "error": f"Response formatting failed: {sanitize_error(e)}",
                 "fallback_message": fallback_message,
                 "timestamp": datetime.now(UTC).isoformat(),
             },
@@ -259,7 +262,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                         {
                             "status": "error",
                             "connection_ip": hostname,
-                            "error": f"SSH connection timeout: {str(e)}",
+                            "error": f"SSH connection timeout: {sanitize_error(e)}",
                             "error_type": "ssh_timeout",
                             "timestamp": datetime.now(UTC).isoformat(),
                         },
@@ -270,7 +273,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                         {
                             "status": "error",
                             "connection_ip": hostname,
-                            "error": f"SSH connection failed: {str(e)}",
+                            "error": f"SSH connection failed: {sanitize_error(e)}",
                             "error_type": "ssh_connection_error",
                             "timestamp": datetime.now(UTC).isoformat(),
                         },
@@ -286,7 +289,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                         {
                             "status": "error",
                             "connection_ip": hostname,
-                            "error": f"SSH key authentication failed: {str(e)}",
+                            "error": f"SSH key authentication failed: {sanitize_error(e)}",
                             "error_type": "ssh_auth_error",
                             "timestamp": datetime.now(UTC).isoformat(),
                         },
@@ -297,7 +300,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                         {
                             "status": "error",
                             "connection_ip": hostname,
-                            "error": f"SSH operation failed: {str(e)}",
+                            "error": f"SSH operation failed: {sanitize_error(e)}",
                             "error_type": "ssh_general_error",
                             "timestamp": datetime.now(UTC).isoformat(),
                         },

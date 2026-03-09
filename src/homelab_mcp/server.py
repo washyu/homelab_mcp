@@ -15,11 +15,15 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 
 from .config import MCPConfig, get_config
+from .log_filter import CredentialFilter
 from .resource_manager import ResourceManager
 from .tool_handlers import get_tool_handler
 from .tool_schemas import get_all_tool_schemas
 
 logger = logging.getLogger(__name__)
+
+# Attach credential redaction filter to root logger so all log output is scrubbed.
+logging.getLogger().addFilter(CredentialFilter())
 
 # Module-level ResourceManager reference for handlers that need direct access.
 # Set during lifespan, cleared on shutdown.
