@@ -69,6 +69,9 @@ Recent decisions affecting current work:
 - [01-02]: Result adapter pattern converts legacy handler dicts to SDK types without touching handler code
 - [01-03]: Used anyio.Event + task group cancellation for signal handling (consistent with MCP SDK's anyio usage)
 - [01-03]: HTTP mode relies on uvicorn's built-in signal handling, no custom handlers needed
+- [02-01]: Used stdlib-only approach (ipaddress, re) for validation -- no external dependencies
+- [02-01]: CredentialFilter always returns True (redacts content, never suppresses messages)
+- [02-01]: Attached CredentialFilter to root logger for global coverage
 - [02-02]: SSL verification True by default -- PROXMOX_VERIFY_SSL=false required to disable
 - [02-02]: create_ssl_context() returns bool|SSLContext union for aiohttp ssl parameter compatibility
 - [Phase 02]: [02-02]: SSL verification True by default -- PROXMOX_VERIFY_SSL=false required to disable
