@@ -10,7 +10,6 @@ import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from typing import Any
 
 from starlette.applications import Starlette
