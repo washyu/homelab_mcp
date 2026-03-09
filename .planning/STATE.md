@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-05-PLAN.md (gap closure - error sanitization)
-last_updated: "2026-03-09T16:06:22.689Z"
-last_activity: 2026-03-09 -- Plan 02-05 executed (error response sanitization wiring)
+stopped_at: Completed 03-03-PLAN.md (tool annotations + isError compliance)
+last_updated: "2026-03-09T18:08:22.300Z"
+last_activity: 2026-03-09 -- Plan 03-03 executed (tool annotations + isError compliance)
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 40
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 11
+  percent: 55
 ---
 
 # Project State
@@ -21,23 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-08)
 
 **Core value:** Every tool in the server actually works -- a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 2: Security Hardening
+**Current focus:** Phase 3: Functional Completeness
 
 ## Current Position
 
-Phase: 2 of 5 (Security Hardening) -- COMPLETE
-Plan: 5 of 5 in current phase (gap closure plans 02-04 and 02-05 added and completed)
-Status: Phase 2 Complete
-Last activity: 2026-03-09 -- Plan 02-05 executed (error response sanitization wiring)
+Phase: 3 of 5 (Functional Completeness)
+Plan: 3 of 3 in current phase
+Status: Phase 3 Complete
+Last activity: 2026-03-09 -- Plan 03-03 executed (tool annotations + isError compliance)
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 55%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 4.4min
-- Total execution time: 0.37 hours
+- Total plans completed: 6
+- Average duration: 4.3min
+- Total execution time: 0.43 hours
 
 **By Phase:**
 
@@ -45,12 +45,14 @@ Progress: [████░░░░░░] 40%
 |-------|-------|-------|----------|
 | 01-architecture-foundation | 3/3 | 13min | 4.3min |
 | 02-security-hardening | 5/5 | -- | -- |
+| 03-functional-completeness | 1/3 | 4min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 01-03 (4min), 02-02 (4min), 02-03 (10min), 02-04 (4min), 02-05 (4min)
+- Last 5 plans: 02-02 (4min), 02-03 (10min), 02-04 (4min), 02-05 (4min), 03-03 (4min)
 - Trend: Steady
 
 *Updated after each plan completion*
+| Phase 03 P01 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -81,6 +83,8 @@ Recent decisions affecting current work:
 - [02-04]: Defense-in-depth: handler-level validation gives earlier/clearer errors before ssh_connect
 - [02-05]: Logger str(e) calls left unchanged -- CredentialFilter on root logger already handles redaction there
 - [02-05]: http_transport.py updated despite being deprecated -- still importable and could leak credentials
+- [03-03]: ToolError exception pattern leverages SDK call_tool decorator auto-isError behavior rather than modifying return types
+- [03-03]: Shared ToolAnnotations instances for read-only and destructive categories reduce memory and ensure consistency
 
 ### Pending Todos
 
@@ -95,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T15:59:00Z
-Stopped at: Completed 02-05-PLAN.md (gap closure - error sanitization)
-Resume file: .planning/phases/02-security-hardening/02-05-SUMMARY.md
+Last session: 2026-03-09T18:02:15Z
+Stopped at: Completed 03-03-PLAN.md (tool annotations + isError compliance)
+Resume file: .planning/phases/03-functional-completeness/03-03-SUMMARY.md

@@ -70,7 +70,7 @@ Plans:
 Plans:
 - [ ] 03-01-PLAN.md — Implement stub functions (sitemap auto-refresh, device rediscovery, script install)
 - [ ] 03-02-PLAN.md — Replace silent exception handlers with logged handlers
-- [ ] 03-03-PLAN.md — Tool annotations + isError compliance
+- [x] 03-03-PLAN.md — Tool annotations + isError compliance
 
 ### Phase 4: MCP Protocol Compliance
 **Goal**: The server fully complies with MCP protocol expectations for logging and HTTP transport
@@ -106,6 +106,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Architecture Foundation | 3/3 | Complete |  |
 | 2. Security Hardening | 5/5 | Complete   | 2026-03-09 |
-| 3. Functional Completeness | 0/3 | Not started | - |
+| 3. Functional Completeness | 1/3 | In progress | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |
