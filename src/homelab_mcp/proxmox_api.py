@@ -21,7 +21,7 @@ class ProxmoxAPIClient:
         self,
         host: str,
         port: int = 8006,
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
         username: str | None = None,
         password: str | None = None,
         api_token: str | None = None,
@@ -214,7 +214,7 @@ def get_proxmox_client(
         raise ValueError("Proxmox host must be provided or set in PROXMOX_HOST env var")
 
     if verify_ssl is None:
-        verify_ssl = os.getenv("PROXMOX_VERIFY_SSL", "false").lower() == "true"
+        verify_ssl = os.getenv("PROXMOX_VERIFY_SSL", "true").lower() != "false"
 
     username = username or os.getenv("PROXMOX_USER")
     password = password or os.getenv("PROXMOX_PASSWORD")

@@ -1,6 +1,7 @@
 """Configuration management for the homelab MCP server."""
 
 import os
+import ssl
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -111,9 +112,26 @@ class MCPConfig:
         self.discovery_batch_size = int(os.getenv("DISCOVERY_BATCH_SIZE", "10"))
         self.discovery_timeout = int(os.getenv("DISCOVERY_TIMEOUT", "300"))  # 5 minutes
 
+        # Proxmox SSL configuration
+        self.proxmox_verify_ssl = os.getenv("PROXMOX_VERIFY_SSL", "true").lower() != "false"
+        self.proxmox_ca_cert: str | None = os.getenv("PROXMOX_CA_CERT")
+
         # Feature flags
         self.enable_postgresql = os.getenv("ENABLE_POSTGRESQL", "false").lower() == "true"
         self.enable_resource_pools = os.getenv("ENABLE_RESOURCE_POOLS", "false").lower() == "true"
+
+    def create_ssl_context(self) -> ssl.SSLContext | bool:
+        """Create SSL context for Proxmox API connections.
+
+        Returns:
+            True to use system CA verification, False to disable verification,
+            or an ssl.SSLContext configured with a custom CA certificate.
+        """
+        if not self.proxmox_verify_ssl:
+            return False
+        if self.proxmox_ca_cert:
+            return ssl.create_default_context(cafile=self.proxmox_ca_cert)
+        return True
 
     def validate(self) -> list[str]:
         """Validate configuration and return any errors."""
