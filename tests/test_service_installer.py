@@ -787,6 +787,132 @@ class TestServiceInstallerVariableSubstitution:
             assert "service" in result or "status" in result
 
 
+class TestInstallScriptServiceDirect:
+    """Tests for the _install_script_service method implementation."""
+
+    def setup_method(self) -> None:
+        """Set up test method."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.template_dir = Path(self.temp_dir) / "service_templates"
+        self.template_dir.mkdir()
+
+        # Create a minimal template so ServiceInstaller can init
+        import yaml
+
+        minimal = {
+            "name": "dummy",
+            "description": "dummy",
+            "category": "test",
+            "requirements": {"ports": [], "memory_gb": 1, "disk_gb": 1},
+            "installation": {"method": "script"},
+        }
+        with open(self.template_dir / "dummy.yaml", "w") as f:
+            yaml.dump(minimal, f)
+
+        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        self.patcher.start()
+        self.installer = ServiceInstaller()
+
+    def teardown_method(self) -> None:
+        self.patcher.stop()
+        import shutil
+
+        shutil.rmtree(self.temp_dir)
+
+    @pytest.mark.asyncio
+    async def test_install_script_success(self) -> None:
+        """Script-based service installs successfully when installation_script is present."""
+        service = {
+            "name": "test-svc",
+            "installation": {
+                "method": "script",
+                "installation_script": "#!/bin/bash\necho hello\n",
+            },
+        }
+
+        with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
+            mock_ssh.return_value = json.dumps(
+                {"status": "success", "exit_code": 0, "output": "hello"}
+            )
+
+            result = await self.installer._install_script_service(
+                "test-svc", service, "host1", "admin", None, None
+            )
+
+            assert result["status"] == "success"
+            assert result["service"] == "test-svc"
+            mock_ssh.assert_called_once()
+            # Verify the script content was included in the command
+            call_kwargs = mock_ssh.call_args
+            assert "echo hello" in call_kwargs.kwargs.get("command", call_kwargs[1].get("command", ""))
+
+    @pytest.mark.asyncio
+    async def test_install_script_no_script(self) -> None:
+        """When installation_script is missing, returns error."""
+        service = {
+            "name": "no-script-svc",
+            "installation": {
+                "method": "script",
+            },
+        }
+
+        result = await self.installer._install_script_service(
+            "no-script-svc", service, "host1", "admin", None, None
+        )
+
+        assert result["status"] == "error"
+        assert "no-script-svc" in result["error"].lower() or "script" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_install_script_with_config_override(self) -> None:
+        """Config override values are passed as environment variables, not string-substituted."""
+        service = {
+            "name": "env-svc",
+            "installation": {
+                "method": "script",
+                "installation_script": "#!/bin/bash\necho $DB_HOST\n",
+            },
+        }
+        config_override = {"DB_HOST": "localhost", "DB_PORT": "5432"}
+
+        with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
+            mock_ssh.return_value = json.dumps(
+                {"status": "success", "exit_code": 0, "output": "localhost"}
+            )
+
+            result = await self.installer._install_script_service(
+                "env-svc", service, "host1", "admin", None, config_override
+            )
+
+            assert result["status"] == "success"
+            call_kwargs = mock_ssh.call_args
+            command = call_kwargs.kwargs.get("command", call_kwargs[1].get("command", ""))
+            # Env vars should be exported before the script
+            assert "export DB_HOST=" in command
+            assert "export DB_PORT=" in command
+
+    @pytest.mark.asyncio
+    async def test_install_script_ssh_failure(self) -> None:
+        """When ssh_execute_command raises, returns error with sanitized message."""
+        service = {
+            "name": "fail-svc",
+            "installation": {
+                "method": "script",
+                "installation_script": "#!/bin/bash\nexit 1\n",
+            },
+        }
+
+        with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
+            mock_ssh.side_effect = Exception("Connection refused")
+
+            result = await self.installer._install_script_service(
+                "fail-svc", service, "host1", "admin", None, None
+            )
+
+            assert result["status"] == "error"
+            assert result["service"] == "fail-svc"
+
+
 class TestServiceInstallerISOMethod:
     """Test ISO installation method."""
 
