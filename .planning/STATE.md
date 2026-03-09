@@ -47,7 +47,7 @@ Progress: [████░░░░░░] 40%
 | 02-security-hardening | 5/5 | -- | -- |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (4min), 01-03 (4min), 02-02 (4min), 02-03 (10min), 02-04 (4min)
+- Last 5 plans: 01-03 (4min), 02-02 (4min), 02-03 (10min), 02-04 (4min), 02-05 (4min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -79,6 +79,8 @@ Recent decisions affecting current work:
 - [02-03]: Non-standard ports use [host]:port format per OpenSSH convention
 - [02-04]: Centralized validation in ssh_connect() covers all 21+ SSH call sites without modifying each one
 - [02-04]: Defense-in-depth: handler-level validation gives earlier/clearer errors before ssh_connect
+- [02-05]: Logger str(e) calls left unchanged -- CredentialFilter on root logger already handles redaction there
+- [02-05]: http_transport.py updated despite being deprecated -- still importable and could leak credentials
 
 ### Pending Todos
 
@@ -93,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T15:58:38Z
-Stopped at: Completed 02-04-PLAN.md (gap closure - validation wiring)
-Resume file: .planning/phases/02-security-hardening/02-04-SUMMARY.md
+Last session: 2026-03-09T15:59:00Z
+Stopped at: Completed 02-05-PLAN.md (gap closure - error sanitization)
+Resume file: .planning/phases/02-security-hardening/02-05-SUMMARY.md
