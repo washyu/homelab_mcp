@@ -30,11 +30,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Proxmox API calls reuse HTTP connections via session pooling (no new connection per request)
   4. Server shuts down cleanly on SIGTERM/SIGINT with all connections closed and no orphaned resources
   5. Existing test suite passes against the new architecture
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — ResourceManager + Proxmox session pooling
+- [ ] 01-02-PLAN.md — MCP SDK migration (server, transports, tool registration)
+- [ ] 01-03-PLAN.md — Graceful shutdown + test suite verification
 
 ### Phase 2: Security Hardening
 **Goal**: Users can trust that their SSH and Proxmox connections are not vulnerable to interception, tool inputs are validated, and credentials never leak into logs
@@ -99,7 +100,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Architecture Foundation | 0/? | Not started | - |
+| 1. Architecture Foundation | 0/3 | Planned | - |
 | 2. Security Hardening | 0/? | Not started | - |
 | 3. Functional Completeness | 0/? | Not started | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
