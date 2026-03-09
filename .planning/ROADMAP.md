@@ -46,12 +46,14 @@ Plans:
   2. Proxmox API connections verify SSL certificates by default, with a documented configuration override for self-signed certs
   3. Tool inputs for hostnames, IP addresses, and port ranges are validated before use -- malformed or hostile inputs are rejected with clear error messages
   4. Passwords, API tokens, and SSH keys never appear in log output or error responses returned to the MCP client
-**Plans:** 3 plans
+**Plans:** 5 plans
 
 Plans:
 - [x] 02-01-PLAN.md — Input validation module + credential redaction logging filter
 - [x] 02-02-PLAN.md — Proxmox SSL verification default flip + CA cert support
 - [x] 02-03-PLAN.md — SSH TOFU host key verification + replace all insecure connect calls
+- [ ] 02-04-PLAN.md — Wire validation.py into ssh_connect and tool handlers (gap closure)
+- [ ] 02-05-PLAN.md — Replace str(e) with sanitize_error(e) across all error responses (gap closure)
 
 ### Phase 3: Functional Completeness
 **Goal**: Every tool that can be called actually works end-to-end -- no stubs, no swallowed errors, and MCP clients can distinguish read-only from destructive tools
@@ -102,7 +104,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Architecture Foundation | 3/3 | Complete |  |
-| 2. Security Hardening | 3/3 | Complete | 2026-03-09 |
+| 2. Security Hardening | 3/5 | Gap closure | - |
 | 3. Functional Completeness | 0/? | Not started | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |
