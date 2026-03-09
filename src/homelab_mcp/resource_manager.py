@@ -48,12 +48,14 @@ class ResourceManager:
         """
         logger.info("Initializing ResourceManager")
 
-        # Create aiohttp session with connection pooling
+        # Create aiohttp session with connection pooling and SSL configuration
+        ssl_context = self._config.create_ssl_context()
         connector = aiohttp.TCPConnector(
             limit=10,
             limit_per_host=5,
             ttl_dns_cache=300,
             enable_cleanup_closed=True,
+            ssl=ssl_context,
         )
         self._proxmox_session = aiohttp.ClientSession(
             connector=connector,
