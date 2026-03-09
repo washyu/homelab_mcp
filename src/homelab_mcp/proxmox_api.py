@@ -654,7 +654,7 @@ async def delete_proxmox_vm(
         try:
             await manage_proxmox_vm(node, vmid, "stop", host, vm_type)
         except Exception:
-            pass  # VM might already be stopped
+            logger.debug("VM %s on node %s may already be stopped, continuing with deletion", vmid, node)
 
         # Delete
         endpoint = f"/nodes/{node}/{vm_type}/{vmid}"

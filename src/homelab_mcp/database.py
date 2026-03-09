@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import logging
 import os
 import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     import psycopg2
@@ -400,7 +403,7 @@ class SQLiteAdapter(DatabaseAdapter):
                 data = json.loads(row[0])
                 changes.append({"data": data, "discovered_at": row[1]})
             except json.JSONDecodeError:
-                pass
+                logger.debug("Failed to parse discovery history JSON for record at %s", row[1] if len(row) > 1 else "unknown")
 
         return changes
 

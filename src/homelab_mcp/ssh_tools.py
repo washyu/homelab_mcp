@@ -479,7 +479,7 @@ async def ssh_discover_system(
                     system_info["network"] = network_info
                 except json.JSONDecodeError:
                     # Fallback to basic parsing if JSON output not supported
-                    pass
+                    logger.debug("JSON parsing failed for network interface data on %s, falling back to basic parsing", hostname)
 
             # Get system uptime
             uptime_result = await conn.run("uptime -p", check=False)
@@ -573,7 +573,7 @@ async def ssh_discover_system(
                                                 partitions_list.append(partition_info)
                                 block_devices.append(block_device_info)
                 except json.JSONDecodeError:
-                    pass
+                    logger.debug("JSON parsing failed for block device data on %s", hostname)
             if block_devices:
                 system_info["block_devices"] = block_devices
 

@@ -1,9 +1,12 @@
 """Network site mapping and device tracking functionality."""
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .database import calculate_data_hash, get_database_adapter
 from .log_filter import sanitize_error
@@ -187,7 +190,7 @@ class NetworkSiteMap:
                                 }
                             )
                 except (ValueError, AttributeError):
-                    pass
+                    logger.debug("Skipping device %s in topology analysis: unable to parse disk usage", device.get("hostname", "unknown"))
 
             # Identify resource-constrained devices
             cpu_cores = device.get("cpu_cores")
@@ -274,7 +277,7 @@ class NetworkSiteMap:
                                 }
                             )
                 except (ValueError, AttributeError):
-                    pass
+                    logger.debug("Skipping device %s for deployment suggestion: unable to parse disk usage", hostname)
 
             # Monitoring targets (all online devices should be monitored)
             suggestions["monitoring_targets"].append(
