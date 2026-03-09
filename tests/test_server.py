@@ -378,3 +378,62 @@ async def test_destructive_tools_not_read_only() -> None:
             assert tool.annotations.readOnlyHint is False, (
                 f"Tool {tool.name} is destructive but also marked read-only"
             )
+
+
+# ---------------------------------------------------------------------------
+# isError detection tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_is_error_on_handler_error_dict() -> None:
+    """When handler returns {"status": "error", ...}, handle_call_tool raises ToolError."""
+    from src.homelab_mcp.server import ToolError
+
+    mock_handler = AsyncMock(
+        return_value={"status": "error", "error": "something went wrong"}
+    )
+
+    with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
+        with pytest.raises(ToolError, match="something went wrong"):
+            await handle_call_tool("my_tool", {"arg": "value"})
+
+
+@pytest.mark.asyncio
+async def test_is_error_on_nested_error_content() -> None:
+    """When handler returns content with JSON error status, handle_call_tool raises ToolError."""
+    import json
+
+    from src.homelab_mcp.server import ToolError
+
+    error_payload = json.dumps({"status": "error", "error": "nested failure"})
+    mock_handler = AsyncMock(
+        return_value={"content": [{"type": "text", "text": error_payload}]}
+    )
+
+    with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
+        with pytest.raises(ToolError, match="nested failure"):
+            await handle_call_tool("my_tool", {})
+
+
+@pytest.mark.asyncio
+async def test_no_is_error_on_success() -> None:
+    """When handler returns success result, handle_call_tool returns normally."""
+    mock_handler = AsyncMock(
+        return_value={"content": [{"type": "text", "text": "all good"}]}
+    )
+
+    with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
+        result = await handle_call_tool("my_tool", {})
+        assert len(result) == 1
+        assert result[0].text == "all good"
+
+
+@pytest.mark.asyncio
+async def test_is_error_on_exception() -> None:
+    """When handler raises an exception, it propagates (SDK sets isError=True)."""
+    mock_handler = AsyncMock(side_effect=RuntimeError("handler crashed"))
+
+    with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
+        with pytest.raises(RuntimeError, match="handler crashed"):
+            await handle_call_tool("my_tool", {})
