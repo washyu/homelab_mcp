@@ -1,311 +1,146 @@
-#!/usr/bin/env python3
-"""
-MCP (Model Context Protocol) server for homelab system management.
+"""MCP server for homelab system management using MCP SDK lowlevel.Server.
+
+Replaces the hand-rolled JSON-RPC HomelabMCPServer with the official MCP SDK.
+Uses lowlevel.Server with lifespan, list_tools, and call_tool decorators.
 """
 
-import asyncio
-import json
+from __future__ import annotations
+
 import logging
-import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
-import uvicorn
+import mcp.types as types
+from mcp.server.lowlevel import Server
 
-from .error_handling import health_checker
-from .http_transport import create_mcp_http_app
-from .ssh_tools import ensure_mcp_ssh_key
-from .tools import execute_tool, get_available_tools
+from .config import MCPConfig, get_config
+from .resource_manager import ResourceManager
+from .tool_handlers import get_tool_handler
+from .tool_schemas import get_all_tool_schemas
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-class HomelabMCPServer:
-    """MCP Server for homelab system discovery and monitoring."""
-
-    def __init__(self) -> None:
-        self.tools = get_available_tools()
-        self.ssh_key_initialized = False
-
-    async def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Handle incoming MCP requests with timeout protection."""
-        method = request.get("method")
-        params = request.get("params", {})
-        request_id = request.get("id")
-
-        # Record request for health monitoring
-        health_checker.record_request()
-
-        try:
-            if method == "initialize":
-                # Initialize SSH key on first request with timeout
-                if not self.ssh_key_initialized:
-                    try:
-                        await asyncio.wait_for(ensure_mcp_ssh_key(), timeout=10.0)
-                        self.ssh_key_initialized = True
-                    except TimeoutError:
-                        logger.error("SSH key initialization timed out")
-                        health_checker.record_error("timeout")
-                        return self._error_response(request_id, "SSH key initialization timed out")
-
-                return self._success_response(
-                    request_id,
-                    {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {"tools": {}},
-                        "serverInfo": {"name": "homelab-mcp", "version": "0.1.0"},
-                    },
-                )
-
-            elif method == "tools/list":
-                # Add the name field to each tool
-                tools_list = []
-                for name, tool_def in self.tools.items():
-                    tool_with_name = tool_def.copy()
-                    tool_with_name["name"] = name
-                    tools_list.append(tool_with_name)
-                return self._success_response(request_id, {"tools": tools_list})
-
-            elif method == "tools/call":
-                tool_name = params.get("name")
-                tool_args = params.get("arguments", {})
-
-                if tool_name not in self.tools:
-                    health_checker.record_error("invalid_tool")
-                    return self._error_response(request_id, f"Unknown tool: {tool_name}")
-
-                # Execute tool with timeout protection
-                try:
-                    result = await asyncio.wait_for(
-                        execute_tool(tool_name, tool_args),
-                        timeout=60.0,  # 60 second timeout for tool execution
-                    )
-                    return self._success_response(request_id, result)
-                except TimeoutError:
-                    logger.error(f"Tool '{tool_name}' execution timed out")
-                    health_checker.record_error("timeout")
-                    return self._error_response(
-                        request_id,
-                        f"Tool '{tool_name}' timed out after 60 seconds. The operation may still be running in the background.",
-                    )
-
-            elif method == "health/status":
-                # Health check endpoint
-                health_status = health_checker.get_health_status()
-                return self._success_response(request_id, health_status)
-
-            else:
-                health_checker.record_error("unknown_method")
-                return self._error_response(request_id, f"Unknown method: {method}")
-
-        except Exception as e:
-            logger.error(f"Unexpected error handling request: {str(e)}", exc_info=True)
-            health_checker.record_error("unexpected")
-            return self._error_response(request_id, f"Server error: {str(e)}")
-
-    def _success_response(self, request_id: Any, result: Any) -> dict[str, Any]:
-        """Create a successful JSON-RPC response."""
-        return {"jsonrpc": "2.0", "id": request_id, "result": result}
-
-    def _error_response(self, request_id: Any, message: str, code: int = -32603) -> dict[str, Any]:
-        """Create an error JSON-RPC response."""
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": code, "message": message},
-        }
-
-    async def run_stdio(self) -> None:
-        """Run the MCP server using stdio with robust error handling."""
-        logger.info("Starting MCP server with enhanced error handling")
-
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        await asyncio.get_event_loop().connect_read_pipe(lambda: protocol, sys.stdin)
-
-        consecutive_errors = 0
-        max_consecutive_errors = 10
-
-        while True:
-            try:
-                # Read line from stdin with timeout to prevent hanging
-                try:
-                    line_bytes = await asyncio.wait_for(reader.readline(), timeout=300.0)  # 5 minute timeout
-                    if not line_bytes:
-                        logger.info("EOF received, shutting down server")
-                        break
-                except TimeoutError:
-                    logger.warning("No input received for 5 minutes, server still running")
-                    continue
-
-                line = line_bytes.decode("utf-8").strip()
-                if not line:
-                    continue
-
-                # Parse JSON-RPC request
-                try:
-                    request = json.loads(line)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON received: {str(e)}")
-                    error_response = self._error_response(None, f"Invalid JSON: {str(e)}", -32700)
-                    print(json.dumps(error_response))
-                    sys.stdout.flush()
-                    consecutive_errors += 1
-                    if consecutive_errors >= max_consecutive_errors:
-                        logger.error(f"Too many consecutive errors ({consecutive_errors}), shutting down")
-                        break
-                    continue
-
-                # Reset error counter on successful JSON parse
-                consecutive_errors = 0
-
-                # Check if this is a notification (no id field)
-                if "id" not in request:
-                    # Notifications don't get responses, just process them
-                    method = request.get("method")
-                    if method == "notifications/initialized":
-                        logger.info("Client initialized notification received")
-                    # Don't send any response for notifications
-                    continue
-
-                # Handle request with timeout protection
-                try:
-                    response = await asyncio.wait_for(
-                        self.handle_request(request),
-                        timeout=120.0,  # 2 minute timeout for complete request handling
-                    )
-                except TimeoutError:
-                    logger.error("Request handling timed out after 2 minutes")
-                    error_response = self._error_response(
-                        request.get("id"),
-                        "Request processing timed out after 2 minutes",
-                        -32603,
-                    )
-                    response = error_response
-
-                # Send response to stdout
-                try:
-                    print(json.dumps(response))
-                    sys.stdout.flush()
-                except Exception as e:
-                    logger.error(f"Failed to send response: {str(e)}")
-
-            except KeyboardInterrupt:
-                logger.info("Received interrupt signal, shutting down gracefully")
-                break
-            except Exception as e:
-                logger.error(f"Unexpected error in server loop: {str(e)}", exc_info=True)
-                consecutive_errors += 1
-
-                # Try to send error response if we can identify the request
-                try:
-                    error_response = self._error_response(None, f"Server error: {str(e)}", -32603)
-                    print(json.dumps(error_response))
-                    sys.stdout.flush()
-                except Exception:
-                    logger.error("Failed to send error response")
-
-                # If too many consecutive errors, shut down to prevent infinite loop
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error(f"Too many consecutive errors ({consecutive_errors}), shutting down")
-                    break
-
-                # Brief pause before continuing to avoid rapid error loops
-                await asyncio.sleep(0.1)
-
-        logger.info("MCP server shutdown complete")
-
-    async def run_http(
-        self,
-        host: str = "0.0.0.0",
-        port: int = 8080,
-        auth_enabled: bool = True,
-        api_key: str | None = None,
-        ssl_certfile: str | None = None,
-        ssl_keyfile: str | None = None,
-    ) -> None:
-        """
-        Run the MCP server using HTTP transport.
-
-        Args:
-            host: Host to bind to (default: 0.0.0.0 for LAN access)
-            port: Port to listen on (default: 8080)
-            auth_enabled: Whether to enable API key authentication
-            api_key: Optional API key (uses MCP_API_KEY env var if not provided)
-            ssl_certfile: Path to SSL certificate file (enables HTTPS)
-            ssl_keyfile: Path to SSL private key file
-        """
-        protocol = "HTTPS" if ssl_certfile else "HTTP"
-        logger.info(f"Starting MCP {protocol} server on {host}:{port}")
-        logger.info(f"Authentication: {'enabled' if auth_enabled else 'disabled'}")
-
-        # Initialize SSH key on startup
-        if not self.ssh_key_initialized:
-            try:
-                await asyncio.wait_for(ensure_mcp_ssh_key(), timeout=10.0)
-                self.ssh_key_initialized = True
-            except TimeoutError:
-                logger.warning("SSH key initialization timed out, continuing anyway")
-
-        # Create the Starlette app
-        app = create_mcp_http_app(
-            server=self,
-            auth_enabled=auth_enabled,
-            api_key=api_key,
-        )
-
-        # Configure uvicorn
-        config = uvicorn.Config(
-            app=app,
-            host=host,
-            port=port,
-            log_level="info",
-            access_log=True,
-            ssl_certfile=ssl_certfile,
-            ssl_keyfile=ssl_keyfile,
-        )
-        server = uvicorn.Server(config)
-
-        # Run the server
-        await server.serve()
+# Module-level ResourceManager reference for handlers that need direct access.
+# Set during lifespan, cleared on shutdown.
+_resource_manager: ResourceManager | None = None
 
 
-async def main(
-    http_mode: bool = False,
-    host: str = "0.0.0.0",
-    port: int = 8080,
-    auth_enabled: bool = True,
-    api_key: str | None = None,
-    ssl_certfile: str | None = None,
-    ssl_keyfile: str | None = None,
-) -> None:
+def get_resource_manager() -> ResourceManager:
+    """Get the active ResourceManager instance.
+
+    Raises:
+        RuntimeError: If the server lifespan has not started.
     """
-    Main entry point.
+    if _resource_manager is None:
+        raise RuntimeError("ResourceManager not available -- server lifespan not started")
+    return _resource_manager
 
-    Args:
-        http_mode: If True, run HTTP server instead of stdio
-        host: HTTP server host (only used in HTTP mode)
-        port: HTTP server port (only used in HTTP mode)
-        auth_enabled: Enable authentication (only used in HTTP mode)
-        api_key: API key for authentication (only used in HTTP mode)
-        ssl_certfile: Path to SSL certificate file (enables HTTPS)
-        ssl_keyfile: Path to SSL private key file
+
+@asynccontextmanager
+async def app_lifespan(server: Server[dict[str, Any], Any]) -> AsyncIterator[dict[str, Any]]:
+    """Server lifespan: initialize and shut down ResourceManager.
+
+    Yields a context dict with the ResourceManager instance, accessible via
+    ``server.request_context.lifespan_context["resource_manager"]``.
     """
-    server = HomelabMCPServer()
+    global _resource_manager  # noqa: PLW0603
 
-    if http_mode:
-        await server.run_http(
-            host=host,
-            port=port,
-            auth_enabled=auth_enabled,
-            api_key=api_key,
-            ssl_certfile=ssl_certfile,
-            ssl_keyfile=ssl_keyfile,
+    config: MCPConfig = get_config()
+    resource_manager = ResourceManager(config)
+
+    try:
+        await resource_manager.initialize()
+        _resource_manager = resource_manager
+        logger.info("Server lifespan started -- ResourceManager ready")
+        yield {"resource_manager": resource_manager}
+    finally:
+        _resource_manager = None
+        await resource_manager.shutdown()
+        logger.info("Server lifespan ended -- ResourceManager shut down")
+
+
+# ---------------------------------------------------------------------------
+# Create the SDK server instance
+# ---------------------------------------------------------------------------
+
+server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Handler: list_tools
+# ---------------------------------------------------------------------------
+
+@server.list_tools()
+async def handle_list_tools() -> list[types.Tool]:
+    """Return all available tools as MCP Tool objects."""
+    schemas = get_all_tool_schemas()
+    tools: list[types.Tool] = []
+    for name, schema in schemas.items():
+        tools.append(
+            types.Tool(
+                name=name,
+                description=schema.get("description", ""),
+                inputSchema=schema.get("inputSchema", {"type": "object", "properties": {}}),
+            )
         )
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Handler: call_tool
+# ---------------------------------------------------------------------------
+
+@server.call_tool()
+async def handle_call_tool(
+    name: str, arguments: dict[str, Any] | None
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Dispatch a tool call to the appropriate handler.
+
+    Converts the handler's legacy dict result format into MCP SDK content types.
+
+    Raises:
+        ValueError: If the tool name is not recognized.
+    """
+    handler = get_tool_handler(name)  # raises ValueError for unknown tools
+    result = await handler(arguments or {})
+    return _convert_result(result)
+
+
+def _convert_result(
+    result: dict[str, Any],
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Convert a legacy handler result dict to MCP content objects.
+
+    Handlers return ``{"content": [{"type": "text", "text": "..."}, ...]}``
+    or sometimes a flat dict. This normalizes to SDK content types.
+    """
+    content_items: list[dict[str, Any]] = []
+
+    if "content" in result and isinstance(result["content"], list):
+        content_items = result["content"]
     else:
-        await server.run_stdio()
+        # Fallback: wrap the whole result as a single text item
+        import json
 
+        content_items = [{"type": "text", "text": json.dumps(result)}]
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    converted: list[types.TextContent | types.ImageContent | types.EmbeddedResource] = []
+    for item in content_items:
+        item_type = item.get("type", "text")
+        if item_type == "image":
+            converted.append(
+                types.ImageContent(
+                    type="image",
+                    data=item.get("data", ""),
+                    mimeType=item.get("mimeType", "image/png"),
+                )
+            )
+        else:
+            converted.append(
+                types.TextContent(
+                    type="text",
+                    text=item.get("text", ""),
+                )
+            )
+    return converted
