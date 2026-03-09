@@ -30,12 +30,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Proxmox API calls reuse HTTP connections via session pooling (no new connection per request)
   4. Server shuts down cleanly on SIGTERM/SIGINT with all connections closed and no orphaned resources
   5. Existing test suite passes against the new architecture
-**Plans:** 1/3 plans executed
+**Plans:** 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — ResourceManager + Proxmox session pooling
-- [ ] 01-02-PLAN.md — MCP SDK migration (server, transports, tool registration)
-- [ ] 01-03-PLAN.md — Graceful shutdown + test suite verification
+- [x] 01-01-PLAN.md — ResourceManager + Proxmox session pooling
+- [x] 01-02-PLAN.md — MCP SDK migration (server, transports, tool registration)
+- [x] 01-03-PLAN.md — Graceful shutdown + test suite verification
 
 ### Phase 2: Security Hardening
 **Goal**: Users can trust that their SSH and Proxmox connections are not vulnerable to interception, tool inputs are validated, and credentials never leak into logs
@@ -46,11 +46,12 @@ Plans:
   2. Proxmox API connections verify SSL certificates by default, with a documented configuration override for self-signed certs
   3. Tool inputs for hostnames, IP addresses, and port ranges are validated before use -- malformed or hostile inputs are rejected with clear error messages
   4. Passwords, API tokens, and SSH keys never appear in log output or error responses returned to the MCP client
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — Input validation module + credential redaction logging filter
+- [ ] 02-02-PLAN.md — Proxmox SSL verification default flip + CA cert support
+- [ ] 02-03-PLAN.md — SSH TOFU host key verification + replace all insecure connect calls
 
 ### Phase 3: Functional Completeness
 **Goal**: Every tool that can be called actually works end-to-end -- no stubs, no swallowed errors, and MCP clients can distinguish read-only from destructive tools
@@ -100,8 +101,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Architecture Foundation | 1/3 | In Progress|  |
-| 2. Security Hardening | 0/? | Not started | - |
+| 1. Architecture Foundation | 3/3 | Complete |  |
+| 2. Security Hardening | 0/3 | Not started | - |
 | 3. Functional Completeness | 0/? | Not started | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |
