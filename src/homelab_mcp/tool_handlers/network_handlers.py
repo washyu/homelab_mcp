@@ -4,10 +4,12 @@ import json
 from typing import Any
 
 from ..sitemap import NetworkSiteMap, bulk_discover_and_store, discover_and_store
+from ..validation import validate_hostname
 
 
 async def handle_discover_and_map(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle discover_and_map tool."""
+    validate_hostname(arguments["hostname"])
     sitemap = NetworkSiteMap()
     result = await discover_and_store(sitemap, **arguments)
     return {"content": [{"type": "text", "text": result}]}
@@ -15,6 +17,8 @@ async def handle_discover_and_map(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_bulk_discover_and_map(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle bulk_discover_and_map tool."""
+    for target in arguments["targets"]:
+        validate_hostname(target["hostname"])
     sitemap = NetworkSiteMap()
     result = await bulk_discover_and_store(sitemap, arguments["targets"])
     return {"content": [{"type": "text", "text": result}]}
