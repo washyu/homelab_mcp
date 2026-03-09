@@ -23,7 +23,7 @@ Requirements for 1.0 release. Each maps to roadmap phases.
 
 ### Architecture
 
-- [ ] **ARCH-01**: Server uses MCP SDK (lowlevel.Server) instead of hand-rolled JSON-RPC
+- [x] **ARCH-01**: Server uses MCP SDK (lowlevel.Server) instead of hand-rolled JSON-RPC
 - [x] **ARCH-02**: ResourceManager centralizes SSH, HTTP, and database connection lifecycle
 - [ ] **ARCH-03**: Server shuts down gracefully on SIGTERM/SIGINT with resource cleanup
 
@@ -93,7 +93,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MCP-02 | Phase 3 | Pending |
 | MCP-03 | Phase 4 | Pending |
 | MCP-04 | Phase 4 | Pending |
-| ARCH-01 | Phase 1 | Pending |
+| ARCH-01 | Phase 1 | Complete |
 | ARCH-02 | Phase 1 | Complete |
 | ARCH-03 | Phase 1 | Pending |
 | FUNC-01 | Phase 3 | Pending |
