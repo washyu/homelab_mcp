@@ -65,11 +65,12 @@ Plans:
   3. Script-based service installation (the _install_with_script path) completes successfully on a target host
   4. All previously-silent exception handlers now emit log messages at debug or warning level -- no bare except:pass remains
   5. Every tool has readOnlyHint, destructiveHint, and idempotentHint annotations visible to MCP clients, and all error responses include isError: true
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Implement stub functions (sitemap auto-refresh, device rediscovery, script install)
+- [ ] 03-02-PLAN.md — Replace silent exception handlers with logged handlers
+- [ ] 03-03-PLAN.md — Tool annotations + isError compliance
 
 ### Phase 4: MCP Protocol Compliance
 **Goal**: The server fully complies with MCP protocol expectations for logging and HTTP transport
@@ -105,6 +106,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Architecture Foundation | 3/3 | Complete |  |
 | 2. Security Hardening | 5/5 | Complete   | 2026-03-09 |
-| 3. Functional Completeness | 0/? | Not started | - |
+| 3. Functional Completeness | 0/3 | Not started | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |
