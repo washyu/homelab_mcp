@@ -31,6 +31,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from .auth import APIKeyAuth
 from .error_handling import health_checker
+from .log_filter import sanitize_error
 from .shell_session import session_manager
 
 if TYPE_CHECKING:
@@ -100,7 +101,7 @@ class MCPHTTPTransport:
                         "id": None,
                         "error": {
                             "code": -32700,
-                            "message": f"Parse error: {str(e)}",
+                            "message": f"Parse error: {sanitize_error(e)}",
                         },
                     },
                     status_code=400,
@@ -131,7 +132,7 @@ class MCPHTTPTransport:
                     "id": None,
                     "error": {
                         "code": -32603,
-                        "message": f"Internal error: {str(e)}",
+                        "message": f"Internal error: {sanitize_error(e)}",
                     },
                 },
                 status_code=500,

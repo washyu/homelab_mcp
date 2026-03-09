@@ -11,6 +11,8 @@ from typing import Any
 
 import aiohttp
 
+from .log_filter import sanitize_error
+
 logger = logging.getLogger(__name__)
 
 # GitHub API base URLs
@@ -334,5 +336,5 @@ async def execute_proxmox_script(
         return {
             "status": "error",
             "script": script_name,
-            "message": f"Execution failed: {str(e)}",
+            "message": f"Execution failed: {sanitize_error(e)}",
         }
