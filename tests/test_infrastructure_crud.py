@@ -7,6 +7,8 @@ import pytest
 
 from src.homelab_mcp.infrastructure_crud import (
     InfrastructureManager,
+    _rediscover_device_after_changes,
+    _update_sitemap_after_deployment,
     create_infrastructure_backup,
     decommission_network_device,
     deploy_infrastructure_plan,
@@ -603,3 +605,119 @@ class TestDecommissionDevice:
 
                             assert result_data["status"] == "success"
                             assert result_data["device_id"] == 1
+
+
+class TestUpdateSitemapAfterDeployment:
+    """Tests for _update_sitemap_after_deployment."""
+
+    def setup_method(self) -> None:
+        self.manager = InfrastructureManager()
+
+    @pytest.mark.asyncio
+    async def test_sitemap_after_deploy_success(self) -> None:
+        """After deployment with successful results, discover_and_store is called for each device."""
+        results = [
+            {"status": "success", "device_id": 1, "service": "nginx"},
+            {"status": "success", "device_id": 2, "service": "postgres"},
+        ]
+
+        conn_info_1 = {"hostname": "192.168.1.10", "username": "mcp_admin", "port": 22}
+        conn_info_2 = {"hostname": "192.168.1.11", "username": "mcp_admin", "port": 22}
+
+        with patch.object(
+            self.manager, "get_device_connection_info", new_callable=AsyncMock
+        ) as mock_get_conn:
+            mock_get_conn.side_effect = [conn_info_1, conn_info_2]
+
+            with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+                mock_discover.return_value = '{"status": "success"}'
+
+                await _update_sitemap_after_deployment(self.manager, results)
+
+                assert mock_discover.call_count == 2
+                mock_discover.assert_any_call(
+                    self.manager.sitemap, "192.168.1.10", "mcp_admin", port=22
+                )
+                mock_discover.assert_any_call(
+                    self.manager.sitemap, "192.168.1.11", "mcp_admin", port=22
+                )
+
+    @pytest.mark.asyncio
+    async def test_sitemap_after_deploy_skips_failures(self) -> None:
+        """Deployment results with status 'error' are skipped."""
+        results = [
+            {"status": "error", "device_id": 1, "error": "connection failed"},
+            {"status": "success", "device_id": 2, "service": "nginx"},
+        ]
+
+        conn_info = {"hostname": "192.168.1.11", "username": "mcp_admin", "port": 22}
+
+        with patch.object(
+            self.manager, "get_device_connection_info", new_callable=AsyncMock
+        ) as mock_get_conn:
+            mock_get_conn.return_value = conn_info
+
+            with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+                mock_discover.return_value = '{"status": "success"}'
+
+                await _update_sitemap_after_deployment(self.manager, results)
+
+                # Only called once for device 2 (device 1 had error status)
+                assert mock_discover.call_count == 1
+                mock_get_conn.assert_called_once_with(2)
+
+    @pytest.mark.asyncio
+    async def test_sitemap_after_deploy_handles_discovery_failure(self) -> None:
+        """If discover_and_store raises, the function logs warning but does NOT raise."""
+        results = [
+            {"status": "success", "device_id": 1, "service": "nginx"},
+        ]
+
+        conn_info = {"hostname": "192.168.1.10", "username": "mcp_admin", "port": 22}
+
+        with patch.object(
+            self.manager, "get_device_connection_info", new_callable=AsyncMock
+        ) as mock_get_conn:
+            mock_get_conn.return_value = conn_info
+
+            with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+                mock_discover.side_effect = Exception("SSH connection failed")
+
+                # Should NOT raise
+                await _update_sitemap_after_deployment(self.manager, results)
+
+                mock_discover.assert_called_once()
+
+
+class TestRediscoverDeviceAfterChanges:
+    """Tests for _rediscover_device_after_changes."""
+
+    def setup_method(self) -> None:
+        self.manager = InfrastructureManager()
+
+    @pytest.mark.asyncio
+    async def test_rediscover_after_change_success(self) -> None:
+        """Given device_id and connection_info, discover_and_store is called correctly."""
+        connection_info = {"hostname": "192.168.1.50", "username": "mcp_admin", "port": 22}
+
+        with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+            mock_discover.return_value = '{"status": "success"}'
+
+            await _rediscover_device_after_changes(self.manager, 5, connection_info)
+
+            mock_discover.assert_called_once_with(
+                self.manager.sitemap, "192.168.1.50", "mcp_admin", port=22
+            )
+
+    @pytest.mark.asyncio
+    async def test_rediscover_after_change_handles_failure(self) -> None:
+        """If discover_and_store raises, the function logs warning but does NOT raise."""
+        connection_info = {"hostname": "192.168.1.50", "username": "mcp_admin", "port": 22}
+
+        with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+            mock_discover.side_effect = Exception("Discovery failed")
+
+            # Should NOT raise
+            await _rediscover_device_after_changes(self.manager, 5, connection_info)
+
+            mock_discover.assert_called_once()
