@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from .log_filter import sanitize_error
 from .sitemap import NetworkSiteMap
 from .ssh_connection import ssh_connect
 from .vm_providers import get_vm_provider
@@ -54,9 +55,9 @@ async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict
             return json.dumps(result, indent=2)
 
     except ValueError as e:
-        return json.dumps({"status": "error", "message": str(e)})
+        return json.dumps({"status": "error", "message": sanitize_error(e)})
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"VM deployment failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"VM deployment failed: {sanitize_error(e)}"})
 
 
 async def control_vm_state(device_id: int, platform: str, vm_name: str, action: str) -> str:
@@ -86,9 +87,9 @@ async def control_vm_state(device_id: int, platform: str, vm_name: str, action: 
             return json.dumps(result, indent=2)
 
     except ValueError as e:
-        return json.dumps({"status": "error", "message": str(e)})
+        return json.dumps({"status": "error", "message": sanitize_error(e)})
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"VM control failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"VM control failed: {sanitize_error(e)}"})
 
 
 async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
@@ -118,9 +119,9 @@ async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
             return json.dumps(result, indent=2)
 
     except ValueError as e:
-        return json.dumps({"status": "error", "message": str(e)})
+        return json.dumps({"status": "error", "message": sanitize_error(e)})
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Failed to get VM status: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Failed to get VM status: {sanitize_error(e)}"})
 
 
 async def list_vms_on_device(device_id: int, platforms: list[str] | None = None) -> str:
@@ -173,7 +174,7 @@ async def list_vms_on_device(device_id: int, platforms: list[str] | None = None)
                         "error": "Unsupported platform",
                     }
                 except Exception as e:
-                    platform_results[platform] = {"status": "error", "error": str(e)}
+                    platform_results[platform] = {"status": "error", "error": sanitize_error(e)}
 
             return json.dumps(
                 {
@@ -189,7 +190,7 @@ async def list_vms_on_device(device_id: int, platforms: list[str] | None = None)
             )
 
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Failed to list VMs: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Failed to list VMs: {sanitize_error(e)}"})
 
 
 async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 100) -> str:
@@ -219,9 +220,9 @@ async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 
             return json.dumps(result, indent=2)
 
     except ValueError as e:
-        return json.dumps({"status": "error", "message": str(e)})
+        return json.dumps({"status": "error", "message": sanitize_error(e)})
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"Failed to get VM logs: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"Failed to get VM logs: {sanitize_error(e)}"})
 
 
 async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = False) -> str:
@@ -251,6 +252,6 @@ async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = F
             return json.dumps(result, indent=2)
 
     except ValueError as e:
-        return json.dumps({"status": "error", "message": str(e)})
+        return json.dumps({"status": "error", "message": sanitize_error(e)})
     except Exception as e:
-        return json.dumps({"status": "error", "message": f"VM removal failed: {str(e)}"})
+        return json.dumps({"status": "error", "message": f"VM removal failed: {sanitize_error(e)}"})

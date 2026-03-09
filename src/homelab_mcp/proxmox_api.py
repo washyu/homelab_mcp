@@ -11,6 +11,8 @@ from typing import Any
 
 import aiohttp
 
+from .log_filter import sanitize_error
+
 logger = logging.getLogger(__name__)
 
 
@@ -268,7 +270,7 @@ async def list_proxmox_resources(
         logger.error("Error listing Proxmox resources: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to list resources: {str(e)}",
+            "message": f"Failed to list resources: {sanitize_error(e)}",
         }
 
 
@@ -301,7 +303,7 @@ async def get_proxmox_node_status(
         logger.error("Error getting node status: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to get node status: {str(e)}",
+            "message": f"Failed to get node status: {sanitize_error(e)}",
         }
 
 
@@ -340,7 +342,7 @@ async def get_proxmox_vm_status(
         logger.error("Error getting VM status: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to get VM status: {str(e)}",
+            "message": f"Failed to get VM status: {sanitize_error(e)}",
         }
 
 
@@ -397,7 +399,7 @@ async def manage_proxmox_vm(
         logger.error("Error managing VM: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to {action} VM: {str(e)}",
+            "message": f"Failed to {action} VM: {sanitize_error(e)}",
         }
 
 
@@ -481,7 +483,7 @@ async def create_proxmox_lxc(
         logger.error("Error creating LXC container: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to create LXC container: {str(e)}",
+            "message": f"Failed to create LXC container: {sanitize_error(e)}",
         }
 
 
@@ -567,7 +569,7 @@ async def create_proxmox_vm(
         logger.error("Error creating VM: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to create VM: {str(e)}",
+            "message": f"Failed to create VM: {sanitize_error(e)}",
         }
 
 
@@ -621,7 +623,7 @@ async def clone_proxmox_vm(
         logger.error("Error cloning VM: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to clone VM: {str(e)}",
+            "message": f"Failed to clone VM: {sanitize_error(e)}",
         }
 
 
@@ -673,5 +675,5 @@ async def delete_proxmox_vm(
         logger.error("Error deleting VM: %s", str(e))
         return {
             "status": "error",
-            "message": f"Failed to delete VM: {str(e)}",
+            "message": f"Failed to delete VM: {sanitize_error(e)}",
         }
