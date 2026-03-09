@@ -25,6 +25,7 @@ class ProxmoxAPIClient:
         username: str | None = None,
         password: str | None = None,
         api_token: str | None = None,
+        session: aiohttp.ClientSession | None = None,
     ) -> None:
         """
         Initialize Proxmox API client.
@@ -36,6 +37,7 @@ class ProxmoxAPIClient:
             username: Username (e.g., 'root@pam')
             password: Password for authentication
             api_token: API token (format: 'user@realm!tokenid=secret')
+            session: Optional shared aiohttp.ClientSession (from ResourceManager)
         """
         self.host = host
         self.port = port
@@ -48,6 +50,9 @@ class ProxmoxAPIClient:
         self.api_token = api_token
         self._auth_cookie: str | None = None
         self._csrf_token: str | None = None
+
+        # Shared session (from ResourceManager)
+        self._shared_session = session
 
     async def _authenticate(self, session: aiohttp.ClientSession) -> None:
         """Authenticate with Proxmox API using password."""
@@ -110,30 +115,57 @@ class ProxmoxAPIClient:
         """
         url = f"{self.base_url}{endpoint}"
 
-        connector = aiohttp.TCPConnector(ssl=self.verify_ssl)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            # Authenticate if using password
-            if not self.api_token and self.username and self.password:
-                await self._authenticate(session)
+        if self._shared_session is not None:
+            # Use the shared session from ResourceManager
+            return await self._do_request(self._shared_session, method, url, data, params)
+        else:
+            # Fallback: create a per-request session (backward compatibility)
+            connector = aiohttp.TCPConnector(ssl=self.verify_ssl)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                return await self._do_request(session, method, url, data, params)
 
-            headers = self._get_headers()
-            cookies = self._get_cookies()
+    async def _do_request(
+        self,
+        session: aiohttp.ClientSession,
+        method: str,
+        url: str,
+        data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Execute an HTTP request using the given session.
 
-            async with session.request(
-                method=method,
-                url=url,
-                headers=headers,
-                cookies=cookies,
-                json=data,
-                params=params,
-            ) as response:
-                response.raise_for_status()
-                result = await response.json()
+        Args:
+            session: aiohttp.ClientSession to use
+            method: HTTP method
+            url: Full request URL
+            data: Request body data
+            params: Query parameters
 
-                if "data" not in result:
-                    raise ValueError(f"Invalid API response: {result}")
+        Returns:
+            API response data
+        """
+        # Authenticate if using password
+        if not self.api_token and self.username and self.password:
+            await self._authenticate(session)
 
-                return result["data"]  # type: ignore[no-any-return]
+        headers = self._get_headers()
+        cookies = self._get_cookies()
+
+        async with session.request(
+            method=method,
+            url=url,
+            headers=headers,
+            cookies=cookies,
+            json=data,
+            params=params,
+        ) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+            if "data" not in result:
+                raise ValueError(f"Invalid API response: {result}")
+
+            return result["data"]  # type: ignore[no-any-return]
 
     async def get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         """Make a GET request."""
@@ -159,6 +191,7 @@ def get_proxmox_client(
     username: str | None = None,
     password: str | None = None,
     api_token: str | None = None,
+    session: aiohttp.ClientSession | None = None,
 ) -> ProxmoxAPIClient:
     """
     Get a Proxmox API client with credentials from environment or parameters.
@@ -170,6 +203,7 @@ def get_proxmox_client(
         username: Username (defaults to PROXMOX_USER env var)
         password: Password (defaults to PROXMOX_PASSWORD env var)
         api_token: API token (defaults to PROXMOX_API_TOKEN env var)
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         Configured ProxmoxAPIClient instance
@@ -197,6 +231,7 @@ def get_proxmox_client(
         username=username,
         password=password,
         api_token=api_token,
+        session=session,
     )
 
 

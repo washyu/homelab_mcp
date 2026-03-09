@@ -5,7 +5,7 @@ Tests the Proxmox VE API client and all Proxmox management tools.
 """
 
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import ClientError
@@ -1178,3 +1178,142 @@ class TestDeleteProxmoxVM:
         # AND: Should succeed with deletion
         assert result["status"] == "success"
         mock_client.delete.assert_called_once()
+
+
+class AsyncContextManagerMock:
+    """Helper to create an async context manager from a return value."""
+
+    def __init__(self, return_value: AsyncMock) -> None:
+        self._return_value = return_value
+
+    async def __aenter__(self) -> AsyncMock:
+        return self._return_value
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+class TestProxmoxSharedSession:
+    """Test ProxmoxAPIClient shared session support."""
+
+    def test_client_init_with_shared_session(self):
+        """Test client initialization with an externally-provided session."""
+        # GIVEN: An external aiohttp.ClientSession mock
+        mock_session = AsyncMock()
+
+        # WHEN: Creating a client with a shared session
+        client = ProxmoxAPIClient(
+            host="192.168.1.100",
+            api_token="root@pam!token=secret",
+            session=mock_session,
+        )
+
+        # THEN: The shared session should be stored
+        assert client._shared_session is mock_session
+
+    def test_client_init_without_shared_session(self):
+        """Test client initialization without a shared session (backward compat)."""
+        # WHEN: Creating a client without session parameter
+        client = ProxmoxAPIClient(
+            host="192.168.1.100",
+            api_token="root@pam!token=secret",
+        )
+
+        # THEN: No shared session should be set
+        assert client._shared_session is None
+
+    @pytest.mark.asyncio
+    async def test_request_uses_shared_session(self):
+        """Test that request() uses shared session instead of creating a new one."""
+        # GIVEN: A client with a shared session
+        mock_response = AsyncMock()
+        mock_response.raise_for_status = lambda: None
+        mock_response.json = AsyncMock(return_value={"data": {"nodes": []}})
+
+        # Create a proper async context manager for session.request()
+        mock_session = AsyncMock()
+        mock_session.request = MagicMock(return_value=AsyncContextManagerMock(mock_response))
+
+        client = ProxmoxAPIClient(
+            host="192.168.1.100",
+            api_token="root@pam!token=secret",
+            session=mock_session,
+        )
+
+        # WHEN: Making a request
+        with patch("src.homelab_mcp.proxmox_api.aiohttp.ClientSession") as mock_session_cls, \
+             patch("src.homelab_mcp.proxmox_api.aiohttp.TCPConnector"):
+            result = await client.request("GET", "/nodes")
+
+            # THEN: No new ClientSession should be created
+            mock_session_cls.assert_not_called()
+
+        # AND: The shared session should have been used
+        mock_session.request.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_request_falls_back_to_per_request_session(self):
+        """Test that request() creates a session when no shared session is provided."""
+        # GIVEN: A client WITHOUT a shared session
+        client = ProxmoxAPIClient(
+            host="192.168.1.100",
+            api_token="root@pam!token=secret",
+        )
+
+        # WHEN: Making a request with aioresponses mocking
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://192.168.1.100:8006/api2/json/nodes",
+                payload={"data": [{"node": "pve"}]},
+            )
+            result = await client.request("GET", "/nodes")
+
+        # THEN: Request should succeed (per-request session was created)
+        assert result == [{"node": "pve"}]
+
+    @pytest.mark.asyncio
+    async def test_shared_session_auth_works(self):
+        """Test that authentication still works with a shared session."""
+        # GIVEN: A client with shared session and password auth
+        mock_auth_response = AsyncMock()
+        mock_auth_response.raise_for_status = lambda: None
+        mock_auth_response.json = AsyncMock(return_value={
+            "data": {"ticket": "PVE-ticket", "CSRFPreventionToken": "csrf-123"}
+        })
+
+        mock_data_response = AsyncMock()
+        mock_data_response.raise_for_status = lambda: None
+        mock_data_response.json = AsyncMock(return_value={"data": {"nodes": []}})
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=AsyncContextManagerMock(mock_auth_response))
+        mock_session.request = MagicMock(return_value=AsyncContextManagerMock(mock_data_response))
+
+        client = ProxmoxAPIClient(
+            host="192.168.1.100",
+            username="root@pam",
+            password="secret",
+            session=mock_session,
+        )
+
+        # WHEN: Making a request that requires authentication
+        result = await client.request("GET", "/nodes")
+
+        # THEN: Auth should have been called on the shared session
+        assert client._auth_cookie == "PVE-ticket"
+        assert client._csrf_token == "csrf-123"
+
+    def test_get_proxmox_client_with_session(self):
+        """Test get_proxmox_client() accepts and passes through a session."""
+        # GIVEN: An external session
+        mock_session = AsyncMock()
+
+        # WHEN: Creating client via factory with session
+        client = get_proxmox_client(
+            host="192.168.1.100",
+            api_token="root@pam!token=secret",
+            session=mock_session,
+        )
+
+        # THEN: Client should have the shared session
+        assert client._shared_session is mock_session
