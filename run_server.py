@@ -95,13 +95,50 @@ Environment Variables:
 
 
 async def run_stdio() -> None:
-    """Run the MCP server in stdio mode using the SDK transport."""
+    """Run the MCP server in stdio mode using the SDK transport.
+
+    Registers signal handlers for SIGTERM and SIGINT that trigger graceful
+    shutdown by cancelling the anyio task group.  This causes the stdio_server
+    context manager to exit, which exits server.run(), which exits the
+    lifespan context manager, which calls ResourceManager.shutdown().
+    """
+    import signal
+
+    import anyio
     from mcp.server.stdio import stdio_server
 
     from src.homelab_mcp.server import server
 
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+    shutdown_event = anyio.Event()
+
+    def _signal_handler(signum: int, frame: object) -> None:
+        print(
+            f"\nReceived signal {signal.Signals(signum).name}, shutting down...",
+            file=sys.stderr,
+        )
+        shutdown_event.set()
+
+    # Register signal handlers
+    previous_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
+    previous_sigint = signal.signal(signal.SIGINT, _signal_handler)
+
+    try:
+        async with anyio.create_task_group() as tg:
+
+            async def _run_server() -> None:
+                async with stdio_server() as (read_stream, write_stream):
+                    await server.run(read_stream, write_stream, server.create_initialization_options())
+
+            async def _wait_for_shutdown() -> None:
+                await shutdown_event.wait()
+                tg.cancel_scope.cancel()
+
+            tg.start_soon(_run_server)
+            tg.start_soon(_wait_for_shutdown)
+    finally:
+        # Restore previous signal handlers
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        signal.signal(signal.SIGINT, previous_sigint)
 
 
 async def run_http(
