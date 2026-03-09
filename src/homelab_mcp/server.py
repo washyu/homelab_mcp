@@ -55,9 +55,10 @@ async def app_lifespan(server: Server[dict[str, Any], Any]) -> AsyncIterator[dic
         logger.info("Server lifespan started -- ResourceManager ready")
         yield {"resource_manager": resource_manager}
     finally:
+        logger.info("Shutting down ResourceManager...")
         _resource_manager = None
         await resource_manager.shutdown()
-        logger.info("Server lifespan ended -- ResourceManager shut down")
+        logger.info("ResourceManager shutdown complete")
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
 # ---------------------------------------------------------------------------
 # Handler: list_tools
 # ---------------------------------------------------------------------------
+
 
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
@@ -90,6 +92,7 @@ async def handle_list_tools() -> list[types.Tool]:
 # ---------------------------------------------------------------------------
 # Handler: call_tool
 # ---------------------------------------------------------------------------
+
 
 @server.call_tool()
 async def handle_call_tool(
