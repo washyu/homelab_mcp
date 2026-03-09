@@ -15,6 +15,8 @@ from typing import Any
 
 import asyncssh
 
+from .validation import validate_hostname, validate_port
+
 logger = logging.getLogger(__name__)
 
 # Default known_hosts file location (alongside the homelab database)
@@ -177,6 +179,9 @@ async def ssh_connect(
     Returns:
         An asyncssh.SSHClientConnection instance.
     """
+    validate_hostname(hostname)
+    validate_port(port)
+
     kh_path = known_hosts_path or KNOWN_HOSTS_PATH
 
     # Ensure known_hosts file and parent directory exist
