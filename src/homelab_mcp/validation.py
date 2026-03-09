@@ -7,7 +7,10 @@ operations. Uses Python stdlib only (ipaddress, re).
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # RFC 1123 hostname label: 1-63 chars, alphanumeric + hyphens, no leading/trailing hyphen.
 _LABEL_RE = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$")
@@ -44,7 +47,7 @@ def validate_hostname(value: str) -> str:
         ipaddress.ip_address(value)
         return value
     except ValueError:
-        pass
+        logger.debug("Value %r is not a valid IP address, trying hostname validation", value)
 
     # Validate as hostname: split into labels, check each.
     labels = value.split(".")

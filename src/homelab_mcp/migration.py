@@ -1,9 +1,12 @@
 """Database migration utilities for moving from SQLite to PostgreSQL."""
 
 import json
+import logging
 import sys
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .config import get_config
 from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
@@ -319,7 +322,7 @@ def migrate_sqlite_to_postgresql(
             if not dry_run and "target" in locals():
                 target.close()
         except Exception:
-            pass
+            logger.debug("Error closing database connection during migration cleanup")
 
 
 def setup_postgresql_database(postgres_params: dict[str, Any] | None = None) -> bool:

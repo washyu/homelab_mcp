@@ -132,7 +132,7 @@ def _is_error_result(result: dict[str, Any]) -> bool:
                     if isinstance(parsed, dict) and parsed.get("status") == "error":
                         return True
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    logger.debug("Failed to parse content text as JSON when checking for error status")
 
     return False
 
@@ -159,7 +159,7 @@ def _extract_error_text(result: dict[str, Any]) -> str:
                         if "message" in parsed:
                             return str(parsed["message"])
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    logger.debug("Failed to parse content text as JSON when extracting error message")
 
     return str(result)
 
