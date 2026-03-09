@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 03-03-PLAN.md (tool annotations + isError compliance)
-last_updated: "2026-03-09T18:08:22.300Z"
+stopped_at: Completed 03-01-PLAN.md (stub implementation)
+last_updated: "2026-03-09T18:08:46.860Z"
 last_activity: 2026-03-09 -- Plan 03-03 executed (tool annotations + isError compliance)
 progress:
   total_phases: 5
@@ -85,6 +85,8 @@ Recent decisions affecting current work:
 - [02-05]: http_transport.py updated despite being deprecated -- still importable and could leak credentials
 - [03-03]: ToolError exception pattern leverages SDK call_tool decorator auto-isError behavior rather than modifying return types
 - [03-03]: Shared ToolAnnotations instances for read-only and destructive categories reduce memory and ensure consistency
+- [Phase 03]: Config overrides passed as env vars with single-quote escaping to prevent shell injection
+- [Phase 03]: Discovery failures logged as warnings but never propagate (deployment should not fail due to sitemap)
 
 ### Pending Todos
 
@@ -99,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T18:02:15Z
-Stopped at: Completed 03-03-PLAN.md (tool annotations + isError compliance)
-Resume file: .planning/phases/03-functional-completeness/03-03-SUMMARY.md
+Last session: 2026-03-09T18:08:30.315Z
+Stopped at: Completed 03-01-PLAN.md (stub implementation)
+Resume file: None

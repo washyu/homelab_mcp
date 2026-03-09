@@ -29,9 +29,9 @@ Requirements for 1.0 release. Each maps to roadmap phases.
 
 ### Functional Completeness
 
-- [ ] **FUNC-01**: Sitemap updates automatically after infrastructure deployment
-- [ ] **FUNC-02**: Device info refreshes after configuration changes
-- [ ] **FUNC-03**: Script-based service installation works end-to-end
+- [x] **FUNC-01**: Sitemap updates automatically after infrastructure deployment
+- [x] **FUNC-02**: Device info refreshes after configuration changes
+- [x] **FUNC-03**: Script-based service installation works end-to-end
 - [ ] **FUNC-04**: Silent exception handlers replaced with debug/warning logging
 - [x] **FUNC-05**: Proxmox API client reuses HTTP connections via session pooling
 
@@ -96,9 +96,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ARCH-01 | Phase 1 | Complete |
 | ARCH-02 | Phase 1 | Complete |
 | ARCH-03 | Phase 1 | Complete |
-| FUNC-01 | Phase 3 | Pending |
-| FUNC-02 | Phase 3 | Pending |
-| FUNC-03 | Phase 3 | Pending |
+| FUNC-01 | Phase 3 | Complete |
+| FUNC-02 | Phase 3 | Complete |
+| FUNC-03 | Phase 3 | Complete |
 | FUNC-04 | Phase 3 | Pending |
 | FUNC-05 | Phase 1 | Complete |
 | DOCS-01 | Phase 5 | Pending |

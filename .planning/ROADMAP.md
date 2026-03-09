@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Architecture Foundation** - Centralize resource lifecycle and migrate to MCP SDK
 - [x] **Phase 2: Security Hardening** - Enable host key verification, SSL, input validation, and secrets redaction (completed 2026-03-09)
-- [ ] **Phase 3: Functional Completeness** - Implement stubs, fix silent exceptions, add tool annotations and error flags
+- [x] **Phase 3: Functional Completeness** - Implement stubs, fix silent exceptions, add tool annotations and error flags (completed 2026-03-09)
 - [ ] **Phase 4: MCP Protocol Compliance** - Add logging notifications and Streamable HTTP compliance
 - [ ] **Phase 5: Documentation** - Setup guide, tool reference, and configuration reference
 
@@ -65,7 +65,7 @@ Plans:
   3. Script-based service installation (the _install_with_script path) completes successfully on a target host
   4. All previously-silent exception handlers now emit log messages at debug or warning level -- no bare except:pass remains
   5. Every tool has readOnlyHint, destructiveHint, and idempotentHint annotations visible to MCP clients, and all error responses include isError: true
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 03-01-PLAN.md — Implement stub functions (sitemap auto-refresh, device rediscovery, script install)
@@ -106,6 +106,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 |-------|----------------|--------|-----------|
 | 1. Architecture Foundation | 3/3 | Complete |  |
 | 2. Security Hardening | 5/5 | Complete   | 2026-03-09 |
-| 3. Functional Completeness | 1/3 | In progress | - |
+| 3. Functional Completeness | 3/3 | Complete   | 2026-03-09 |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |
