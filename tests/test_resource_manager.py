@@ -82,6 +82,72 @@ class TestResourceManagerInitialization:
         mock_adapter.init_schema.assert_called_once()
 
 
+class TestResourceManagerSSL:
+    """Test SSL context wiring in ResourceManager."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_passes_ssl_context_to_connector(self):
+        """Test that ResourceManager passes SSL context from config to TCPConnector."""
+        # GIVEN: A config where create_ssl_context returns True
+        config = MagicMock()
+        config.http = MagicMock()
+        config.http.enabled = False
+        config.database = MagicMock()
+        config.database.get_database_params.return_value = {"db_type": "sqlite", "db_path": ":memory:"}
+        config.create_ssl_context.return_value = True
+        rm = ResourceManager(config)
+
+        # WHEN: Initializing
+        mock_session = MagicMock()
+        mock_adapter = MagicMock()
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector") as mock_connector,
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
+            await rm.initialize()
+
+            # THEN: TCPConnector should be called with ssl=True
+            mock_connector.assert_called_once_with(
+                limit=10,
+                limit_per_host=5,
+                ttl_dns_cache=300,
+                enable_cleanup_closed=True,
+                ssl=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_initialize_passes_ssl_false_when_disabled(self):
+        """Test that ResourceManager passes ssl=False when verification is disabled."""
+        # GIVEN: A config where create_ssl_context returns False
+        config = MagicMock()
+        config.http = MagicMock()
+        config.http.enabled = False
+        config.database = MagicMock()
+        config.database.get_database_params.return_value = {"db_type": "sqlite", "db_path": ":memory:"}
+        config.create_ssl_context.return_value = False
+        rm = ResourceManager(config)
+
+        # WHEN: Initializing
+        mock_session = MagicMock()
+        mock_adapter = MagicMock()
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector") as mock_connector,
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
+            await rm.initialize()
+
+            # THEN: TCPConnector should be called with ssl=False
+            mock_connector.assert_called_once_with(
+                limit=10,
+                limit_per_host=5,
+                ttl_dns_cache=300,
+                enable_cleanup_closed=True,
+                ssl=False,
+            )
+
+
 class TestResourceManagerAccessors:
     """Test typed accessor properties."""
 
