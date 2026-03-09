@@ -1241,8 +1241,10 @@ class TestProxmoxSharedSession:
         )
 
         # WHEN: Making a request
-        with patch("src.homelab_mcp.proxmox_api.aiohttp.ClientSession") as mock_session_cls, \
-             patch("src.homelab_mcp.proxmox_api.aiohttp.TCPConnector"):
+        with (
+            patch("src.homelab_mcp.proxmox_api.aiohttp.ClientSession") as mock_session_cls,
+            patch("src.homelab_mcp.proxmox_api.aiohttp.TCPConnector"),
+        ):
             result = await client.request("GET", "/nodes")
 
             # THEN: No new ClientSession should be created
@@ -1277,9 +1279,9 @@ class TestProxmoxSharedSession:
         # GIVEN: A client with shared session and password auth
         mock_auth_response = AsyncMock()
         mock_auth_response.raise_for_status = lambda: None
-        mock_auth_response.json = AsyncMock(return_value={
-            "data": {"ticket": "PVE-ticket", "CSRFPreventionToken": "csrf-123"}
-        })
+        mock_auth_response.json = AsyncMock(
+            return_value={"data": {"ticket": "PVE-ticket", "CSRFPreventionToken": "csrf-123"}}
+        )
 
         mock_data_response = AsyncMock()
         mock_data_response.raise_for_status = lambda: None

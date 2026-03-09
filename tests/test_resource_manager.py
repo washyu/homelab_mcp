@@ -42,9 +42,13 @@ class TestResourceManagerInitialization:
         # WHEN: Initializing with mocked dependencies
         mock_session = MagicMock()
         mock_adapter = MagicMock()
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector") as mock_connector, \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session) as mock_session_cls, \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector") as mock_connector,
+            patch(
+                "src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session
+            ) as mock_session_cls,
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             await rm.initialize()
 
         # THEN: Session should have been created
@@ -66,9 +70,11 @@ class TestResourceManagerInitialization:
         # WHEN: Initializing
         mock_session = MagicMock()
         mock_adapter = MagicMock()
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"), \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session), \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"),
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             await rm.initialize()
 
         # THEN: Database adapter should be connected and schema initialized
@@ -92,9 +98,11 @@ class TestResourceManagerAccessors:
 
         mock_session = MagicMock(spec=aiohttp.ClientSession)
         mock_adapter = MagicMock()
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"), \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session), \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"),
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             await rm.initialize()
 
         # WHEN/THEN: Accessing proxmox_session should return the session
@@ -123,9 +131,11 @@ class TestResourceManagerAccessors:
 
         mock_session = MagicMock()
         mock_adapter = MagicMock()
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"), \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session), \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"),
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             await rm.initialize()
 
         # WHEN/THEN: Accessing db_adapter should return the adapter
@@ -158,9 +168,11 @@ class TestResourceManagerShutdown:
 
         mock_session = AsyncMock(spec=aiohttp.ClientSession)
         mock_adapter = MagicMock()
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"), \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session), \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"),
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             await rm.initialize()
 
         # WHEN: Shutting down
@@ -184,9 +196,11 @@ class TestResourceManagerShutdown:
 
         mock_session = AsyncMock(spec=aiohttp.ClientSession)
         mock_adapter = MagicMock()
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"), \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session), \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"),
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             await rm.initialize()
 
         # WHEN: Shutting down twice
@@ -212,9 +226,11 @@ class TestResourceManagerContextManager:
         mock_session = AsyncMock(spec=aiohttp.ClientSession)
         mock_adapter = MagicMock()
 
-        with patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"), \
-             patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session), \
-             patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter):
+        with (
+            patch("src.homelab_mcp.resource_manager.aiohttp.TCPConnector"),
+            patch("src.homelab_mcp.resource_manager.aiohttp.ClientSession", return_value=mock_session),
+            patch("src.homelab_mcp.resource_manager.get_database_adapter", return_value=mock_adapter),
+        ):
             # WHEN: Using as context manager
             async with ResourceManager(config) as rm:
                 # THEN: Should be initialized inside context
