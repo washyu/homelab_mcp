@@ -1,6 +1,12 @@
 """
-HTTP transport for MCP server using Starlette.
+DEPRECATED: This module is superseded by http_app.py which uses the MCP SDK
+StreamableHTTPSessionManager for protocol handling.
 
+This file is retained for reference only and is not imported by any active
+code path. It will be removed in a future cleanup.
+
+Original description:
+HTTP transport for MCP server using Starlette.
 Implements the MCP Streamable HTTP transport protocol:
 - POST /mcp - JSON-RPC requests
 - GET /mcp - SSE stream for server notifications
