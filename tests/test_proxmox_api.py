@@ -1319,3 +1319,121 @@ class TestProxmoxSharedSession:
 
         # THEN: Client should have the shared session
         assert client._shared_session is mock_session
+
+
+class TestProxmoxSSLVerification:
+    """Test SSL verification defaults and configuration."""
+
+    def test_ssl_verify_default_true(self):
+        """Test that ProxmoxAPIClient defaults to verify_ssl=True."""
+        # GIVEN: No explicit verify_ssl parameter
+        client = ProxmoxAPIClient(host="pve")
+
+        # THEN: verify_ssl should default to True
+        assert client.verify_ssl is True
+
+    def test_config_ssl_defaults(self):
+        """Test MCPConfig has proxmox_verify_ssl=True and proxmox_ca_cert=None by default."""
+        from src.homelab_mcp.config import MCPConfig
+
+        # GIVEN: No environment variables set for Proxmox SSL
+        with patch.dict(os.environ, {}, clear=False):
+            # Remove any existing Proxmox SSL env vars
+            env = os.environ.copy()
+            env.pop("PROXMOX_VERIFY_SSL", None)
+            env.pop("PROXMOX_CA_CERT", None)
+            with patch.dict(os.environ, env, clear=True):
+                config = MCPConfig()
+
+                # THEN: SSL defaults should be secure
+                assert config.proxmox_verify_ssl is True
+                assert config.proxmox_ca_cert is None
+
+    def test_config_create_ssl_context_default_returns_true(self):
+        """Test create_ssl_context() returns True when verify_ssl=True and no CA cert."""
+        from src.homelab_mcp.config import MCPConfig
+
+        with patch.dict(os.environ, {}, clear=False):
+            env = os.environ.copy()
+            env.pop("PROXMOX_VERIFY_SSL", None)
+            env.pop("PROXMOX_CA_CERT", None)
+            with patch.dict(os.environ, env, clear=True):
+                config = MCPConfig()
+                result = config.create_ssl_context()
+
+                # THEN: Should return True (use system CA)
+                assert result is True
+
+    def test_config_create_ssl_context_with_ca_cert(self):
+        """Test create_ssl_context() returns SSLContext when CA cert is set."""
+        import ssl
+
+        from src.homelab_mcp.config import MCPConfig
+
+        with patch.dict(
+            os.environ,
+            {"PROXMOX_CA_CERT": "/path/to/cert.pem"},
+            clear=False,
+        ):
+            config = MCPConfig()
+
+            # Mock ssl.create_default_context to avoid needing a real cert
+            mock_ctx = MagicMock(spec=ssl.SSLContext)
+            with patch("ssl.create_default_context", return_value=mock_ctx) as mock_create:
+                result = config.create_ssl_context()
+
+                # THEN: Should return an SSLContext
+                mock_create.assert_called_once_with(cafile="/path/to/cert.pem")
+                assert result is mock_ctx
+
+    def test_config_create_ssl_context_verify_false(self):
+        """Test create_ssl_context() returns False when verify_ssl=False."""
+        from src.homelab_mcp.config import MCPConfig
+
+        with patch.dict(
+            os.environ,
+            {"PROXMOX_VERIFY_SSL": "false"},
+            clear=False,
+        ):
+            config = MCPConfig()
+            result = config.create_ssl_context()
+
+            # THEN: Should return False (disable verification)
+            assert result is False
+
+    def test_ssl_verify_false_override_via_env(self):
+        """Test get_proxmox_client with PROXMOX_VERIFY_SSL=false sets verify_ssl=False."""
+        with patch.dict(
+            os.environ,
+            {
+                "PROXMOX_HOST": "pve.local",
+                "PROXMOX_VERIFY_SSL": "false",
+                "PROXMOX_API_TOKEN": "root@pam!token=secret",
+            },
+        ):
+            client = get_proxmox_client()
+
+            # THEN: verify_ssl should be False
+            assert client.verify_ssl is False
+
+    def test_get_proxmox_client_default_verify_ssl_true(self):
+        """Test get_proxmox_client defaults to verify_ssl=True."""
+        with patch.dict(
+            os.environ,
+            {
+                "PROXMOX_HOST": "pve.local",
+                "PROXMOX_API_TOKEN": "root@pam!token=secret",
+            },
+            clear=False,
+        ):
+            # Remove PROXMOX_VERIFY_SSL if set
+            env = os.environ.copy()
+            env.pop("PROXMOX_VERIFY_SSL", None)
+            with patch.dict(os.environ, env, clear=True):
+                # Also ensure our test vars are present
+                os.environ["PROXMOX_HOST"] = "pve.local"
+                os.environ["PROXMOX_API_TOKEN"] = "root@pam!token=secret"
+                client = get_proxmox_client()
+
+                # THEN: verify_ssl should default to True
+                assert client.verify_ssl is True
