@@ -10,6 +10,7 @@ import asyncssh
 
 from .database import get_database_adapter
 from .error_handling import retry_on_failure, ssh_connection_wrapper
+from .ssh_connection import ssh_connect
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -163,16 +164,12 @@ async def setup_remote_mcp_admin(
 
     try:
         # Connect with admin credentials
-        connect_kwargs = {
-            "host": hostname,
-            "port": port,
-            "username": username,
-            "password": password,
-            "known_hosts": None,
-            "connect_timeout": 10,
-        }
-
-        async with await asyncssh.connect(**connect_kwargs) as conn:
+        async with await ssh_connect(
+            hostname=hostname,
+            username=username,
+            port=port,
+            password=password,
+        ) as conn:
             setup_results = {}
 
             # Check if mcp_admin user already exists
@@ -323,16 +320,12 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
         )
 
     # Test SSH connection with key
-    connect_kwargs = {
-        "host": hostname,
-        "port": port,
-        "username": "mcp_admin",
-        "client_keys": [str(key_path)],
-        "known_hosts": None,
-        "connect_timeout": 10,
-    }
-
-    async with await asyncssh.connect(**connect_kwargs) as conn:
+    async with await ssh_connect(
+        hostname=hostname,
+        username="mcp_admin",
+        port=port,
+        key_path=str(key_path),
+    ) as conn:
         # Test basic access
         whoami_result = await conn.run("whoami", check=False)
         if whoami_result.exit_status != 0:
@@ -399,25 +392,19 @@ async def ssh_discover_system(
     )
 
     # Connect via SSH
-    connect_kwargs: dict[str, Any] = {
-        "host": creds.hostname,
-        "port": creds.port,
-        "username": creds.username,
-        "known_hosts": None,
-        "connect_timeout": 10,
-    }
-
-    if creds.key_path:
-        connect_kwargs["client_keys"] = [creds.key_path]
-    elif creds.password:
-        connect_kwargs["password"] = creds.password
-    else:
+    if not creds.key_path and not creds.password:
         raise ValueError(
             f"No credentials available for {hostname}. "
             "Register the server first with register_server or provide password/key_path."
         )
 
-    async with await asyncssh.connect(**connect_kwargs) as conn:
+    async with await ssh_connect(
+        hostname=creds.hostname,
+        username=creds.username,
+        port=creds.port,
+        password=creds.password,
+        key_path=creds.key_path,
+    ) as conn:
         system_info: dict[str, Any] = {}
 
         # Get actual hostname from the remote system
@@ -619,33 +606,26 @@ async def ssh_execute_command(
         port=port,
     )
 
-    # Prepare connection options
-    connect_kwargs: dict[str, Any] = {
-        "host": creds.hostname,
-        "port": creds.port,
-        "username": creds.username,
-        "known_hosts": None,
-    }
-
-    if creds.key_path:
-        connect_kwargs["client_keys"] = [creds.key_path]
-
-    if creds.password:
-        connect_kwargs["password"] = creds.password
-
-    # If no credentials available, try to fall back to default mcp_admin key
-    if "client_keys" not in connect_kwargs and "password" not in connect_kwargs:
+    # Determine key path, falling back to mcp_admin key if needed
+    resolved_key = creds.key_path
+    if not resolved_key and not creds.password:
         if creds.username == "mcp_admin":
             mcp_key_path = await ensure_mcp_ssh_key()
             if mcp_key_path:
-                connect_kwargs["client_keys"] = [mcp_key_path]
+                resolved_key = mcp_key_path
         else:
             raise ValueError(
                 f"No credentials available for {hostname}. "
                 "Register the server first with register_server or provide password."
             )
 
-    async with asyncssh.connect(**connect_kwargs) as conn:
+    async with await ssh_connect(
+        hostname=creds.hostname,
+        username=creds.username,
+        port=creds.port,
+        password=creds.password,
+        key_path=resolved_key,
+    ) as conn:
         # Prepare the command with sudo if requested
         if sudo:
             if creds.username == "mcp_admin":
@@ -684,16 +664,12 @@ async def update_mcp_admin_groups(hostname: str, username: str, password: str, p
     """Update mcp_admin group memberships to include service management groups."""
     try:
         # Connect via SSH with admin credentials
-        connect_kwargs = {
-            "host": hostname,
-            "port": port,
-            "username": username,
-            "password": password,
-            "known_hosts": None,
-            "connect_timeout": 10,
-        }
-
-        async with await asyncssh.connect(**connect_kwargs) as conn:
+        async with await ssh_connect(
+            hostname=hostname,
+            username=username,
+            port=port,
+            password=password,
+        ) as conn:
             results: dict[str, Any] = {}
 
             # Check if mcp_admin user exists
@@ -866,16 +842,12 @@ async def register_server(
         last_verified = None
         if verify_connection and resolved_key_path:
             try:
-                connect_kwargs = {
-                    "host": hostname,
-                    "port": port,
-                    "username": username,
-                    "client_keys": [resolved_key_path],
-                    "known_hosts": None,
-                    "connect_timeout": 10,
-                }
-
-                async with await asyncssh.connect(**connect_kwargs) as conn:
+                async with await ssh_connect(
+                    hostname=hostname,
+                    username=username,
+                    port=port,
+                    key_path=resolved_key_path,
+                ) as conn:
                     result = await conn.run("hostname", check=False)
                     if result.exit_status == 0:
                         last_verified = "verified"

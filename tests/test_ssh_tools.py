@@ -15,7 +15,7 @@ from src.homelab_mcp.ssh_tools import (
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_ssh_discover_success(mock_connect):
     """Test successful SSH discovery."""
     # Mock command results - in the order they are executed by ssh_discover_system
@@ -99,19 +99,11 @@ Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"
 
     mock_conn.run = mock_run
 
-    # Create an async context manager that returns mock_conn
-    async def mock_context_mgr():
-        class MockContext:
-            async def __aenter__(self):
-                return mock_conn
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-        return MockContext()
-
-    # Make connect return the async context manager
-    mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
+    # ssh_connect is async, returns a connection usable as async context manager
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Execute discovery
     result = await ssh_discover_system(hostname="test-host", username="test-user", password="test-pass")
@@ -154,7 +146,7 @@ Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"
 
 
 @pytest.mark.asyncio
-@patch("asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_ssh_discover_auth_failure(mock_connect):
     """Test SSH discovery with authentication failure."""
     mock_connect.side_effect = asyncssh.misc.PermissionDenied("Authentication failed")
@@ -168,7 +160,7 @@ async def test_ssh_discover_auth_failure(mock_connect):
 
 
 @pytest.mark.asyncio
-@patch("asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_ssh_discover_connection_timeout(mock_connect):
     """Test SSH discovery with connection timeout."""
 
@@ -200,15 +192,15 @@ async def test_ssh_discover_no_credentials(mock_get_db):
 
 
 @pytest.mark.asyncio
-@patch("asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_ssh_discover_with_key_path(mock_connect):
     """Test SSH discovery using key file."""
     # Mock SSH connection
     mock_conn = AsyncMock()
-    mock_context = AsyncMock()
-    mock_context.__aenter__.return_value = mock_conn
-    mock_context.__aexit__.return_value = None
-    mock_connect.return_value = mock_context
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Mock minimal command results
     mock_result = MagicMock()
@@ -219,11 +211,10 @@ async def test_ssh_discover_with_key_path(mock_connect):
     # Execute discovery with key
     await ssh_discover_system(hostname="test-host", username="test-user", key_path="/path/to/key")
 
-    # Verify connect was called with key
+    # Verify ssh_connect was called with key_path parameter
     mock_connect.assert_called_once()
-    call_args = mock_connect.call_args[1]
-    assert call_args["client_keys"] == ["/path/to/key"]
-    assert "password" not in call_args
+    call_kwargs = mock_connect.call_args.kwargs
+    assert call_kwargs["key_path"] == "/path/to/key"
 
 
 @pytest.mark.asyncio
@@ -298,7 +289,7 @@ async def test_ensure_mcp_ssh_key_uses_existing(mock_get_path):
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensure_key):
     """Test successful remote mcp_admin setup."""
     # Mock SSH key
@@ -364,19 +355,11 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
         test_conn,
     ]
 
-    # Setup context manager
-    async def mock_context_mgr():
-        class MockContext:
-            async def __aenter__(self):
-                return mock_conn
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-        return MockContext()
-
-    # Make connect return the async context manager
-    mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
+    # ssh_connect is async, returns a connection usable as async context manager
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Execute
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
@@ -398,7 +381,7 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup when user already exists."""
     # Mock SSH key
@@ -452,19 +435,11 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
         test_conn,
     ]
 
-    # Setup context manager
-    async def mock_context_mgr():
-        class MockContext:
-            async def __aenter__(self):
-                return mock_conn
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-        return MockContext()
-
-    # Make connect return the async context manager
-    mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
+    # ssh_connect returns a connection usable as async context manager
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Execute
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
@@ -479,7 +454,7 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
 
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_verify_mcp_admin_access_success(mock_connect, mock_key_path):
     """Test successful mcp_admin access verification."""
     # Mock SSH key exists
@@ -511,19 +486,11 @@ async def test_verify_mcp_admin_access_success(mock_connect, mock_key_path):
         groups_result,
     ]
 
-    # Setup context manager
-    async def mock_context_mgr():
-        class MockContext:
-            async def __aenter__(self):
-                return mock_conn
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-        return MockContext()
-
-    # Make connect return the async context manager
-    mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
+    # ssh_connect returns a connection usable as async context manager
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Execute
     result = await verify_mcp_admin_access("test-host")
@@ -562,7 +529,7 @@ async def test_verify_mcp_admin_access_no_key(mock_key_path):
 
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_verify_mcp_admin_access_auth_failure(mock_connect, mock_key_path):
     """Test verification with authentication failure."""
     # Mock SSH key exists
@@ -584,7 +551,7 @@ async def test_verify_mcp_admin_access_auth_failure(mock_connect, mock_key_path)
 
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path):
     """Test SSH discovery auto-uses MCP key for mcp_admin user."""
     # Mock SSH key exists
@@ -593,10 +560,10 @@ async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path)
 
     # Mock SSH connection
     mock_conn = AsyncMock()
-    mock_context = AsyncMock()
-    mock_context.__aenter__.return_value = mock_conn
-    mock_context.__aexit__.return_value = None
-    mock_connect.return_value = mock_context
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Mock minimal command results
     mock_result = MagicMock()
@@ -611,17 +578,16 @@ async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path)
     result_data = json.loads(result)
     assert "status" in result_data
 
-    # Verify connect was called with MCP key
+    # Verify ssh_connect was called with key_path parameter
     mock_connect.assert_called_once()
-    call_args = mock_connect.call_args[1]
-    assert call_args["client_keys"] == ["/home/user/.ssh/mcp_admin_rsa"]
-    assert "password" not in call_args
+    call_kwargs = mock_connect.call_args.kwargs
+    assert call_kwargs["key_path"] == "/home/user/.ssh/mcp_admin_rsa"
 
 
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup with force key update."""
     # Mock SSH key
@@ -679,19 +645,11 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
         test_conn,
     ]
 
-    # Setup context manager
-    async def mock_context_mgr():
-        class MockContext:
-            async def __aenter__(self):
-                return mock_conn
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-        return MockContext()
-
-    # Make connect return the async context manager
-    mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
+    # ssh_connect returns a connection usable as async context manager
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Execute with force_update_key=True (default)
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
@@ -708,7 +666,7 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup without forcing key update."""
     # Mock SSH key
@@ -746,19 +704,11 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
         test_conn,
     ]
 
-    # Setup context manager
-    async def mock_context_mgr():
-        class MockContext:
-            async def __aenter__(self):
-                return mock_conn
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                return None
-
-        return MockContext()
-
-    # Make connect return the async context manager
-    mock_connect.side_effect = lambda **kwargs: mock_context_mgr()
+    # ssh_connect returns a connection usable as async context manager
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
 
     # Execute with force_update_key=False
     result = await setup_remote_mcp_admin("test-host", "admin", "password", force_update_key=False)

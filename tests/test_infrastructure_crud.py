@@ -201,7 +201,7 @@ class TestUpdateDeviceConfiguration:
                 with patch("src.homelab_mcp.infrastructure_crud.create_infrastructure_backup") as mock_backup:
                     mock_backup.return_value = json.dumps({"status": "success", "backup_id": "backup_123"})
 
-                    with patch("asyncssh.connect") as mock_connect:
+                    with patch("src.homelab_mcp.infrastructure_crud.ssh_connect", new_callable=AsyncMock) as mock_connect:
                         mock_conn = AsyncMock()
                         mock_connect.return_value.__aenter__.return_value = mock_conn
 
@@ -509,7 +509,7 @@ class TestDecommissionDevice:
                     "dependent_devices": [],
                 }
 
-                with patch("asyncssh.connect") as mock_connect:
+                with patch("src.homelab_mcp.infrastructure_crud.ssh_connect", new_callable=AsyncMock) as mock_connect:
                     mock_conn = AsyncMock()
                     mock_connect.return_value.__aenter__.return_value = mock_conn
 
@@ -582,7 +582,7 @@ class TestDecommissionDevice:
                     "dependent_devices": [],
                 }
 
-                with patch("asyncssh.connect") as mock_connect:
+                with patch("src.homelab_mcp.infrastructure_crud.ssh_connect", new_callable=AsyncMock) as mock_connect:
                     mock_conn = AsyncMock()
                     mock_connect.return_value.__aenter__.return_value = mock_conn
 
