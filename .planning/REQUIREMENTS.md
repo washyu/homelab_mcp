@@ -9,7 +9,7 @@ Requirements for 1.0 release. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-01**: SSH connections use host key verification with trust-on-first-use (TOFU) model
+- [x] **SEC-01**: SSH connections use host key verification with trust-on-first-use (TOFU) model
 - [x] **SEC-02**: Proxmox API connections verify SSL certificates by default with configurable override
 - [x] **SEC-03**: All tool inputs validated for hostnames, IP addresses, and port ranges
 - [x] **SEC-04**: Sensitive credentials never appear in log output or error responses
@@ -85,7 +85,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 2 | Pending |
+| SEC-01 | Phase 2 | Complete |
 | SEC-02 | Phase 2 | Complete |
 | SEC-03 | Phase 2 | Complete |
 | SEC-04 | Phase 2 | Complete |

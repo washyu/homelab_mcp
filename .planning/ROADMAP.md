@@ -49,9 +49,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Input validation module + credential redaction logging filter
-- [ ] 02-02-PLAN.md — Proxmox SSL verification default flip + CA cert support
-- [ ] 02-03-PLAN.md — SSH TOFU host key verification + replace all insecure connect calls
+- [x] 02-01-PLAN.md — Input validation module + credential redaction logging filter
+- [x] 02-02-PLAN.md — Proxmox SSL verification default flip + CA cert support
+- [x] 02-03-PLAN.md — SSH TOFU host key verification + replace all insecure connect calls
 
 ### Phase 3: Functional Completeness
 **Goal**: Every tool that can be called actually works end-to-end -- no stubs, no swallowed errors, and MCP clients can distinguish read-only from destructive tools
@@ -102,7 +102,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Architecture Foundation | 3/3 | Complete |  |
-| 2. Security Hardening | 0/3 | Not started | - |
+| 2. Security Hardening | 3/3 | Complete | 2026-03-09 |
 | 3. Functional Completeness | 0/? | Not started | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |

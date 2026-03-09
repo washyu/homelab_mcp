@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-03-09T15:32:07.428Z"
-last_activity: 2026-03-09 -- Plan 02-02 executed (SSL verification defaults)
+status: completed
+stopped_at: Completed 02-03-PLAN.md (Phase 2 complete)
+last_updated: "2026-03-09T15:38:28Z"
+last_activity: 2026-03-09 -- Plan 02-03 executed (SSH TOFU host key verification)
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 67
+  completed_plans: 6
+  percent: 40
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 2 of 5 (Security Hardening)
-Plan: 2 of 3 in current phase
-Status: Executing Phase 2
-Last activity: 2026-03-09 -- Plan 02-02 executed (SSL verification defaults)
+Phase: 2 of 5 (Security Hardening) -- COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase 2 Complete
+Last activity: 2026-03-09 -- Plan 02-03 executed (SSH TOFU host key verification)
 
-Progress: [███████░░░] 67%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -44,13 +44,13 @@ Progress: [███████░░░] 67%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-architecture-foundation | 3/3 | 13min | 4.3min |
+| 02-security-hardening | 3/3 | -- | -- |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min), 01-02 (4min), 01-03 (4min)
+- Last 5 plans: 01-01 (5min), 01-02 (4min), 01-03 (4min), 02-02 (4min), 02-03 (10min)
 - Trend: Steady
 
 *Updated after each plan completion*
-| Phase 02 P02 | 4min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -74,8 +74,9 @@ Recent decisions affecting current work:
 - [02-01]: Attached CredentialFilter to root logger for global coverage
 - [02-02]: SSL verification True by default -- PROXMOX_VERIFY_SSL=false required to disable
 - [02-02]: create_ssl_context() returns bool|SSLContext union for aiohttp ssl parameter compatibility
-- [Phase 02]: [02-02]: SSL verification True by default -- PROXMOX_VERIFY_SSL=false required to disable
-- [Phase 02]: [02-02]: create_ssl_context() returns bool|SSLContext union for aiohttp ssl parameter compatibility
+- [02-03]: validate_host_public_key is synchronous (asyncssh calls it in a sync context)
+- [02-03]: Known hosts at ~/.homelab_mcp/known_hosts alongside existing DB
+- [02-03]: Non-standard ports use [host]:port format per OpenSSH convention
 
 ### Pending Todos
 
@@ -85,11 +86,11 @@ None yet.
 
 - ~~[Research]: MCP SDK lowlevel.Server API needs verification during Phase 1 planning~~ RESOLVED in 01-02
 - [Research]: Streamable HTTP auth middleware not yet integrated with new SDK transport (APIKeyAuth)
-- [Research]: asyncssh TOFU API needs verification during Phase 2 planning (known_hosts callbacks, host key file management)
+- ~~[Research]: asyncssh TOFU API needs verification during Phase 2 planning (known_hosts callbacks, host key file management)~~ RESOLVED in 02-03
 - [Research]: Streamable HTTP session requirements need verification during Phase 4 planning
 
 ## Session Continuity
 
-Last session: 2026-03-09T15:32:01.556Z
-Stopped at: Completed 02-02-PLAN.md
-Resume file: None
+Last session: 2026-03-09T15:38:28Z
+Stopped at: Completed 02-03-PLAN.md (Phase 2 complete)
+Resume file: .planning/phases/02-security-hardening/02-03-SUMMARY.md
