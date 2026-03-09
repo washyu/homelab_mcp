@@ -6,6 +6,7 @@ Uses lowlevel.Server with lifespan, list_tools, and call_tool decorators.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -96,6 +97,74 @@ async def handle_list_tools() -> list[types.Tool]:
 
 
 # ---------------------------------------------------------------------------
+# Error detection for tool results
+# ---------------------------------------------------------------------------
+
+
+class ToolError(Exception):
+    """Raised when a tool handler returns an error result.
+
+    The SDK call_tool decorator catches exceptions and auto-sets isError=True
+    in the CallToolResult, so raising this converts handler error dicts into
+    proper MCP error signals.
+    """
+
+
+def _is_error_result(result: dict[str, Any]) -> bool:
+    """Detect whether a handler result dict represents an error.
+
+    Checks two patterns:
+    1. Direct: ``{"status": "error", ...}``
+    2. Nested: ``{"content": [{"type": "text", "text": '{"status": "error", ...}'}]}``
+    """
+    # Pattern 1: direct error status
+    if result.get("status") == "error":
+        return True
+
+    # Pattern 2: nested JSON in content
+    content = result.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text", "")
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict) and parsed.get("status") == "error":
+                        return True
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+    return False
+
+
+def _extract_error_text(result: dict[str, Any]) -> str:
+    """Extract a human-readable error message from an error result dict."""
+    # Direct error fields
+    if "error" in result:
+        return str(result["error"])
+    if "message" in result:
+        return str(result["message"])
+
+    # Try nested content
+    content = result.get("content")
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text", "")
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict):
+                        if "error" in parsed:
+                            return str(parsed["error"])
+                        if "message" in parsed:
+                            return str(parsed["message"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+    return str(result)
+
+
+# ---------------------------------------------------------------------------
 # Handler: call_tool
 # ---------------------------------------------------------------------------
 
@@ -107,12 +176,16 @@ async def handle_call_tool(
     """Dispatch a tool call to the appropriate handler.
 
     Converts the handler's legacy dict result format into MCP SDK content types.
+    Detects error results and raises ToolError so the SDK sets isError=True.
 
     Raises:
         ValueError: If the tool name is not recognized.
+        ToolError: If the handler returns an error result dict.
     """
     handler = get_tool_handler(name)  # raises ValueError for unknown tools
     result = await handler(arguments or {})
+    if _is_error_result(result):
+        raise ToolError(_extract_error_text(result))
     return _convert_result(result)
 
 
@@ -130,8 +203,6 @@ def _convert_result(
         content_items = result["content"]
     else:
         # Fallback: wrap the whole result as a single text item
-        import json
-
         content_items = [{"type": "text", "text": json.dumps(result)}]
 
     converted: list[types.TextContent | types.ImageContent | types.EmbeddedResource] = []
