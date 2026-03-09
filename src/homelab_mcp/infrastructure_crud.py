@@ -1,13 +1,16 @@
 """Infrastructure CRUD operations for complete network management."""
 
 import json
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
 
 from .log_filter import sanitize_error
-from .sitemap import NetworkSiteMap
+from .sitemap import NetworkSiteMap, discover_and_store
 from .ssh_connection import ssh_connect
+
+logger = logging.getLogger(__name__)
 
 
 class InfrastructureManager:
@@ -750,8 +753,26 @@ async def _apply_network_change(manager: InfrastructureManager, change: dict[str
 
 
 async def _update_sitemap_after_deployment(manager: InfrastructureManager, results: list[dict[str, Any]]) -> None:
-    """Update sitemap after deployment."""
-    pass
+    """Update sitemap after deployment by discovering each successfully deployed device."""
+    for result in results:
+        if result.get("status") != "success":
+            continue
+        device_id = result.get("device_id")
+        if device_id is None:
+            continue
+        connection_info = await manager.get_device_connection_info(device_id)
+        if connection_info is None:
+            logger.warning("No connection info found for device %s, skipping sitemap update", device_id)
+            continue
+        try:
+            await discover_and_store(
+                manager.sitemap,
+                connection_info["hostname"],
+                connection_info["username"],
+                port=connection_info.get("port", 22),
+            )
+        except Exception as e:
+            logger.warning("Failed to update sitemap for device %s: %s", device_id, e)
 
 
 async def _validate_config_changes(changes: dict[str, Any], device_id: int) -> dict[str, Any]:
@@ -945,8 +966,16 @@ async def _update_resource_config(conn: Any, config: dict[str, Any]) -> dict[str
 async def _rediscover_device_after_changes(
     manager: InfrastructureManager, device_id: int, connection_info: dict[str, Any]
 ) -> None:
-    """Rediscover device after configuration changes."""
-    pass
+    """Rediscover device after configuration changes to reflect updated state."""
+    try:
+        await discover_and_store(
+            manager.sitemap,
+            connection_info["hostname"],
+            connection_info["username"],
+            port=connection_info.get("port", 22),
+        )
+    except Exception as e:
+        logger.warning("Failed to rediscover device %s after changes: %s", device_id, e)
 
 
 async def _analyze_device_dependencies(manager: InfrastructureManager, device_id: int) -> dict[str, Any]:
