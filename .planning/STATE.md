@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 02-03-PLAN.md (Phase 2 complete)
-last_updated: "2026-03-09T15:38:28Z"
-last_activity: 2026-03-09 -- Plan 02-03 executed (SSH TOFU host key verification)
+stopped_at: Completed 02-05-PLAN.md (gap closure - error sanitization)
+last_updated: "2026-03-09T15:59:00Z"
+last_activity: 2026-03-09 -- Plan 02-05 executed (error response sanitization wiring)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 8
   percent: 40
 ---
 
@@ -26,28 +26,28 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 2 of 5 (Security Hardening) -- COMPLETE
-Plan: 3 of 3 in current phase
+Plan: 5 of 5 in current phase (gap closure plans 02-04 and 02-05 added and completed)
 Status: Phase 2 Complete
-Last activity: 2026-03-09 -- Plan 02-03 executed (SSH TOFU host key verification)
+Last activity: 2026-03-09 -- Plan 02-05 executed (error response sanitization wiring)
 
 Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 4.3min
-- Total execution time: 0.22 hours
+- Total plans completed: 5
+- Average duration: 4.4min
+- Total execution time: 0.37 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-architecture-foundation | 3/3 | 13min | 4.3min |
-| 02-security-hardening | 3/3 | -- | -- |
+| 02-security-hardening | 5/5 | -- | -- |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min), 01-02 (4min), 01-03 (4min), 02-02 (4min), 02-03 (10min)
+- Last 5 plans: 01-02 (4min), 01-03 (4min), 02-02 (4min), 02-03 (10min), 02-04 (4min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -77,6 +77,8 @@ Recent decisions affecting current work:
 - [02-03]: validate_host_public_key is synchronous (asyncssh calls it in a sync context)
 - [02-03]: Known hosts at ~/.homelab_mcp/known_hosts alongside existing DB
 - [02-03]: Non-standard ports use [host]:port format per OpenSSH convention
+- [02-04]: Centralized validation in ssh_connect() covers all 21+ SSH call sites without modifying each one
+- [02-04]: Defense-in-depth: handler-level validation gives earlier/clearer errors before ssh_connect
 
 ### Pending Todos
 
@@ -91,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T15:38:28Z
-Stopped at: Completed 02-03-PLAN.md (Phase 2 complete)
-Resume file: .planning/phases/02-security-hardening/02-03-SUMMARY.md
+Last session: 2026-03-09T15:58:38Z
+Stopped at: Completed 02-04-PLAN.md (gap closure - validation wiring)
+Resume file: .planning/phases/02-security-hardening/02-04-SUMMARY.md

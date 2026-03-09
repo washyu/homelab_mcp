@@ -13,7 +13,7 @@ Take an existing 34+ tool MCP server from "works in development" to "production-
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Architecture Foundation** - Centralize resource lifecycle and migrate to MCP SDK
-- [ ] **Phase 2: Security Hardening** - Enable host key verification, SSL, input validation, and secrets redaction
+- [x] **Phase 2: Security Hardening** - Enable host key verification, SSL, input validation, and secrets redaction (completed 2026-03-09)
 - [ ] **Phase 3: Functional Completeness** - Implement stubs, fix silent exceptions, add tool annotations and error flags
 - [ ] **Phase 4: MCP Protocol Compliance** - Add logging notifications and Streamable HTTP compliance
 - [ ] **Phase 5: Documentation** - Setup guide, tool reference, and configuration reference
@@ -46,7 +46,7 @@ Plans:
   2. Proxmox API connections verify SSL certificates by default, with a documented configuration override for self-signed certs
   3. Tool inputs for hostnames, IP addresses, and port ranges are validated before use -- malformed or hostile inputs are rejected with clear error messages
   4. Passwords, API tokens, and SSH keys never appear in log output or error responses returned to the MCP client
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 
 Plans:
 - [x] 02-01-PLAN.md — Input validation module + credential redaction logging filter
@@ -104,7 +104,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Architecture Foundation | 3/3 | Complete |  |
-| 2. Security Hardening | 3/5 | Gap closure | - |
+| 2. Security Hardening | 5/5 | Complete   | 2026-03-09 |
 | 3. Functional Completeness | 0/? | Not started | - |
 | 4. MCP Protocol Compliance | 0/? | Not started | - |
 | 5. Documentation | 0/? | Not started | - |
