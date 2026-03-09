@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from ..shell_session import session_manager
+from ..validation import validate_hostname, validate_port
 from ..ssh_tools import (
     setup_remote_mcp_admin,
     ssh_discover_system,
@@ -40,6 +41,10 @@ async def handle_ssh_execute_command(arguments: dict[str, Any]) -> dict[str, Any
 
 async def handle_start_interactive_shell(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle start_interactive_shell tool."""
+    validate_hostname(arguments["hostname"])
+    if "port" in arguments:
+        validate_port(arguments.get("port", 22))
+
     # Get initial command if provided
     initial_command = arguments.get("initial_command")
 

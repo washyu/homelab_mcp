@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from ..validation import validate_hostname
 from ..proxmox_api import (
     clone_proxmox_vm,
     create_proxmox_lxc,
@@ -50,6 +51,8 @@ async def handle_get_proxmox_script_info(arguments: dict[str, Any]) -> dict[str,
 
 async def handle_list_proxmox_resources(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle list_proxmox_resources tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await list_proxmox_resources(
         host=arguments.get("host"),
         resource_type=arguments.get("resource_type"),
@@ -59,6 +62,8 @@ async def handle_list_proxmox_resources(arguments: dict[str, Any]) -> dict[str, 
 
 async def handle_get_proxmox_node_status(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle get_proxmox_node_status tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await get_proxmox_node_status(
         node=arguments["node"],
         host=arguments.get("host"),
@@ -68,6 +73,8 @@ async def handle_get_proxmox_node_status(arguments: dict[str, Any]) -> dict[str,
 
 async def handle_get_proxmox_vm_status(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle get_proxmox_vm_status tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await get_proxmox_vm_status(
         node=arguments["node"],
         vmid=arguments["vmid"],
@@ -79,6 +86,8 @@ async def handle_get_proxmox_vm_status(arguments: dict[str, Any]) -> dict[str, A
 
 async def handle_manage_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle manage_proxmox_vm tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await manage_proxmox_vm(
         node=arguments["node"],
         vmid=arguments["vmid"],
@@ -91,6 +100,9 @@ async def handle_manage_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle create_proxmox_lxc tool."""
+    validate_hostname(arguments["hostname"])
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await create_proxmox_lxc(
         node=arguments["node"],
         vmid=arguments["vmid"],
@@ -109,6 +121,8 @@ async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]
 
 async def handle_create_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle create_proxmox_vm tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await create_proxmox_vm(
         node=arguments["node"],
         vmid=arguments["vmid"],
@@ -126,6 +140,8 @@ async def handle_create_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_clone_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle clone_proxmox_vm tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await clone_proxmox_vm(
         node=arguments["node"],
         vmid=arguments["vmid"],
@@ -140,6 +156,8 @@ async def handle_clone_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_delete_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle delete_proxmox_vm tool."""
+    if host := arguments.get("host"):
+        validate_hostname(host)
     result = await delete_proxmox_vm(
         node=arguments["node"],
         vmid=arguments["vmid"],
