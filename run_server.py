@@ -35,7 +35,7 @@ Examples:
 
 Environment Variables:
   MCP_HTTP_ENABLED    Enable HTTP mode by default (true/false)
-  MCP_HTTP_HOST       Default HTTP host (default: 0.0.0.0)
+  MCP_HTTP_HOST       Default HTTP host (default: 127.0.0.1)
   MCP_HTTP_PORT       Default HTTP port (default: 8080)
   MCP_API_KEY         API key for HTTP authentication
   MCP_AUTH_ENABLED    Enable/disable authentication (default: true)
@@ -52,8 +52,8 @@ Environment Variables:
     parser.add_argument(
         "--host",
         type=str,
-        default=os.getenv("MCP_HTTP_HOST", "0.0.0.0"),
-        help="HTTP server host (default: 0.0.0.0)",
+        default=os.getenv("MCP_HTTP_HOST", "127.0.0.1"),
+        help="HTTP server host (default: 127.0.0.1)",
     )
 
     parser.add_argument(
@@ -142,7 +142,7 @@ async def run_stdio() -> None:
 
 
 async def run_http(
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8080,
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
