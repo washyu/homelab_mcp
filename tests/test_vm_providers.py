@@ -320,3 +320,137 @@ class TestVMProviderBase:
         result = await provider.control_vm(mock_conn, "test", "invalid")
         assert result["status"] == "error"
         assert "Unknown action" in result["message"]
+
+    def test_format_error_with_exception_has_required_fields(self):
+        """Test _format_error with an Exception returns error, error_type, and detail fields."""
+        provider = DockerProvider()
+        exc = ValueError("test error")
+        result = provider._format_error("deploy", "my-vm", exc)
+
+        assert result["status"] == "error"
+        assert result["operation"] == "deploy"
+        assert result["vm_name"] == "my-vm"
+        assert "error" in result
+        assert "error_type" in result
+        assert "detail" in result
+
+    def test_format_error_exception_type_name(self):
+        """Test _format_error uses the actual exception class name for error_type."""
+        provider = DockerProvider()
+        exc = TimeoutError("connection timed out")
+        result = provider._format_error("list", "my-vm", exc)
+
+        assert result["error_type"] == "TimeoutError"
+
+    def test_format_error_with_string_has_required_fields(self):
+        """Test _format_error with string input returns error, error_type, and detail fields (backward compat)."""
+        provider = DockerProvider()
+        result = provider._format_error("deploy", "my-vm", "Container already exists")
+
+        assert result["status"] == "error"
+        assert "error" in result
+        assert "error_type" in result
+        assert "detail" in result
+        assert result["error_type"] == "Error"
+
+    def test_format_error_detail_uses_sanitize_error(self):
+        """Test _format_error detail field uses sanitize_error not raw repr."""
+        provider = DockerProvider()
+        exc = ValueError("connection failed password=secret123")
+        result = provider._format_error("connect", "my-vm", exc)
+
+        # detail should have credentials redacted
+        assert "secret123" not in result["detail"]
+        assert "[REDACTED]" in result["detail"]
+
+    def test_error_result_has_required_fields(self):
+        """Test that all error results from _format_error have the 3 required fields."""
+        provider = DockerProvider()
+
+        # With exception
+        exc_result = provider._format_error("op", "vm", RuntimeError("oops"))
+        assert all(k in exc_result for k in ("error", "error_type", "detail"))
+
+        # With string
+        str_result = provider._format_error("op", "vm", "plain string error")
+        assert all(k in str_result for k in ("error", "error_type", "detail"))
+
+
+class TestDockerProviderErrorPaths:
+    """Test DockerProvider exception handling in list_vms and other paths."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.provider = DockerProvider()
+        self.mock_conn = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_list_vms_exception_has_error_type_and_detail(self):
+        """Test DockerProvider.list_vms exception path includes error_type and detail fields.
+
+        Mocks _run_command directly because _run_command catches conn.run exceptions
+        internally, so the outer except in list_vms is only reachable if _run_command
+        itself raises (e.g. from json.JSONDecodeError or similar non-connection errors).
+        """
+        with patch.object(self.provider, "_run_command", new_callable=AsyncMock) as mock_run_cmd:
+            mock_run_cmd.side_effect = RuntimeError("Docker daemon not running")
+            result = await self.provider.list_vms(self.mock_conn)
+
+        assert result["status"] == "error"
+        assert result["platform"] == "docker"
+        assert "error" in result
+        assert "error_type" in result
+        assert "detail" in result
+        assert result["error_type"] == "RuntimeError"
+
+    @pytest.mark.asyncio
+    async def test_deploy_vm_exception_has_error_type_and_detail(self):
+        """Test DockerProvider.deploy_vm exception path includes error_type and detail fields."""
+        with patch.object(self.provider, "_run_command", new_callable=AsyncMock) as mock_run_cmd:
+            mock_run_cmd.side_effect = ConnectionError("SSH connection lost")
+            result = await self.provider.deploy_vm(self.mock_conn, "my-container", {})
+
+        assert result["status"] == "error"
+        assert "error_type" in result
+        assert "detail" in result
+        assert result["error_type"] == "ConnectionError"
+
+
+class TestLXDProviderErrorPaths:
+    """Test LXDProvider exception handling in list_vms and other paths."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.provider = LXDProvider()
+        self.mock_conn = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_list_vms_exception_has_error_type_and_detail(self):
+        """Test LXDProvider.list_vms exception path includes error_type and detail fields.
+
+        Mocks _run_command directly because _run_command catches conn.run exceptions
+        internally, so the outer except in list_vms is only reachable if _run_command
+        itself raises (e.g. from parsing errors or other non-connection errors).
+        """
+        with patch.object(self.provider, "_run_command", new_callable=AsyncMock) as mock_run_cmd:
+            mock_run_cmd.side_effect = RuntimeError("LXD socket not available")
+            result = await self.provider.list_vms(self.mock_conn)
+
+        assert result["status"] == "error"
+        assert result["platform"] == "lxd"
+        assert "error" in result
+        assert "error_type" in result
+        assert "detail" in result
+        assert result["error_type"] == "RuntimeError"
+
+    @pytest.mark.asyncio
+    async def test_deploy_vm_exception_has_error_type_and_detail(self):
+        """Test LXDProvider.deploy_vm exception path includes error_type and detail fields."""
+        with patch.object(self.provider, "_run_command", new_callable=AsyncMock) as mock_run_cmd:
+            mock_run_cmd.side_effect = OSError("Permission denied")
+            result = await self.provider.deploy_vm(self.mock_conn, "my-container", {})
+
+        assert result["status"] == "error"
+        assert "error_type" in result
+        assert "detail" in result
+        assert result["error_type"] == "OSError"

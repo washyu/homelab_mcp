@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from ..log_filter import sanitize_error
+
 
 class VMProvider(ABC):
     """Abstract base class for VM/container providers."""
@@ -63,13 +65,30 @@ class VMProvider(ABC):
                 "message": f"Unknown action: {action}. Supported actions: start, stop, restart",
             }
 
-    def _format_error(self, operation: str, vm_name: str, error: str) -> dict[str, Any]:
-        """Format error response consistently."""
+    def _format_error(self, operation: str, vm_name: str, error: str | Exception) -> dict[str, Any]:
+        """Format error response consistently.
+
+        Accepts either a string or an Exception.  When given an Exception the
+        returned dict includes ``error_type`` (the exception class name) and
+        ``detail`` (the sanitized exception message).  When given a string both
+        fields are set to safe defaults for backward compatibility.
+        """
+        if isinstance(error, Exception):
+            return {
+                "status": "error",
+                "operation": operation,
+                "vm_name": vm_name,
+                "error": str(error),
+                "error_type": type(error).__name__,
+                "detail": sanitize_error(error),
+            }
         return {
             "status": "error",
             "operation": operation,
             "vm_name": vm_name,
             "error": error,
+            "error_type": "Error",
+            "detail": error,
         }
 
     def _format_success(self, operation: str, vm_name: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

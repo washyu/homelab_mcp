@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from ..log_filter import sanitize_error
 from .base import VMProvider
 
 
@@ -78,7 +79,7 @@ class DockerProvider(VMProvider):
                 return self._format_error("deploy", vm_name, deploy_result["stderr"])
 
         except Exception as e:
-            return self._format_error("deploy", vm_name, str(e))
+            return self._format_error("deploy", vm_name, e)
 
     async def start_vm(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Start a Docker container."""
@@ -100,7 +101,7 @@ class DockerProvider(VMProvider):
                 return self._format_error("start", vm_name, result["stderr"])
 
         except Exception as e:
-            return self._format_error("start", vm_name, str(e))
+            return self._format_error("start", vm_name, e)
 
     async def stop_vm(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Stop a Docker container."""
@@ -113,7 +114,7 @@ class DockerProvider(VMProvider):
                 return self._format_error("stop", vm_name, result["stderr"])
 
         except Exception as e:
-            return self._format_error("stop", vm_name, str(e))
+            return self._format_error("stop", vm_name, e)
 
     async def restart_vm(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Restart a Docker container."""
@@ -135,7 +136,7 @@ class DockerProvider(VMProvider):
                 return self._format_error("restart", vm_name, result["stderr"])
 
         except Exception as e:
-            return self._format_error("restart", vm_name, str(e))
+            return self._format_error("restart", vm_name, e)
 
     async def get_vm_status(self, conn: Any, vm_name: str) -> dict[str, Any]:
         """Get Docker container status."""
@@ -165,7 +166,7 @@ class DockerProvider(VMProvider):
                 return self._format_error("get_status", vm_name, "Container not found")
 
         except Exception as e:
-            return self._format_error("get_status", vm_name, str(e))
+            return self._format_error("get_status", vm_name, e)
 
     async def list_vms(self, conn: Any) -> dict[str, Any]:
         """List all Docker containers."""
@@ -205,7 +206,13 @@ class DockerProvider(VMProvider):
                 }
 
         except Exception as e:
-            return {"status": "error", "platform": "docker", "error": str(e)}
+            return {
+                "status": "error",
+                "platform": "docker",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "detail": sanitize_error(e),
+            }
 
     async def get_vm_logs(self, conn: Any, vm_name: str, lines: int = 100) -> dict[str, Any]:
         """Get Docker container logs."""
@@ -224,7 +231,7 @@ class DockerProvider(VMProvider):
                 return self._format_error("get_logs", vm_name, result["stderr"])
 
         except Exception as e:
-            return self._format_error("get_logs", vm_name, str(e))
+            return self._format_error("get_logs", vm_name, e)
 
     async def remove_vm(self, conn: Any, vm_name: str, force: bool = False) -> dict[str, Any]:
         """Remove a Docker container."""
@@ -247,4 +254,4 @@ class DockerProvider(VMProvider):
                 return self._format_error("remove", vm_name, result["stderr"])
 
         except Exception as e:
-            return self._format_error("remove", vm_name, str(e))
+            return self._format_error("remove", vm_name, e)
