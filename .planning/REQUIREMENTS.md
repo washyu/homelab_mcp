@@ -18,7 +18,7 @@ Requirements for 1.0 release. Each maps to roadmap phases.
 
 - [x] **MCP-01**: All tools annotated with readOnlyHint, destructiveHint, and idempotentHint
 - [x] **MCP-02**: All error responses include isError: true per MCP spec
-- [ ] **MCP-03**: Server emits MCP logging notifications for long-running operations
+- [x] **MCP-03**: Server emits MCP logging notifications for long-running operations
 - [x] **MCP-04**: HTTP transport complies with Streamable HTTP spec (session management, Origin validation)
 
 ### Architecture
@@ -91,7 +91,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEC-04 | Phase 2 | Complete |
 | MCP-01 | Phase 3 | Complete |
 | MCP-02 | Phase 3 | Complete |
-| MCP-03 | Phase 4 | Pending |
+| MCP-03 | Phase 4 | Complete |
 | MCP-04 | Phase 4 | Complete |
 | ARCH-01 | Phase 1 | Complete |
 | ARCH-02 | Phase 1 | Complete |
