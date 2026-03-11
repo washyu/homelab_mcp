@@ -10,7 +10,7 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 ### Tech Debt
 
 - [x] **DEBT-01**: ResourceManager.proxmox_session is consumed by handler chain when Proxmox operations are invoked
-- [ ] **DEBT-02**: API key authentication is enforced on HTTP transport endpoints
+- [x] **DEBT-02**: API key authentication is enforced on HTTP transport endpoints
 - [x] **DEBT-03**: vm_providers error paths return structured error dicts instead of raw str(e)
 
 ### Dry-Run
@@ -87,7 +87,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DEBT-01 | Phase 6 | Complete |
-| DEBT-02 | Phase 6 | Pending |
+| DEBT-02 | Phase 6 | Complete |
 | DEBT-03 | Phase 6 | Complete |
 | DRY-01 | Phase 8 | Pending |
 | DRY-02 | Phase 8 | Pending |

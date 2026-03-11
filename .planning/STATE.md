@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 06-01-PLAN.md: session threading through Proxmox handlers"
-last_updated: "2026-03-11T19:44:18.594Z"
-last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
+stopped_at: "Completed 06-02-PLAN.md: APIKeyAuth middleware wiring for HTTP transport"
+last_updated: "2026-03-11T19:45:16Z"
+last_activity: 2026-03-11 — Completed 06-02 APIKeyAuth HTTP auth middleware
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -44,6 +44,8 @@ Key v1.1 decisions:
 - [Phase 06]: _format_error accepts str | Exception for backward compatibility; error_type derived from exception class name; detail uses sanitize_error for credential safety
 - [Phase 06]: VM provider list_vms bare exception handlers fixed inline with error_type and detail; test mocks target _run_command not conn.run since _run_command absorbs connection exceptions
 - [Phase 06-tech-debt-cleanup]: Local import of get_resource_manager inside each handler function avoids circular import; session param added as last kwarg for backward compatibility
+- [Phase 06-02]: Exclude '/' from APIKeyAuth exclude_paths — it uses prefix matching and '/' matches all paths; only use exact paths or paths ending in '/' for real prefix routes
+- [Phase 06-02]: APIKeyAuth wrapping is conditional: create_http_app() returns Starlette | APIKeyAuth; callers receive ASGI-compatible object in both cases
 
 ### Pending Todos
 
@@ -56,6 +58,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T19:44:18.592Z
-Stopped at: Completed 06-01-PLAN.md: session threading through Proxmox handlers
+Last session: 2026-03-11T19:45:16Z
+Stopped at: Completed 06-02-PLAN.md: APIKeyAuth middleware wiring for HTTP transport
 Resume file: None

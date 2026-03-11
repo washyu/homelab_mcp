@@ -41,9 +41,9 @@
   3. All VM provider error paths return structured dicts with `error`, `error_type`, and `detail` fields instead of raw `str(e)` strings
 **Plans**: 3 plans
 Plans:
-- [ ] 06-01-PLAN.md — Thread shared Proxmox session through handler chain
-- [ ] 06-02-PLAN.md — Wire APIKeyAuth into HTTP app
-- [ ] 06-03-PLAN.md — Structured error dicts in VM providers
+- [x] 06-01-PLAN.md — Thread shared Proxmox session through handler chain
+- [x] 06-02-PLAN.md — Wire APIKeyAuth into HTTP app
+- [x] 06-03-PLAN.md — Structured error dicts in VM providers
 
 ### Phase 7: MCP Resources Plumbing
 **Goal**: The MCP Resources protocol is fully wired — clients can list resources, read stubs, subscribe, and receive correct error codes — validating SDK integration before real data is connected.
