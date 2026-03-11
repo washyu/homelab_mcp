@@ -14,6 +14,9 @@ from typing import Any
 
 import mcp.types as types
 from mcp.server.lowlevel import Server
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.shared.exceptions import McpError
+from pydantic import AnyUrl
 
 from .config import MCPConfig, get_config
 from .log_filter import CredentialFilter
@@ -30,6 +33,9 @@ from .tool_schemas import get_all_tool_schemas
 
 # Re-export progress symbols for backward compatibility and plan contract
 __all__ = ["LOG_LEVEL_ORDER", "emit_progress", "should_emit"]
+
+# Error code constant — SDK has no named constant for resource-not-found
+RESOURCE_NOT_FOUND = -32002
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +87,108 @@ async def app_lifespan(server: Server[dict[str, Any], Any]) -> AsyncIterator[dic
 # ---------------------------------------------------------------------------
 
 server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
+
+# ---------------------------------------------------------------------------
+# MCP Resources registry
+# ---------------------------------------------------------------------------
+
+#: Registry of homelab:// resources exposed via resources/list and resources/read.
+#: Keys must match str(AnyUrl("homelab://...")) output exactly.
+#: Values are dicts with: name, description, stub (the JSON payload returned by read).
+HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
+    "homelab://vms": {
+        "name": "Virtual Machines",
+        "description": "Proxmox, Docker, and LXD VM/container inventory from all managed hosts",
+        "stub": {"vms": [], "_note": "stub - Phase 9 wires live data"},
+    },
+    "homelab://devices": {
+        "name": "Device Inventory",
+        "description": "All devices discovered on the homelab network via SSH and mDNS scanning",
+        "stub": {"devices": [], "_note": "stub - Phase 9 wires live data"},
+    },
+    "homelab://services": {
+        "name": "Services",
+        "description": "Status of installed services (Docker, Proxmox, custom stacks) across all hosts",
+        "stub": {"services": [], "_note": "stub - Phase 9 wires live data"},
+    },
+}
+
+#: Set of URI strings currently subscribed by MCP clients.
+#: Populated by handle_subscribe_resource, cleared by handle_unsubscribe_resource.
+_subscriptions: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
+# Handler: list_resources
+# ---------------------------------------------------------------------------
+
+
+@server.list_resources()  # type: ignore[misc]
+async def handle_list_resources() -> list[types.Resource]:
+    """Return all homelab:// resources with metadata.
+
+    Returns a types.Resource for each entry in HOMELAB_RESOURCES with
+    mimeType application/json so clients know the payload format.
+    """
+    resources: list[types.Resource] = []
+    for uri_str, meta in HOMELAB_RESOURCES.items():
+        resources.append(
+            types.Resource(
+                uri=AnyUrl(uri_str),
+                name=str(meta["name"]),
+                description=str(meta["description"]),
+                mimeType="application/json",
+            )
+        )
+    return resources
+
+
+# ---------------------------------------------------------------------------
+# Handler: read_resource
+# ---------------------------------------------------------------------------
+
+
+@server.read_resource()  # type: ignore[misc]
+async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
+    """Return stub JSON content for a known homelab:// resource URI.
+
+    Raises:
+        McpError: With code -32002 if the URI is not in HOMELAB_RESOURCES.
+    """
+    uri_str = str(uri)
+    if uri_str not in HOMELAB_RESOURCES:
+        raise McpError(
+            types.ErrorData(
+                code=RESOURCE_NOT_FOUND,
+                message="Resource not found",
+                data={"uri": uri_str},
+            )
+        )
+    meta = HOMELAB_RESOURCES[uri_str]
+    stub = meta["stub"]
+    return [ReadResourceContents(content=json.dumps(stub), mime_type="application/json")]
+
+
+# ---------------------------------------------------------------------------
+# Handler: subscribe_resource
+# ---------------------------------------------------------------------------
+
+
+@server.subscribe_resource()  # type: ignore[misc]
+async def handle_subscribe_resource(uri: AnyUrl) -> None:
+    """Add URI to subscription tracker so future updates can be pushed."""
+    _subscriptions.add(str(uri))
+
+
+# ---------------------------------------------------------------------------
+# Handler: unsubscribe_resource
+# ---------------------------------------------------------------------------
+
+
+@server.unsubscribe_resource()  # type: ignore[misc]
+async def handle_unsubscribe_resource(uri: AnyUrl) -> None:
+    """Remove URI from subscription tracker (no-op if not present)."""
+    _subscriptions.discard(str(uri))
 
 
 # ---------------------------------------------------------------------------
