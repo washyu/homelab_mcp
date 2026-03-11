@@ -38,7 +38,7 @@ Requirements for 1.0 release. Each maps to roadmap phases.
 ### Documentation
 
 - [x] **DOCS-01**: Setup guide covers clone, install, configure, connect, and verify
-- [ ] **DOCS-02**: Tool reference documents all tools with arguments, returns, and examples
+- [x] **DOCS-02**: Tool reference documents all tools with arguments, returns, and examples
 - [x] **DOCS-03**: Configuration reference lists all environment variables with defaults
 
 ## v2 Requirements
@@ -102,7 +102,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FUNC-04 | Phase 3 | Complete |
 | FUNC-05 | Phase 1 | Complete |
 | DOCS-01 | Phase 5 | Complete |
-| DOCS-02 | Phase 5 | Pending |
+| DOCS-02 | Phase 5 | Complete |
 | DOCS-03 | Phase 5 | Complete |
 
 **Coverage:**

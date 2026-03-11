@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Security Hardening** - Enable host key verification, SSL, input validation, and secrets redaction (completed 2026-03-09)
 - [x] **Phase 3: Functional Completeness** - Implement stubs, fix silent exceptions, add tool annotations and error flags (completed 2026-03-09)
 - [ ] **Phase 4: MCP Protocol Compliance** - Add logging notifications and Streamable HTTP compliance
-- [ ] **Phase 5: Documentation** - Setup guide, tool reference, and configuration reference
+- [x] **Phase 5: Documentation** - Setup guide, tool reference, and configuration reference (completed 2026-03-11)
 
 ## Phase Details
 
@@ -93,7 +93,7 @@ Plans:
   1. A user can follow the setup guide from clone through first successful tool call without needing to read source code
   2. Every tool is documented with its arguments, return format, and at least one usage example
   3. All environment variables and configuration options are listed with their defaults and descriptions
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 05-01-PLAN.md — Setup guide + configuration reference + .env.example cleanup
@@ -110,4 +110,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 2. Security Hardening | 5/5 | Complete   | 2026-03-09 |
 | 3. Functional Completeness | 3/3 | Complete   | 2026-03-09 |
 | 4. MCP Protocol Compliance | 2/2 | Complete | 2026-03-11 |
-| 5. Documentation | 0/2 | Not started | - |
+| 5. Documentation | 2/2 | Complete   | 2026-03-11 |
