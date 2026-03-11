@@ -108,7 +108,7 @@ Plans:
 | 3. Functional Completeness | v1.0 | 3/3 | Complete | 2026-03-09 |
 | 4. MCP Protocol Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
-| 6. Tech Debt Cleanup | v1.1 | 0/3 | Planned | - |
+| 6. Tech Debt Cleanup | 1/3 | In Progress|  | - |
 | 7. MCP Resources Plumbing | v1.1 | 0/TBD | Not started | - |
 | 8. Dry-Run Mode | v1.1 | 0/TBD | Not started | - |
 | 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |

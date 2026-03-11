@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
-status: ready_to_plan
-stopped_at: null
-last_updated: "2026-03-11"
-last_activity: 2026-03-11 -- Roadmap created, ready to plan Phase 6
+status: planning
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-11T19:32:24.738Z"
+last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -41,6 +41,8 @@ Key v1.1 decisions:
 - Phase 6 before all features: proxmox_session wiring is a load-bearing prerequisite for Phases 9 and 11
 - Phase 8 (Dry-Run) independent of Phase 7 (Resources Plumbing) — can proceed in parallel after Phase 6
 - Phase 11 (Drift) last: most complex, needs stable session management and notification infrastructure
+- [Phase 06]: _format_error accepts str | Exception for backward compatibility; error_type derived from exception class name; detail uses sanitize_error for credential safety
+- [Phase 06]: VM provider list_vms bare exception handlers fixed inline with error_type and detail; test mocks target _run_command not conn.run since _run_command absorbs connection exceptions
 
 ### Pending Todos
 
@@ -53,6 +55,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11
-Stopped at: Roadmap creation complete
+Last session: 2026-03-11T19:32:24.736Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
