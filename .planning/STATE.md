@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md (setup guide + configuration reference)
-last_updated: "2026-03-11T17:44:12.651Z"
+stopped_at: Completed 05-02-PLAN.md (tool reference + README slim)
+last_updated: "2026-03-11T17:45:20.269Z"
 last_activity: 2026-03-11 -- Plan 05-01 executed (setup guide + configuration reference)
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 15
-  completed_plans: 14
+  completed_plans: 15
   percent: 93
 ---
 
@@ -57,6 +57,7 @@ Progress: [█████████░] 93%
 | Phase 04 P01 | 6min | 2 tasks | 6 files |
 | Phase 04 P02 | 3min | 1 tasks | 3 files |
 | Phase 05 P01 | 2min | 2 tasks | 3 files |
+| Phase 05 P02 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,8 @@ Recent decisions affecting current work:
 - [04-01]: RFC 5424 syslog severity ordering for LOG_LEVEL_ORDER (8 levels: debug through emergency)
 - [Phase 05]: [05-01]: Documented MCP_HTTP_HOST default discrepancy between config.py (0.0.0.0) and CLI (127.0.0.1)
 - [Phase 05]: [05-01]: Removed 11 stale env vars from .env.example (OLLAMA, ANSIBLE, INVENTORY, TEMPLATE)
+- [Phase 05]: Schema files are the single source of truth for tool documentation
+- [Phase 05]: README reduced from 730 to 117 lines, all detail moved to docs/
 
 ### Pending Todos
 
@@ -112,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T17:44:12.649Z
-Stopped at: Completed 05-01-PLAN.md (setup guide + configuration reference)
+Last session: 2026-03-11T17:45:20.267Z
+Stopped at: Completed 05-02-PLAN.md (tool reference + README slim)
 Resume file: None
