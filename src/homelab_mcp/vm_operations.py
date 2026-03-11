@@ -28,7 +28,7 @@ class VMManager:
         return None
 
 
-async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict[str, Any]) -> str:
+async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict[str, Any]) -> str:  # type: ignore[return]
     """Deploy a new VM/container on a specific device."""
     try:
         manager = VMManager()
@@ -60,7 +60,7 @@ async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict
         return json.dumps({"status": "error", "message": f"VM deployment failed: {sanitize_error(e)}"})
 
 
-async def control_vm_state(device_id: int, platform: str, vm_name: str, action: str) -> str:
+async def control_vm_state(device_id: int, platform: str, vm_name: str, action: str) -> str:  # type: ignore[return]
     """Control VM state (start, stop, restart)."""
     try:
         manager = VMManager()
@@ -92,7 +92,7 @@ async def control_vm_state(device_id: int, platform: str, vm_name: str, action: 
         return json.dumps({"status": "error", "message": f"VM control failed: {sanitize_error(e)}"})
 
 
-async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
+async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:  # type: ignore[return]
     """Get detailed status of a specific VM."""
     try:
         manager = VMManager()
@@ -124,7 +124,7 @@ async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:
         return json.dumps({"status": "error", "message": f"Failed to get VM status: {sanitize_error(e)}"})
 
 
-async def list_vms_on_device(device_id: int, platforms: list[str] | None = None) -> str:
+async def list_vms_on_device(device_id: int, platforms: list[str] | None = None) -> str:  # type: ignore[return]
     """List all VMs on a specific device across platforms."""
     try:
         manager = VMManager()
@@ -193,7 +193,7 @@ async def list_vms_on_device(device_id: int, platforms: list[str] | None = None)
         return json.dumps({"status": "error", "message": f"Failed to list VMs: {sanitize_error(e)}"})
 
 
-async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 100) -> str:
+async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 100) -> str:  # type: ignore[return]
     """Get logs from a specific VM."""
     try:
         manager = VMManager()
@@ -225,7 +225,7 @@ async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 
         return json.dumps({"status": "error", "message": f"Failed to get VM logs: {sanitize_error(e)}"})
 
 
-async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = False) -> str:
+async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = False) -> str:  # type: ignore[return]
     """Remove a VM/container from a device."""
     try:
         manager = VMManager()

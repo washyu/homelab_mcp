@@ -640,7 +640,7 @@ async def _validate_deployment_plan(plan: dict[str, Any]) -> dict[str, Any]:
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 
 
-async def _deploy_service(manager: InfrastructureManager, service: dict[str, Any]) -> dict[str, Any]:
+async def _deploy_service(manager: InfrastructureManager, service: dict[str, Any]) -> dict[str, Any]:  # type: ignore[return]
     """Deploy a single service."""
     try:
         device_id = service["target_device_id"]

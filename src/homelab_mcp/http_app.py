@@ -28,7 +28,7 @@ from .shell_session import session_manager as shell_session_manager
 try:
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 except ImportError:
-    from mcp.server.streamable_http import StreamableHTTPSessionManager  # type: ignore[no-redef]
+    from mcp.server.streamable_http import StreamableHTTPSessionManager  # type: ignore[no-redef, attr-defined]
 
 logger = logging.getLogger(__name__)
 

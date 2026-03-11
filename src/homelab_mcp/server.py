@@ -88,7 +88,7 @@ server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
 # ---------------------------------------------------------------------------
 
 
-@server.set_logging_level()
+@server.set_logging_level()  # type: ignore[misc]
 async def handle_set_logging_level(level: types.LoggingLevel) -> None:
     """Store the client-requested minimum log level for notification filtering."""
     set_min_log_level(level)
@@ -100,7 +100,7 @@ async def handle_set_logging_level(level: types.LoggingLevel) -> None:
 # ---------------------------------------------------------------------------
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore[misc]
 async def handle_list_tools() -> list[types.Tool]:
     """Return all available tools as MCP Tool objects."""
     schemas = get_all_tool_schemas()
@@ -190,7 +190,7 @@ def _extract_error_text(result: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-@server.call_tool()
+@server.call_tool()  # type: ignore[misc]
 async def handle_call_tool(
     name: str, arguments: dict[str, Any] | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:

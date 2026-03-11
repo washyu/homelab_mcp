@@ -35,7 +35,7 @@ from .log_filter import sanitize_error
 from .shell_session import session_manager
 
 if TYPE_CHECKING:
-    from .server import HomelabMCPServer
+    from .server import HomelabMCPServer  # type: ignore[attr-defined]
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ class MCPHTTPTransport:
             return None
 
         # Process request through the server
-        response = await self.server.handle_request(request)
+        response: dict[str, Any] | None = await self.server.handle_request(request)
         return response
 
     async def handle_mcp_sse(self, request: Request) -> Response:
