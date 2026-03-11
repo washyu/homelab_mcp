@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -30,6 +31,76 @@ except ImportError:
     from mcp.server.streamable_http import StreamableHTTPSessionManager  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
+
+# Default origins considered safe (localhost variants)
+_DEFAULT_ALLOWED_ORIGINS: list[str] = [
+    "http://localhost",
+    "https://localhost",
+    "http://127.0.0.1",
+    "https://127.0.0.1",
+]
+
+
+# ---------------------------------------------------------------------------
+# Origin validation middleware (DNS rebinding protection)
+# ---------------------------------------------------------------------------
+
+
+class OriginValidationMiddleware:
+    """ASGI middleware that validates the Origin header on incoming requests.
+
+    Requests without an Origin header are allowed (non-browser clients).
+    Requests with an Origin that does not match any allowed origin receive
+    a ``403 Forbidden`` JSON response.
+
+    Port variants are accepted: if ``http://localhost`` is allowed then
+    ``http://localhost:3000`` is also accepted.
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        allowed_origins: list[str] | None = None,
+    ) -> None:
+        self.app = app
+        self.allowed_origins = allowed_origins or list(_DEFAULT_ALLOWED_ORIGINS)
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        """ASGI interface -- check Origin on HTTP requests."""
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        # Extract Origin header from raw ASGI headers
+        origin: str | None = None
+        for header_name, header_value in scope.get("headers", []):
+            if header_name == b"origin":
+                origin = header_value.decode("latin-1")
+                break
+
+        if origin is not None and not self._is_allowed(origin):
+            response = JSONResponse(
+                {"error": "Forbidden", "detail": "Origin not allowed"},
+                status_code=403,
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+    def _is_allowed(self, origin: str) -> bool:
+        """Check whether *origin* matches any allowed origin.
+
+        An exact match passes.  A match of ``allowed + ":" + port`` also
+        passes so that ``http://localhost:3000`` is accepted when
+        ``http://localhost`` is in the allowed list.
+        """
+        for allowed in self.allowed_origins:
+            if origin == allowed:
+                return True
+            if origin.startswith(allowed + ":"):
+                return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +219,7 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
 
 def create_http_app(
     cors_origins: list[str] | None = None,
+    allowed_origins: list[str] | None = None,
 ) -> Starlette:
     """Create a Starlette ASGI application with MCP SDK HTTP transport.
 
@@ -157,11 +229,20 @@ def create_http_app(
 
     Args:
         cors_origins: Allowed CORS origins (default ``["*"]``).
+        allowed_origins: Origins permitted by the Origin validation
+            middleware.  Falls back to the ``MCP_ALLOWED_ORIGINS`` env
+            var (comma-separated), then to localhost defaults.
 
     Returns:
         Configured Starlette application.
     """
     origins = cors_origins or ["*"]
+
+    # Resolve allowed origins: parameter > env var > defaults
+    if allowed_origins is None:
+        env_origins = os.getenv("MCP_ALLOWED_ORIGINS")
+        if env_origins:
+            allowed_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
 
     session_manager = StreamableHTTPSessionManager(app=server)
 
@@ -187,13 +268,14 @@ def create_http_app(
     ]
 
     middleware = [
+        Middleware(OriginValidationMiddleware, allowed_origins=allowed_origins),
         Middleware(
             CORSMiddleware,
             allow_origins=origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
             allow_headers=["*"],
-        )
+        ),
     ]
 
     return Starlette(
