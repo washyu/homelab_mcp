@@ -39,7 +39,11 @@
   1. Proxmox tool calls route through the shared `ResourceManager.proxmox_session` aiohttp ClientSession — zero additional sessions opened per request
   2. HTTP transport endpoints reject requests without a valid API key (return 401/403), not silently accept them
   3. All VM provider error paths return structured dicts with `error`, `error_type`, and `detail` fields instead of raw `str(e)` strings
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 06-01-PLAN.md — Thread shared Proxmox session through handler chain
+- [ ] 06-02-PLAN.md — Wire APIKeyAuth into HTTP app
+- [ ] 06-03-PLAN.md — Structured error dicts in VM providers
 
 ### Phase 7: MCP Resources Plumbing
 **Goal**: The MCP Resources protocol is fully wired — clients can list resources, read stubs, subscribe, and receive correct error codes — validating SDK integration before real data is connected.
@@ -104,7 +108,7 @@
 | 3. Functional Completeness | v1.0 | 3/3 | Complete | 2026-03-09 |
 | 4. MCP Protocol Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
-| 6. Tech Debt Cleanup | v1.1 | 0/TBD | Not started | - |
+| 6. Tech Debt Cleanup | v1.1 | 0/3 | Planned | - |
 | 7. MCP Resources Plumbing | v1.1 | 0/TBD | Not started | - |
 | 8. Dry-Run Mode | v1.1 | 0/TBD | Not started | - |
 | 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |
