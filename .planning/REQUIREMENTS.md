@@ -86,34 +86,34 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEBT-01 | — | Pending |
-| DEBT-02 | — | Pending |
-| DEBT-03 | — | Pending |
-| DRY-01 | — | Pending |
-| DRY-02 | — | Pending |
-| DRY-03 | — | Pending |
-| DRY-04 | — | Pending |
-| DRY-05 | — | Pending |
-| DRY-06 | — | Pending |
-| DRY-07 | — | Pending |
-| DRFT-01 | — | Pending |
-| DRFT-02 | — | Pending |
-| DRFT-03 | — | Pending |
-| DRFT-04 | — | Pending |
-| DRFT-05 | — | Pending |
-| RES-01 | — | Pending |
-| RES-02 | — | Pending |
-| RES-03 | — | Pending |
-| RES-04 | — | Pending |
-| RES-05 | — | Pending |
-| RES-06 | — | Pending |
-| RES-07 | — | Pending |
+| DEBT-01 | Phase 6 | Pending |
+| DEBT-02 | Phase 6 | Pending |
+| DEBT-03 | Phase 6 | Pending |
+| DRY-01 | Phase 8 | Pending |
+| DRY-02 | Phase 8 | Pending |
+| DRY-03 | Phase 8 | Pending |
+| DRY-04 | Phase 8 | Pending |
+| DRY-05 | Phase 8 | Pending |
+| DRY-06 | Phase 8 | Pending |
+| DRY-07 | Phase 8 | Pending |
+| DRFT-01 | Phase 11 | Pending |
+| DRFT-02 | Phase 11 | Pending |
+| DRFT-03 | Phase 11 | Pending |
+| DRFT-04 | Phase 11 | Pending |
+| DRFT-05 | Phase 11 | Pending |
+| RES-01 | Phase 7 | Pending |
+| RES-02 | Phase 9 | Pending |
+| RES-03 | Phase 9 | Pending |
+| RES-04 | Phase 9 | Pending |
+| RES-05 | Phase 7 | Pending |
+| RES-06 | Phase 7 | Pending |
+| RES-07 | Phase 10 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after initial definition*
+*Last updated: 2026-03-11 after roadmap creation — all 22 requirements mapped*
