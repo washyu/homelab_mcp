@@ -1,8 +1,6 @@
 # Homelab MCP Server
 
-[![CI](https://github.com/washyu/homelab_mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/washyu/homelab_mcp/actions/workflows/ci.yml)
-[![Test Coverage](https://github.com/washyu/homelab_mcp/actions/workflows/test-coverage.yml/badge.svg)](https://github.com/washyu/homelab_mcp/actions/workflows/test-coverage.yml)
-[![codecov](https://codecov.io/gh/washyu/homelab_mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/washyu/homelab_mcp)
+[![CI](https://github.com/washyu/homelab_mcp/actions/workflows/main.yml/badge.svg)](https://github.com/washyu/homelab_mcp/actions/workflows/main.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
