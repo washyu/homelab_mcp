@@ -4,11 +4,11 @@ milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
 stopped_at: "Completed 06-02-PLAN.md: APIKeyAuth middleware wiring for HTTP transport"
-last_updated: "2026-03-11T19:45:16Z"
-last_activity: 2026-03-11 — Completed 06-02 APIKeyAuth HTTP auth middleware
+last_updated: "2026-03-11T19:51:22.760Z"
+last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
   completed_plans: 3
   percent: 0
