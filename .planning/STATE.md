@@ -4,7 +4,7 @@ milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
 stopped_at: "Completed 07-01-PLAN.md: MCP Resources list/read/subscribe handlers"
-last_updated: "2026-03-11T23:37:47.879Z"
+last_updated: "2026-03-11T23:41:03.968Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
