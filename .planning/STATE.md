@@ -1,120 +1,55 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: executing
-stopped_at: Completed 05-02-PLAN.md (tool reference + README slim)
-last_updated: "2026-03-11T17:48:51.343Z"
-last_activity: 2026-03-11 -- Plan 05-01 executed (setup guide + configuration reference)
+milestone_name: MVP
+status: milestone_complete
+stopped_at: v1.0 milestone completed
+last_updated: "2026-03-11"
+last_activity: 2026-03-11 -- v1.0 milestone shipped
 progress:
   total_phases: 5
   completed_phases: 5
   total_plans: 15
   completed_plans: 15
-  percent: 93
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-08)
+See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** Every tool in the server actually works -- a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 5: Documentation
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 5 of 5 (Documentation)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-03-11 -- Plan 05-01 executed (setup guide + configuration reference)
+Milestone: v1.0 MVP -- SHIPPED 2026-03-11
+Status: Complete (5 phases, 15 plans, 30 tasks)
+Next: /gsd:new-milestone
 
-Progress: [█████████░] 93%
-
-## Performance Metrics
-
-**Velocity:**
-- Total plans completed: 6
-- Average duration: 4.3min
-- Total execution time: 0.43 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01-architecture-foundation | 3/3 | 13min | 4.3min |
-| 02-security-hardening | 5/5 | -- | -- |
-| 03-functional-completeness | 1/3 | 4min | 4min |
-
-**Recent Trend:**
-- Last 5 plans: 02-02 (4min), 02-03 (10min), 02-04 (4min), 02-05 (4min), 03-03 (4min)
-- Trend: Steady
-
-*Updated after each plan completion*
-| Phase 03 P01 | 4min | 2 tasks | 4 files |
-| Phase 03 P02 | 5min | 2 tasks | 9 files |
-| Phase 04 P01 | 6min | 2 tasks | 6 files |
-| Phase 04 P02 | 3min | 1 tasks | 3 files |
-| Phase 05 P01 | 2min | 2 tasks | 3 files |
-| Phase 05 P02 | 4min | 2 tasks | 2 files |
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Roadmap]: 5 phases derived from 19 requirements -- Architecture Foundation before Security (ResourceManager centralizes where security policies are enforced)
-- [Roadmap]: MCP-01 and MCP-02 grouped with Phase 3 (Functional Completeness) rather than Phase 4 because annotations and error flags are per-tool concerns, not protocol-level
-- [01-01]: TCPConnector with limit=10, limit_per_host=5, ttl_dns_cache=300 for Proxmox session pooling
-- [01-01]: Extracted _do_request() in ProxmoxAPIClient for shared/per-request session reuse
-- [01-01]: Backward compatible shared session -- ProxmoxAPIClient creates per-request sessions when no shared session provided
-- [01-02]: Used lowlevel.Server (not FastMCP) per CONTEXT.md decision for maximum control
-- [01-02]: Module-level _resource_manager with get_resource_manager() avoids threading request_context through every handler
-- [01-02]: Result adapter pattern converts legacy handler dicts to SDK types without touching handler code
-- [01-03]: Used anyio.Event + task group cancellation for signal handling (consistent with MCP SDK's anyio usage)
-- [01-03]: HTTP mode relies on uvicorn's built-in signal handling, no custom handlers needed
-- [02-01]: Used stdlib-only approach (ipaddress, re) for validation -- no external dependencies
-- [02-01]: CredentialFilter always returns True (redacts content, never suppresses messages)
-- [02-01]: Attached CredentialFilter to root logger for global coverage
-- [02-02]: SSL verification True by default -- PROXMOX_VERIFY_SSL=false required to disable
-- [02-02]: create_ssl_context() returns bool|SSLContext union for aiohttp ssl parameter compatibility
-- [02-03]: validate_host_public_key is synchronous (asyncssh calls it in a sync context)
-- [02-03]: Known hosts at ~/.homelab_mcp/known_hosts alongside existing DB
-- [02-03]: Non-standard ports use [host]:port format per OpenSSH convention
-- [02-04]: Centralized validation in ssh_connect() covers all 21+ SSH call sites without modifying each one
-- [02-04]: Defense-in-depth: handler-level validation gives earlier/clearer errors before ssh_connect
-- [02-05]: Logger str(e) calls left unchanged -- CredentialFilter on root logger already handles redaction there
-- [02-05]: http_transport.py updated despite being deprecated -- still importable and could leak credentials
-- [03-03]: ToolError exception pattern leverages SDK call_tool decorator auto-isError behavior rather than modifying return types
-- [03-03]: Shared ToolAnnotations instances for read-only and destructive categories reduce memory and ensure consistency
-- [Phase 03]: Config overrides passed as env vars with single-quote escaping to prevent shell injection
-- [Phase 03]: Discovery failures logged as warnings but never propagate (deployment should not fail due to sitemap)
-- [Phase 03]: [03-02]: Used logger.debug (not warning) for all silent exception handlers since these are expected fallback paths
-- [Phase 03]: [03-02]: Fixed 11 handlers total (5 more than planned) via AST scan in server.py, migration.py, proxmox_api.py, validation.py
-- [Phase 04]: Pure ASGI middleware for Origin validation instead of BaseHTTPMiddleware
-- [04-01]: Extracted progress.py module to break circular import (server -> tool_handlers -> infrastructure_crud -> server)
-- [04-01]: RFC 5424 syslog severity ordering for LOG_LEVEL_ORDER (8 levels: debug through emergency)
-- [Phase 05]: [05-01]: Documented MCP_HTTP_HOST default discrepancy between config.py (0.0.0.0) and CLI (127.0.0.1)
-- [Phase 05]: [05-01]: Removed 11 stale env vars from .env.example (OLLAMA, ANSIBLE, INVENTORY, TEMPLATE)
-- [Phase 05]: Schema files are the single source of truth for tool documentation
-- [Phase 05]: README reduced from 730 to 117 lines, all detail moved to docs/
+Full decision log archived in .planning/milestones/v1.0-ROADMAP.md.
+Key decisions carried forward to PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- ~~[Research]: MCP SDK lowlevel.Server API needs verification during Phase 1 planning~~ RESOLVED in 01-02
-- [Research]: Streamable HTTP auth middleware not yet integrated with new SDK transport (APIKeyAuth)
-- ~~[Research]: asyncssh TOFU API needs verification during Phase 2 planning (known_hosts callbacks, host key file management)~~ RESOLVED in 02-03
-- [Research]: Streamable HTTP session requirements need verification during Phase 4 planning
+- [Tech Debt]: ResourceManager.proxmox_session created but never consumed by handler chain
+- [Tech Debt]: API key auth not wired into new HTTP app
+- [Tech Debt]: vm_providers layer still uses raw str(e) in error dicts
 
 ## Session Continuity
 
-Last session: 2026-03-11T17:45:20.267Z
-Stopped at: Completed 05-02-PLAN.md (tool reference + README slim)
+Last session: 2026-03-11
+Stopped at: v1.0 milestone completed
 Resume file: None
