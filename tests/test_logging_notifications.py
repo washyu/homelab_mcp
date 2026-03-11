@@ -139,10 +139,12 @@ class TestSetLoggingLevelRegistration:
 
     def test_server_has_logging_handler(self) -> None:
         """The server should have a set_logging_level handler registered."""
+        import mcp.types as types
+
         from homelab_mcp.server import server
 
-        # The Server stores handlers internally; check that logging level handler exists.
-        # When set_logging_level() decorator is used, it sets _set_logging_level_handler.
-        assert server.set_logging_level_handler is not None, (
+        # The Server stores handlers in request_handlers dict keyed by request type.
+        # When set_logging_level() decorator is used, it registers SetLevelRequest handler.
+        assert types.SetLevelRequest in server.request_handlers, (
             "set_logging_level handler should be registered on the server"
         )
