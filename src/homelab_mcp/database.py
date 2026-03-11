@@ -403,7 +403,9 @@ class SQLiteAdapter(DatabaseAdapter):
                 data = json.loads(row[0])
                 changes.append({"data": data, "discovered_at": row[1]})
             except json.JSONDecodeError:
-                logger.debug("Failed to parse discovery history JSON for record at %s", row[1] if len(row) > 1 else "unknown")
+                logger.debug(
+                    "Failed to parse discovery history JSON for record at %s", row[1] if len(row) > 1 else "unknown"
+                )
 
         return changes
 

@@ -71,70 +71,116 @@ _DESTRUCTIVE_TOOLS = [
 
 _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "discover_and_map": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "bulk_discover_and_map": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "setup_mcp_admin": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "update_mcp_admin_groups": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "ssh_execute_command": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
     ),
     "start_interactive_shell": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=True,
     ),
     "deploy_infrastructure": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "deploy_vm": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "install_service": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "update_device_config": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "update_server_credentials": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "scale_services": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "register_server": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "create_proxmox_vm": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "create_proxmox_lxc": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "clone_proxmox_vm": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "create_infrastructure_backup": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "plan_terraform_service": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "refresh_terraform_service": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "run_ansible_playbook": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
     ),
     "manage_proxmox_vm": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
     "control_vm": ToolAnnotations(
-        readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
     ),
 }
 

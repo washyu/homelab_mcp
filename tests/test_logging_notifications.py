@@ -61,8 +61,10 @@ class TestEmitProgress:
         mock_ctx = MagicMock()
         mock_ctx.session = mock_session
 
-        with patch("homelab_mcp.progress.request_ctx") as mock_request_ctx, \
-             patch("homelab_mcp.progress._min_log_level", "info"):
+        with (
+            patch("homelab_mcp.progress.request_ctx") as mock_request_ctx,
+            patch("homelab_mcp.progress._min_log_level", "info"),
+        ):
             mock_request_ctx.get.return_value = mock_ctx
             await emit_progress("info", "Scanning network")
 
@@ -83,8 +85,10 @@ class TestEmitProgress:
 
         data_payload: dict[str, Any] = {"progress": 3, "total": 10}
 
-        with patch("homelab_mcp.progress.request_ctx") as mock_request_ctx, \
-             patch("homelab_mcp.progress._min_log_level", "info"):
+        with (
+            patch("homelab_mcp.progress.request_ctx") as mock_request_ctx,
+            patch("homelab_mcp.progress._min_log_level", "info"),
+        ):
             mock_request_ctx.get.return_value = mock_ctx
             await emit_progress("info", "progress update", data=data_payload)
 
@@ -97,8 +101,10 @@ class TestEmitProgress:
     @pytest.mark.asyncio
     async def test_no_crash_outside_request_context(self) -> None:
         """emit_progress gracefully handles LookupError when not in request context."""
-        with patch("homelab_mcp.progress.request_ctx") as mock_request_ctx, \
-             patch("homelab_mcp.progress._min_log_level", "info"):
+        with (
+            patch("homelab_mcp.progress.request_ctx") as mock_request_ctx,
+            patch("homelab_mcp.progress._min_log_level", "info"),
+        ):
             mock_request_ctx.get.side_effect = LookupError("no context")
             # Should not raise
             await emit_progress("info", "This should not crash")
@@ -112,8 +118,10 @@ class TestEmitProgress:
         mock_ctx = MagicMock()
         mock_ctx.session = mock_session
 
-        with patch("homelab_mcp.progress.request_ctx") as mock_request_ctx, \
-             patch("homelab_mcp.progress._min_log_level", "warning"):
+        with (
+            patch("homelab_mcp.progress.request_ctx") as mock_request_ctx,
+            patch("homelab_mcp.progress._min_log_level", "warning"),
+        ):
             mock_request_ctx.get.return_value = mock_ctx
             await emit_progress("debug", "This debug message should be filtered")
 
@@ -123,12 +131,12 @@ class TestEmitProgress:
     async def test_catches_generic_exception(self) -> None:
         """emit_progress catches and logs unexpected exceptions without crashing."""
         mock_ctx = MagicMock()
-        mock_ctx.session.send_log_message = AsyncMock(
-            side_effect=RuntimeError("connection lost")
-        )
+        mock_ctx.session.send_log_message = AsyncMock(side_effect=RuntimeError("connection lost"))
 
-        with patch("homelab_mcp.progress.request_ctx") as mock_request_ctx, \
-             patch("homelab_mcp.progress._min_log_level", "info"):
+        with (
+            patch("homelab_mcp.progress.request_ctx") as mock_request_ctx,
+            patch("homelab_mcp.progress._min_log_level", "info"),
+        ):
             mock_request_ctx.get.return_value = mock_ctx
             # Should not raise
             await emit_progress("info", "This should not crash either")

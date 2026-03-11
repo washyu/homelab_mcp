@@ -332,15 +332,9 @@ async def test_all_tools_have_annotations() -> None:
     tools = await handle_list_tools()
     for tool in tools:
         assert tool.annotations is not None, f"Tool {tool.name} missing annotations"
-        assert tool.annotations.readOnlyHint is not None, (
-            f"Tool {tool.name} missing readOnlyHint"
-        )
-        assert tool.annotations.destructiveHint is not None, (
-            f"Tool {tool.name} missing destructiveHint"
-        )
-        assert tool.annotations.idempotentHint is not None, (
-            f"Tool {tool.name} missing idempotentHint"
-        )
+        assert tool.annotations.readOnlyHint is not None, f"Tool {tool.name} missing readOnlyHint"
+        assert tool.annotations.destructiveHint is not None, f"Tool {tool.name} missing destructiveHint"
+        assert tool.annotations.idempotentHint is not None, f"Tool {tool.name} missing idempotentHint"
 
 
 @pytest.mark.asyncio
@@ -375,9 +369,7 @@ async def test_destructive_tools_not_read_only() -> None:
     for tool in tools:
         assert tool.annotations is not None
         if tool.annotations.destructiveHint is True:
-            assert tool.annotations.readOnlyHint is False, (
-                f"Tool {tool.name} is destructive but also marked read-only"
-            )
+            assert tool.annotations.readOnlyHint is False, f"Tool {tool.name} is destructive but also marked read-only"
 
 
 # ---------------------------------------------------------------------------
@@ -390,9 +382,7 @@ async def test_is_error_on_handler_error_dict() -> None:
     """When handler returns {"status": "error", ...}, handle_call_tool raises ToolError."""
     from src.homelab_mcp.server import ToolError
 
-    mock_handler = AsyncMock(
-        return_value={"status": "error", "error": "something went wrong"}
-    )
+    mock_handler = AsyncMock(return_value={"status": "error", "error": "something went wrong"})
 
     with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
         with pytest.raises(ToolError, match="something went wrong"):
@@ -407,9 +397,7 @@ async def test_is_error_on_nested_error_content() -> None:
     from src.homelab_mcp.server import ToolError
 
     error_payload = json.dumps({"status": "error", "error": "nested failure"})
-    mock_handler = AsyncMock(
-        return_value={"content": [{"type": "text", "text": error_payload}]}
-    )
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": error_payload}]})
 
     with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
         with pytest.raises(ToolError, match="nested failure"):
@@ -419,9 +407,7 @@ async def test_is_error_on_nested_error_content() -> None:
 @pytest.mark.asyncio
 async def test_no_is_error_on_success() -> None:
     """When handler returns success result, handle_call_tool returns normally."""
-    mock_handler = AsyncMock(
-        return_value={"content": [{"type": "text", "text": "all good"}]}
-    )
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": "all good"}]})
 
     with patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler):
         result = await handle_call_tool("my_tool", {})

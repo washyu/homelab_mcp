@@ -6,13 +6,13 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 import yaml
 
 from .log_filter import sanitize_error
 from .progress import emit_progress
 from .ssh_tools import ssh_execute_command
+
+logger = logging.getLogger(__name__)
 
 # Service templates directory
 TEMPLATES_DIR = Path(__file__).parent / "service_templates"

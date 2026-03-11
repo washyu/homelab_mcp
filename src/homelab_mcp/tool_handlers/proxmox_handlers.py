@@ -3,7 +3,6 @@
 import json
 from typing import Any
 
-from ..validation import validate_hostname
 from ..proxmox_api import (
     clone_proxmox_vm,
     create_proxmox_lxc,
@@ -15,6 +14,7 @@ from ..proxmox_api import (
     manage_proxmox_vm,
 )
 from ..proxmox_scripts import get_script_details, search_scripts
+from ..validation import validate_hostname
 
 
 async def handle_search_proxmox_scripts(arguments: dict[str, Any]) -> dict[str, Any]:

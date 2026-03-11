@@ -1245,7 +1245,7 @@ class TestProxmoxSharedSession:
             patch("src.homelab_mcp.proxmox_api.aiohttp.ClientSession") as mock_session_cls,
             patch("src.homelab_mcp.proxmox_api.aiohttp.TCPConnector"),
         ):
-            result = await client.request("GET", "/nodes")
+            await client.request("GET", "/nodes")
 
             # THEN: No new ClientSession should be created
             mock_session_cls.assert_not_called()
@@ -1299,7 +1299,7 @@ class TestProxmoxSharedSession:
         )
 
         # WHEN: Making a request that requires authentication
-        result = await client.request("GET", "/nodes")
+        await client.request("GET", "/nodes")
 
         # THEN: Auth should have been called on the shared session
         assert client._auth_cookie == "PVE-ticket"

@@ -56,10 +56,7 @@ class CredentialFilter(logging.Filter):
             record.msg = _redact(record.msg)
 
         if isinstance(record.args, tuple):
-            record.args = tuple(
-                _redact(arg) if isinstance(arg, str) else arg
-                for arg in record.args
-            )
+            record.args = tuple(_redact(arg) if isinstance(arg, str) else arg for arg in record.args)
 
         return True
 

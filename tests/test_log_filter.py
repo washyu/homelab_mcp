@@ -2,8 +2,6 @@
 
 import logging
 
-import pytest
-
 from homelab_mcp.log_filter import CredentialFilter, sanitize_error
 
 
@@ -52,11 +50,7 @@ class TestCredentialFilter:
         assert "[REDACTED]" in record.msg
 
     def test_redacts_ssh_private_key(self) -> None:
-        key_block = (
-            "-----BEGIN RSA PRIVATE KEY-----\n"
-            "MIIBogIBAAJBALRiMLAHudd...\n"
-            "-----END RSA PRIVATE KEY-----"
-        )
+        key_block = "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAHudd...\n-----END RSA PRIVATE KEY-----"
         record = self._make_record(f"Found key: {key_block}")
         self.filter.filter(record)
         assert "MIIBogIBAAJBALRiMLAHudd" not in record.msg
@@ -93,9 +87,7 @@ class TestCredentialFilter:
 
     def test_redacts_openssh_private_key(self) -> None:
         key_block = (
-            "-----BEGIN OPENSSH PRIVATE KEY-----\n"
-            "b3BlbnNzaC1rZXktdjEAAAAAB...\n"
-            "-----END OPENSSH PRIVATE KEY-----"
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAAB...\n-----END OPENSSH PRIVATE KEY-----"
         )
         record = self._make_record(f"Key data: {key_block}")
         self.filter.filter(record)

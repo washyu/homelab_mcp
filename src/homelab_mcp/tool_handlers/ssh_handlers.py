@@ -5,7 +5,6 @@ import os
 from typing import Any
 
 from ..shell_session import session_manager
-from ..validation import validate_hostname, validate_port
 from ..ssh_tools import (
     setup_remote_mcp_admin,
     ssh_discover_system,
@@ -13,6 +12,7 @@ from ..ssh_tools import (
     update_mcp_admin_groups,
     verify_mcp_admin_access,
 )
+from ..validation import validate_hostname, validate_port
 
 
 async def handle_ssh_discover(arguments: dict[str, Any]) -> dict[str, Any]:

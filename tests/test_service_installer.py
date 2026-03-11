@@ -831,13 +831,9 @@ class TestInstallScriptServiceDirect:
         }
 
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
-            mock_ssh.return_value = json.dumps(
-                {"status": "success", "exit_code": 0, "output": "hello"}
-            )
+            mock_ssh.return_value = json.dumps({"status": "success", "exit_code": 0, "output": "hello"})
 
-            result = await self.installer._install_script_service(
-                "test-svc", service, "host1", "admin", None, None
-            )
+            result = await self.installer._install_script_service("test-svc", service, "host1", "admin", None, None)
 
             assert result["status"] == "success"
             assert result["service"] == "test-svc"
@@ -856,9 +852,7 @@ class TestInstallScriptServiceDirect:
             },
         }
 
-        result = await self.installer._install_script_service(
-            "no-script-svc", service, "host1", "admin", None, None
-        )
+        result = await self.installer._install_script_service("no-script-svc", service, "host1", "admin", None, None)
 
         assert result["status"] == "error"
         assert "no-script-svc" in result["error"].lower() or "script" in result["error"].lower()
@@ -876,9 +870,7 @@ class TestInstallScriptServiceDirect:
         config_override = {"DB_HOST": "localhost", "DB_PORT": "5432"}
 
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
-            mock_ssh.return_value = json.dumps(
-                {"status": "success", "exit_code": 0, "output": "localhost"}
-            )
+            mock_ssh.return_value = json.dumps({"status": "success", "exit_code": 0, "output": "localhost"})
 
             result = await self.installer._install_script_service(
                 "env-svc", service, "host1", "admin", None, config_override
@@ -905,9 +897,7 @@ class TestInstallScriptServiceDirect:
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
             mock_ssh.side_effect = Exception("Connection refused")
 
-            result = await self.installer._install_script_service(
-                "fail-svc", service, "host1", "admin", None, None
-            )
+            result = await self.installer._install_script_service("fail-svc", service, "host1", "admin", None, None)
 
             assert result["status"] == "error"
             assert result["service"] == "fail-svc"

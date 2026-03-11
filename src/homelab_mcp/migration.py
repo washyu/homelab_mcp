@@ -6,10 +6,10 @@ import sys
 from datetime import datetime
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from .config import get_config
 from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
+
+logger = logging.getLogger(__name__)
 
 
 def run_sqlite_migrations(db_path: str | None = None) -> list[str]:

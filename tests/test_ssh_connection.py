@@ -63,9 +63,7 @@ class TestTOFUKnownKeyMatch:
     """Test TOFU behavior when connecting to host with matching key."""
 
     @pytest.mark.asyncio
-    async def test_ssh_connect_passes_known_hosts_path(
-        self, known_hosts_path: Path
-    ) -> None:
+    async def test_ssh_connect_passes_known_hosts_path(self, known_hosts_path: Path) -> None:
         """ssh_connect should pass known_hosts file path to asyncssh.connect."""
         from homelab_mcp.ssh_connection import ssh_connect
 
@@ -91,21 +89,15 @@ class TestTOFUKeyMismatch:
     """Test TOFU behavior when host key has changed (possible MITM)."""
 
     @pytest.mark.asyncio
-    async def test_tofu_rejects_mismatch(
-        self, known_hosts_path: Path, mock_ssh_key_different: MagicMock
-    ) -> None:
+    async def test_tofu_rejects_mismatch(self, known_hosts_path: Path, mock_ssh_key_different: MagicMock) -> None:
         """Connection to host with changed key should be rejected."""
         from homelab_mcp.ssh_connection import TOFUSSHClient
 
         # Pre-populate with a key for this host
-        known_hosts_path.write_text(
-            "192.168.1.100 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOriginalKey789\n"
-        )
+        known_hosts_path.write_text("192.168.1.100 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOriginalKey789\n")
 
         client = TOFUSSHClient(known_hosts_path)
-        result = client.validate_host_public_key(
-            "192.168.1.100", None, 22, mock_ssh_key_different
-        )
+        result = client.validate_host_public_key("192.168.1.100", None, 22, mock_ssh_key_different)
 
         if asyncio.iscoroutine(result):
             result = await result
@@ -117,9 +109,7 @@ class TestKnownHostsFile:
     """Test known_hosts file management."""
 
     @pytest.mark.asyncio
-    async def test_known_hosts_file_created_if_not_exists(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_known_hosts_file_created_if_not_exists(self, tmp_path: Path) -> None:
         """ssh_connect should create known_hosts file and parent dir if missing."""
         from homelab_mcp.ssh_connection import ssh_connect
 
@@ -139,9 +129,7 @@ class TestKnownHostsFile:
         assert kh_path.exists()
 
     @pytest.mark.asyncio
-    async def test_non_standard_port_format(
-        self, known_hosts_path: Path, mock_ssh_key: MagicMock
-    ) -> None:
+    async def test_non_standard_port_format(self, known_hosts_path: Path, mock_ssh_key: MagicMock) -> None:
         """Non-standard port should use [host]:port format in known_hosts."""
         from homelab_mcp.ssh_connection import TOFUSSHClient
 
@@ -159,9 +147,7 @@ class TestKnownHostsFile:
         assert "[192.168.1.100]:2222" in content
 
     @pytest.mark.asyncio
-    async def test_standard_port_uses_plain_host(
-        self, known_hosts_path: Path, mock_ssh_key: MagicMock
-    ) -> None:
+    async def test_standard_port_uses_plain_host(self, known_hosts_path: Path, mock_ssh_key: MagicMock) -> None:
         """Standard port 22 should use plain hostname (no brackets)."""
         from homelab_mcp.ssh_connection import TOFUSSHClient
 
@@ -182,11 +168,9 @@ class TestSSHConnectKwargs:
     """Test that ssh_connect passes correct parameters to asyncssh.connect."""
 
     @pytest.mark.asyncio
-    async def test_ssh_connect_passes_correct_kwargs(
-        self, known_hosts_path: Path
-    ) -> None:
+    async def test_ssh_connect_passes_correct_kwargs(self, known_hosts_path: Path) -> None:
         """ssh_connect should pass known_hosts and client_factory to asyncssh."""
-        from homelab_mcp.ssh_connection import TOFUSSHClient, ssh_connect
+        from homelab_mcp.ssh_connection import ssh_connect
 
         known_hosts_path.touch()
 

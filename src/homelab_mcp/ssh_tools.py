@@ -479,7 +479,9 @@ async def ssh_discover_system(
                     system_info["network"] = network_info
                 except json.JSONDecodeError:
                     # Fallback to basic parsing if JSON output not supported
-                    logger.debug("JSON parsing failed for network interface data on %s, falling back to basic parsing", hostname)
+                    logger.debug(
+                        "JSON parsing failed for network interface data on %s, falling back to basic parsing", hostname
+                    )
 
             # Get system uptime
             uptime_result = await conn.run("uptime -p", check=False)

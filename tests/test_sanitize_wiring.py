@@ -39,9 +39,7 @@ def test_proxmox_api_uses_sanitize_error() -> None:
 
     source = inspect.getsource(proxmox_api)
     assert "sanitize_error" in source, "sanitize_error not found in proxmox_api"
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in proxmox_api"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in proxmox_api"
 
 
 def test_vm_operations_uses_sanitize_error() -> None:
@@ -50,9 +48,7 @@ def test_vm_operations_uses_sanitize_error() -> None:
 
     source = inspect.getsource(vm_operations)
     assert "sanitize_error" in source, "sanitize_error not found in vm_operations"
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in vm_operations"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in vm_operations"
 
 
 def test_infrastructure_crud_uses_sanitize_error() -> None:
@@ -61,9 +57,7 @@ def test_infrastructure_crud_uses_sanitize_error() -> None:
 
     source = inspect.getsource(infrastructure_crud)
     assert "sanitize_error" in source, "sanitize_error not found in infrastructure_crud"
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in infrastructure_crud"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in infrastructure_crud"
 
 
 def test_ssh_tools_uses_sanitize_error() -> None:
@@ -72,9 +66,7 @@ def test_ssh_tools_uses_sanitize_error() -> None:
 
     source = inspect.getsource(ssh_tools)
     assert "sanitize_error" in source, "sanitize_error not found in ssh_tools"
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in ssh_tools"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in ssh_tools"
 
 
 def test_service_installer_uses_sanitize_error() -> None:
@@ -83,9 +75,7 @@ def test_service_installer_uses_sanitize_error() -> None:
 
     source = inspect.getsource(service_installer)
     assert "sanitize_error" in source, "sanitize_error not found in service_installer"
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in service_installer"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in service_installer"
 
 
 def test_sitemap_uses_sanitize_error() -> None:
@@ -94,9 +84,7 @@ def test_sitemap_uses_sanitize_error() -> None:
 
     source = inspect.getsource(sitemap)
     assert "sanitize_error" in source, "sanitize_error not found in sitemap"
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in sitemap"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in sitemap"
 
 
 def test_proxmox_scripts_uses_sanitize_error() -> None:
@@ -106,6 +94,4 @@ def test_proxmox_scripts_uses_sanitize_error() -> None:
     source = inspect.getsource(proxmox_scripts)
     assert "sanitize_error" in source, "sanitize_error not found in proxmox_scripts"
     # proxmox_scripts has str(e) only in logger calls, which is fine
-    assert (
-        _count_raw_str_e_in_responses(source) == 0
-    ), "Raw str(e) found in error response dicts in proxmox_scripts"
+    assert _count_raw_str_e_in_responses(source) == 0, "Raw str(e) found in error response dicts in proxmox_scripts"

@@ -38,9 +38,7 @@ def validate_hostname(value: str) -> str:
 
     # Check for dangerous characters first (catches shell injection attempts).
     if _DANGEROUS_CHARS.search(value):
-        raise ValueError(
-            f"Hostname contains invalid characters: {value!r}"
-        )
+        raise ValueError(f"Hostname contains invalid characters: {value!r}")
 
     # Try parsing as an IP address (IPv4 or IPv6).
     try:

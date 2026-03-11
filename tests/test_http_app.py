@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -13,7 +11,6 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from homelab_mcp.http_app import OriginValidationMiddleware
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,17 +56,13 @@ class TestOriginValidationMiddleware:
     def test_localhost_with_port_allowed(self) -> None:
         """POST to /mcp with Origin 'http://localhost:3000' returns non-403."""
         client = TestClient(_make_app())
-        response = client.post(
-            "/mcp", headers={"Origin": "http://localhost:3000"}
-        )
+        response = client.post("/mcp", headers={"Origin": "http://localhost:3000"})
         assert response.status_code != 403
 
     def test_127_0_0_1_origin_allowed(self) -> None:
         """POST to /mcp with Origin 'http://127.0.0.1' returns non-403."""
         client = TestClient(_make_app())
-        response = client.post(
-            "/mcp", headers={"Origin": "http://127.0.0.1"}
-        )
+        response = client.post("/mcp", headers={"Origin": "http://127.0.0.1"})
         assert response.status_code != 403
 
     def test_no_origin_header_allowed(self) -> None:
@@ -84,16 +77,12 @@ class TestOriginValidationMiddleware:
         client = TestClient(app)
 
         # Custom origin allowed
-        response = client.post(
-            "/mcp", headers={"Origin": "http://myapp.local"}
-        )
+        response = client.post("/mcp", headers={"Origin": "http://myapp.local"})
         assert response.status_code != 403
 
         # Default localhost should NOT be allowed when custom list given
         # (unless explicitly included)
-        response = client.post(
-            "/mcp", headers={"Origin": "http://evil.com"}
-        )
+        response = client.post("/mcp", headers={"Origin": "http://evil.com"})
         assert response.status_code == 403
 
     def test_env_var_parsed(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,19 +97,13 @@ class TestOriginValidationMiddleware:
         app = create_http_app()
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.post(
-            "/mcp", headers={"Origin": "http://myapp.local"}
-        )
+        response = client.post("/mcp", headers={"Origin": "http://myapp.local"})
         assert response.status_code != 403
 
-        response = client.post(
-            "/mcp", headers={"Origin": "https://openwebui.local"}
-        )
+        response = client.post("/mcp", headers={"Origin": "https://openwebui.local"})
         assert response.status_code != 403
 
-        response = client.post(
-            "/mcp", headers={"Origin": "http://evil.com"}
-        )
+        response = client.post("/mcp", headers={"Origin": "http://evil.com"})
         assert response.status_code == 403
 
     def test_403_response_is_json(self) -> None:

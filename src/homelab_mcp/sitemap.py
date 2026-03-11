@@ -6,11 +6,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from .database import calculate_data_hash, get_database_adapter
 from .log_filter import sanitize_error
 from .progress import emit_progress
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -191,7 +191,10 @@ class NetworkSiteMap:
                                 }
                             )
                 except (ValueError, AttributeError):
-                    logger.debug("Skipping device %s in topology analysis: unable to parse disk usage", device.get("hostname", "unknown"))
+                    logger.debug(
+                        "Skipping device %s in topology analysis: unable to parse disk usage",
+                        device.get("hostname", "unknown"),
+                    )
 
             # Identify resource-constrained devices
             cpu_cores = device.get("cpu_cores")

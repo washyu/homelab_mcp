@@ -203,7 +203,9 @@ class TestUpdateDeviceConfiguration:
                 with patch("src.homelab_mcp.infrastructure_crud.create_infrastructure_backup") as mock_backup:
                     mock_backup.return_value = json.dumps({"status": "success", "backup_id": "backup_123"})
 
-                    with patch("src.homelab_mcp.infrastructure_crud.ssh_connect", new_callable=AsyncMock) as mock_connect:
+                    with patch(
+                        "src.homelab_mcp.infrastructure_crud.ssh_connect", new_callable=AsyncMock
+                    ) as mock_connect:
                         mock_conn = AsyncMock()
                         mock_connect.return_value.__aenter__.return_value = mock_conn
 
@@ -624,23 +626,19 @@ class TestUpdateSitemapAfterDeployment:
         conn_info_1 = {"hostname": "192.168.1.10", "username": "mcp_admin", "port": 22}
         conn_info_2 = {"hostname": "192.168.1.11", "username": "mcp_admin", "port": 22}
 
-        with patch.object(
-            self.manager, "get_device_connection_info", new_callable=AsyncMock
-        ) as mock_get_conn:
+        with patch.object(self.manager, "get_device_connection_info", new_callable=AsyncMock) as mock_get_conn:
             mock_get_conn.side_effect = [conn_info_1, conn_info_2]
 
-            with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+            with patch(
+                "src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock
+            ) as mock_discover:
                 mock_discover.return_value = '{"status": "success"}'
 
                 await _update_sitemap_after_deployment(self.manager, results)
 
                 assert mock_discover.call_count == 2
-                mock_discover.assert_any_call(
-                    self.manager.sitemap, "192.168.1.10", "mcp_admin", port=22
-                )
-                mock_discover.assert_any_call(
-                    self.manager.sitemap, "192.168.1.11", "mcp_admin", port=22
-                )
+                mock_discover.assert_any_call(self.manager.sitemap, "192.168.1.10", "mcp_admin", port=22)
+                mock_discover.assert_any_call(self.manager.sitemap, "192.168.1.11", "mcp_admin", port=22)
 
     @pytest.mark.asyncio
     async def test_sitemap_after_deploy_skips_failures(self) -> None:
@@ -652,12 +650,12 @@ class TestUpdateSitemapAfterDeployment:
 
         conn_info = {"hostname": "192.168.1.11", "username": "mcp_admin", "port": 22}
 
-        with patch.object(
-            self.manager, "get_device_connection_info", new_callable=AsyncMock
-        ) as mock_get_conn:
+        with patch.object(self.manager, "get_device_connection_info", new_callable=AsyncMock) as mock_get_conn:
             mock_get_conn.return_value = conn_info
 
-            with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+            with patch(
+                "src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock
+            ) as mock_discover:
                 mock_discover.return_value = '{"status": "success"}'
 
                 await _update_sitemap_after_deployment(self.manager, results)
@@ -675,12 +673,12 @@ class TestUpdateSitemapAfterDeployment:
 
         conn_info = {"hostname": "192.168.1.10", "username": "mcp_admin", "port": 22}
 
-        with patch.object(
-            self.manager, "get_device_connection_info", new_callable=AsyncMock
-        ) as mock_get_conn:
+        with patch.object(self.manager, "get_device_connection_info", new_callable=AsyncMock) as mock_get_conn:
             mock_get_conn.return_value = conn_info
 
-            with patch("src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock) as mock_discover:
+            with patch(
+                "src.homelab_mcp.infrastructure_crud.discover_and_store", new_callable=AsyncMock
+            ) as mock_discover:
                 mock_discover.side_effect = Exception("SSH connection failed")
 
                 # Should NOT raise
@@ -705,9 +703,7 @@ class TestRediscoverDeviceAfterChanges:
 
             await _rediscover_device_after_changes(self.manager, 5, connection_info)
 
-            mock_discover.assert_called_once_with(
-                self.manager.sitemap, "192.168.1.50", "mcp_admin", port=22
-            )
+            mock_discover.assert_called_once_with(self.manager.sitemap, "192.168.1.50", "mcp_admin", port=22)
 
     @pytest.mark.asyncio
     async def test_rediscover_after_change_handles_failure(self) -> None:
