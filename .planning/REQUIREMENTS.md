@@ -33,12 +33,12 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 
 ### MCP Resources
 
-- [ ] **RES-01**: Server declares `resources` capability and responds to `resources/list`
+- [x] **RES-01**: Server declares `resources` capability and responds to `resources/list`
 - [ ] **RES-02**: `homelab://vms` resource returns live VM list from Proxmox/Docker/LXD
 - [ ] **RES-03**: `homelab://devices` resource returns device inventory with last discovery data
 - [ ] **RES-04**: `homelab://services/{name}` resource returns individual service status
-- [ ] **RES-05**: All resources return `application/json` content via `resources/read`
-- [ ] **RES-06**: Server returns error code `-32002` for unknown resource URIs
+- [x] **RES-05**: All resources return `application/json` content via `resources/read`
+- [x] **RES-06**: Server returns error code `-32002` for unknown resource URIs
 - [ ] **RES-07**: Server emits `notifications/resources/list_changed` after `ssh_discover` adds new devices
 
 ## Future Requirements
@@ -101,12 +101,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DRFT-03 | Phase 11 | Pending |
 | DRFT-04 | Phase 11 | Pending |
 | DRFT-05 | Phase 11 | Pending |
-| RES-01 | Phase 7 | Pending |
+| RES-01 | Phase 7 | Complete |
 | RES-02 | Phase 9 | Pending |
 | RES-03 | Phase 9 | Pending |
 | RES-04 | Phase 9 | Pending |
-| RES-05 | Phase 7 | Pending |
-| RES-06 | Phase 7 | Pending |
+| RES-05 | Phase 7 | Complete |
+| RES-06 | Phase 7 | Complete |
 | RES-07 | Phase 10 | Pending |
 
 **Coverage:**

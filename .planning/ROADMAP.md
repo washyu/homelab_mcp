@@ -23,7 +23,7 @@
 **Milestone Goal:** Make the server trustworthy for real use — preview before breaking things, detect when reality drifts from expectations, expose live infra state via MCP Resources, and clean up v1.0 tech debt.
 
 - [ ] **Phase 6: Tech Debt Cleanup** - Fix three known bugs that block every subsequent feature
-- [ ] **Phase 7: MCP Resources Plumbing** - Wire the Resources protocol skeleton (list, read, subscribe, error handling) with stub data
+- [x] **Phase 7: MCP Resources Plumbing** - Wire the Resources protocol skeleton (list, read, subscribe, error handling) with stub data (completed 2026-03-11)
 - [ ] **Phase 8: Dry-Run Mode** - Add `dry_run: true` to all six destructive tools with structured preview output
 - [ ] **Phase 9: MCP Resources Live Data** - Connect ResourceFetcher to real Proxmox, Docker, SQLite data sources
 - [ ] **Phase 10: Resource Notifications** - Emit `listChanged` and `resourceUpdated` notifications after mutations and discoveries
@@ -111,7 +111,7 @@ Plans:
 | 4. MCP Protocol Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 6. Tech Debt Cleanup | 2/3 | In Progress|  | - |
-| 7. MCP Resources Plumbing | v1.1 | 0/1 | Not started | - |
+| 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
 | 8. Dry-Run Mode | v1.1 | 0/TBD | Not started | - |
 | 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |
 | 10. Resource Notifications | v1.1 | 0/TBD | Not started | - |

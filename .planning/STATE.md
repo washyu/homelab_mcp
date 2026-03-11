@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 06-02-PLAN.md: APIKeyAuth middleware wiring for HTTP transport"
-last_updated: "2026-03-11T19:51:22.760Z"
+stopped_at: "Completed 07-01-PLAN.md: MCP Resources list/read/subscribe handlers"
+last_updated: "2026-03-11T23:37:47.879Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Key v1.1 decisions:
 - [Phase 06-tech-debt-cleanup]: Local import of get_resource_manager inside each handler function avoids circular import; session param added as last kwarg for backward compatibility
 - [Phase 06-02]: Exclude '/' from APIKeyAuth exclude_paths — it uses prefix matching and '/' matches all paths; only use exact paths or paths ending in '/' for real prefix routes
 - [Phase 06-02]: APIKeyAuth wrapping is conditional: create_http_app() returns Starlette | APIKeyAuth; callers receive ASGI-compatible object in both cases
+- [Phase 07-01]: AnyUrl('homelab://vms') stringifies without triple slash in pydantic v2; RESOURCE_NOT_FOUND=-32002 constant added; subscribe/unsubscribe use set for idempotency
 
 ### Pending Todos
 
@@ -58,6 +59,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T19:45:16Z
-Stopped at: Completed 06-02-PLAN.md: APIKeyAuth middleware wiring for HTTP transport
+Last session: 2026-03-11T23:37:47.877Z
+Stopped at: Completed 07-01-PLAN.md: MCP Resources list/read/subscribe handlers
 Resume file: None
