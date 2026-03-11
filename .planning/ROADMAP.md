@@ -1,113 +1,28 @@
-# Roadmap: Homelab MCP Server 1.0
+# Roadmap: Homelab MCP Server
 
-## Overview
+## Milestones
 
-Take an existing 34+ tool MCP server from "works in development" to "production-ready 1.0 release." The codebase has sound architecture but ships with disabled security, stub functions, silent failures, and no documentation. The path to 1.0 is: centralize connection management, harden security, complete missing functionality, achieve MCP spec compliance, then document the stable result.
+- ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-03-11)
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+<details>
+<summary>✅ v1.0 MVP (Phases 1-5) — SHIPPED 2026-03-11</summary>
 
-Decimal phases appear between their surrounding integers in numeric order.
+- [x] Phase 1: Architecture Foundation (3/3 plans) — completed 2026-03-08
+- [x] Phase 2: Security Hardening (5/5 plans) — completed 2026-03-09
+- [x] Phase 3: Functional Completeness (3/3 plans) — completed 2026-03-09
+- [x] Phase 4: MCP Protocol Compliance (2/2 plans) — completed 2026-03-11
+- [x] Phase 5: Documentation (2/2 plans) — completed 2026-03-11
 
-- [ ] **Phase 1: Architecture Foundation** - Centralize resource lifecycle and migrate to MCP SDK
-- [x] **Phase 2: Security Hardening** - Enable host key verification, SSL, input validation, and secrets redaction (completed 2026-03-09)
-- [x] **Phase 3: Functional Completeness** - Implement stubs, fix silent exceptions, add tool annotations and error flags (completed 2026-03-09)
-- [ ] **Phase 4: MCP Protocol Compliance** - Add logging notifications and Streamable HTTP compliance
-- [x] **Phase 5: Documentation** - Setup guide, tool reference, and configuration reference (completed 2026-03-11)
-
-## Phase Details
-
-### Phase 1: Architecture Foundation
-**Goal**: All external connections (SSH, HTTP, database) are managed through a central ResourceManager, the server uses the MCP SDK instead of hand-rolled JSON-RPC, and the process shuts down cleanly
-**Depends on**: Nothing (first phase)
-**Requirements**: ARCH-01, ARCH-02, ARCH-03, FUNC-05
-**Success Criteria** (what must be TRUE):
-  1. Server starts and handles tool calls using MCP SDK lowlevel.Server (not custom JSON-RPC parsing)
-  2. SSH connections, Proxmox HTTP sessions, and database connections are obtained from ResourceManager, not created ad-hoc in each tool handler
-  3. Proxmox API calls reuse HTTP connections via session pooling (no new connection per request)
-  4. Server shuts down cleanly on SIGTERM/SIGINT with all connections closed and no orphaned resources
-  5. Existing test suite passes against the new architecture
-**Plans:** 3 plans
-
-Plans:
-- [x] 01-01-PLAN.md — ResourceManager + Proxmox session pooling
-- [x] 01-02-PLAN.md — MCP SDK migration (server, transports, tool registration)
-- [x] 01-03-PLAN.md — Graceful shutdown + test suite verification
-
-### Phase 2: Security Hardening
-**Goal**: Users can trust that their SSH and Proxmox connections are not vulnerable to interception, tool inputs are validated, and credentials never leak into logs
-**Depends on**: Phase 1
-**Requirements**: SEC-01, SEC-02, SEC-03, SEC-04
-**Success Criteria** (what must be TRUE):
-  1. SSH connections verify host keys using trust-on-first-use (TOFU) -- first connection prompts/stores, subsequent connections reject mismatches
-  2. Proxmox API connections verify SSL certificates by default, with a documented configuration override for self-signed certs
-  3. Tool inputs for hostnames, IP addresses, and port ranges are validated before use -- malformed or hostile inputs are rejected with clear error messages
-  4. Passwords, API tokens, and SSH keys never appear in log output or error responses returned to the MCP client
-**Plans:** 5/5 plans complete
-
-Plans:
-- [x] 02-01-PLAN.md — Input validation module + credential redaction logging filter
-- [x] 02-02-PLAN.md — Proxmox SSL verification default flip + CA cert support
-- [x] 02-03-PLAN.md — SSH TOFU host key verification + replace all insecure connect calls
-- [ ] 02-04-PLAN.md — Wire validation.py into ssh_connect and tool handlers (gap closure)
-- [ ] 02-05-PLAN.md — Replace str(e) with sanitize_error(e) across all error responses (gap closure)
-
-### Phase 3: Functional Completeness
-**Goal**: Every tool that can be called actually works end-to-end -- no stubs, no swallowed errors, and MCP clients can distinguish read-only from destructive tools
-**Depends on**: Phase 2
-**Requirements**: FUNC-01, FUNC-02, FUNC-03, FUNC-04, MCP-01, MCP-02
-**Success Criteria** (what must be TRUE):
-  1. After deploying infrastructure, the sitemap automatically reflects the new device without manual refresh
-  2. After changing device configuration, device info reflects the updated state without manual refresh
-  3. Script-based service installation (the _install_with_script path) completes successfully on a target host
-  4. All previously-silent exception handlers now emit log messages at debug or warning level -- no bare except:pass remains
-  5. Every tool has readOnlyHint, destructiveHint, and idempotentHint annotations visible to MCP clients, and all error responses include isError: true
-**Plans:** 3/3 plans complete
-
-Plans:
-- [ ] 03-01-PLAN.md — Implement stub functions (sitemap auto-refresh, device rediscovery, script install)
-- [ ] 03-02-PLAN.md — Replace silent exception handlers with logged handlers
-- [x] 03-03-PLAN.md — Tool annotations + isError compliance
-
-### Phase 4: MCP Protocol Compliance
-**Goal**: The server fully complies with MCP protocol expectations for logging and HTTP transport
-**Depends on**: Phase 3
-**Requirements**: MCP-03, MCP-04
-**Success Criteria** (what must be TRUE):
-  1. Long-running operations (subnet scans, bulk deployments) emit MCP logging notifications that clients can display as progress
-  2. HTTP transport implements Streamable HTTP spec requirements: session management, Origin header validation, and proper content-type handling
-**Plans:** 2 plans
-
-Plans:
-- [x] 04-01-PLAN.md — MCP logging notifications (set_logging_level + emit_progress in long-running handlers)
-- [x] 04-02-PLAN.md — Origin header validation middleware + default localhost binding
-
-### Phase 5: Documentation
-**Goal**: A new user can go from zero to managing their homelab with this server by following the documentation
-**Depends on**: Phase 4
-**Requirements**: DOCS-01, DOCS-02, DOCS-03
-**Success Criteria** (what must be TRUE):
-  1. A user can follow the setup guide from clone through first successful tool call without needing to read source code
-  2. Every tool is documented with its arguments, return format, and at least one usage example
-  3. All environment variables and configuration options are listed with their defaults and descriptions
-**Plans:** 2/2 plans complete
-
-Plans:
-- [ ] 05-01-PLAN.md — Setup guide + configuration reference + .env.example cleanup
-- [ ] 05-02-PLAN.md — Tool reference (all 49 tools) + README slim-down
+</details>
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Architecture Foundation | 3/3 | Complete |  |
-| 2. Security Hardening | 5/5 | Complete   | 2026-03-09 |
-| 3. Functional Completeness | 3/3 | Complete   | 2026-03-09 |
-| 4. MCP Protocol Compliance | 2/2 | Complete | 2026-03-11 |
-| 5. Documentation | 2/2 | Complete    | 2026-03-11 |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Architecture Foundation | v1.0 | 3/3 | Complete | 2026-03-08 |
+| 2. Security Hardening | v1.0 | 5/5 | Complete | 2026-03-09 |
+| 3. Functional Completeness | v1.0 | 3/3 | Complete | 2026-03-09 |
+| 4. MCP Protocol Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
+| 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
