@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 import yaml
 
 from .log_filter import sanitize_error
+from .progress import emit_progress
 from .ssh_tools import ssh_execute_command
 
 # Service templates directory
@@ -219,6 +220,7 @@ class ServiceInstaller:
         service = self.templates[service_name]
 
         # Check requirements first
+        await emit_progress("info", f"Step 1: Checking requirements for {service_name} on {hostname}")
         req_check = await self.check_service_requirements(service_name, hostname, username, password)
 
         if not req_check["requirements_met"]:
@@ -230,6 +232,7 @@ class ServiceInstaller:
 
         # Get installation method
         install_method = service.get("installation", {}).get("method", "docker-compose")
+        await emit_progress("info", f"Step 2: Installing {service_name} via {install_method}")
 
         if install_method == "docker-compose":
             return await self._install_docker_compose_service(
