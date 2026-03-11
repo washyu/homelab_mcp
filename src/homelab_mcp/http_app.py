@@ -11,7 +11,10 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .auth import APIKeyAuth
 
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -220,12 +223,17 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
 def create_http_app(
     cors_origins: list[str] | None = None,
     allowed_origins: list[str] | None = None,
-) -> Starlette:
+) -> Starlette | APIKeyAuth:
     """Create a Starlette ASGI application with MCP SDK HTTP transport.
 
     The /mcp endpoint is handled by StreamableHTTPSessionManager,
     which speaks the MCP Streamable HTTP protocol. Other routes are
     standard Starlette handlers.
+
+    When ``MCP_API_KEY`` is set in the environment, the returned application
+    is wrapped in :class:`~homelab_mcp.auth.APIKeyAuth` ASGI middleware so
+    that all endpoints except ``/health``, ``/shell/``, and ``/ws/shell/``
+    require a valid Bearer token.
 
     Args:
         cors_origins: Allowed CORS origins (default ``["*"]``).
@@ -234,7 +242,8 @@ def create_http_app(
             var (comma-separated), then to localhost defaults.
 
     Returns:
-        Configured Starlette application.
+        Configured Starlette application, optionally wrapped in
+        :class:`~homelab_mcp.auth.APIKeyAuth` middleware.
     """
     origins = cors_origins or ["*"]
 
@@ -278,8 +287,22 @@ def create_http_app(
         ),
     ]
 
-    return Starlette(
+    starlette_app = Starlette(
         routes=routes,
         middleware=middleware,
         lifespan=lifespan,
     )
+
+    api_key = os.getenv("MCP_API_KEY")
+    if api_key:
+        from .auth import APIKeyAuth
+
+        return APIKeyAuth(
+            starlette_app,
+            api_key=api_key,
+            enabled=True,
+            exclude_paths=["/health", "/shell/", "/ws/shell/"],
+        )
+
+    logger.warning("MCP_API_KEY not set — HTTP endpoints are unauthenticated")
+    return starlette_app
