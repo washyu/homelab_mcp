@@ -39,13 +39,17 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ### Active
 
-<!-- Next milestone scope -->
+<!-- v1.1 Safety & Observability -->
 
-- [ ] MCP Resources with subscriptions for infrastructure state
-- [ ] Pre-built MCP Prompts for common workflows
-- [ ] Infrastructure drift detection
-- [ ] Dry-run mode for destructive operations
-- [ ] PyPI package distribution
+- [ ] Dry-run preview for destructive operations (show what would happen before executing)
+- [ ] Infrastructure drift detection — config drift (CPU, memory, network changed outside MCP)
+- [ ] Infrastructure drift detection — state drift (services stopped, VMs offline unexpectedly)
+- [ ] On-demand drift scan tool with structured report
+- [ ] MCP Resources exposing live infrastructure state (VM list, service status, device inventory)
+- [ ] MCP Resource subscriptions for state change notifications
+- [ ] Fix: ResourceManager.proxmox_session wiring (created but never consumed by handler chain)
+- [ ] Fix: API key authentication wired into HTTP transport
+- [ ] Fix: vm_providers error handling (replace raw str(e) with structured errors)
 
 ### Out of Scope
 
@@ -56,6 +60,20 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - Kubernetes management — fundamentally different from Proxmox VMs/LXC
 - Real-time monitoring/alerting — not Prometheus; expose point-in-time queries
 - Offline mode — real-time is core value
+- Pre-built MCP Prompts — deferred to v1.2
+- PyPI package distribution — deferred to v1.2
+- Auto-detect drift with periodic background checks — deferred, start with on-demand scan
+- Full workflow simulation (dry-run beyond destructive ops) — deferred, start with destructive preview
+
+## Current Milestone: v1.1 Safety & Observability
+
+**Goal:** Make the server trustworthy for real use — preview before breaking things, detect when reality drifts from expectations, expose live infra state via MCP Resources, and clean up v1.0 tech debt.
+
+**Target features:**
+- Dry-run preview for destructive operations (delete, stop, restart show what would happen first)
+- Infrastructure drift detection — config and state drift with on-demand scan
+- MCP Resources for live infrastructure state with subscriptions
+- Tech debt cleanup (proxmox_session wiring, API key auth, vm_providers errors)
 
 ## Context
 
@@ -88,4 +106,4 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | Pure ASGI middleware for Origin validation | Better performance than BaseHTTPMiddleware | ✓ Good — clean integration with Starlette middleware stack |
 
 ---
-*Last updated: 2026-03-11 after v1.0 milestone*
+*Last updated: 2026-03-11 after v1.1 milestone initialization*
