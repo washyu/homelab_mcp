@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-03-11T19:32:24.738Z"
+stopped_at: "Completed 06-01-PLAN.md: session threading through Proxmox handlers"
+last_updated: "2026-03-11T19:44:18.594Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -43,6 +43,7 @@ Key v1.1 decisions:
 - Phase 11 (Drift) last: most complex, needs stable session management and notification infrastructure
 - [Phase 06]: _format_error accepts str | Exception for backward compatibility; error_type derived from exception class name; detail uses sanitize_error for credential safety
 - [Phase 06]: VM provider list_vms bare exception handlers fixed inline with error_type and detail; test mocks target _run_command not conn.run since _run_command absorbs connection exceptions
+- [Phase 06-tech-debt-cleanup]: Local import of get_resource_manager inside each handler function avoids circular import; session param added as last kwarg for backward compatibility
 
 ### Pending Todos
 
@@ -55,6 +56,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T19:32:24.736Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-03-11T19:44:18.592Z
+Stopped at: Completed 06-01-PLAN.md: session threading through Proxmox handlers
 Resume file: None
