@@ -54,7 +54,9 @@ Plans:
   2. `resources/read` on any declared URI returns `application/json` content (stub data acceptable at this phase)
   3. `resources/read` on an unknown URI returns MCP error code `-32002`
   4. `resources/subscribe` and `resources/unsubscribe` complete without error and update the server-side subscription tracker
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 07-01-PLAN.md — Resource handlers (list, read, subscribe) with TDD tests
 
 ### Phase 8: Dry-Run Mode
 **Goal**: All six destructive tools accept `dry_run: true` and return structured previews describing what would be affected — users can inspect before committing to irreversible operations.
@@ -109,7 +111,7 @@ Plans:
 | 4. MCP Protocol Compliance | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 6. Tech Debt Cleanup | 2/3 | In Progress|  | - |
-| 7. MCP Resources Plumbing | v1.1 | 0/TBD | Not started | - |
+| 7. MCP Resources Plumbing | v1.1 | 0/1 | Not started | - |
 | 8. Dry-Run Mode | v1.1 | 0/TBD | Not started | - |
 | 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |
 | 10. Resource Notifications | v1.1 | 0/TBD | Not started | - |
