@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 04-01-PLAN.md (logging notifications + progress)
-last_updated: "2026-03-11T17:20:01.921Z"
-last_activity: 2026-03-11 -- Plan 04-01 executed (MCP logging notifications + emit_progress)
+status: executing
+stopped_at: Completed 05-01-PLAN.md (setup guide + configuration reference)
+last_updated: "2026-03-11T17:44:12.651Z"
+last_activity: 2026-03-11 -- Plan 05-01 executed (setup guide + configuration reference)
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
-  percent: 100
+  total_plans: 15
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-08)
 
 **Core value:** Every tool in the server actually works -- a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 3: Functional Completeness
+**Current focus:** Phase 5: Documentation
 
 ## Current Position
 
-Phase: 4 of 5 (MCP Protocol Compliance)
-Plan: 2 of 2 in current phase
-Status: Phase 4 Complete
-Last activity: 2026-03-11 -- Plan 04-01 executed (MCP logging notifications + emit_progress)
+Phase: 5 of 5 (Documentation)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-11 -- Plan 05-01 executed (setup guide + configuration reference)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 03 P02 | 5min | 2 tasks | 9 files |
 | Phase 04 P01 | 6min | 2 tasks | 6 files |
 | Phase 04 P02 | 3min | 1 tasks | 3 files |
+| Phase 05 P01 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Recent decisions affecting current work:
 - [Phase 04]: Pure ASGI middleware for Origin validation instead of BaseHTTPMiddleware
 - [04-01]: Extracted progress.py module to break circular import (server -> tool_handlers -> infrastructure_crud -> server)
 - [04-01]: RFC 5424 syslog severity ordering for LOG_LEVEL_ORDER (8 levels: debug through emergency)
+- [Phase 05]: [05-01]: Documented MCP_HTTP_HOST default discrepancy between config.py (0.0.0.0) and CLI (127.0.0.1)
+- [Phase 05]: [05-01]: Removed 11 stale env vars from .env.example (OLLAMA, ANSIBLE, INVENTORY, TEMPLATE)
 
 ### Pending Todos
 
@@ -109,6 +112,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T17:16:00Z
-Stopped at: Completed 04-01-PLAN.md (logging notifications + progress)
+Last session: 2026-03-11T17:44:12.649Z
+Stopped at: Completed 05-01-PLAN.md (setup guide + configuration reference)
 Resume file: None
