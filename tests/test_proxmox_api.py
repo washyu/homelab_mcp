@@ -924,7 +924,7 @@ class TestCreateProxmoxVM:
         # THEN: Should create and start VM
         assert result["status"] == "success"
         mock_client.post.assert_called_once()
-        mock_manage_vm.assert_called_once_with("pve", 100, "start", None, "qemu")
+        mock_manage_vm.assert_called_once_with("pve", 100, "start", None, "qemu", session=None)
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -1111,7 +1111,7 @@ class TestDeleteProxmoxVM:
         assert "deleted successfully" in result["message"]
 
         # AND: Should stop VM first
-        mock_manage_vm.assert_called_once_with("pve", 100, "stop", None, "qemu")
+        mock_manage_vm.assert_called_once_with("pve", 100, "stop", None, "qemu", session=None)
 
         # AND: Should delete VM
         mock_client.delete.assert_called_once_with("/nodes/pve/qemu/100")
@@ -1154,7 +1154,7 @@ class TestDeleteProxmoxVM:
         assert result["status"] == "success"
 
         # AND: Should use LXC endpoint
-        mock_manage_vm.assert_called_once_with("pve", 101, "stop", None, "lxc")
+        mock_manage_vm.assert_called_once_with("pve", 101, "stop", None, "lxc", session=None)
         mock_client.delete.assert_called_once_with("/nodes/pve/lxc/101")
 
     @pytest.mark.asyncio
@@ -1173,7 +1173,7 @@ class TestDeleteProxmoxVM:
         result = await delete_proxmox_vm(node="pve", vmid=100)
 
         # THEN: Should stop VM first
-        mock_manage_vm.assert_called_once_with("pve", 100, "stop", None, "qemu")
+        mock_manage_vm.assert_called_once_with("pve", 100, "stop", None, "qemu", session=None)
 
         # AND: Should succeed with deletion
         assert result["status"] == "success"
@@ -1437,3 +1437,141 @@ class TestProxmoxSSLVerification:
 
                 # THEN: verify_ssl should default to True
                 assert client.verify_ssl is True
+
+
+class TestHandlerSessionThreading:
+    """Test that Proxmox handlers pass the shared session to API functions.
+
+    Since get_resource_manager is imported inside each handler function
+    (to avoid circular imports), we patch it at its source in homelab_mcp.server
+    and patch the proxmox_api functions at the module level in proxmox_handlers.
+    """
+
+    @pytest.mark.asyncio
+    async def test_handler_uses_shared_session_list_resources(self):
+        """handle_list_proxmox_resources passes session=rm.proxmox_session."""
+        import src.homelab_mcp.tool_handlers.proxmox_handlers as _ph_mod
+        from src.homelab_mcp.tool_handlers.proxmox_handlers import handle_list_proxmox_resources
+
+        mock_rm = MagicMock()
+        mock_session = MagicMock()
+        mock_rm.proxmox_session = mock_session
+        mock_list = AsyncMock(return_value={"status": "success", "resources": [], "total": 0})
+
+        with (
+            patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
+            patch.object(_ph_mod, "list_proxmox_resources", mock_list),
+        ):
+            await handle_list_proxmox_resources({})
+
+        mock_list.assert_called_once()
+        call_kwargs = mock_list.call_args
+        assert (
+            call_kwargs.kwargs.get("session") is mock_session
+        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+
+    @pytest.mark.asyncio
+    async def test_handler_uses_shared_session_node_status(self):
+        """handle_get_proxmox_node_status passes session=rm.proxmox_session."""
+        import src.homelab_mcp.tool_handlers.proxmox_handlers as _ph_mod
+        from src.homelab_mcp.tool_handlers.proxmox_handlers import handle_get_proxmox_node_status
+
+        mock_rm = MagicMock()
+        mock_session = MagicMock()
+        mock_rm.proxmox_session = mock_session
+        mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "data": {}})
+
+        with (
+            patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
+            patch.object(_ph_mod, "get_proxmox_node_status", mock_fn),
+        ):
+            await handle_get_proxmox_node_status({"node": "pve"})
+
+        mock_fn.assert_called_once()
+        call_kwargs = mock_fn.call_args
+        assert (
+            call_kwargs.kwargs.get("session") is mock_session
+        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+
+    @pytest.mark.asyncio
+    async def test_handler_uses_shared_session_manage_vm(self):
+        """handle_manage_proxmox_vm passes session=rm.proxmox_session."""
+        import src.homelab_mcp.tool_handlers.proxmox_handlers as _ph_mod
+        from src.homelab_mcp.tool_handlers.proxmox_handlers import handle_manage_proxmox_vm
+
+        mock_rm = MagicMock()
+        mock_session = MagicMock()
+        mock_rm.proxmox_session = mock_session
+        mock_fn = AsyncMock(
+            return_value={
+                "status": "success",
+                "node": "pve",
+                "vmid": 100,
+                "action": "start",
+                "data": {},
+            }
+        )
+
+        with (
+            patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
+            patch.object(_ph_mod, "manage_proxmox_vm", mock_fn),
+        ):
+            await handle_manage_proxmox_vm({"node": "pve", "vmid": 100, "action": "start"})
+
+        mock_fn.assert_called_once()
+        call_kwargs = mock_fn.call_args
+        assert (
+            call_kwargs.kwargs.get("session") is mock_session
+        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+
+    @pytest.mark.asyncio
+    async def test_handler_uses_shared_session_delete_vm(self):
+        """handle_delete_proxmox_vm passes session=rm.proxmox_session."""
+        import src.homelab_mcp.tool_handlers.proxmox_handlers as _ph_mod
+        from src.homelab_mcp.tool_handlers.proxmox_handlers import handle_delete_proxmox_vm
+
+        mock_rm = MagicMock()
+        mock_session = MagicMock()
+        mock_rm.proxmox_session = mock_session
+        mock_fn = AsyncMock(
+            return_value={
+                "status": "success",
+                "node": "pve",
+                "vmid": 100,
+                "message": "deleted",
+                "data": {},
+            }
+        )
+
+        with (
+            patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
+            patch.object(_ph_mod, "delete_proxmox_vm", mock_fn),
+        ):
+            await handle_delete_proxmox_vm({"node": "pve", "vmid": 100})
+
+        mock_fn.assert_called_once()
+        call_kwargs = mock_fn.call_args
+        assert (
+            call_kwargs.kwargs.get("session") is mock_session
+        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
+    async def test_delete_proxmox_vm_threads_session_to_manage(self, mock_manage_vm, mock_get_client):
+        """delete_proxmox_vm passes its session param to its internal manage_proxmox_vm call."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.delete.return_value = {"data": "OK"}
+        mock_manage_vm.return_value = {"status": "success"}
+
+        mock_session = MagicMock()
+
+        await delete_proxmox_vm(node="pve", vmid=100, session=mock_session)
+
+        # manage_proxmox_vm should have been called with session=mock_session
+        mock_manage_vm.assert_called_once()
+        call_kwargs = mock_manage_vm.call_args
+        assert (
+            call_kwargs.kwargs.get("session") is mock_session
+        ), f"Expected session={mock_session!r} in manage_proxmox_vm call, got {call_kwargs}"

@@ -51,28 +51,36 @@ async def handle_get_proxmox_script_info(arguments: dict[str, Any]) -> dict[str,
 
 async def handle_list_proxmox_resources(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle list_proxmox_resources tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await list_proxmox_resources(
         host=arguments.get("host"),
         resource_type=arguments.get("resource_type"),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_get_proxmox_node_status(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle get_proxmox_node_status tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await get_proxmox_node_status(
         node=arguments["node"],
         host=arguments.get("host"),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_get_proxmox_vm_status(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle get_proxmox_vm_status tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await get_proxmox_vm_status(
@@ -80,12 +88,15 @@ async def handle_get_proxmox_vm_status(arguments: dict[str, Any]) -> dict[str, A
         vmid=arguments["vmid"],
         host=arguments.get("host"),
         vm_type=arguments.get("vm_type", "qemu"),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_manage_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle manage_proxmox_vm tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await manage_proxmox_vm(
@@ -94,12 +105,15 @@ async def handle_manage_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         action=arguments["action"],
         host=arguments.get("host"),
         vm_type=arguments.get("vm_type", "qemu"),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle create_proxmox_lxc tool."""
+    from ..server import get_resource_manager
+
     validate_hostname(arguments["hostname"])
     if host := arguments.get("host"):
         validate_hostname(host)
@@ -115,12 +129,15 @@ async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]
         rootfs_size=arguments.get("rootfs_size", 8),
         password=arguments.get("password"),
         start=arguments.get("start", False),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_create_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle create_proxmox_vm tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await create_proxmox_vm(
@@ -134,12 +151,15 @@ async def handle_create_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         disk_size=arguments.get("disk_size", 32),
         iso=arguments.get("iso"),
         start=arguments.get("start", False),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_clone_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle clone_proxmox_vm tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await clone_proxmox_vm(
@@ -150,12 +170,15 @@ async def handle_clone_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         name=arguments.get("name"),
         full=arguments.get("full", True),
         vm_type=arguments.get("vm_type", "qemu"),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_delete_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle delete_proxmox_vm tool."""
+    from ..server import get_resource_manager
+
     if host := arguments.get("host"):
         validate_hostname(host)
     result = await delete_proxmox_vm(
@@ -164,5 +187,6 @@ async def handle_delete_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         host=arguments.get("host"),
         vm_type=arguments.get("vm_type", "qemu"),
         purge=arguments.get("purge", False),
+        session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}

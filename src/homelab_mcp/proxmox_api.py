@@ -240,6 +240,7 @@ def get_proxmox_client(
 async def list_proxmox_resources(
     host: str | None = None,
     resource_type: str | None = None,
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """
     List Proxmox cluster resources.
@@ -247,11 +248,12 @@ async def list_proxmox_resources(
     Args:
         host: Proxmox host (optional, uses env var if not provided)
         resource_type: Filter by type: 'vm', 'lxc', 'node', 'storage', etc.
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         List of resources with their details
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         resources = await client.get("/cluster/resources")
@@ -277,6 +279,7 @@ async def list_proxmox_resources(
 async def get_proxmox_node_status(
     node: str,
     host: str | None = None,
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """
     Get status of a Proxmox node.
@@ -284,11 +287,12 @@ async def get_proxmox_node_status(
     Args:
         node: Node name
         host: Proxmox host (optional, uses env var if not provided)
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         Node status information
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         status = await client.get(f"/nodes/{node}/status")
@@ -312,6 +316,7 @@ async def get_proxmox_vm_status(
     vmid: int,
     host: str | None = None,
     vm_type: str = "qemu",
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """
     Get status of a VM or container.
@@ -321,11 +326,12 @@ async def get_proxmox_vm_status(
         vmid: VM/Container ID
         host: Proxmox host (optional)
         vm_type: 'qemu' for VM or 'lxc' for container
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         VM/Container status information
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         status = await client.get(f"/nodes/{node}/{vm_type}/{vmid}/status/current")
@@ -352,6 +358,7 @@ async def manage_proxmox_vm(
     action: str,
     host: str | None = None,
     vm_type: str = "qemu",
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """
     Manage a VM or container (start, stop, shutdown, reboot, reset, suspend, resume).
@@ -362,11 +369,12 @@ async def manage_proxmox_vm(
         action: Action to perform ('start', 'stop', 'shutdown', 'reboot', 'reset', 'suspend', 'resume')
         host: Proxmox host (optional)
         vm_type: 'qemu' for VM or 'lxc' for container
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         Operation result
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     valid_actions = [
         "start",
@@ -418,6 +426,7 @@ async def create_proxmox_lxc(
     ssh_public_keys: str | None = None,
     unprivileged: bool = True,
     start: bool = False,
+    session: aiohttp.ClientSession | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """
@@ -438,12 +447,13 @@ async def create_proxmox_lxc(
         ssh_public_keys: SSH public keys
         unprivileged: Create unprivileged container
         start: Start after creation
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
         **kwargs: Additional LXC parameters
 
     Returns:
         Creation result
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         # Build container config
@@ -502,6 +512,7 @@ async def create_proxmox_vm(
     net0: str = "virtio,bridge=vmbr0",
     ostype: str = "l26",
     start: bool = False,
+    session: aiohttp.ClientSession | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """
@@ -522,12 +533,13 @@ async def create_proxmox_vm(
         net0: Network configuration
         ostype: OS type
         start: Start after creation
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
         **kwargs: Additional VM parameters
 
     Returns:
         Creation result
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         # Build VM config
@@ -554,7 +566,7 @@ async def create_proxmox_vm(
 
         # Start if requested
         if start and result:
-            await manage_proxmox_vm(node, vmid, "start", host, "qemu")
+            await manage_proxmox_vm(node, vmid, "start", host, "qemu", session=session)
 
         return {
             "status": "success",
@@ -581,6 +593,7 @@ async def clone_proxmox_vm(
     name: str | None = None,
     full: bool = True,
     vm_type: str = "qemu",
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """
     Clone a VM or container.
@@ -593,11 +606,12 @@ async def clone_proxmox_vm(
         name: New VM name
         full: Full clone (True) or linked clone (False)
         vm_type: 'qemu' for VM or 'lxc' for container
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         Clone operation result
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         config: dict[str, Any] = {
@@ -633,6 +647,7 @@ async def delete_proxmox_vm(
     host: str | None = None,
     vm_type: str = "qemu",
     purge: bool = False,
+    session: aiohttp.ClientSession | None = None,
 ) -> dict[str, Any]:
     """
     Delete a VM or container.
@@ -643,16 +658,17 @@ async def delete_proxmox_vm(
         host: Proxmox host (optional)
         vm_type: 'qemu' for VM or 'lxc' for container
         purge: Remove from all related configurations
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
 
     Returns:
         Deletion result
     """
-    client = get_proxmox_client(host=host)
+    client = get_proxmox_client(host=host, session=session)
 
     try:
         # Stop VM first if running
         try:
-            await manage_proxmox_vm(node, vmid, "stop", host, vm_type)
+            await manage_proxmox_vm(node, vmid, "stop", host, vm_type, session=session)
         except Exception:
             logger.debug("VM %s on node %s may already be stopped, continuing with deletion", vmid, node)
 

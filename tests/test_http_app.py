@@ -113,3 +113,60 @@ class TestOriginValidationMiddleware:
         assert response.status_code == 403
         body = response.json()
         assert "error" in body or "detail" in body
+
+
+# ---------------------------------------------------------------------------
+# API key auth enforcement tests
+# ---------------------------------------------------------------------------
+
+
+class TestAPIKeyAuthEnforcement:
+    """Tests for APIKeyAuth middleware wired into create_http_app()."""
+
+    def test_mcp_endpoint_requires_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """POST to /mcp without Authorization header returns 401 when MCP_API_KEY is set."""
+        monkeypatch.setenv("MCP_API_KEY", "test-secret-key-32chars-longxxxx")
+
+        from homelab_mcp.http_app import create_http_app
+
+        app = create_http_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post("/mcp", json={"jsonrpc": "2.0", "method": "ping", "id": 1})
+        assert response.status_code == 401
+
+    def test_mcp_endpoint_accepts_valid_bearer_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """POST /mcp with valid Bearer token does not return 401 when MCP_API_KEY is set."""
+        monkeypatch.setenv("MCP_API_KEY", "test-secret-key-32chars-longxxxx")
+
+        from homelab_mcp.http_app import create_http_app
+
+        app = create_http_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+            headers={"Authorization": "Bearer test-secret-key-32chars-longxxxx"},
+        )
+        assert response.status_code != 401
+
+    def test_health_endpoint_excluded_from_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """GET /health returns non-401 even when MCP_API_KEY is set (excluded path)."""
+        monkeypatch.setenv("MCP_API_KEY", "test-secret-key-32chars-longxxxx")
+
+        from homelab_mcp.http_app import create_http_app
+
+        app = create_http_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/health")
+        assert response.status_code != 401
+
+    def test_no_api_key_set_allows_unauthenticated_access(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """POST /mcp succeeds without auth header when MCP_API_KEY is NOT set."""
+        monkeypatch.delenv("MCP_API_KEY", raising=False)
+
+        from homelab_mcp.http_app import create_http_app
+
+        app = create_http_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.post("/mcp", json={"jsonrpc": "2.0", "method": "ping", "id": 1})
+        assert response.status_code != 401
