@@ -1,278 +1,367 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** Infrastructure management MCP server (SSH/Proxmox homelab automation)
-**Researched:** 2026-03-08
-**Confidence:** HIGH (based on codebase analysis + established infrastructure security patterns)
+**Domain:** Adding dry-run mode, drift detection, and MCP Resources to an existing Python MCP server
+**Researched:** 2026-03-11
+**Confidence:** HIGH (codebase analysis + verified against MCP spec + IaC/drift detection community patterns)
+
+> **Note:** This file covers v1.1 Safety & Observability pitfalls. v1.0 pitfalls (SSH TOFU,
+> command injection, silent exceptions, connection pooling) are in the git history of this file.
+
+---
 
 ## Critical Pitfalls
 
-Mistakes that cause security incidents, data loss, or require rewrites.
+### Pitfall 1: Dry-Run Preview That Cannot Execute the Real Path
 
-### Pitfall 1: Shipping Disabled Host Key Verification as "Fixable Later"
+**What goes wrong:** The dry-run implementation is written as a separate code path — a parallel
+simulation that approximates what would happen — rather than running the actual execution logic
+with writes intercepted. Over time, the simulation drifts from the real path. A user sees a
+preview that says "will stop VM pve-101, then delete disk /dev/sdb" and approves. The actual
+execution stops VM pve-201 and deletes a different disk. The preview was accurate at the time
+it was written but fell behind after a refactor to the real handler.
 
-**What goes wrong:** The 19 instances of `known_hosts=None` across `ssh_tools.py`, `vm_operations.py`, `infrastructure_crud.py`, and `shell_session.py` mean every SSH connection is vulnerable to man-in-the-middle attacks. Teams often plan to "fix it after launch" but the fix requires a known_hosts management strategy that touches every SSH callsite. If users adopt with verification disabled, enabling it later is a breaking change (their connections start failing because host keys were never collected).
+**Why it happens:** The instinct when adding dry-run to `decommission_device`, `remove_vm`, and
+`delete_proxmox_vm` is to write a separate inspection function: read state, describe what would
+change, return. This feels clean. But it creates two representations of the same logic.
 
-**Why it happens:** During development, `known_hosts=None` removes friction. asyncssh's default behavior is to reject unknown hosts, which blocks iteration. The pattern spreads because developers copy working connection code.
+**How to avoid:** Structure dry-run as a parameter to the existing handler, not a separate
+function. The handler checks `dry_run=True` and short-circuits before the mutation step. The
+read/validate/plan portion is shared code. Only the final write/commit step is gated. Pattern:
 
-**Consequences:**
-- MITM attacks on the homelab network (attacker can intercept SSH sessions the AI uses to manage infrastructure)
-- Users trust tool output that may have been tampered with
-- Enabling verification post-1.0 breaks every existing installation
-- CVE-worthy if the project gains visibility
+```python
+async def decommission_device(..., dry_run: bool = False) -> dict:
+    # Shared path: read state, validate, compute impact
+    device = await _fetch_device(device_id)
+    impact = _compute_impact(device)  # what would be deleted
 
-**Prevention:**
-1. Implement a known_hosts file manager as the FIRST hardening task (before other fixes)
-2. On first connection to a host, record the host key (trust-on-first-use / TOFU model)
-3. On subsequent connections, verify against stored key and REJECT on mismatch
-4. Provide a `--trust-new-hosts` flag for initial setup, not as a permanent default
-5. Create a single `get_ssh_connection(hostname, ...)` function that ALL modules use -- eliminate the 19 independent connection sites
+    if dry_run:
+        return {"status": "dry_run", "would_affect": impact, "skipped": True}
 
-**Detection:** `grep -r "known_hosts=None" src/` should return zero results before 1.0 ships.
+    # Real path: only reachable when dry_run=False
+    await _execute_decommission(device)
+    return {"status": "success"}
+```
 
-**Phase:** Must be Phase 1 (Security Hardening). This is the single highest-risk item in the codebase.
+**Warning signs:**
+- Any function named `_preview_*` or `_simulate_*` that duplicates logic from `_execute_*`
+- Dry-run tests pass but real execution diverges when you add a new step
+- The dry-run result mentions resources by ID but the real execution resolves by name (or vice versa)
 
----
-
-### Pitfall 2: Silent Exception Swallowing Masks Infrastructure Failures
-
-**What goes wrong:** The 9 instances of bare `except: pass` or `except SomeError: pass` across `migration.py`, `http_transport.py`, `database.py`, `ssh_tools.py`, `sitemap.py`, and `service_installer.py` mean infrastructure operations can fail silently. When an AI assistant calls a tool and gets no error, it reports success to the user. The user believes their infrastructure was configured correctly when it was not.
-
-**Why it happens:** During prototyping, silent catches prevent crashes. Some are intentional fallbacks (JSON parse errors in hardware detection where you try one format then fall back). The problem is distinguishing "acceptable fallback" from "swallowed infrastructure failure."
-
-**Consequences:**
-- AI reports "deployment succeeded" when it partially failed
-- Sitemap data becomes stale/wrong (devices not updated after config changes due to stub `_update_sitemap_after_deployment`)
-- Users make decisions based on stale device information
-- Debugging becomes nearly impossible ("it just stopped working")
-
-**Prevention:**
-1. Audit each of the 9 silent handlers and categorize: intentional fallback vs. swallowed error
-2. Intentional fallbacks: add `logger.debug()` with context
-3. Swallowed errors: convert to `logger.error()` and propagate to tool response
-4. Establish a rule: infrastructure-mutating operations must NEVER silently swallow exceptions
-
-**Detection:** `grep -rn "except.*:\s*$" src/ | grep -A1 "pass"` should show only JSON parse fallbacks, never infrastructure operations.
-
-**Phase:** Phase 1 (Security Hardening) -- silent failures in infrastructure tools are a safety issue.
+**Phase to address:** Dry-run implementation phase. The single-path design must be established
+before any destructive operations get dry-run support. Retrofit is painful.
 
 ---
 
-### Pitfall 3: Stub Functions Called in Production Paths
+### Pitfall 2: Dry-Run Performs Real Side Effects
 
-**What goes wrong:** Three functions are called in real execution paths but do nothing:
-- `_update_sitemap_after_deployment()` -- called after every deployment, body is `pass`
-- `_rediscover_device_after_config()` -- called after config changes, body is `pass`
-- `_install_with_script()` -- returns error string instead of functioning
+**What goes wrong:** The dry-run preview claims to be safe but silently performs real operations
+as part of "checking" what would happen. Common examples in this codebase:
 
-The first two are worse than missing features: they create the illusion of functionality. The deployment succeeds, the stub is called, no error is raised, but the sitemap is now wrong.
+- Proxmox API authentication (`_authenticate()` in `proxmox_api.py`) is called to check current
+  VM state for the preview. Authentication itself writes a session ticket on the Proxmox server.
+- SSH connection is established to gather current device state. If `setup_mcp_admin` was part
+  of a plan, dry-run would connect and check user existence — but the connection itself leaves
+  traces in auth logs and potentially triggers `fail2ban`.
+- `discover_and_map` as part of a deploy preview would update the SQLite sitemap.
 
-**Why it happens:** Stubs are scaffolded during architecture phase with the intent to implement later. They get forgotten because they do not cause test failures (there is nothing to test) and do not cause runtime errors (they just silently do nothing).
+The user is told "no changes will be made" but changes are made.
 
-**Consequences:**
-- Sitemap diverges from reality after every deployment
-- AI assistant gives incorrect information about infrastructure state
-- Users cannot trust device inventory data
-- Script-based installation silently fails, users must use Terraform/Ansible even when inappropriate
+**Why it happens:** State-read operations feel side-effect-free but they are not. Proxmox API
+calls consume rate limit budget. SSH connections consume file descriptors and appear in auth logs.
+Database reads in `NetworkSiteMap` also run schema initialization (`_init_database()`) on every
+instantiation — a write.
 
-**Prevention:**
-1. Implement the two sitemap stubs before shipping -- they are not optional features, they are data integrity requirements
-2. Either implement `_install_with_script()` or remove the code path entirely and document that only Terraform and Ansible are supported
-3. Add a pre-release check: `grep -rn "^\s*pass$" src/ --include="*.py"` and verify every hit is either an abstract method or an exception class body
+**How to avoid:**
+1. Define precisely what "no changes made" means for this server: no mutations to Proxmox state,
+   no mutations to remote host state, no mutations to the local SQLite database.
+2. Read operations against Proxmox and SSH are acceptable in dry-run — they gather state to
+   compute the preview. Document this explicitly.
+3. Database writes are NOT acceptable in dry-run. Pass `read_only=True` to `NetworkSiteMap` when
+   running dry-run, or skip sitemap updates entirely.
+4. Annotate each destructive handler with what dry-run will and will not do.
 
-**Detection:** Any function whose body is just `pass` that is NOT an abstract method or exception class is a bug.
+**Warning signs:**
+- Dry-run tests that check only return value but not SQLite state after execution
+- `NetworkSiteMap()` instantiation inside a dry-run code path (it calls `_init_database()`)
+- Any `await emit_progress(...)` in the dry-run path that logs "deploying X" (misleads)
 
-**Phase:** Phase 2 (Stub Implementation). Depends on Phase 1 SSH fixes since stubs need working SSH connections.
-
----
-
-### Pitfall 4: Command Injection Through Unvalidated Tool Arguments
-
-**What goes wrong:** Tool arguments come from an AI model, which in turn gets them from user natural language. The `service_installer.py` uses `subprocess.run()` with arguments that include user-provided values (playbook paths, variable names). SSH commands are constructed from tool arguments and executed on remote hosts. If any of these paths pass unsanitized user input to shell commands, it is a command injection vulnerability.
-
-**Why it happens:** MCP servers have an unusual trust model -- the input comes from an AI, so developers assume it is "safe." But the AI is reflecting user intent, and prompt injection or malicious user input can produce hostile tool arguments. The JSON schema validation checks types but not semantic content (no validation of hostnames, IP addresses, or path traversals).
-
-**Consequences:**
-- Arbitrary command execution on managed infrastructure
-- Data exfiltration from homelab devices
-- Lateral movement across the network
-- Particularly dangerous because this tool runs with SSH access to infrastructure
-
-**Prevention:**
-1. Validate all hostnames against a regex: `^[a-zA-Z0-9][a-zA-Z0-9.-]*$`
-2. Validate IP addresses with `ipaddress.ip_address()` from stdlib
-3. Validate port ranges: 1-65535
-4. Path arguments: resolve and check they stay within expected directories (no `../` traversal)
-5. Never pass tool arguments directly into shell commands -- use parameterized approaches
-6. The `subprocess.run()` in `service_installer.py` already uses list form (good), but verify `extra_vars` JSON cannot inject Ansible flags
-
-**Detection:** Search for string formatting in subprocess calls and SSH command construction. Any f-string or `.format()` that includes tool arguments adjacent to shell metacharacters is suspect.
-
-**Phase:** Phase 1 (Security Hardening). Input validation is a prerequisite for safe operation.
+**Phase to address:** Dry-run implementation phase. Add a test that runs dry-run and then asserts
+the database is unchanged.
 
 ---
 
-### Pitfall 5: HTTP Transport Binding to 0.0.0.0 With Weak Auth Defaults
+### Pitfall 3: Drift Detection That Mistakes Transient State for Drift
 
-**What goes wrong:** `config.py` defaults `MCP_HTTP_HOST` to `"0.0.0.0"` and while auth is enabled by default, the API key comes from an environment variable that may not be set in development. The `validate_api_key_strength()` function exists but is not called by default (`auth.py:141-155`). This means the HTTP transport can be exposed to the network with a weak or missing API key.
+**What goes wrong:** The drift scanner queries Proxmox or SSH to get current state and compares
+it against stored baseline. A VM that is rebooting, a service that is restarting, or a host
+temporarily unreachable is flagged as "DRIFTED: VM stopped unexpectedly" or "DRIFTED: service
+not running." The user sees an alarm, investigates, finds nothing wrong because the system had
+recovered by the time they checked. After several false positives, they stop trusting drift
+reports entirely — which defeats the purpose.
 
-**Why it happens:** Binding to `0.0.0.0` is convenient for development and necessary for containerized deployments. The auth validation exists but was not wired into the startup path.
+**Why it happens:** Infrastructure is not a static snapshot. Point-in-time queries during
+transient operations produce states that look like drift but are expected. On-demand scans make
+this worse than polling because the timing is unpredictable — a scan might hit exactly during
+a service restart.
 
-**Consequences:**
-- Anyone on the network can call MCP tools (SSH into your infrastructure, deploy services, modify configs)
-- Homelab networks often have IoT devices, guests, or other less-trusted hosts
-- A single compromised device on the LAN gets full infrastructure management capability
+**How to avoid:**
+1. For state drift (VM stopped, service not running): report "possibly drifted" with a
+   `last_stable_at` timestamp. Require the anomalous state to persist for N minutes before
+   classifying as confirmed drift. For v1.1 on-demand scans, include a `scan_age_warning` in
+   the report: "This is a point-in-time scan. Transient states (rebooting, restarting) may
+   appear as drift."
+2. For config drift (CPU/memory/network changed): this is less transient — config changes
+   persist. High confidence classification is appropriate.
+3. Track `mcp_last_known_good` timestamps in the database. A drift item is only alarming if
+   the last-known-good was more recent than a configurable threshold.
 
-**Prevention:**
-1. Default `MCP_HTTP_HOST` to `127.0.0.1` (localhost only)
-2. Call `validate_api_key_strength()` during startup, refuse to start HTTP transport with weak keys
-3. Log a clear warning when binding to non-localhost addresses
-4. Document the security implications of network-accessible HTTP transport
+**Warning signs:**
+- Drift reports that show the same VM as drifted one minute and healthy the next
+- Tests that mock `get_proxmox_vm_status` returning "stopped" and assert the result is
+   classified as confirmed drift (should be "suspected drift")
+- No `scan_timestamp` in the drift report output
 
-**Detection:** Check that startup validates auth configuration before accepting connections.
-
-**Phase:** Phase 1 (Security Hardening).
-
-## Moderate Pitfalls
-
-### Pitfall 6: New aiohttp Session Per Proxmox API Request
-
-**What goes wrong:** `proxmox_api.py` creates a new `aiohttp.ClientSession` with a new `TCPConnector` for every API call. This means no connection reuse, no TCP keepalive, and a new TLS handshake for every request. Under load (e.g., polling VM status, listing nodes), this creates excessive overhead and can exhaust file descriptors.
-
-**Prevention:**
-1. Create the `ClientSession` once in `__init__` or on first use
-2. Store as instance variable, reuse across requests
-3. Implement proper cleanup with `async with` or explicit `close()` in a shutdown hook
-4. Add connection pool size limits appropriate for homelab (5-10 connections is plenty)
-
-**Detection:** Search for `ClientSession(` -- it should appear once (initialization), not in every method.
-
-**Phase:** Phase 3 (Performance/Polish). Not a correctness issue but causes reliability problems under sustained use.
+**Phase to address:** Drift detection implementation phase. The baseline storage schema and
+drift classification logic must handle transient states from the start — retrofitting
+"suspected vs confirmed" later requires schema changes.
 
 ---
 
-### Pitfall 7: Database Connection Churn in SSH Credential Lookups
+### Pitfall 4: MCP Resources Returning Stale Data Without Signaling It
 
-**What goes wrong:** `ssh_tools.py` opens, queries, and closes a database connection for every credential lookup. Since credential resolution happens for every SSH operation, and SSH operations are the core of this tool, this means constant database churn. With SQLite this is tolerable but creates lock contention if multiple async operations run concurrently.
+**What goes wrong:** `homelab://vms` is registered as an MCP Resource exposing live VM state.
+The client reads it and gets a list of VMs with statuses. An hour later, a VM crashes. The
+client still has the cached resource content. The client never re-reads it because the server
+never sent a `notifications/resources/updated` notification. The AI assistant answers "yes, all
+your VMs are running" based on the stale resource.
 
-**Prevention:**
-1. Use a connection pool or persistent connection for the database adapter
-2. For SQLite specifically, use WAL mode to allow concurrent reads
-3. Cache frequently-accessed credentials in memory with a TTL
+Since subscriptions are opt-in and many MCP clients (including Claude Desktop as of 2025) do
+not support resource subscriptions, the server cannot rely on push notifications to keep clients
+current. Resource content is fundamentally pull-based.
 
-**Detection:** Profile database open/close operations during a multi-device discovery scan.
+**Why it happens:** Adding `@server.list_resources()` and `@server.read_resource()` decorators
+feels complete. But the protocol only guarantees freshness at the moment of read. Without either
+a subscription push or a client that re-reads regularly, the data ages.
 
-**Phase:** Phase 3 (Performance/Polish).
+**How to avoid:**
+1. Include a `scanned_at` timestamp in every resource's JSON content. Clients see how old the
+   data is.
+2. For resources that expose live state (VM list, service status), set `mimeType:
+   "application/json"` and include `"warning": "Point-in-time snapshot. Re-read for current state."`
+3. Implement `notifications/resources/updated` via
+   `ctx.session.send_resource_updated(AnyUrl(uri))` when a tool mutation succeeds — at minimum
+   after `manage_proxmox_vm`, `control_vm`, `remove_vm`, `deploy_vm`.
+4. Do not advertise `subscribe: true` in server capabilities unless notifications are actually
+   implemented. An empty capability declaration is worse than omitting it.
 
----
+**Warning signs:**
+- Resource handlers that fetch from Proxmox API without timestamps in the response
+- No calls to `send_resource_updated` anywhere in tool handlers after mutations
+- Tests that read a resource, mutate state, read again, and never assert the content changed
 
-### Pitfall 8: Hardcoded `mcp_admin` Username Assumption
-
-**What goes wrong:** `infrastructure_crud.py:27` hardcodes `"username": "mcp_admin"` when resolving SSH connections for devices. While the credential resolution system supports multiple usernames, the infrastructure manager bypasses it. Users who set up SSH access with a different username will find infrastructure operations fail while direct SSH tools work.
-
-**Prevention:**
-1. Always use the credential resolution system (`resolve_ssh_credentials`) instead of hardcoding usernames
-2. If `mcp_admin` is the recommended default, document it clearly but do not require it
-3. Test with non-default usernames in integration tests
-
-**Detection:** `grep -r "mcp_admin" src/` -- should only appear in credential defaults and documentation, not hardcoded in connection logic.
-
-**Phase:** Phase 2 (Stub Implementation / Functional Completeness).
-
----
-
-### Pitfall 9: 45-Second Global Timeout for All Tool Operations
-
-**What goes wrong:** `tools.py` wraps all tool execution with `@timeout_wrapper(timeout_seconds=45.0)`. This is a single timeout for wildly different operations: listing credentials (milliseconds), discovering a device via SSH (5-30 seconds), deploying infrastructure (potentially minutes). Long-running operations will be killed, returning a timeout error to the AI, which may interpret this as a failure and retry -- potentially creating duplicate deployments.
-
-**Prevention:**
-1. Define per-tool-category timeouts: fast queries (10s), SSH operations (60s), deployments (300s)
-2. For long-running operations, implement a job/task pattern: start operation, return job ID, poll for completion
-3. Make timeouts configurable per tool in the schema
-
-**Detection:** Test deployment operations against real infrastructure and verify they complete within timeout.
-
-**Phase:** Phase 2 or 3. Not a security issue but causes functional failures for legitimate operations.
+**Phase to address:** MCP Resources phase. Notification sending must be planned as part of the
+resource implementation, not added afterward.
 
 ---
 
-### Pitfall 10: No Graceful Shutdown / Resource Cleanup
+### Pitfall 5: ResourceManager.proxmox_session Not Wired Into Handlers (Known Tech Debt)
 
-**What goes wrong:** Shell sessions are in-memory (`ShellSession` objects in `ShellSessionManager.sessions` dict). SSH connections held by active sessions are not cleaned up on server shutdown. The cleanup loop only handles expired sessions, not server termination. aiohttp sessions (when pooled) need explicit cleanup. SQLite connections need closing.
+**What goes wrong:** This is a documented issue in PROJECT.md: the `proxmox_session`
+(an `aiohttp.ClientSession` created in `ResourceManager.initialize()`) is never consumed by
+`ProxmoxAPIClient`. Every Proxmox tool call creates its own session via `aiohttp.ClientSession()`
+inside the handler, ignoring the shared one. The shared session exists but is orphaned.
 
-**Prevention:**
-1. Implement signal handlers (SIGTERM, SIGINT) that trigger graceful shutdown
-2. Close all active SSH connections in sessions
-3. Close database connections
-4. Close aiohttp client sessions
-5. Log shutdown activity so users know cleanup happened
+When v1.1 adds MCP Resources that query Proxmox (e.g., `homelab://vms` reading
+`list_proxmox_resources`), if the resource handler also creates its own session, the problem
+multiplies. A single `resources/read` call could open a new session, authenticate, query, and
+leave the session unclosed if the handler does not use `async with`.
 
-**Detection:** Kill the server process and check for leaked SSH connections on target hosts (`ss -tnp | grep ssh`).
+**Why it happens:** The ResourceManager was designed before the ProxmoxAPIClient was written.
+The client defaulted to creating its own session because the shared one was not accessible
+from the call site. The module-level `get_resource_manager()` was the intended solution but
+was never plumbed through to Proxmox handlers.
 
-**Phase:** Phase 3 (Performance/Polish).
+**How to avoid:** Fix the wiring in the tech debt phase (before MCP Resources are implemented).
+`ProxmoxAPIClient.__init__` already accepts `session: aiohttp.ClientSession | None`. The fix
+is to pass `get_resource_manager().proxmox_session` at the call site in each Proxmox handler.
+This must be done before Resource handlers are written, otherwise Resources will also bypass
+the shared session.
 
-## Minor Pitfalls
+**Warning signs:**
+- `grep -r "ClientSession()" src/homelab_mcp/proxmox_api.py` returns hits in non-init methods
+- `ResourceManager.proxmox_session` is never accessed outside `resource_manager.py` itself
+- Any new code in resource handlers that instantiates `aiohttp.ClientSession` directly
 
-### Pitfall 11: Service Template Path Hardcoding
-
-**What goes wrong:** `service_installer.py` loads YAML service templates from a hardcoded directory path relative to the package. When installed via different methods (editable install, system install, container), the path may not resolve correctly.
-
-**Prevention:** Use `importlib.resources` or `__file__`-relative paths with proper `Path` resolution. Test template loading from an installed (non-editable) package.
-
-**Phase:** Phase 4 (Distribution/Packaging).
-
----
-
-### Pitfall 12: Proxmox API Token Format Not Validated
-
-**What goes wrong:** The `ProxmoxAPIClient` accepts `api_token` as a string but does not validate the expected format (`user@realm!tokenid=secret`). A malformed token results in cryptic auth failures rather than a clear error message.
-
-**Prevention:** Validate token format on client initialization with a regex check. Provide a clear error message showing the expected format.
-
-**Phase:** Phase 2 (Functional Completeness).
+**Phase to address:** Tech debt cleanup phase — must precede MCP Resources phase. Resource
+handlers will call into the same Proxmox API code and need the session wired correctly.
 
 ---
 
-### Pitfall 13: Hardware Detection Parsing Fragility
+### Pitfall 6: Drift Baseline That Does Not Track "Expected" Changes
 
-**What goes wrong:** SSH-based hardware detection in `ssh_tools.py` parses command output (lsblk JSON, /proc/cpuinfo, etc.) from remote hosts. Different Linux distributions, kernel versions, and tool versions produce subtly different output formats. The JSON parse fallbacks (`except json.JSONDecodeError: pass`) silently lose data when the format is unexpected.
+**What goes wrong:** User asks MCP to stop VM pve-101 for maintenance. MCP stops it
+successfully. The drift scanner runs an hour later and reports: "DRIFT DETECTED: VM pve-101
+expected state=running, actual state=stopped." The drift detection cannot distinguish between
+"MCP stopped it intentionally" and "it crashed." The user now has a noisy drift report that
+always flags everything MCP recently changed as drift.
 
-**Prevention:**
-1. Test hardware detection against multiple distros (Ubuntu, Debian, Rocky, Alpine -- common in Proxmox LXC)
-2. Log when fallback parsing is used so users know data may be incomplete
-3. Return partial results with a "completeness" indicator rather than silently dropping fields
+**Why it happens:** Drift detection compares current state against a stored baseline without
+knowing which changes MCP itself made. If the baseline was set before MCP ran the stop command,
+the baseline is now intentionally stale.
 
-**Phase:** Phase 2 (Functional Completeness). Important for reliability but not a security issue.
+**How to avoid:**
+1. After every successful mutation (tool call that changes infrastructure state), update the
+   stored baseline for the affected resource. The baseline should reflect "last known intended
+   state," not "initial state."
+2. Store `mcp_last_changed_at` and `mcp_last_changed_by_tool` alongside baseline values.
+   Drift is only flagged when current state differs from the baseline AND the baseline was set
+   after the last MCP mutation.
+3. Schema: add `expected_state` and `last_mcp_update` columns to the device/VM tracking tables
+   in SQLite.
+
+**Warning signs:**
+- Drift reports that flag VMs or services that were recently modified by MCP tools
+- No database writes after successful `manage_proxmox_vm` or `control_vm` calls
+- Drift schema that stores only a static snapshot with no mutation timestamps
+
+**Phase to address:** Drift detection implementation phase. The baseline update-on-mutation
+pattern must be designed before implementing the scanner — the scanner depends on it.
 
 ---
 
-### Pitfall 14: Missing Rate Limiting on SSH Operations
+## Technical Debt Patterns
 
-**What goes wrong:** An AI assistant that encounters an error may retry aggressively. With no rate limiting on SSH operations, rapid retries can trigger fail2ban or similar intrusion detection on target hosts, locking out the MCP admin account. This is particularly insidious because the tool that was supposed to manage the infrastructure causes it to become inaccessible.
+Shortcuts that seem reasonable but create long-term problems.
 
-**Prevention:**
-1. Implement per-host rate limiting for SSH connections (max 3 concurrent, max 10/minute)
-2. Add exponential backoff on connection failures
-3. The retry decorator in `error_handling.py` already exists -- verify it has reasonable backoff
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| `dry_run` as a flag checked at the top of the function with early return | Quick to add | Preview drifts from real execution as code changes; two code paths to maintain | Never — use the shared-path pattern instead |
+| Registering MCP Resources without `notifications/resources/updated` | Simple first implementation | Clients cache stale data with no indication it is stale | Only as an explicitly documented v1.1 limitation with `scanned_at` timestamps in every response |
+| Drift baseline as a static table populated once | Simple schema | Every MCP mutation creates false drift alarms; users lose trust in reports | Never for a tool that mutates infrastructure |
+| Fixing `proxmox_session` wiring only in ResourceManager without updating call sites | Minimal code change | Resource handlers will bypass the fix and open their own sessions | Never — fix must propagate to all Proxmox call sites |
+| Storing drift config snapshot as JSON blob | Easy to extend | No queryability, hard to compare field-by-field, migrations require JSON parsing | Acceptable for v1.1; plan structured columns for v1.2 if drift comparison logic grows |
 
-**Phase:** Phase 3 (Performance/Polish).
+---
 
-## Phase-Specific Warnings
+## Integration Gotchas
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| Security Hardening | Breaking existing installations when enabling host key verification | Use TOFU model: auto-accept on first connect, reject on mismatch. Provide migration tool to populate known_hosts from current connections. |
-| Security Hardening | Over-securing to the point of unusability | Keep defaults secure but provide clear escape hatches. Document how to disable verification for specific hosts if needed. |
-| Stub Implementation | Implementing stubs that silently fail under edge cases | Write integration tests against real Proxmox before considering stubs "done." |
-| Stub Implementation | Sitemap update logic creating inconsistencies if deployment partially succeeds | Implement idempotent sitemap updates -- running the update twice should produce the same result. |
-| Performance | Connection pool exhaustion under concurrent tool calls | Set pool limits appropriate for homelab (5-10 connections), queue excess requests rather than failing. |
-| Performance | Breaking existing timeout behavior when changing to per-tool timeouts | Keep 45s as the default, only override for specific tool categories. |
-| Documentation | Assuming users will read docs before running | Make `uv sync && uv run python run_server.py` work with zero configuration. Fail loudly with actionable errors when config is needed. |
-| Distribution | Different behavior between `uv run` and installed package | Test the actual distribution path (clone, sync, run) on a clean system before tagging 1.0. |
+Common mistakes when connecting these new features to existing code.
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| Dry-run + `emit_progress()` | Emitting "Deploying X" progress messages during dry-run misleads the AI/user | Gate progress messages behind `if not dry_run:` or use different message prefix "Would deploy X" |
+| MCP Resources + `get_resource_manager()` | Resource handlers calling `get_resource_manager()` before lifespan starts during tests | Mock the resource manager or ensure lifespan context is set in test fixtures |
+| Drift scanner + `NetworkSiteMap()` | Constructing `NetworkSiteMap()` in drift scanner runs `_init_database()` (a write) | Pass the existing db_adapter from `ResourceManager` instead of constructing a new `NetworkSiteMap` |
+| MCP Resources + lowlevel.Server | Declaring `resources` capability in server init but not registering `@server.list_resources()` handler causes protocol errors | Always pair capability declaration with handler registration |
+| Dry-run + existing `validate_only=True` parameter | `infrastructure_crud.py` already has `validate_only=True` in several functions; adding a separate `dry_run=True` creates two similar but different modes | Align on one parameter name (`dry_run`) and deprecate `validate_only` in the same phase |
+| Tech debt fix + existing 479 tests | Wiring `proxmox_session` into Proxmox handlers changes how tests must mock the session | Update test fixtures in the same PR as the wiring fix; do not split across phases |
+
+---
+
+## Performance Traps
+
+Patterns that work for a homelab but fail under specific conditions.
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Drift scan queries all VMs and devices in serial | Scan takes 30-120 seconds on larger homelabs, hits the 45-second `execute_tool` timeout | Use `asyncio.gather()` for parallel Proxmox + SSH queries; increase timeout for drift scan tool | Any homelab with 6+ VMs or 4+ devices |
+| Resource `read_resource` that calls Proxmox API synchronously | MCP client UI hangs waiting for slow API; appears unresponsive | Add timeout to resource read; return cached last-scan data if API is slow | Any time Proxmox is under load or network is congested |
+| Storing full VM config JSON in drift baseline per-scan | SQLite rows grow unboundedly if scans happen frequently | Store only fields relevant to drift (status, CPU, memory, network config), not full API response | After ~100 scans on a 10-VM homelab, rows become large but still manageable; mainly wastes space |
+| Sending `notifications/resources/updated` for every tool call | Noisy; clients that do support subscriptions get flooded | Only send notification when the resource content would actually change (compare hash before/after) | Any client that subscribes to multiple resources and triggers many tools |
+
+---
+
+## Security Mistakes
+
+Domain-specific security issues for dry-run and drift detection features.
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Dry-run response includes full VM config / disk layout in "would affect" field | Credential or topology information leak via AI context | Sanitize dry-run output through the same `sanitize_error` / `CredentialFilter` as real responses |
+| Drift report exposes Proxmox API token format or SSH private key paths in "config drift" fields | Credential exposure in tool output | Ensure drift comparison excludes credential fields; add credential fields to `CredentialFilter` patterns |
+| MCP Resource URI scheme that encodes device IPs directly (`homelab://device/192.168.1.5`) | URI leaks network topology in client logs | Use opaque IDs: `homelab://device/{device_id}` where ID is the SQLite row ID, not the IP |
+| API key auth fix (`Fix: API key authentication wired into HTTP transport`) disables auth during the refactor window | Unauthenticated access if deployed mid-refactor | Fix auth in a single atomic commit; add a test that asserts HTTP requests without a valid key are rejected before merging |
+
+---
+
+## UX Pitfalls
+
+How these features will be experienced by the AI assistant and the homelab user.
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Dry-run output is a wall of technical JSON | AI cannot summarize it; user gets confused | Structure dry-run output as `{"action": "stop_vm", "target": "pve-101", "reason": "...", "reversible": true}` — human-readable action items |
+| Drift report lists every minor config variation as drift | User gets alert fatigue; stops caring about real drift | Distinguish severity: CRITICAL (VM down), WARNING (config changed), INFO (minor variation). Only surface CRITICAL and WARNING by default |
+| MCP Resource for VM list includes every Proxmox field | AI includes irrelevant data in context; wastes token budget | Project to a minimal schema: `{id, name, status, node, cpu_cores, memory_mb}` — enough to reason about, not a full API dump |
+| "Dry-run succeeded" message with no action summary | User approves without understanding what will happen | Dry-run response must include `"actions": [...]` listing every operation that would execute, ordered by execution sequence |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+Things that appear complete but are missing critical pieces.
+
+- [ ] **Dry-run for `decommission_device`:** Often missing cascade impact — what services depend on
+  the device. Verify the dry-run output includes dependent services, not just "device would be removed."
+- [ ] **Drift detection baseline:** Often missing mutation tracking. Verify that after a successful
+  `manage_proxmox_vm` call, the drift baseline for that VM is updated in SQLite.
+- [ ] **MCP Resources capability declared:** Often missing actual handler registration. Verify
+  `resources/list` returns the declared resources and `resources/read` works for each URI.
+- [ ] **`notifications/resources/updated` after mutations:** Often declared as "will implement"
+  but never wired. Verify at least one tool handler calls `send_resource_updated` after a
+  successful Proxmox or VM state change.
+- [ ] **Tech debt: `proxmox_session` wiring:** Fix appears done when `get_resource_manager()` is
+  called, but session may still not reach `ProxmoxAPIClient`. Verify with
+  `grep -r "ClientSession()" src/homelab_mcp/proxmox_api.py` — should have zero results in
+  non-init code after the fix.
+- [ ] **Dry-run + existing `validate_only` param:** Two different parameters doing similar things.
+  Verify they are aligned or one is removed before the phase closes.
+- [ ] **Drift scanner excludes transient states:** Verify the scanner output includes a
+  `scan_timestamp` and a disclaimer for state-type drift findings.
+
+---
+
+## Recovery Strategies
+
+When pitfalls occur despite prevention, how to recover.
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Dry-run diverged from real execution path | HIGH | Audit every destructive handler; refactor to single-path pattern; add comparison tests that run both paths and assert they describe the same actions |
+| Drift baseline full of false positives from MCP mutations | MEDIUM | Add `mcp_last_changed_at` column; run a migration to set it to `now()` for all existing rows; re-run baseline scan |
+| MCP Resources declared but no notifications wired | LOW | Add `send_resource_updated` calls in tool handler post-success paths; no schema change needed |
+| `proxmox_session` wiring incomplete; Resource handlers open their own sessions | MEDIUM | Identify all Proxmox API instantiation sites; pass shared session; update all affected mocks in tests |
+| Dry-run executing real side effects (db writes, SSH mutations) | HIGH | Add integration test asserting db is unchanged after dry-run; add SSH operation audit; fix each side effect site |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+How roadmap phases should address these pitfalls.
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Dry-run diverging from real path | Dry-run implementation | Test: run dry-run then real execution, assert descriptions match |
+| Dry-run performing real side effects | Dry-run implementation | Test: run dry-run, assert SQLite unchanged, assert no SSH mutations |
+| Drift false positives from transient state | Drift detection implementation | Test: mock VM as "stopped" briefly, assert classified as "suspected" not "confirmed" |
+| Drift baseline not updated on mutation | Drift detection implementation | Test: call `manage_proxmox_vm`, assert SQLite baseline row has updated `expected_state` |
+| MCP Resources stale without notification | MCP Resources implementation | Test: call tool that changes VM state, assert `send_resource_updated` was called |
+| `proxmox_session` not wired | Tech debt cleanup (before Resources phase) | `grep -r "ClientSession()" src/homelab_mcp/proxmox_api.py` returns zero non-init hits |
+| `validate_only` vs `dry_run` parameter collision | Dry-run implementation | `grep -r "validate_only" src/` — zero hits after alignment |
+| API key auth not wired during fix | Tech debt cleanup | Integration test: HTTP request without API key returns 401 |
+
+---
 
 ## Sources
 
-- Direct codebase analysis of `/home/shaun/projects/mcp_python_server/src/`
-- asyncssh documentation on known_hosts handling (training data, MEDIUM confidence)
-- OWASP command injection prevention guidelines (training data, HIGH confidence -- established patterns)
-- aiohttp ClientSession best practices (training data, HIGH confidence -- well-documented pattern)
-- General infrastructure automation security patterns (Ansible, Terraform security hardening guides -- training data, MEDIUM confidence)
+- Direct codebase analysis of `/home/shaun/projects/mcp_python_server/src/` — HIGH confidence
+- MCP Resources specification at https://modelcontextprotocol.io/specification/2025-06-18/server/resources — HIGH confidence
+- MCP Python SDK `send_resource_updated` / `send_resource_list_changed` patterns (community discussion https://github.com/orgs/modelcontextprotocol/discussions/301) — MEDIUM confidence
+- Terraform dry-run (plan vs apply) discrepancy patterns — https://spacelift.io/blog/terraform-dry-run — MEDIUM confidence
+- Infrastructure drift detection false positive causes — https://snyk.io/blog/infrastructure-drift-detection-mitigation/ — MEDIUM confidence
+- Kubernetes dry-run implementation design (side effects handling) — https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/576-dry-run/README.md — HIGH confidence (well-established pattern)
+- Known MCP client subscription support limitations (Claude Desktop does not support resource subscriptions as of 2025) — https://github.com/orgs/modelcontextprotocol/discussions/391 — MEDIUM confidence
+
+---
+*Pitfalls research for: v1.1 Safety & Observability — dry-run, drift detection, MCP Resources, tech debt*
+*Researched: 2026-03-11*

@@ -1,398 +1,768 @@
-# Architecture Patterns
+# Architecture Research
 
-**Domain:** MCP server for homelab infrastructure management
-**Researched:** 2026-03-08
-**Confidence:** HIGH (based on codebase analysis and established server architecture patterns)
+**Domain:** MCP Server — Safety & Observability additions to existing Python MCP server
+**Researched:** 2026-03-11
+**Confidence:** HIGH (based on direct source inspection of SDK source and full existing codebase)
 
-## Current Architecture Assessment
+## Existing Architecture (v1.0 Baseline)
 
-The existing layered architecture is sound: Transport -> Tool Registry -> Handlers -> Domain Logic -> Database. This is the right pattern for an MCP server. The issues are not structural -- they are about lifecycle management, resource ownership, and connection hygiene. The layers are correct; what sits inside them needs hardening.
+Understanding the v1.0 structure is prerequisite to placing new components correctly.
 
-### What Works Well
-
-- **Schema/handler split** separates MCP protocol concerns from business logic cleanly
-- **Abstract database adapter** allows SQLite for homelab, PostgreSQL if needed later
-- **Strategy pattern for VM providers** is extensible without modifying existing code
-- **Async-first design** is correct for an I/O-heavy infrastructure tool
-- **Tool registry pattern** makes adding new tools mechanical and low-risk
-
-### What Needs Architectural Evolution
-
-The codebase has grown organically. Three modules exceed 1,000 lines (`infrastructure_crud.py` at 1,513, `service_installer.py` at 1,497, `ssh_tools.py` at 1,126). These are doing too much. The architecture needs resource lifecycle management, not more layers.
-
-## Recommended Architecture
-
-### Target State
+### System Overview
 
 ```
-MCP Client
+┌─────────────────────────────────────────────────────────────────┐
+│                      MCP Clients (stdio / HTTP)                  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ MCP protocol (JSON-RPC)
+┌────────────────────────────▼────────────────────────────────────┐
+│                    server.py  (lowlevel.Server)                  │
+│  handle_list_tools()   handle_call_tool()   handle_set_level()   │
+│       │                      │                                   │
+│  get_all_tool_schemas()  get_tool_handler(name)                  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                   tool_handlers/  (dispatch layer)               │
+│  ssh_handlers  vm_handlers  infra_handlers  proxmox_handlers     │
+│  network_handlers  service_handlers  credential_handlers         │
+└──────┬──────────┬──────────┬──────────┬───────────┬────────────┘
+       │          │          │          │           │
+  ssh_tools  vm_ops/    infra_    proxmox_    service_
+  ssh_conn   vm_provs   crud      api         installer
+       │          │          │          │           │
+└──────┴──────────┴──────────┴──────────┴───────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│                    sitemap.py / database.py (SQLite)             │
+│              NetworkSiteMap  •  DatabaseAdapter                  │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│              resource_manager.py (lifespan-managed)              │
+│        proxmox_session (aiohttp)  •  db_adapter (SQLite)         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Component Responsibilities (v1.0)
+
+| Component | Responsibility |
+|-----------|---------------|
+| `server.py` | lowlevel.Server wiring; lifespan; list_tools / call_tool / set_level handlers |
+| `tool_handlers/__init__.py` | TOOL_HANDLERS registry mapping name to async handler fn |
+| `tool_handlers/*.py` | Thin adapters: unpack arguments, call domain module, wrap response |
+| `tool_schemas/*.py` | JSON schema definitions for all 49 tools |
+| `tool_annotations.py` | ToolAnnotations (readOnlyHint, destructiveHint, idempotentHint) per tool |
+| `vm_operations.py` | VM/container deploy, control, status, logs, remove |
+| `vm_providers/` | Docker and LXD provider implementations |
+| `infrastructure_crud.py` | Deploy/update/decommission/backup/rollback lifecycle |
+| `proxmox_api.py` | Proxmox REST API calls (nodes, VMs, LXC, tasks) |
+| `ssh_tools.py` | SSH-based device discovery and hardware detection |
+| `ssh_connection.py` | asyncssh connection factory with TOFU host key verification |
+| `sitemap.py` | NetworkSiteMap: device storage and change history |
+| `database.py` | DatabaseAdapter ABC; SQLiteAdapter implementation |
+| `resource_manager.py` | Lifespan-managed aiohttp session + db_adapter |
+| `service_installer.py` | Terraform/Ansible-based service installation |
+| `error_handling.py` | timeout_wrapper, MCPTimeout, MCPConnectionError |
+| `config.py` | MCPConfig from env/file; get_config() singleton |
+| `progress.py` | emit_progress() MCP logging notifications |
+| `log_filter.py` | CredentialFilter; sanitize_error() |
+| `http_app.py` / `http_transport.py` | Starlette ASGI; Streamable HTTP + WebSocket transport |
+
+---
+
+## v1.1 Target Architecture
+
+Three new capability clusters integrate with the existing structure.
+
+### System Overview (v1.1)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                          MCP Clients                             │
+│  tools/call   tools/list                                         │
+│  resources/list   resources/read   resources/subscribe           │
+└────────┬──────────────────────┬──────────────────────────────────┘
+         │                      │
+┌────────▼──────────────────────▼──────────────────────────────────┐
+│                           server.py  [MODIFIED]                   │
+│  handle_call_tool()            handle_list_resources()  [NEW]     │
+│    dry_run arg passed through  handle_read_resource()   [NEW]     │
+│    _notify_resource_change()   handle_subscribe()       [NEW]     │
+│    called after mutations      handle_unsubscribe()     [NEW]     │
+└────────┬──────────────────────┬──────────────────────────────────┘
+         │                      │
+┌────────▼──────┐    ┌──────────▼──────────────────────────────────┐
+│ Domain modules│    │              resources.py  [NEW]              │
+│ [MODIFIED]    │    │  RESOURCE_REGISTRY: list of Resource objects  │
+│               │    │  ResourceFetcher: URI to content function     │
+│ remove_vm()   │    │  SubscriptionTracker: URI to subscribed bool  │
+│ delete_prox() │    └──────────┬──────────────────────────────────┘
+│ decommission()│               │
+│               │    ┌──────────▼──────────────────────────────────┐
+│ dry_run=True  │    │           drift.py  [NEW]                     │
+│ returns plan  │    │  DriftDetector.scan()                         │
+│ dry_run=False │    │  compares SQLite baseline vs live SSH/API     │
+│ executes      │    │  returns DriftReport dataclass                │
+└───────────────┘    └──────────┬──────────────────────────────────┘
+                                │
+                     ┌──────────▼──────────────────────────────────┐
+                     │   Existing: sitemap, proxmox_api, vm_ops,    │
+                     │   ssh_tools  (all read-only query paths)      │
+                     └──────────────────────────────────────────────┘
+```
+
+---
+
+## New and Modified Components
+
+| Component | New / Modified | What Changes |
+|-----------|---------------|-------------|
+| `dry_run.py` | **NEW** (optional) | If preview logic grows complex, extract to own module |
+| `drift.py` | **NEW** | DriftDetector, DriftReport, ConfigDrift, StateDrift |
+| `resources.py` | **NEW** | RESOURCE_REGISTRY, ResourceFetcher, SubscriptionTracker |
+| `server.py` | **MODIFIED** | Add four Resource handler decorators; add `_notify_resource_change()` helper |
+| `resource_manager.py` | **MODIFIED** | Add SubscriptionTracker; fix proxmox_session wiring to handler chain |
+| `tool_handlers/vm_handlers.py` | **MODIFIED** | Pass `dry_run` arg; call `_notify_resource_change()` after successful mutations |
+| `tool_handlers/proxmox_handlers.py` | **MODIFIED** | Call `_notify_resource_change()` after successful mutations |
+| `tool_handlers/infrastructure_handlers.py` | **MODIFIED** | Pass `dry_run` arg; call `_notify_resource_change()` after mutations |
+| `tool_handlers/network_handlers.py` | **MODIFIED** | Call `_notify_resource_change()` after discover_and_map |
+| `tool_handlers/__init__.py` | **MODIFIED** | Register `scan_infrastructure_drift` handler |
+| `tool_schemas/drift_tools_schema.py` | **NEW** | Schema for `scan_infrastructure_drift` |
+| `tool_annotations.py` | **MODIFIED** | Add `scan_infrastructure_drift` as read-only |
+| `vm_operations.py` | **MODIFIED** | Add `dry_run: bool = False` to remove_vm, control_vm_state |
+| `infrastructure_crud.py` | **MODIFIED** | Add `dry_run: bool = False` to decommission, rollback, scale |
+| `proxmox_api.py` | **MODIFIED** | Add `dry_run: bool = False` to delete_proxmox_vm |
+
+---
+
+## Feature 1: Dry-Run Mode
+
+### Design Decision
+
+Dry-run is implemented at the **domain function level**, not as an interceptor in server.py. Each destructive domain function gains a `dry_run: bool = False` parameter. When True, it returns a structured preview without executing.
+
+Why not intercept generically in server.py: The preview content is domain-specific. `delete_proxmox_vm` preview must list the VMID, its snapshots, and disk images. `decommission_device` preview must list services that would be migrated. A generic interceptor can only echo back the tool name and arguments — useless for operator safety.
+
+### Integration Points
+
+**Tool schemas** (six destructive tools gain the `dry_run` property):
+
+```python
+# Added to each destructive tool's inputSchema.properties:
+"dry_run": {
+    "type": "boolean",
+    "description": "If true, return a preview of what would happen without executing.",
+    "default": False,
+}
+```
+
+**Domain function pattern:**
+
+```python
+# vm_operations.py
+async def remove_vm(
+    device_id: int,
+    platform: str,
+    vm_name: str,
+    force: bool = False,
+    dry_run: bool = False,   # NEW parameter
+) -> str:
+    if dry_run:
+        return json.dumps({
+            "status": "dry_run",
+            "operation": "remove_vm",
+            "would_affect": {
+                "vm_name": vm_name,
+                "device_id": device_id,
+                "platform": platform,
+            },
+            "warning": "Irreversible. Use dry_run=false to execute.",
+        })
+    # existing execution path unchanged below this point
+    ...
+```
+
+**Handler passes dry_run through:**
+
+```python
+# tool_handlers/vm_handlers.py
+async def handle_remove_vm(arguments: dict[str, Any]) -> dict[str, Any]:
+    result = await remove_vm(
+        device_id=arguments["device_id"],
+        platform=arguments["platform"],
+        vm_name=arguments["vm_name"],
+        force=arguments.get("force", False),
+        dry_run=arguments.get("dry_run", False),   # NEW
+    )
+    return {"content": [{"type": "text", "text": result}]}
+```
+
+**Affected destructive tools** (from tool_annotations.py `_DESTRUCTIVE_TOOLS`):
+- `decommission_device` — infrastructure_crud.py
+- `remove_vm` — vm_operations.py
+- `remove_server` — credential domain
+- `delete_proxmox_vm` — proxmox_api.py
+- `destroy_terraform_service` — service_installer.py
+- `rollback_infrastructure_changes` — infrastructure_crud.py
+
+---
+
+## Feature 2: Drift Detection
+
+### Design Decision
+
+Drift detection runs as a **tool call** (`scan_infrastructure_drift`), not a background task and not a resource read. The result is surfaced as a structured JSON tool response. The `homelab://drift/report` resource caches the last result so subscribed clients get notified.
+
+Why a tool, not a background task: PROJECT.md explicitly defers "Auto-detect drift with periodic background checks" to a future milestone. On-demand keeps asyncio task management out of v1.1.
+
+Why not a resource read: SSH discovery across 10+ devices takes seconds per device. Resource reads are expected to be fast (clients may call them frequently). The tool call model communicates that the operation is slow and deliberate.
+
+### New Module: drift.py
+
+```
+src/homelab_mcp/drift.py
+```
+
+**Data structures:**
+
+```python
+@dataclass
+class ConfigDrift:
+    device_id: int
+    hostname: str
+    field: str           # e.g. "cpu_cores", "memory_total"
+    expected: Any        # value stored in SQLite last-seen record
+    actual: Any          # value from live SSH query
+
+@dataclass
+class StateDrift:
+    resource_id: str     # e.g. "proxmox:pve:100" or "device:42:nginx"
+    resource_type: str   # "vm" | "lxc" | "service"
+    expected_state: str  # e.g. "running"
+    actual_state: str    # e.g. "stopped"
+
+@dataclass
+class DriftReport:
+    scanned_at: str      # ISO 8601 timestamp
+    config_drift: list[ConfigDrift]
+    state_drift: list[StateDrift]
+    unreachable: list[int]   # device_ids that could not be reached
+    drift_detected: bool
+    summary: str
+```
+
+**DriftDetector class:**
+
+```python
+class DriftDetector:
+    def __init__(
+        self,
+        db_adapter: DatabaseAdapter,
+        proxmox_session: aiohttp.ClientSession | None,
+    ) -> None: ...
+
+    async def scan(self, scope: str = "all") -> DriftReport:
+        # 1. Load baseline from SQLite (sitemap devices)
+        # 2. For each reachable device: SSH discover, compare vs baseline
+        # 3. Query Proxmox API for VM list, compare status vs expected
+        # 4. Assemble DriftReport
+        ...
+
+    async def _check_config_drift(self) -> list[ConfigDrift]:
+        # SSH discover each device, compare cpu_cores / memory_total /
+        # network_interfaces against SQLite record
+        ...
+
+    async def _check_state_drift(self) -> list[StateDrift]:
+        # proxmox_api.list_proxmox_resources() and get_proxmox_vm_status()
+        # compare running/stopped vs last known state
+        ...
+```
+
+**DriftDetector accesses ResourceManager** via `get_resource_manager()` — same pattern as existing handlers. Does not instantiate its own connections.
+
+### New Tool: scan_infrastructure_drift
+
+**Schema** (`tool_schemas/drift_tools_schema.py`):
+
+```python
+DRIFT_TOOLS_SCHEMA = {
+    "scan_infrastructure_drift": {
+        "description": "Scan for drift between expected infrastructure state and live state. "
+                       "Checks both config drift (CPU, memory, network changed outside MCP) "
+                       "and state drift (VMs stopped, services offline). Returns a structured report.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": ["all", "devices", "vms", "services"],
+                    "default": "all",
+                    "description": "Which category of resources to check.",
+                },
+                "device_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Limit scan to specific device IDs. Omit for all devices.",
+                },
+            },
+            "required": [],
+        },
+    }
+}
+```
+
+**Annotation:** `readOnlyHint=True` — scan queries only, never modifies.
+
+**Data flow:**
+
+```
+call_tool("scan_infrastructure_drift", {scope: "all"})
     |
     v
-[Transport Layer]  stdio / HTTP+SSE / WebSocket
+tool_handlers/drift_handlers.py: handle_scan_drift(args)
     |
     v
-[Tool Registry]  schema validation + handler dispatch
+drift.py: DriftDetector(db, proxmox_session).scan("all")
+    |
+    +-- _check_config_drift():
+    |     load devices from SQLite
+    |     SSH-discover each (asyncio.gather for parallelism)
+    |     diff cpu_cores, memory_total, network_interfaces
+    |     --> list[ConfigDrift]
+    |
+    +-- _check_state_drift():
+    |     proxmox_api.list_proxmox_resources()
+    |     get_proxmox_vm_status() per VM
+    |     diff status vs last_seen
+    |     --> list[StateDrift]
     |
     v
-[Handler Layer]  argument unpacking, response formatting
+DriftReport assembled
+    |
+    v  (cache last report for homelab://drift/report resource)
+_cache_drift_report(report)
+    |
+    v  (if client subscribed)
+_notify_resource_change("homelab://drift/report")
     |
     v
-[Domain Logic]   SSH, Proxmox, VM, Service, Infrastructure, Network
-    |       \
-    v        v
-[Resource     [Database Layer]
- Manager]     SQLite / PostgreSQL
-    |
-    v
-[Connection Pool]  SSH connections, HTTP sessions, DB connections
+Client receives DriftReport as JSON in tool result
 ```
 
-The key addition is a **Resource Manager** that owns long-lived connections and provides them to domain logic on demand, rather than each domain function creating and destroying its own connections.
+---
 
-### Component Boundaries
+## Feature 3: MCP Resources
 
-| Component | Responsibility | Communicates With | Owns |
-|-----------|---------------|-------------------|------|
-| **Transport** (`server.py`, `http_transport.py`) | Accept JSON-RPC, deliver responses, manage WebSocket shell relay | Tool Registry, Health Checker | Request lifecycle, SSE streams |
-| **Auth** (`auth.py`) | API key validation for HTTP transport | Transport (middleware) | Nothing stateful |
-| **Tool Registry** (`tools.py`, `tool_schemas/`, `tool_handlers/`) | Map tool names to schemas and handlers, dispatch execution | Handlers | Tool catalog |
-| **Handlers** (`tool_handlers/*.py`) | Unpack arguments, call domain logic, format MCP responses | Domain Logic | Nothing -- pure adapters |
-| **SSH Domain** (`ssh_tools.py`) | Device discovery, command execution, credential resolution | Resource Manager, Database | Discovery logic, hardware parsing |
-| **Proxmox Domain** (`proxmox_api.py`, `proxmox_scripts.py`) | Proxmox VE API integration | Resource Manager (HTTP pool) | API abstraction, script cache |
-| **VM Domain** (`vm_operations.py`, `vm_providers/`) | VM/container lifecycle via Docker/LXD | SSH Domain | Provider abstraction |
-| **Infrastructure Domain** (`infrastructure_crud.py`) | Deploy, update, decommission infrastructure | SSH Domain, Service Installer, Database | Deployment state |
-| **Service Domain** (`service_installer.py`) | Install services via Terraform/Ansible | SSH Domain | Template loading, installation methods |
-| **Network Domain** (`sitemap.py`) | Device registry, topology, change tracking | Database | Sitemap queries |
-| **Resource Manager** (NEW) | Connection pooling, lifecycle management | SSH connections, HTTP sessions, DB connections | Connection pools, health state |
-| **Database** (`database.py`) | Persistent storage abstraction | SQLite/PostgreSQL | Schema, migrations |
-| **Config** (`config.py`) | Environment-based configuration | All layers (read-only) | Validated config objects |
-| **Error Handling** (`error_handling.py`) | Timeouts, retries, health tracking | Cross-cutting | Health metrics |
+### SDK API (confirmed from source inspection, mcp>=1.9.1)
 
-### Boundary Rules
+The `lowlevel.Server` exposes these decorator hooks:
 
-1. **Handlers never touch connections directly.** They call domain functions, which get connections from the Resource Manager.
-2. **Domain modules do not create `aiohttp.ClientSession` or `asyncssh.connect` directly.** They request connections from pools.
-3. **Database access goes through `DatabaseAdapter`.** No raw SQL outside `database.py`.
-4. **Configuration flows one direction: Config -> everything.** Modules read config, never write it.
-5. **Transport layer never calls domain logic directly.** Always through Tool Registry -> Handler -> Domain.
+```python
+@server.list_resources()
+async def handle_list_resources() -> list[types.Resource]: ...
 
-## Data Flow
+@server.list_resource_templates()
+async def handle_list_resource_templates() -> list[types.ResourceTemplate]: ...
 
-### Tool Execution (Primary Path)
+@server.read_resource()
+async def handle_read_resource(uri: AnyUrl) -> Iterable[ReadResourceContents]: ...
 
-```
-1. Client sends JSON-RPC 2.0 request
-2. Transport parses, validates JSON-RPC envelope
-3. Tool Registry looks up handler by tool name
-4. Handler unpacks arguments dict -> keyword arguments
-5. Domain function executes business logic:
-   a. Gets connection from Resource Manager (pooled)
-   b. Performs SSH/API/DB operations
-   c. Returns structured result (JSON string)
-6. Handler wraps result in MCP content format
-7. Transport serializes JSON-RPC response
+@server.subscribe_resource()
+async def handle_subscribe(uri: AnyUrl) -> None: ...
+
+@server.unsubscribe_resource()
+async def handle_unsubscribe(uri: AnyUrl) -> None: ...
 ```
 
-### SSH Operations (Connection-Intensive Path)
+Capability auto-detection: `get_capabilities()` in the SDK sets `resources_capability.subscribe=True` when both `ListResourcesRequest` and `SubscribeRequest` handlers are registered. No manual capability configuration needed.
 
-```
-1. Handler calls domain function with hostname + credentials
-2. Domain calls resolve_ssh_credentials() -> SSHCredentials
-3. Domain requests SSH connection from pool:
-   a. Pool checks for existing healthy connection to host
-   b. If exists and healthy -> reuse
-   c. If not -> create new connection with host key verification
-   d. Connection added to pool with TTL
-4. Domain executes commands over connection
-5. Connection returned to pool (not closed)
-6. Pool cleanup task closes idle connections after TTL
+Push notification to subscribed client:
+
+```python
+session = server.request_context.session
+await session.send_resource_updated(uri)   # ServerSession.send_resource_updated()
 ```
 
-### Proxmox API (HTTP-Intensive Path)
+### Resource URI Namespace
+
+| URI | Content | Update Trigger |
+|-----|---------|----------------|
+| `homelab://infra/vms` | JSON list of all VMs across all hosts | After deploy_vm, remove_vm, control_vm, manage_proxmox_vm, create_proxmox_vm, delete_proxmox_vm, clone_proxmox_vm |
+| `homelab://infra/devices` | JSON list of all discovered devices from SQLite | After discover_and_map, bulk_discover_and_map, decommission_device |
+| `homelab://infra/services` | JSON service installation status per device | After install_service, destroy_terraform_service |
+| `homelab://infra/proxmox/resources` | Proxmox nodes, VMs, storage summary | After create_proxmox_vm, delete_proxmox_vm, clone_proxmox_vm, create_proxmox_lxc |
+| `homelab://drift/report` | Latest drift scan result (null if never scanned) | After scan_infrastructure_drift |
+
+### New Module: resources.py
 
 ```
-1. Handler calls ProxmoxAPIClient method
-2. Client uses shared aiohttp.ClientSession (not per-request)
-3. Session handles connection pooling via TCPConnector
-4. Auth token cached and reused until expiry
-5. Response parsed and returned
-6. Session persists for server lifetime
+src/homelab_mcp/resources.py
 ```
 
-### State Management (Current -> Target)
+**RESOURCE_REGISTRY** — static list of Resource descriptors:
 
-| State | Current Location | Current Problem | Target |
-|-------|-----------------|-----------------|--------|
-| SSH connections | Created per-call, closed after | No reuse, 19 MITM-vulnerable | Pooled with host key verification |
-| HTTP sessions | Created per-call | No connection reuse | Single shared session per Proxmox host |
-| DB connections | Opened/closed per operation | Overhead on each query | Persistent connection, reconnect on failure |
-| Shell sessions | In-memory dict | Lost on restart | In-memory (acceptable for 1.0, documented) |
-| Health metrics | In-memory singleton | Lost on restart | In-memory (acceptable for 1.0) |
-| Proxmox auth | Per-client cached | Re-auth on each new client | Cached in shared client instance |
-| Script cache | Module-level dict, 1hr TTL | Works fine | Keep as-is |
+```python
+from mcp.types import Resource
+from pydantic import AnyUrl
 
-## Patterns to Follow
+RESOURCE_REGISTRY: list[Resource] = [
+    Resource(
+        uri=AnyUrl("homelab://infra/vms"),
+        name="VM List",
+        description="All VMs and containers across all managed hosts",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=AnyUrl("homelab://infra/devices"),
+        name="Device Inventory",
+        description="All discovered network devices with hardware info",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=AnyUrl("homelab://infra/services"),
+        name="Service Status",
+        description="Service installation status per device",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=AnyUrl("homelab://infra/proxmox/resources"),
+        name="Proxmox Resources",
+        description="Proxmox nodes, VMs, LXC containers, and storage",
+        mimeType="application/json",
+    ),
+    Resource(
+        uri=AnyUrl("homelab://drift/report"),
+        name="Drift Report",
+        description="Latest infrastructure drift scan result",
+        mimeType="application/json",
+    ),
+]
+```
 
-### Pattern 1: Resource Manager for Connection Pooling
+**ResourceFetcher** — maps URI to live query:
 
-**What:** A single component that owns all external connections (SSH, HTTP, DB) and provides them to domain logic via context managers.
+```python
+class ResourceFetcher:
+    """Fetches live content for each resource URI by calling existing domain functions."""
 
-**When:** Any operation that connects to external systems.
+    async def fetch(self, uri: AnyUrl) -> str:
+        uri_str = str(uri)
+        if uri_str == "homelab://infra/vms":
+            return await self._fetch_vms()
+        elif uri_str == "homelab://infra/devices":
+            return await self._fetch_devices()
+        elif uri_str == "homelab://infra/services":
+            return await self._fetch_services()
+        elif uri_str == "homelab://infra/proxmox/resources":
+            return await self._fetch_proxmox_resources()
+        elif uri_str == "homelab://drift/report":
+            return await self._fetch_drift_report()
+        else:
+            raise ValueError(f"Unknown resource URI: {uri}")
 
-**Why:** The current pattern of creating connections per-call means:
-- No connection reuse (TCP handshake overhead on every Proxmox API call)
-- No centralized place to enforce host key verification
-- No graceful shutdown (connections abandoned, not closed)
-- No connection health monitoring
+    async def _fetch_devices(self) -> str:
+        db = get_resource_manager().db_adapter
+        devices = db.get_all_devices()
+        return json.dumps({"devices": devices, "count": len(devices)})
 
-**Example:**
+    async def _fetch_proxmox_resources(self) -> str:
+        result = await list_proxmox_resources()   # existing function
+        return json.dumps(result)
+    # ...
+```
+
+**SubscriptionTracker** — tracks which URIs the client has subscribed to:
+
+```python
+class SubscriptionTracker:
+    """Single-client model: one set of subscribed URIs per server instance.
+
+    Homelab is single-operator. No per-client subscription map needed.
+    """
+
+    def __init__(self) -> None:
+        self._subscriptions: set[str] = set()
+
+    def subscribe(self, uri: AnyUrl) -> None:
+        self._subscriptions.add(str(uri))
+
+    def unsubscribe(self, uri: AnyUrl) -> None:
+        self._subscriptions.discard(str(uri))
+
+    def is_subscribed(self, uri: AnyUrl) -> bool:
+        return str(uri) in self._subscriptions
+```
+
+### Wiring into server.py
+
+Four new handler decorators in `server.py`:
+
+```python
+from .resources import RESOURCE_REGISTRY, ResourceFetcher, SubscriptionTracker
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+
+@server.list_resources()
+async def handle_list_resources() -> list[types.Resource]:
+    return RESOURCE_REGISTRY
+
+@server.read_resource()
+async def handle_read_resource(uri: AnyUrl) -> Iterable[ReadResourceContents]:
+    fetcher = ResourceFetcher()
+    content = await fetcher.fetch(uri)
+    yield ReadResourceContents(content=content, mime_type="application/json")
+
+@server.subscribe_resource()
+async def handle_subscribe(uri: AnyUrl) -> None:
+    get_resource_manager().subscription_tracker.subscribe(uri)
+
+@server.unsubscribe_resource()
+async def handle_unsubscribe(uri: AnyUrl) -> None:
+    get_resource_manager().subscription_tracker.unsubscribe(uri)
+```
+
+**Notification helper added to server.py:**
+
+```python
+async def _notify_resource_change(uri_str: str) -> None:
+    """Send ResourceUpdated notification if client is subscribed to this URI."""
+    try:
+        tracker = get_resource_manager().subscription_tracker
+        uri = AnyUrl(uri_str)
+        if tracker.is_subscribed(uri):
+            session = server.request_context.session
+            await session.send_resource_updated(uri)
+    except Exception:
+        logger.debug("Resource notification skipped (no active session context)")
+```
+
+Called from `handle_call_tool()` after successful non-dry-run execution of mutating tools.
+
+### resource_manager.py Changes
+
+Add SubscriptionTracker:
+
 ```python
 class ResourceManager:
-    """Owns and manages all external connections."""
-
     def __init__(self, config: MCPConfig) -> None:
-        self._ssh_pool: dict[str, asyncssh.SSHClientConnection] = {}
-        self._http_session: aiohttp.ClientSession | None = None
-        self._db: DatabaseAdapter | None = None
-        self._config = config
+        ...
+        self._subscription_tracker: SubscriptionTracker | None = None
 
-    async def get_ssh_connection(
-        self, hostname: str, credentials: SSHCredentials
-    ) -> asyncssh.SSHClientConnection:
-        """Get or create a pooled SSH connection."""
-        key = f"{credentials.username}@{hostname}:{credentials.port}"
-        if key in self._ssh_pool:
-            conn = self._ssh_pool[key]
-            if not conn.is_closed():
-                return conn
-            del self._ssh_pool[key]
+    async def initialize(self) -> None:
+        ...
+        from .resources import SubscriptionTracker
+        self._subscription_tracker = SubscriptionTracker()
 
-        conn = await asyncssh.connect(
-            hostname,
-            username=credentials.username,
-            known_hosts=self._config.ssh.known_hosts_path,  # NOT None
-            client_keys=[credentials.key_path] if credentials.key_path else None,
-            password=credentials.password,
-        )
-        self._ssh_pool[key] = conn
-        return conn
-
-    async def get_http_session(self) -> aiohttp.ClientSession:
-        """Get or create a shared HTTP session."""
-        if self._http_session is None or self._http_session.closed:
-            connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
-            self._http_session = aiohttp.ClientSession(connector=connector)
-        return self._http_session
-
-    async def shutdown(self) -> None:
-        """Gracefully close all connections."""
-        for conn in self._ssh_pool.values():
-            conn.close()
-        if self._http_session:
-            await self._http_session.close()
-        if self._db:
-            self._db.close()
+    @property
+    def subscription_tracker(self) -> SubscriptionTracker:
+        if self._subscription_tracker is None:
+            raise RuntimeError("ResourceManager not initialized")
+        return self._subscription_tracker
 ```
 
-### Pattern 2: Graceful Startup and Shutdown
+Also fix the existing v1.0 bug: `proxmox_session` is created but never passed to `proxmox_api.py` functions. The fix is to have proxmox functions call `get_resource_manager().proxmox_session` directly, same pattern used by other handlers. This is a one-time wiring fix, not a new abstraction.
 
-**What:** Server has explicit startup and shutdown phases that initialize and tear down resources in order.
+---
 
-**When:** Server start and stop.
+## Data Flow Summary
 
-**Why:** Currently, resources are initialized lazily and never explicitly cleaned up. This causes:
-- SSH key initialization racing with first request
-- No cleanup of open connections on SIGTERM
-- Database connections left open
+### Dry-Run Flow
 
-**Example:**
-```python
-class HomelabMCPServer:
-    async def startup(self) -> None:
-        """Initialize all resources in dependency order."""
-        self.config = get_config()
-        self.config.validate()  # Fail fast on bad config
-
-        self.resources = ResourceManager(self.config)
-        await self.resources.initialize_db()
-        await ensure_mcp_ssh_key()
-
-        self.tools = get_available_tools()
-        logger.info("Server ready")
-
-    async def shutdown(self) -> None:
-        """Clean up all resources."""
-        await self.resources.shutdown()
-        logger.info("Server stopped")
+```
+call_tool("remove_vm", {device_id: 1, vm_name: "test", dry_run: true})
+    |
+handle_call_tool in server.py
+    |
+handle_remove_vm(args) in vm_handlers.py
+    |
+remove_vm(..., dry_run=True) in vm_operations.py
+    |
+returns JSON preview -- no SSH connection, no side effect
+    |
+handle_call_tool does NOT call _notify_resource_change  (dry_run = no mutation)
+    |
+Client receives: CallToolResult with dry_run preview
 ```
 
-### Pattern 3: Domain Module Decomposition
+### Drift Scan Flow
 
-**What:** Break 1,000+ line modules into focused sub-modules grouped by operation type.
-
-**When:** Modules exceed ~500 lines or handle multiple distinct responsibilities.
-
-**Why:** `infrastructure_crud.py` (1,513 lines) handles deploy, update, decommission, scale, validate, backup, and rollback. These are distinct operations that share some helpers but should be independently testable.
-
-**Target structure:**
 ```
-src/homelab_mcp/
-  infrastructure/
-    __init__.py          # Public API (re-exports)
-    deploy.py            # deploy_infrastructure()
-    update.py            # update_device_config()
-    decommission.py      # decommission_device()
-    scale.py             # scale_services()
-    validate.py          # validate_infrastructure_changes()
-    backup.py            # create/rollback backups
-    _helpers.py          # Shared SSH helpers, formatting
-
-  services/
-    __init__.py
-    installer.py         # Core installation logic
-    terraform.py         # Terraform-specific
-    ansible.py           # Ansible-specific
-    templates.py         # Template loading
+call_tool("scan_infrastructure_drift", {scope: "all"})
+    |
+handle_scan_drift(args) in drift_handlers.py
+    |
+DriftDetector(db, proxmox_session).scan("all")
+    |
+    +-- SSH discover each device (asyncio.gather)
+    |   compare against SQLite record
+    |   --> list[ConfigDrift]
+    |
+    +-- proxmox_api.list_proxmox_resources()
+    |   compare status vs last_seen
+    |   --> list[StateDrift]
+    |
+DriftReport assembled and JSON-serialised
+    |
+    +-- store in module-level cache in resources.py
+    +-- _notify_resource_change("homelab://drift/report")
+    |     if subscribed: session.send_resource_updated(uri)
+    |
+Client receives: CallToolResult with DriftReport JSON
 ```
 
-**Do this incrementally.** Do not refactor all three large modules at once. Start with `infrastructure_crud.py` because it has the most stub functions that need implementation anyway.
+### Resource Read Flow
 
-### Pattern 4: Input Validation at Handler Boundary
-
-**What:** Validate semantic correctness of inputs (hostnames, IPs, ports) at the handler layer before calling domain logic.
-
-**When:** Every tool call.
-
-**Why:** JSON Schema validates types and required fields, but does not validate that a hostname is a valid hostname or a port is in range. Currently, bad inputs propagate to SSH/API calls and fail with confusing errors.
-
-**Example:**
-```python
-import ipaddress
-import re
-
-def validate_hostname(hostname: str) -> str:
-    """Validate and return hostname, raise ValueError if invalid."""
-    # Try as IP address first
-    try:
-        ipaddress.ip_address(hostname)
-        return hostname
-    except ValueError:
-        pass
-
-    # Validate as hostname
-    if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$', hostname):
-        raise ValueError(f"Invalid hostname: {hostname}")
-    return hostname
+```
+resources/read {"uri": "homelab://infra/vms"}
+    |
+handle_read_resource(uri) in server.py
+    |
+ResourceFetcher.fetch("homelab://infra/vms")
+    |
+    +-- list_proxmox_resources() for Proxmox VMs
+    +-- list_vms_on_device() for Docker/LXD VMs (from sitemap devices)
+    |
+returns JSON string wrapped in ReadResourceContents
+    |
+Client receives: ReadResourceResult
 ```
 
-## Anti-Patterns to Avoid
+### Mutation + Notification Flow
 
-### Anti-Pattern 1: Connection-Per-Call
-**What:** Creating a new SSH connection or HTTP session for every single tool invocation.
-**Why bad:** TCP handshake overhead, no connection reuse, impossible to enforce security policies centrally, no graceful shutdown.
-**Instead:** Pool connections through ResourceManager, reuse until TTL or failure.
+```
+call_tool("create_proxmox_vm", {...})  [no dry_run on non-destructive tools]
+    |
+handle_call_tool succeeds (no ToolError raised)
+    |
+_notify_resource_change("homelab://infra/vms")
+_notify_resource_change("homelab://infra/proxmox/resources")
+    |
+tracker.is_subscribed(uri)?
+  YES: session.send_resource_updated(uri)
+  NO:  skip silently
+    |
+Client receives: ResourceUpdatedNotification
+    |
+Client calls: resources/read {"uri": "homelab://infra/vms"}  to refresh
+```
 
-### Anti-Pattern 2: Silent Exception Swallowing
-**What:** `except Exception: pass` blocks that hide failures.
-**Why bad:** Makes debugging impossible. A user calls a tool, gets success, but a side effect (sitemap update, cleanup) silently failed.
-**Instead:** Log at debug level minimum. For non-critical failures, log and continue. For critical failures, propagate.
-
-### Anti-Pattern 3: God Modules
-**What:** Single files exceeding 1,000 lines handling multiple distinct responsibilities.
-**Why bad:** Hard to test individual operations in isolation. Changes to deployment logic risk breaking decommission logic. Merge conflicts when working on different features.
-**Instead:** Decompose into sub-packages with clear public APIs (see Pattern 3).
-
-### Anti-Pattern 4: Lazy Security Initialization
-**What:** SSH host key verification set to `None`, SSL verification defaulting to `False`.
-**Why bad:** Every connection is vulnerable to MITM. Users inherit insecure defaults without knowing.
-**Instead:** Secure by default. Known hosts file managed by the server. SSL verification on, with documented override for self-signed certs.
-
-## Scalability Considerations
-
-| Concern | Homelab (1 user) | Small Team (5 users) | Notes |
-|---------|-------------------|---------------------|-------|
-| Database | SQLite fine | SQLite fine (single writer) | PostgreSQL adapter exists if needed |
-| SSH connections | Pool of ~5-20 | Pool of ~5-20 | Same infra, more callers -- pool handles it |
-| Proxmox API | Single shared session | Single shared session | Proxmox API is the bottleneck, not the client |
-| Concurrent tools | asyncio handles it | asyncio handles it | Tools are I/O-bound, not CPU-bound |
-| State persistence | SQLite + in-memory | SQLite + in-memory | Shell sessions lost on restart is acceptable |
-
-The homelab use case does not need horizontal scaling. The architecture should optimize for **reliability** (connections that work, errors that surface, cleanup that happens) not throughput.
+---
 
 ## Suggested Build Order
 
-Based on dependency analysis, the architecture hardening should proceed in this order:
+Dependencies between the three v1.1 features determine safe sequencing.
 
-### Phase 1: Resource Lifecycle (Foundation)
+### Phase 1: MCP Resources — Plumbing (no feature dependencies)
 
-Build the ResourceManager and wire it into existing code. This is the foundation everything else depends on.
+Create `resources.py` with RESOURCE_REGISTRY (static list), SubscriptionTracker (no state), and ResourceFetcher stubs (return placeholder JSON). Wire all four SDK handler decorators into `server.py`. Add `subscription_tracker` property to `ResourceManager`.
 
-1. **ResourceManager class** -- owns SSH pool, HTTP session, DB connection
-2. **Wire into server startup/shutdown** -- explicit lifecycle
-3. **Replace direct `asyncssh.connect` calls** with pooled connections
-4. **Replace per-request `aiohttp.ClientSession`** with shared session
-5. **Add graceful shutdown** via signal handlers (SIGTERM, SIGINT)
+**Why first:** The subscription tracker must exist on ResourceManager before any notification calls can be made. This phase establishes the wiring. ResourceFetcher stubs let clients exercise the protocol path immediately, before real data is connected. Tests verify the SDK integration is correct.
 
-**Why first:** Every other improvement (security, stubs, validation) needs a centralized place to manage connections. Without this, fixing SSH host key verification means changing 19 call sites instead of 1.
+**Deliverable:** Clients can call resources/list and get the URI catalog. Resources/read returns placeholder data. Subscribe/unsubscribe work without error.
 
-### Phase 2: Security Hardening (Unblocked by Phase 1)
+### Phase 2: Dry-Run Mode (no dependencies on Phase 1)
 
-With ResourceManager in place, security changes happen in one place.
+Add `dry_run: bool = False` parameter to six destructive domain functions. Update their JSON schemas. Update the six handler thin-adapters to pass through the argument. Write tests for each dry_run path.
 
-1. **SSH host key verification** -- known_hosts management in ResourceManager
-2. **Proxmox SSL verification** -- default True in shared session config
-3. **API key validation** -- enforce strength check on startup
-4. **Input validation** -- hostname/IP/port validation in handlers
+**Why second:** Lowest coupling of the three features. Each domain function change is independent. No new modules. Immediately user-visible safety value. Can be done in parallel with Phase 1 since there are no shared touchpoints.
 
-**Why second:** Phase 1 centralizes connection creation, so security policies apply everywhere automatically.
+**Deliverable:** All six destructive tools accept `dry_run: true` and return a structured preview.
 
-### Phase 3: Stub Implementation and Silent Error Fixes
+### Phase 3: MCP Resources — Live Data (depends on Phase 1)
 
-Now that connections are pooled and secure, implement the missing functionality.
+Implement `ResourceFetcher.fetch()` for each URI using existing read functions: `db_adapter.get_all_devices()` for devices, `list_proxmox_resources()` for Proxmox, etc. Write tests that verify the JSON shape of each resource.
 
-1. **`_update_sitemap_after_deployment()`** -- use pooled SSH + sitemap
-2. **`_rediscover_device_after_config()`** -- use pooled SSH + discovery
-3. **`_install_with_script()`** -- implement script-based installation
-4. **Replace silent `except: pass`** blocks with debug logging
+**Why third:** ResourceFetcher calls existing read-only query functions — no new persistence. Once real data flows, adding notifications (Phase 4) is straightforward.
 
-**Why third:** Stubs need working connections (Phase 1) and some need SSH (Phase 2 makes those secure).
+**Deliverable:** Resources/read returns real live data for all five URIs.
 
-### Phase 4: Module Decomposition (Optional for 1.0)
+### Phase 4: Resource Subscriptions + Notification Wiring (depends on Phase 1 + Phase 3)
 
-Break large modules into sub-packages. This is the lowest priority because the current structure works -- it is just hard to maintain.
+Add `_notify_resource_change()` to `server.py`. Wire it into each mutating handler after successful non-dry-run execution. Identify which tool mutates which resource URIs (tool-to-URI mapping).
 
-1. **`infrastructure_crud.py`** -> `infrastructure/` sub-package
-2. **`service_installer.py`** -> `services/` sub-package
-3. **`ssh_tools.py`** -> `ssh/` sub-package
+**Why fourth:** Requires live data to be meaningful (Phase 3). Requires knowing exactly which tools mutate which URIs — this knowledge is confirmed during Phase 3 implementation.
 
-**Why last:** Refactoring file structure is risky and does not add user-facing value. Only do this if test coverage is high enough to catch regressions.
+**Deliverable:** After any successful mutating tool call, subscribed clients receive ResourceUpdated notifications for the affected URIs.
+
+### Phase 5: Drift Detection (depends on Phase 3 for drift report resource)
+
+Implement `drift.py`: DriftDetector with `_check_config_drift()` and `_check_state_drift()`, DriftReport dataclass. Add schema, annotation, handler. Wire the drift report into `homelab://drift/report` fetch path in ResourceFetcher. Cache last report in a module-level variable.
+
+**Why last:** Most complex feature. Requires SSH connectivity patterns (SSH is well-understood from Phase 1 tests) and Proxmox API integration (confirmed working in Phase 3 proxmox resource). Building after Phases 1-4 means the notification infrastructure already exists for the drift/report resource.
+
+**Deliverable:** `scan_infrastructure_drift` runs a full config + state drift scan and returns a structured DriftReport. If subscribed, client receives ResourceUpdated on homelab://drift/report after each scan.
+
+### Phase 6: Tech Debt Cleanup (parallel to any phase)
+
+- Fix proxmox_session wiring in resource_manager.py (needed for Phase 5 anyway)
+- Wire API key auth into HTTP transport (`auth.py`)
+- Replace `str(e)` in vm_providers with structured errors
+
+**Why any phase:** These are isolated bug fixes with no dependencies on the new features.
 
 ### Dependency Graph
 
 ```
-Phase 1: Resource Lifecycle
-    |
-    +---> Phase 2: Security Hardening
-    |         |
-    |         +---> Phase 3: Stub Implementation
-    |
-    +---> Phase 4: Module Decomposition (independent, optional)
+Phase 1: Resources Plumbing ──────────────────────────────────┐
+    |                                                         |
+    +─── Phase 3: Resources Live Data ─── Phase 4: Notifs    |
+                                               |              |
+Phase 2: Dry-Run (independent)                 |              |
+                                               v              |
+                                     Phase 5: Drift ──────────┘
+                                     (uses Phase 3 + Phase 4)
+
+Phase 6: Tech Debt (anytime, no dependencies)
 ```
-
-Phase 2 depends on Phase 1 (centralized connection management).
-Phase 3 depends on Phase 2 (stubs need secure connections to implement properly).
-Phase 4 is independent but lowest priority.
-
-## Sources
-
-- Codebase analysis: `/home/shaun/projects/mcp_python_server/src/homelab_mcp/`
-- Architecture mapping: `.planning/codebase/ARCHITECTURE.md`
-- Concerns inventory: `.planning/codebase/CONCERNS.md`
-- Project context: `.planning/PROJECT.md`
-- MCP protocol specification (protocol version 2024-11-05 as referenced in server.py)
-- Python asyncio connection pooling patterns (established practice)
-- aiohttp ClientSession documentation (known best practice: one session per application)
 
 ---
 
-*Architecture research: 2026-03-08*
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Generic Dry-Run Interceptor in server.py
+
+**What people do:** Add a `dry_run` check in `handle_call_tool()` that short-circuits all destructive tools with a generic "would execute: {tool_name} with {args}" message.
+
+**Why it's wrong:** The preview must be meaningful. "Would execute remove_vm with device_id=1" tells the operator nothing about disk space freed or dependent services affected. Each domain module knows its own impact surface.
+
+**Do this instead:** Each destructive domain function has its own `dry_run` path that queries affected resources and returns a structured, human-readable preview specific to what that operation does.
+
+### Anti-Pattern 2: Polling in Resource Subscriptions
+
+**What people do:** Implement subscriptions as a background asyncio task that polls live state every N seconds and pushes ResourceUpdated notifications.
+
+**Why it's wrong:** PROJECT.md explicitly defers periodic background checks. Polling adds asyncio task lifecycle complexity, may overwhelm homelab hardware, and creates noisy notifications for state that has not changed.
+
+**Do this instead:** Subscriptions fire only when a mutating tool call completes successfully. Clients that want proactive drift detection call `scan_infrastructure_drift` on demand.
+
+### Anti-Pattern 3: Slow Resource Reads
+
+**What people do:** ResourceFetcher.fetch() performs SSH discovery across all devices every time a resource is read.
+
+**Why it's wrong:** SSH discovery takes seconds per device. Resource reads are expected to be fast — clients may call them frequently for context. A slow resource read blocks the request handler.
+
+**Do this instead:** Resources read from SQLite (devices) or existing cached/fast API responses (Proxmox). Drift detection is the slow operation and runs as a tool call, not a resource read. The `homelab://drift/report` resource returns the cached last report, which is always fast.
+
+### Anti-Pattern 4: Expanding ResourceManager into a God Object
+
+**What people do:** Add every new shared state (SubscriptionTracker, ResourceFetcher, drift cache, per-URI locks) as properties on ResourceManager.
+
+**Why it's wrong:** ResourceManager's stated responsibility is connection lifecycle (aiohttp session, db adapter). Adding application-level logic blurs this boundary.
+
+**Do this instead:** `resources.py` owns ResourceFetcher and SubscriptionTracker. ResourceManager only gains a `subscription_tracker` property because SubscriptionTracker must survive for the server lifetime (it tracks active subscriptions). ResourceFetcher is stateless and can be instantiated per-call or as a lightweight singleton in resources.py.
+
+---
+
+## Sources
+
+- MCP SDK lowlevel.Server source (mcp>=1.9.1 installed): `list_resources`, `read_resource`, `subscribe_resource`, `unsubscribe_resource` decorators confirmed; `get_capabilities()` auto-sets `subscribe=True` from SubscribeRequest handler presence — HIGH confidence
+- MCP SDK ServerSession source: `send_resource_updated(uri)` and `send_resource_list_changed()` confirmed — HIGH confidence
+- MCP SDK lowlevel helper_types: `ReadResourceContents` return type for `read_resource` handlers confirmed — HIGH confidence
+- Existing source inspection (all modules read directly): server.py, resource_manager.py, tool_handlers/, tool_annotations.py, vm_operations.py, infrastructure_crud.py — all v1.0 patterns confirmed — HIGH confidence
+- PROJECT.md v1.1 milestone and out-of-scope decisions: no periodic drift, no full workflow simulation — HIGH confidence
+
+---
+
+*Architecture research for: Homelab MCP Server v1.1 Safety & Observability*
+*Researched: 2026-03-11*

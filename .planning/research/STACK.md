@@ -1,228 +1,387 @@
-# Technology Stack
+# Stack Research — v1.1 Safety & Observability
 
-**Project:** Homelab MCP Server - Production 1.0
-**Researched:** 2026-03-08
-**Mode:** Ecosystem (stack dimension for production-readiness milestone)
+**Domain:** Safety & observability additions to an existing Python MCP server
+**Researched:** 2026-03-11
+**Confidence:** HIGH overall (most decisions use already-installed dependencies; no new heavy libraries required)
 
-## Critical Finding: MCP SDK Not Used
+---
 
-The project lists `mcp[cli]>=1.9.1` as a dependency (locked at v1.9.4) but **does not import or use any of it**. The server implements its own JSON-RPC protocol manually -- raw `asyncio.StreamReader` on stdin, manual JSON parsing, hand-rolled request routing. Meanwhile, the installed MCP SDK ships with:
+## Scope
 
-- **`FastMCP`** -- high-level server with decorator-based tool registration, automatic schema generation, built-in transport support (stdio, SSE, Streamable HTTP)
-- **`lowlevel.Server`** -- lower-level server with handler registration pattern
-- **`stdio_server`** -- proper stdio transport context manager
-- **`StreamableHTTPSessionManager`** -- production HTTP transport with session management
-- **Built-in auth middleware** -- OAuth/Bearer auth, not custom API key validation
+This is a **delta research document** for v1.1. The existing stack (Python 3.12+, uv, mcp[cli] 1.9.4, asyncssh, aiohttp, SQLite, lowlevel.Server) is validated and not re-researched here. This covers only what is **added or changed** to implement:
 
-This is the single most important stack decision for 1.0: **adopt the MCP SDK you already depend on** or continue maintaining a parallel implementation. The recommendation is clear -- use it.
+1. Dry-run preview for destructive operations
+2. Infrastructure drift detection (config drift + state drift)
+3. MCP Resources with subscriptions
+4. Tech debt cleanup (proxmox_session wiring, API key auth, vm_providers errors)
 
-**Confidence:** HIGH (verified by reading installed SDK source at `.venv/lib/python3.12/site-packages/mcp/`)
+---
 
-## Recommended Stack
+## Recommended Stack Additions
 
-### Core Framework
+### No New Runtime Dependencies Required
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| Python | 3.12+ | Runtime | Already pinned, mature async support, type hints. No reason to change. | HIGH |
-| mcp[cli] | >=1.9.1 (locked 1.9.4) | MCP protocol framework | **Actually use it.** FastMCP or lowlevel.Server handles JSON-RPC, transport negotiation, protocol versioning, and tool registration. Eliminates ~200 lines of manual protocol code in server.py. The SDK handles stdio, SSE, and Streamable HTTP transports correctly. | HIGH |
-| uv | latest | Package management | Already used. Fastest Python resolver/installer. Lockfile present. | HIGH |
-| hatchling | latest | Build backend | Already used. Works well with uv. | HIGH |
+All three feature areas can be implemented with the current dependency set. The analysis below explains why.
 
-### SSH & Remote Management
+---
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| asyncssh | >=2.14.0 (locked 2.21.0) | SSH operations | Correct choice. Only serious async SSH library for Python. The version is current. **Must fix `known_hosts=None` across 19 call sites.** asyncssh supports `known_hosts` parameter accepting file paths, `SSHKnownHosts` objects, or callback functions. Use `~/.ssh/known_hosts` as default with a trust-on-first-use (TOFU) pattern. | HIGH |
+## Feature Area 1: Dry-Run Preview
 
-**Do not use:** paramiko for core SSH -- it's sync-only, would require thread pools. Keep it only in the `[automation]` extra where Ansible requires it.
+### Approach: Native Python pattern, no library needed
 
-### Proxmox Integration
+**Confidence: HIGH**
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| aiohttp | >=3.9.0 (locked 3.12.13) | Proxmox API HTTP client | Already used. Mature async HTTP client. **Must implement connection pooling** -- currently creates new `ClientSession` + `TCPConnector` per request. Create a single session on `ProxmoxAPIClient.__init__` and reuse it. | HIGH |
+Dry-run for destructive operations is a structural pattern, not a library problem. The project already has:
 
-**Do not use:** `proxmoxer` -- it's a sync library wrapping `requests`. The project already has a working async Proxmox client; adding a sync wrapper would be a regression.
+- `destructiveHint=True` annotations on the 6 destructive tools in `tool_annotations.py`
+- A `validate_only` parameter precedent in `infrastructure_crud.py` (`deploy_infrastructure_plan`)
 
-**Do not use:** `httpx` for Proxmox -- the project already has `aiohttp` doing this work. Having both `aiohttp` and `httpx` as core dependencies adds confusion. Note: `httpx` is pulled in by the MCP SDK anyway (it's a transitive dependency), but for application code, pick one HTTP client. Since aiohttp is already integrated for Proxmox, keep it.
+The right pattern for this codebase is a `dry_run: bool` parameter on each destructive tool handler that:
 
-### HTTP Transport
+1. Introspects what the operation **would** do (reads state, resolves targets)
+2. Returns a structured preview dict instead of executing
+3. Never calls the mutating operation
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| starlette | >=0.30.0 (locked 0.47.1) | ASGI framework | Already a dependency (both directly and via MCP SDK). When adopting the MCP SDK's transport layer, the custom `MCPHTTPTransport` class can be replaced by `StreamableHTTPSessionManager` which uses Starlette internally. | HIGH |
-| uvicorn | >=0.24.0 (locked 0.34.3) | ASGI server | Standard choice for running Starlette apps. Keep as-is. | HIGH |
-| websockets | >=12.0 (locked 16.0) | Interactive shell sessions | Used for WebSocket-based shell sessions (a feature separate from MCP protocol). Keep for this specific feature. | HIGH |
+**Why not a dry-run library (drypy, dryable)?**
 
-### Data & Validation
+Both `drypy` and `dryable` are minimal libraries (<200 lines) that intercept calls with a global flag and log them. They assume you can skip the entire function body on dry-run. For this server, dry-run needs to **return a rich preview** (which VMs would be stopped, what IDs, current state), not just log "would have called delete_vm(42)". A library decorator that silences calls is actively harmful — it would return `None` instead of the preview. Custom per-handler logic is the correct approach.
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| pydantic | 2.11.7 (transitive) | Data validation | Already pulled in by MCP SDK. **Use it directly** for input validation (hostnames, IPs, port ranges) instead of hand-rolling validation. Replace `jsonschema` for tool input validation where the SDK handles it. | HIGH |
-| SQLite (stdlib) | -- | Device tracking database | Correct for single-user homelab. No need for PostgreSQL at 1.0. Keep the PostgreSQL adapter as optional/future. | HIGH |
-| pyyaml | >=6.0 | Service template parsing | Required for YAML service definitions. Keep. | HIGH |
+**Pattern:**
 
-**Consider removing:** `jsonschema>=4.24.0` -- if adopting FastMCP, tool input schemas are handled by pydantic type annotations on tool functions. The explicit JSON Schema validation becomes redundant. Evaluate during migration.
+```python
+# In each destructive tool handler:
+async def handle_delete_proxmox_vm(vmid: int, node: str, dry_run: bool = False) -> dict:
+    # Always resolve — never skip this:
+    vm_info = await proxmox_api.get_vm_status(node, vmid)
 
-### Supporting Libraries
+    if dry_run:
+        return {
+            "status": "dry_run",
+            "would_delete": {"vmid": vmid, "node": node, "name": vm_info["name"], "status": vm_info["status"]},
+            "warning": "This action is irreversible. Re-run with dry_run=False to execute."
+        }
 
-| Library | Version | Purpose | When to Use | Confidence |
-|---------|---------|---------|-------------|------------|
-| aiofiles | >=24.1.0 (locked 24.1.0) | Async file I/O | Reading/writing config files, service templates. Keep. | HIGH |
-| rich | >=13.10.5 (locked 14.0.0) | Terminal formatting | CLI output, debug logging. Keep. | HIGH |
+    # Actually execute:
+    return await proxmox_api.delete_vm(node, vmid)
+```
 
-### Testing
+**Tool schema addition** — each destructive tool gets a new `dry_run` boolean property in its `inputSchema`:
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| pytest | >=8.3.5 (locked 8.4.1) | Test runner | Standard. Well-configured with strict markers. | HIGH |
-| pytest-asyncio | >=0.23.0 (locked 1.0.0) | Async test support | **Note: locked version jumped to 1.0.0** -- this is a major version bump that changed the default mode to `strict`. Verify tests still work. Should set `asyncio_mode = "auto"` in pyproject.toml for convenience. | MEDIUM |
-| pytest-cov | >=6.1.1 (locked 6.2.1) | Coverage | 40% minimum enforced. Should increase to 60%+ for 1.0. | HIGH |
-| pytest-mock | >=3.14.0 (locked 3.14.1) | Mocking | Standard fixture-based mocking. | HIGH |
-| aioresponses | >=0.7.6 (locked 0.7.8) | HTTP mocking | For mocking aiohttp calls to Proxmox API. Keep. | HIGH |
-| docker | >=7.0.0 | Integration tests | For SSH container tests. Keep as dev dependency. | HIGH |
+```json
+"dry_run": {
+    "type": "boolean",
+    "description": "If true, show what would happen without executing. Default false.",
+    "default": false
+}
+```
 
-### Code Quality
+**No new dependencies.** No version bumps needed.
 
-| Technology | Version | Purpose | Why | Confidence |
-|------------|---------|---------|-----|------------|
-| ruff | >=0.8.0 (locked 0.14.0) | Linting + formatting | Current config is good. Consider adding `S` (flake8-bandit) rules to ruff and removing standalone bandit -- ruff's bandit rules are faster and sufficient. | HIGH |
-| mypy | >=1.13.0 (locked 1.18.2) | Type checking | Strict mode already configured correctly. | HIGH |
-| bandit | >=1.7.0 (locked 1.8.6) | Security linting | **Consider removing** -- ruff's `S` ruleset covers the same checks faster. Currently bandit skips `B101` and `B601`; equivalent ruff ignores can be configured. | MEDIUM |
-| safety | >=3.0.0 (locked 3.6.2) | Dependency vulnerability scanning | Keep for CI. Alternative: `pip-audit` is more actively maintained, but safety works fine. | MEDIUM |
-| pre-commit | >=4.3.0 | Git hooks | Keep. Enforces quality gates before commit. | HIGH |
+---
 
-## Alternatives Considered
+## Feature Area 2: Drift Detection
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| MCP Protocol | Use mcp SDK (FastMCP/lowlevel) | Keep custom JSON-RPC | Custom implementation duplicates SDK functionality, won't get protocol updates (Streamable HTTP, capability negotiation), and is a maintenance burden |
-| SSH | asyncssh | paramiko | paramiko is synchronous, would need thread pools; asyncssh is async-native |
-| HTTP Client (Proxmox) | aiohttp (keep existing) | httpx | Already integrated; switching gains nothing and costs migration effort |
-| HTTP Client (general) | httpx (via MCP SDK) | aiohttp | MCP SDK uses httpx internally; for non-Proxmox HTTP, use what SDK provides |
-| Validation | pydantic (via MCP SDK) | jsonschema | pydantic is already a transitive dep, provides better DX with type annotations |
-| Security linting | ruff `S` rules | standalone bandit | One tool instead of two; ruff is faster; same underlying ruleset |
-| Build | hatchling | setuptools | Already using hatchling; it's simpler for pure-Python projects |
-| Python version | 3.12+ | 3.13+ | 3.12 is the right floor -- wide adoption, all needed features. 3.13 would narrow the user base unnecessarily |
+### Approach: deepdiff for comparison, stdlib dataclasses for models
 
-## Version Pinning Strategy
+**Confidence: HIGH for deepdiff; HIGH for stdlib dataclasses**
 
-The current approach uses `>=` minimum version pins with a `uv.lock` lockfile. This is correct for an application:
+Drift detection requires comparing two snapshots of infrastructure state: "what MCP last recorded" (stored in SQLite) vs "what is actually running now" (queried from Proxmox API / SSH).
 
-- **pyproject.toml**: Keep `>=` for flexibility
-- **uv.lock**: Provides reproducible builds
-- **CI**: Test against locked versions AND latest to catch breakage early
+#### deepdiff — for structural comparison
 
-### Recommended Version Bumps for 1.0
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| deepdiff | 8.6.1 (latest) | Compare expected vs actual infrastructure state | Handles nested dicts/lists that characterize infrastructure state responses. `ignore_order=True` is essential for list comparison (interface lists, tag lists). Returns structured diff objects that serialize cleanly to JSON. Already handles the "exclude transient fields" use case via `exclude_paths`. |
 
-| Package | Current Floor | Recommend | Reason |
-|---------|--------------|-----------|--------|
-| pytest-asyncio | >=0.23.0 | >=1.0.0 | Locked at 1.0.0 already; floor should match to avoid confusion with breaking API changes between 0.x and 1.0 |
-| starlette | >=0.30.0 | >=0.37.0 | 0.30 is very old; if using SDK transports, match what SDK requires |
+**Confidence: HIGH** — verified via PyPI (released September 3, 2025). Requires Python 3.9+. Compatible with Python 3.12.
 
-## Dependencies to Add
+**Why not manual comparison?** Infrastructure state is deeply nested (Proxmox VM status has 30+ fields; network interfaces are lists). Hand-rolling deep comparison for every field type is error-prone and verbose. deepdiff handles this correctly in 10 lines.
 
-| Package | Version | Purpose | Confidence |
-|---------|---------|---------|------------|
-| structlog | >=24.0.0 | Structured logging | Replace `logging.basicConfig()` calls with structured JSON logging. Critical for debugging production issues. Structured logs with context (tool name, target host, session ID) are far more useful than unstructured text. | MEDIUM |
-| pydantic-settings | (already transitive) | Configuration from env | Already pulled in by MCP SDK's FastMCP. Can replace the manual `os.getenv()` config classes with `BaseSettings` subclasses that validate on startup. | HIGH |
+**Why not jsondiff or dictdiffer?** deepdiff is the most actively maintained with 8.x releases through 2025. jsondiff (last release 2022) and dictdiffer (last release 2019) are effectively unmaintained.
 
-## Dependencies to Potentially Remove
+**Installation:**
 
-| Package | Current | Rationale | Risk |
-|---------|---------|-----------|------|
-| jsonschema | >=4.24.0 | Redundant if FastMCP handles tool schemas via pydantic | LOW -- only if full SDK migration |
-| bandit | >=1.7.0 | Replace with ruff `S` rules | LOW -- same checks, one fewer tool |
-| httpx | >=0.28.1 | Transitive via MCP SDK anyway; remove as direct dependency | LOW |
+```bash
+# Add to pyproject.toml [project.dependencies]:
+uv add deepdiff
+```
+
+**Typical usage pattern for this project:**
+
+```python
+from deepdiff import DeepDiff
+
+def compute_drift(expected: dict, actual: dict) -> dict:
+    """Compare expected (stored) vs actual (live) infrastructure state."""
+    diff = DeepDiff(
+        expected,
+        actual,
+        ignore_order=True,
+        exclude_paths=[
+            "root['uptime']",       # Transient, always changes
+            "root['cpu_usage']",    # Telemetry, not config
+            "root['last_seen']",    # Tracking timestamp
+        ]
+    )
+    return {
+        "has_drift": bool(diff),
+        "changes": diff.to_dict() if diff else {},
+    }
+```
+
+#### Data models — stdlib dataclasses, no Pydantic needed
+
+Drift scan results are internal data structures serialized to JSON for tool responses. Python 3.12 `dataclasses` with `__post_init__` validation is sufficient. Pydantic is a transitive dependency but adding it as a **direct** dependency for drift models is overengineering for this use case.
+
+**Drift report structure:**
+
+```python
+from dataclasses import dataclass, field
+from datetime import datetime
+
+@dataclass
+class DriftItem:
+    resource_type: str   # "vm", "lxc", "device", "service"
+    resource_id: str     # vmid, device hostname, service name
+    drift_type: str      # "config_drift" | "state_drift"
+    expected: dict
+    actual: dict
+    changes: dict        # deepdiff output
+    severity: str        # "critical" | "warning" | "info"
+
+@dataclass
+class DriftReport:
+    scanned_at: datetime
+    resources_checked: int
+    drift_items: list[DriftItem] = field(default_factory=list)
+
+    @property
+    def has_drift(self) -> bool:
+        return len(self.drift_items) > 0
+```
+
+**No new dependencies beyond deepdiff.** SQLite already stores device/VM state snapshots.
+
+#### What triggers drift detection
+
+- **Config drift**: Compare Proxmox VM config (cores, memory, network) stored in SQLite after last MCP operation vs current Proxmox API response
+- **State drift**: Compare expected VM/service status ("running" after `start_vm`) vs current Proxmox task status
+
+Both use the same deepdiff comparison pattern. The `on-demand scan` tool queries all tracked resources via existing Proxmox API client and SSH connections, then diffs each against stored baselines.
+
+---
+
+## Feature Area 3: MCP Resources with Subscriptions
+
+### Approach: mcp[cli] lowlevel.Server built-in handlers (already installed)
+
+**Confidence: HIGH** for Resources API; **MEDIUM** for subscription implementation details
+
+The project already uses `mcp[cli] 1.9.4` with `lowlevel.Server`. The SDK includes built-in support for Resources via the same decorator pattern already in use for tools.
+
+#### MCP SDK resource capability (verified against MCP spec and PyPI 1.26.0 docs)
+
+The MCP protocol defines a full resource lifecycle:
+
+- `resources/list` — client discovers available resources
+- `resources/read` — client fetches a resource by URI
+- `resources/subscribe` — client subscribes to change notifications for a URI
+- `notifications/resources/updated` — server notifies subscribed client of change
+- `notifications/resources/list_changed` — server notifies when resource list changes
+
+Server capability declaration (required):
+
+```json
+{
+  "capabilities": {
+    "resources": {
+      "subscribe": true,
+      "listChanged": true
+    }
+  }
+}
+```
+
+#### lowlevel.Server handler registration
+
+```python
+@server.list_resources()
+async def handle_list_resources() -> list[types.Resource]:
+    return [
+        types.Resource(
+            uri=AnyUrl("homelab://vms"),
+            name="VM List",
+            description="Live list of all VMs and containers across Proxmox nodes",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri=AnyUrl("homelab://devices"),
+            name="Device Inventory",
+            description="All discovered devices in the network sitemap",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri=AnyUrl("homelab://services"),
+            name="Service Status",
+            description="Installed service health across managed hosts",
+            mimeType="application/json",
+        ),
+    ]
+
+@server.read_resource()
+async def handle_read_resource(uri: AnyUrl) -> str:
+    uri_str = str(uri)
+    if uri_str == "homelab://vms":
+        rm = get_resource_manager()
+        vms = await proxmox_api.list_all_vms(rm.proxmox_session)
+        return json.dumps(vms)
+    ...
+```
+
+**Confidence: HIGH** — `list_resources` and `read_resource` decorators are confirmed in official API reference (https://anish-natekar.github.io/mcp_docs/api-reference.html) and consistent with the existing `list_tools` / `call_tool` pattern already shipping in `server.py`.
+
+#### Subscription implementation
+
+The `subscribe_resource` decorator and `send_resource_updated` notification are present in the SDK (`ServerSession.send_resource_updated` is confirmed in the API reference). The exact integration with lowlevel.Server requires verification against the installed SDK source.
+
+**Required investigation before implementation** (Phase-specific research flag):
+
+1. Verify `@server.subscribe_resource()` decorator exists in mcp 1.9.4 (check `.venv/lib/python3.12/site-packages/mcp/server/lowlevel/server.py`)
+2. Verify how to call `server.request_context.session.send_resource_updated(uri)` or equivalent from within a background notification task
+3. Understand whether capability flags (`subscribe: true`) are auto-detected from registered handlers or must be manually declared in `Server()` constructor
+
+**Subscription tracking — stdlib asyncio, no library needed:**
+
+The subscription registry is a simple in-memory dict mapping URI strings to sets of subscriber identifiers. For a single-user homelab server (one MCP client at a time), this is trivially simple:
+
+```python
+# In resource_manager.py or a new resources.py module:
+_subscriptions: dict[str, set[str]] = {}  # uri -> set of session_ids
+
+def add_subscription(uri: str, session_id: str) -> None:
+    _subscriptions.setdefault(uri, set()).add(session_id)
+
+def remove_subscription(uri: str, session_id: str) -> None:
+    _subscriptions.get(uri, set()).discard(session_id)
+
+def has_subscribers(uri: str) -> bool:
+    return bool(_subscriptions.get(uri))
+```
+
+**No asyncio pub/sub library needed.** Libraries like `asyncio-multisubscriber-queue` solve the multi-producer/multi-consumer broadcast problem. This server has one producer (the MCP server process) and one subscriber (the connected MCP client). A plain dict + direct notification call is correct.
+
+**Notification trigger** — subscriptions are passive (notify on read-resource cache miss or explicit tool call). The v1.1 scope explicitly defers "auto-detect drift with periodic background checks." Notifications are sent when:
+
+1. A destructive tool completes → `notifications/resources/updated` for affected resource URIs
+2. An on-demand drift scan detects changes → `notifications/resources/updated` for drifted resources
+
+This means notification sends happen synchronously within existing tool handlers, not from a background task. No asyncio background tasks, no polling loops.
+
+#### Resource URIs for this project
+
+| URI | Content | MimeType |
+|-----|---------|----------|
+| `homelab://vms` | All Proxmox VMs/LXCs with status | `application/json` |
+| `homelab://devices` | Network sitemap device inventory | `application/json` |
+| `homelab://services` | Service health across managed hosts | `application/json` |
+| `homelab://drift/{scan_id}` | Drift scan results (templated) | `application/json` |
+
+Custom URI scheme `homelab://` is valid per MCP spec (RFC 3986 compliant, custom schemes allowed). Prefer this over `file://` since these are not filesystem resources.
+
+---
+
+## Feature Area 4: Tech Debt Cleanup
+
+### proxmox_session wiring
+
+**No new dependencies.** The fix is passing `get_resource_manager().proxmox_session` into `ProxmoxAPIClient` at handler call time, replacing per-request session creation. Already wired in `ResourceManager.proxmox_session` — the bug is that handlers call `ProxmoxAPIClient()` directly and create their own sessions. Fix: inject the pooled session.
+
+### API key authentication
+
+**No new dependencies.** The `auth.py` module already exists. The fix connects the existing `APIKeyMiddleware` (in `http_app.py`) to actually reject unauthenticated requests when `MCP_API_KEY` is set. This is configuration wiring, not a library gap.
+
+### vm_providers error handling
+
+**No new dependencies.** Replace `str(e)` patterns with `sanitize_error()` from `log_filter.py` (already used in `infrastructure_crud.py`). Pure code cleanup.
+
+---
+
+## Summary: Dependencies Delta
+
+| Package | Action | Version | Rationale |
+|---------|--------|---------|-----------|
+| `deepdiff` | **ADD** | `>=8.0.0` | Drift comparison engine. Current: 8.6.1. No alternative avoids verbose manual deep comparison. |
+| Everything else | No change | — | All other v1.1 features are implementable with the current stack. |
+
+**What NOT to add:**
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `drypy` / `dryable` | Returns None on dry-run; can't return rich preview | Per-handler `dry_run: bool` parameter |
+| `asyncio-multisubscriber-queue` | Multi-subscriber broadcast for single-client server is overengineering | `dict[str, set[str]]` subscription registry |
+| `apscheduler` / `aiocron` | Periodic background drift checks are explicitly out of scope for v1.1 | On-demand scan tool only |
+| `jsondiff` / `dictdiffer` | Unmaintained (2019-2022); no Python 3.12 validation | deepdiff 8.x |
+| `pydantic` (as direct dep) | Already transitive; overkill for internal drift models | stdlib dataclasses |
+| Redis / message queue | Single-user homelab has one subscriber; no fan-out needed | In-memory dict |
+
+---
+
+## Version Compatibility
+
+| Package | Requires | Compatible With | Notes |
+|---------|---------|-----------------|-------|
+| deepdiff 8.6.1 | Python 3.9+ | Python 3.12 ✓ | No conflicts with existing deps |
+| mcp[cli] 1.9.4 | — | Resources API confirmed present | subscribe_resource decorator needs verification in installed version |
+
+---
 
 ## Installation
 
 ```bash
-# Core installation (unchanged)
-uv sync
+# Add deepdiff to pyproject.toml [project.dependencies], then:
+uv add deepdiff
 
-# With optional features
-uv sync --extra monitoring
-uv sync --extra automation
-uv sync --extra security
-
-# Dev dependencies
-uv sync --group dev
-
-# If adding structlog
-# Add to pyproject.toml dependencies first, then:
-uv sync
+# Verify: should show deepdiff 8.x
+uv run python -c "import deepdiff; print(deepdiff.__version__)"
 ```
 
-## Key Migration Decisions
+---
 
-### 1. FastMCP vs lowlevel.Server
+## Phase-Specific Research Flags
 
-**Recommend: Start with lowlevel.Server, then evaluate FastMCP.**
+| Phase | What Needs Verification | How to Verify |
+|-------|------------------------|---------------|
+| MCP Resources | `@server.subscribe_resource()` decorator availability in mcp 1.9.4 | `grep -r "subscribe_resource" .venv/lib/python3.12/site-packages/mcp/` |
+| MCP Resources | How to send `resource_updated` notification from within tool handler (session reference) | Read `.venv/lib/python3.12/site-packages/mcp/server/lowlevel/server.py` directly |
+| MCP Resources | Capability flag declaration — auto-detected or manual in `Server()` constructor | Same source inspection |
+| Drift Detection | SQLite schema for baseline snapshots (what columns exist, what to add) | Read `src/homelab_mcp/database.py` and migration system |
 
-The lowlevel.Server provides handler registration with `@server.list_tools()` and `@server.call_tool()` decorators. This maps cleanly to the existing `tools.py` TOOLS dict + `execute_tool()` pattern. Migration is mechanical:
-
-```python
-# Current pattern (manual JSON-RPC):
-class HomelabMCPServer:
-    async def handle_request(self, request):
-        if method == "tools/list": ...
-        elif method == "tools/call": ...
-
-# lowlevel.Server pattern:
-server = Server("homelab-mcp")
-
-@server.list_tools()
-async def list_tools():
-    return [Tool(name=k, description=v["description"], ...) for k, v in TOOLS.items()]
-
-@server.call_tool()
-async def call_tool(name: str, arguments: dict):
-    return await execute_tool(name, arguments)
-```
-
-FastMCP would require more refactoring (individual `@mcp.tool()` decorators per tool function) but gives automatic schema generation from type hints. Consider for a future milestone.
-
-### 2. HTTP Transport Migration
-
-Replace custom `MCPHTTPTransport` + `SSEResponse` with SDK's `StreamableHTTPSessionManager`. This gives:
-- Proper MCP session management
-- Streamable HTTP transport (current standard, replacing SSE)
-- Built-in OAuth auth middleware (optional)
-
-### 3. Proxmox Client Session Pooling
-
-Not a library change -- architectural fix. Create `aiohttp.ClientSession` once in `__init__` or via an async context manager, reuse across API calls:
-
-```python
-class ProxmoxAPIClient:
-    async def __aenter__(self):
-        self._session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(ssl=self.verify_ssl)
-        )
-        return self
-
-    async def __aexit__(self, *args):
-        await self._session.close()
-```
+---
 
 ## Sources
 
-- MCP SDK source code: `.venv/lib/python3.12/site-packages/mcp/` (v1.9.4) -- direct inspection
-- Project pyproject.toml and uv.lock -- direct inspection
-- Project source code in `src/homelab_mcp/` -- direct inspection
-- asyncssh known_hosts documentation: training data (MEDIUM confidence -- verify asyncssh docs for exact API)
-- pytest-asyncio 1.0 migration: training data (MEDIUM confidence -- verify changelog)
-- structlog recommendation: training data (HIGH confidence -- well-established library)
+- PyPI `mcp` package page — version 1.26.0 (latest), confirmed subscribe/listChanged capabilities exist; v1.9.4 is installed in this project (verified from uv.lock)
+- PyPI `deepdiff` package page — version 8.6.1, released September 3, 2025; Python 3.9+ requirement confirmed
+- MCP spec resources documentation (https://modelcontextprotocol.io/docs/concepts/resources) — subscribe/listChanged capability JSON structure, protocol messages, notification flow verified
+- MCP API reference (https://anish-natekar.github.io/mcp_docs/api-reference.html) — `list_resources()`, `read_resource()` decorator signatures confirmed; `send_resource_updated`, `send_resource_list_changed` confirmed on ServerSession
+- Project source inspection: `src/homelab_mcp/server.py`, `src/homelab_mcp/resource_manager.py`, `src/homelab_mcp/tool_annotations.py`, `src/homelab_mcp/infrastructure_crud.py`, `pyproject.toml`, `uv.lock`
+- deepdiff GitHub (https://github.com/seperman/deepdiff) — active maintenance, 8.x series through 2025
+- `drypy` (https://github.com/dzanotelli/drypy) and `dryable` (https://github.com/haarcuba/dryable) — evaluated and rejected; confirmed via search
+
+---
 
 ## Confidence Assessment
 
 | Area | Level | Reason |
 |------|-------|--------|
-| MCP SDK adoption | HIGH | Directly inspected installed SDK; clear feature overlap with custom code |
-| Core dependencies (asyncssh, aiohttp) | HIGH | Verified locked versions in uv.lock; well-established libraries |
-| SSH security patterns | MEDIUM | Training data for asyncssh known_hosts API; needs docs verification |
-| pytest-asyncio 1.0 changes | MEDIUM | Training data; locked version confirms 1.0.0 but behavior changes need verification |
-| structlog recommendation | MEDIUM | Standard in Python ecosystem but not verified for this specific project's needs |
-| Dependency removal candidates | MEDIUM | Depends on SDK migration scope; jsonschema removal requires full FastMCP adoption |
+| Dry-run pattern (no library) | HIGH | Pattern already present in codebase (`validate_only`); decorator libraries confirmed unsuitable |
+| deepdiff selection | HIGH | Version verified via PyPI; no competing maintained alternatives |
+| MCP Resources list/read | HIGH | Decorator pattern confirmed in API reference, consistent with existing `list_tools` usage |
+| MCP Resources subscriptions | MEDIUM | Protocol spec confirmed; Python SDK subscribe decorator and notification send API needs source verification in installed 1.9.4 |
+| Subscription registry (stdlib) | HIGH | Single-client server; fan-out complexity not needed |
+| Tech debt fixes (no new deps) | HIGH | All are wiring/pattern fixes in existing modules |
+
+---
+
+*Stack research for: Homelab MCP Server v1.1 Safety & Observability*
+*Researched: 2026-03-11*
