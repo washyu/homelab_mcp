@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from .log_filter import sanitize_error
+from .progress import emit_progress
 from .sitemap import NetworkSiteMap, discover_and_store
 from .ssh_connection import ssh_connect
 
@@ -65,12 +66,22 @@ async def deploy_infrastructure_plan(deployment_plan: dict[str, Any], validate_o
         deployment_results = []
 
         # Deploy services
-        for service in deployment_plan.get("services", []):
+        services = deployment_plan.get("services", [])
+        for i, service in enumerate(services):
+            await emit_progress(
+                "info",
+                f"Deploying service {service.get('name', 'unknown')} ({i + 1}/{len(services)})",
+            )
             result = await _deploy_service(manager, service)
             deployment_results.append(result)
 
         # Apply network changes
-        for network_change in deployment_plan.get("network_changes", []):
+        network_changes = deployment_plan.get("network_changes", [])
+        for i, network_change in enumerate(network_changes):
+            await emit_progress(
+                "info",
+                f"Applying network change ({i + 1}/{len(network_changes)})",
+            )
             result = await _apply_network_change(manager, network_change)
             deployment_results.append(result)
 
@@ -330,12 +341,22 @@ async def scale_infrastructure_services(scaling_plan: dict[str, Any], validate_o
         scaling_results = []
 
         # Execute scale-up operations
-        for scale_up in scaling_plan.get("scale_up", []):
+        scale_ups = scaling_plan.get("scale_up", [])
+        for i, scale_up in enumerate(scale_ups):
+            await emit_progress(
+                "info",
+                f"Scaling up {scale_up.get('service_name', 'unknown')} ({i + 1}/{len(scale_ups)})",
+            )
             result = await _scale_service_up(manager, scale_up)
             scaling_results.append(result)
 
         # Execute scale-down operations
-        for scale_down in scaling_plan.get("scale_down", []):
+        scale_downs = scaling_plan.get("scale_down", [])
+        for i, scale_down in enumerate(scale_downs):
+            await emit_progress(
+                "info",
+                f"Scaling down {scale_down.get('service_name', 'unknown')} ({i + 1}/{len(scale_downs)})",
+            )
             result = await _scale_service_down(manager, scale_down)
             scaling_results.append(result)
 

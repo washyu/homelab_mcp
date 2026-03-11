@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 from .database import calculate_data_hash, get_database_adapter
 from .log_filter import sanitize_error
+from .progress import emit_progress
 
 
 @dataclass
@@ -339,8 +340,13 @@ async def discover_and_store(
 async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[str, Any]]) -> str:
     """Discover multiple devices and store them in the site map."""
     results = []
+    total = len(targets)
 
-    for target in targets:
+    for i, target in enumerate(targets):
+        await emit_progress(
+            "info",
+            f"Discovering {target.get('hostname', 'unknown')} ({i + 1}/{total})",
+        )
         try:
             result = await discover_and_store(
                 sitemap,
@@ -360,10 +366,12 @@ async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[st
                 }
             )
 
+    await emit_progress("info", f"Bulk discovery complete: {total} targets processed")
+
     return json.dumps(
         {
             "status": "success",
-            "total_targets": len(targets),
+            "total_targets": total,
             "results": results,
             "completed_at": datetime.now().isoformat(),
         },

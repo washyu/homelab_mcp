@@ -14,14 +14,22 @@ from typing import Any
 
 import mcp.types as types
 from mcp.server.lowlevel import Server
-from mcp.server.lowlevel.server import request_ctx
 
 from .config import MCPConfig, get_config
 from .log_filter import CredentialFilter
+from .progress import (
+    LOG_LEVEL_ORDER,
+    emit_progress,
+    set_min_log_level,
+    should_emit,
+)
 from .resource_manager import ResourceManager
 from .tool_annotations import get_tool_annotations
 from .tool_handlers import get_tool_handler
 from .tool_schemas import get_all_tool_schemas
+
+# Re-export progress symbols for backward compatibility and plan contract
+__all__ = ["LOG_LEVEL_ORDER", "emit_progress", "should_emit"]
 
 logger = logging.getLogger(__name__)
 
@@ -42,60 +50,6 @@ def get_resource_manager() -> ResourceManager:
     if _resource_manager is None:
         raise RuntimeError("ResourceManager not available -- server lifespan not started")
     return _resource_manager
-
-
-# ---------------------------------------------------------------------------
-# MCP Logging Notification Support
-# ---------------------------------------------------------------------------
-
-# Syslog severity levels in ascending order (RFC 5424)
-LOG_LEVEL_ORDER: dict[str, int] = {
-    "debug": 0,
-    "info": 1,
-    "notice": 2,
-    "warning": 3,
-    "error": 4,
-    "critical": 5,
-    "alert": 6,
-    "emergency": 7,
-}
-
-# Minimum log level; updated by set_logging_level handler when client sends logging/setLevel.
-_min_log_level: types.LoggingLevel = "info"
-
-
-def should_emit(level: str, min_level: str) -> bool:
-    """Return True if *level* is at or above *min_level* in syslog severity order."""
-    return LOG_LEVEL_ORDER.get(level, 0) >= LOG_LEVEL_ORDER.get(min_level, 0)
-
-
-async def emit_progress(
-    level: types.LoggingLevel,
-    message: str,
-    data: Any | None = None,
-) -> None:
-    """Send a log notification to the connected MCP client.
-
-    Gracefully degrades:
-    - Returns immediately when *level* is below the client-configured minimum.
-    - Catches LookupError when called outside a request context (e.g. during tests).
-    - Catches generic exceptions to avoid crashing a tool handler due to notification failure.
-    """
-    if not should_emit(level, _min_log_level):
-        return
-
-    try:
-        ctx = request_ctx.get()
-        await ctx.session.send_log_message(
-            level=level,
-            data=data or message,
-            logger="homelab-mcp",
-        )
-    except LookupError:
-        # Not in a request context -- silently skip.
-        pass
-    except Exception:
-        logger.debug("Failed to emit progress notification: %s", message)
 
 
 @asynccontextmanager
@@ -137,8 +91,7 @@ server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
 @server.set_logging_level()
 async def handle_set_logging_level(level: types.LoggingLevel) -> None:
     """Store the client-requested minimum log level for notification filtering."""
-    global _min_log_level  # noqa: PLW0603
-    _min_log_level = level
+    set_min_log_level(level)
     logger.info("Client set minimum log level to %s", level)
 
 
