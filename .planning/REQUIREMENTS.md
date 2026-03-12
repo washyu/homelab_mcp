@@ -16,8 +16,8 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 ### Dry-Run
 
 - [ ] **DRY-01**: User can pass `dry_run: true` to `decommission_device` and see what would be affected
-- [ ] **DRY-02**: User can pass `dry_run: true` to `remove_vm` and see what would be affected
-- [ ] **DRY-03**: User can pass `dry_run: true` to `remove_server` and see what would be affected
+- [x] **DRY-02**: User can pass `dry_run: true` to `remove_vm` and see what would be affected
+- [x] **DRY-03**: User can pass `dry_run: true` to `remove_server` and see what would be affected
 - [ ] **DRY-04**: User can pass `dry_run: true` to `delete_proxmox_vm` and see what would be affected
 - [ ] **DRY-05**: User can pass `dry_run: true` to `destroy_terraform_service` and see what would be affected
 - [ ] **DRY-06**: User can pass `dry_run: true` to `rollback_infrastructure_changes` and see what would be affected
@@ -90,8 +90,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEBT-02 | Phase 6 | Complete |
 | DEBT-03 | Phase 6 | Complete |
 | DRY-01 | Phase 8 | Pending |
-| DRY-02 | Phase 8 | Pending |
-| DRY-03 | Phase 8 | Pending |
+| DRY-02 | Phase 8 | Complete |
+| DRY-03 | Phase 8 | Complete |
 | DRY-04 | Phase 8 | Pending |
 | DRY-05 | Phase 8 | Pending |
 | DRY-06 | Phase 8 | Pending |

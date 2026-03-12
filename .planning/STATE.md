@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 08-01-PLAN.md: dry_run contract builder and TDD test scaffold"
-last_updated: "2026-03-12T01:19:17.573Z"
+stopped_at: "Completed 08-03-PLAN.md: dry_run for remove_vm and remove_server"
+last_updated: "2026-03-12T01:30:34Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Key v1.1 decisions:
 - [Phase 07-01]: AnyUrl('homelab://vms') stringifies without triple slash in pydantic v2; RESOURCE_NOT_FOUND=-32002 constant added; subscribe/unsubscribe use set for idempotency
 - [Phase 08-dry-run-mode]: build_dry_run_response() returns flat dict with mode, tool, would_affect, risk_level, reversible; preview merged only when preview_details given
 - [Phase 08-dry-run-mode]: get_resource_manager patched at homelab_mcp.server (not proxmox_handlers) since it is a local import; remove_server uses MagicMock not AsyncMock (sync function)
+- [Phase 08-03]: dry-run handlers return raw build_dry_run_response() dict directly (not content-wrapped); filter dry_run key from args before passing to remove_server(); get_database_adapter() not DatabaseManager
 
 ### Pending Todos
 
@@ -61,6 +62,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:19:17.570Z
-Stopped at: Completed 08-01-PLAN.md: dry_run contract builder and TDD test scaffold
+Last session: 2026-03-12T01:30:34Z
+Stopped at: Completed 08-03-PLAN.md: dry_run for remove_vm and remove_server
 Resume file: None
