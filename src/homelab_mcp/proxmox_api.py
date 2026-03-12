@@ -352,6 +352,50 @@ async def get_proxmox_vm_status(
         }
 
 
+async def get_proxmox_vm_config(
+    node: str,
+    vmid: int,
+    host: str | None = None,
+    vm_type: str = "qemu",
+    session: aiohttp.ClientSession | None = None,
+) -> dict[str, Any]:
+    """
+    Get the persistent config of a VM or container.
+
+    Returns cores, memory, sockets, net0/net1/net2 — the fields used for
+    config drift detection. This is distinct from status/current (runtime stats).
+
+    Args:
+        node: Node name
+        vmid: VM/Container ID
+        host: Proxmox host (optional)
+        vm_type: 'qemu' for VM or 'lxc' for container
+        session: Optional shared aiohttp.ClientSession (from ResourceManager)
+
+    Returns:
+        VM/Container persistent configuration
+    """
+    client = get_proxmox_client(host=host, session=session)
+
+    try:
+        config = await client.get(f"/nodes/{node}/{vm_type}/{vmid}/config")
+
+        return {
+            "status": "success",
+            "node": node,
+            "vmid": vmid,
+            "type": vm_type,
+            "data": config,
+        }
+
+    except (aiohttp.ClientError, ValueError) as e:
+        logger.error("Error getting VM config: %s", str(e))
+        return {
+            "status": "error",
+            "message": f"Failed to get VM config: {sanitize_error(e)}",
+        }
+
+
 async def manage_proxmox_vm(
     node: str,
     vmid: int,
