@@ -12,7 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import mcp.types as types
 import pytest
@@ -24,6 +24,7 @@ from src.homelab_mcp.server import (
     HOMELAB_RESOURCES,
     RESOURCE_NOT_FOUND,
     _subscriptions,
+    handle_call_tool,
     handle_list_resources,
     handle_read_resource,
     handle_subscribe_resource,
@@ -236,3 +237,112 @@ async def test_read_services_empty_name_error() -> None:
     with pytest.raises(McpError) as exc_info:
         await handle_read_resource(AnyUrl("homelab://services/"))
     assert exc_info.value.error.code == RESOURCE_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Notification dispatch tests (Phase 10)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_session() -> tuple[MagicMock, MagicMock]:
+    """Create a mock session and request context for notification tests.
+
+    Returns:
+        (mock_session, mock_ctx): mock_session.send_resource_list_changed is an AsyncMock.
+    """
+    mock_session = MagicMock()
+    mock_session.send_resource_list_changed = AsyncMock()
+    mock_ctx = MagicMock()
+    mock_ctx.session = mock_session
+    return mock_session, mock_ctx
+
+
+@pytest.mark.asyncio
+async def test_discover_and_map_sends_list_changed(mocker: MockerFixture) -> None:
+    """handle_call_tool for discover_and_map sends resource list changed notification on success."""
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "ok"}'}]})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    await handle_call_tool("discover_and_map", {})
+
+    mock_session.send_resource_list_changed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_bulk_discover_and_map_sends_list_changed(mocker: MockerFixture) -> None:
+    """handle_call_tool for bulk_discover_and_map sends resource list changed notification on success."""
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "ok"}'}]})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    await handle_call_tool("bulk_discover_and_map", {})
+
+    mock_session.send_resource_list_changed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_dry_run_does_not_send_notification(mocker: MockerFixture) -> None:
+    """handle_call_tool for discover_and_map with dry_run=True does NOT send notification."""
+    mock_handler = AsyncMock(return_value={"mode": "dry_run", "tool": "discover_and_map", "would_affect": []})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    await handle_call_tool("discover_and_map", {"dry_run": True})
+
+    mock_session.send_resource_list_changed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_no_notification(mocker: MockerFixture) -> None:
+    """handle_call_tool for ssh_discover_system (not in MUTATING_TOOLS) does NOT send notification."""
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "ok"}'}]})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    await handle_call_tool("ssh_discover_system", {})
+
+    mock_session.send_resource_list_changed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_error_result_no_notification(mocker: MockerFixture) -> None:
+    """handle_call_tool with error result raises ToolError and does NOT send notification."""
+    from src.homelab_mcp.server import ToolError
+
+    mock_handler = AsyncMock(return_value={"status": "error", "error": "bang"})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    with pytest.raises(ToolError):
+        await handle_call_tool("discover_and_map", {})
+
+    mock_session.send_resource_list_changed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_no_context_no_crash(mocker: MockerFixture) -> None:
+    """handle_call_tool completes without exception when request_context raises LookupError."""
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "ok"}'}]})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    # Patch request_context property on the Server class to raise LookupError when accessed
+    mocker.patch.object(
+        type(server),
+        "request_context",
+        new_callable=PropertyMock,
+        side_effect=LookupError("No active request context"),
+    )
+
+    # Should NOT raise — LookupError must be swallowed silently
+    await handle_call_tool("discover_and_map", {})
