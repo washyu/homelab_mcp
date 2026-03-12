@@ -103,12 +103,22 @@ async def scan_drift(
         baseline_config: dict[str, Any] = b["baseline_config"]
 
         # --- Config drift ---
-        config_result = await get_proxmox_vm_config(
-            node=b_node,
-            vmid=b_vmid,
-            vm_type=b_vm_type,
-            session=session,
-        )
+        try:
+            config_result = await get_proxmox_vm_config(
+                node=b_node,
+                vmid=b_vmid,
+                vm_type=b_vm_type,
+                session=session,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not fetch VM config for drift check — node=%s vmid=%s: %s",
+                b_node,
+                b_vmid,
+                exc,
+            )
+            config_result = {"status": "error", "message": str(exc)}
+
         if config_result.get("status") == "success":
             live_config = config_result["data"]
             expected_subset, actual_subset, changed_fields = _diff_vm_config(baseline_config, live_config)
@@ -135,12 +145,22 @@ async def scan_drift(
             )
 
         # --- State drift ---
-        status_result = await get_proxmox_vm_status(
-            node=b_node,
-            vmid=b_vmid,
-            vm_type=b_vm_type,
-            session=session,
-        )
+        try:
+            status_result = await get_proxmox_vm_status(
+                node=b_node,
+                vmid=b_vmid,
+                vm_type=b_vm_type,
+                session=session,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not fetch VM status for drift check — node=%s vmid=%s: %s",
+                b_node,
+                b_vmid,
+                exc,
+            )
+            status_result = {"status": "error", "message": str(exc)}
+
         if status_result.get("status") == "success":
             proxmox_state: str = status_result["data"].get("status", "unknown")
 
@@ -226,12 +246,20 @@ async def update_baseline_after_mutation(
         session: Optional shared aiohttp.ClientSession.
         db_adapter: Database adapter for storing the updated baseline.
     """
-    result = await get_proxmox_vm_config(
-        node=node,
-        vmid=vmid,
-        vm_type=vm_type,
-        session=session,
-    )
+    try:
+        result = await get_proxmox_vm_config(
+            node=node,
+            vmid=vmid,
+            vm_type=vm_type,
+            session=session,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not update drift baseline after %s: %s",
+            tool_name,
+            exc,
+        )
+        return
 
     if result.get("status") == "error":
         logger.warning(

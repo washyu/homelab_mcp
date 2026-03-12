@@ -199,7 +199,7 @@ class TestStateDrift:
                 "status": "success",
                 "data": {"status": "running"},
             }
-            mock_ssh_connect.side_effect = asyncssh.Error("Connection refused")
+            mock_ssh_connect.side_effect = asyncssh.Error(14, "Connection refused")
 
             result = await scan_drift(session, db_adapter)
 
@@ -221,20 +221,20 @@ class TestBaselineUpdate:
         db_adapter.get_drift_baseline.return_value = None
         session = AsyncMock()
 
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"data": {"cores": 4, "memory": 4096}})
-        session.get.return_value.__aenter__ = AsyncMock(return_value=mock_response)
-        session.get.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("homelab_mcp.drift_detection.get_proxmox_vm_config") as mock_get_config:
+            mock_get_config.return_value = {
+                "status": "success",
+                "data": {"cores": 4, "memory": 4096},
+            }
 
-        await update_baseline_after_mutation(
-            node="pve",
-            vmid=100,
-            vm_type="qemu",
-            tool_name="resize_vm",
-            session=session,
-            db_adapter=db_adapter,
-        )
+            await update_baseline_after_mutation(
+                node="pve",
+                vmid=100,
+                vm_type="qemu",
+                tool_name="resize_vm",
+                session=session,
+                db_adapter=db_adapter,
+            )
 
         db_adapter.upsert_drift_baseline.assert_called_once()
         call_args = db_adapter.upsert_drift_baseline.call_args
