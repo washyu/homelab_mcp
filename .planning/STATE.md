@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 08-03-PLAN.md: dry_run for remove_vm and remove_server"
-last_updated: "2026-03-12T01:30:34Z"
+stopped_at: "Completed 08-04-PLAN.md: dry_run for delete_proxmox_vm and destroy_terraform_service"
+last_updated: "2026-03-12T01:52:36.973Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Key v1.1 decisions:
 - [Phase 08-dry-run-mode]: build_dry_run_response() returns flat dict with mode, tool, would_affect, risk_level, reversible; preview merged only when preview_details given
 - [Phase 08-dry-run-mode]: get_resource_manager patched at homelab_mcp.server (not proxmox_handlers) since it is a local import; remove_server uses MagicMock not AsyncMock (sync function)
 - [Phase 08-03]: dry-run handlers return raw build_dry_run_response() dict directly (not content-wrapped); filter dry_run key from args before passing to remove_server(); get_database_adapter() not DatabaseManager
+- [Phase 08-04]: pre-commit mirrors-mypy upgraded v1.13.0 to v1.18.1 with asyncssh/aiohttp stubs to resolve mypy version conflict; dry-run handlers return raw dict; test stubs need get_proxmox_vm_status and plan_terraform_service AsyncMock setup
 
 ### Pending Todos
 
@@ -62,6 +63,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:30:34Z
-Stopped at: Completed 08-03-PLAN.md: dry_run for remove_vm and remove_server
+Last session: 2026-03-12T01:52:36.971Z
+Stopped at: Completed 08-04-PLAN.md: dry_run for delete_proxmox_vm and destroy_terraform_service
 Resume file: None
