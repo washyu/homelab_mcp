@@ -124,5 +124,5 @@ Plans:
 | 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
 | 8. Dry-Run Mode | 2/4 | In Progress|  | - |
 | 9. MCP Resources Live Data | v1.1 | 0/2 | Not started | - |
-| 10. Resource Notifications | 1/1 | Complete   | 2026-03-12 | - |
+| 10. Resource Notifications | 1/1 | Complete    | 2026-03-12 | - |
 | 11. Drift Detection | v1.1 | 0/TBD | Not started | - |
