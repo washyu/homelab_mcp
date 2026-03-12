@@ -4,7 +4,7 @@ milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
 stopped_at: "Completed 11-05-PLAN.md: MCP server wiring for drift detection"
-last_updated: "2026-03-12T18:57:53.796Z"
+last_updated: "2026-03-12T19:02:46.861Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
