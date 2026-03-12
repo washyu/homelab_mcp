@@ -27,7 +27,7 @@
 - [ ] **Phase 8: Dry-Run Mode** - Add `dry_run: true` to all six destructive tools with structured preview output
 - [ ] **Phase 9: MCP Resources Live Data** - Connect ResourceFetcher to real Proxmox, Docker, SQLite data sources
 - [x] **Phase 10: Resource Notifications** - Emit `listChanged` and `resourceUpdated` notifications after mutations and discoveries (completed 2026-03-12)
-- [ ] **Phase 11: Drift Detection** - Build on-demand infrastructure drift scanner with config and state drift reporting
+- [x] **Phase 11: Drift Detection** - Build on-demand infrastructure drift scanner with config and state drift reporting (completed 2026-03-12)
 
 ## Phase Details
 
@@ -131,4 +131,4 @@ Plans:
 | 8. Dry-Run Mode | 2/4 | In Progress|  | - |
 | 9. MCP Resources Live Data | v1.1 | 0/2 | Not started | - |
 | 10. Resource Notifications | 1/1 | Complete    | 2026-03-12 | - |
-| 11. Drift Detection | 4/5 | In Progress|  | - |
+| 11. Drift Detection | 5/5 | Complete   | 2026-03-12 | - |

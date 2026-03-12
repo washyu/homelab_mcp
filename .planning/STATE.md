@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 11-04-PLAN.md: drift_detection.py implementation"
-last_updated: "2026-03-12T18:47:13.906Z"
+stopped_at: "Completed 11-05-PLAN.md: MCP server wiring for drift detection"
+last_updated: "2026-03-12T18:57:53.796Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
   percent: 0
 ---
 
@@ -67,6 +67,7 @@ Key v1.1 decisions:
 - [Phase 11-drift-detection]: [Phase 11-03]: get_proxmox_vm_config follows get_proxmox_vm_status pattern exactly — same signature, same error handling, only endpoint differs (/config vs /status/current)
 - [Phase 11-drift-detection]: Exception handling around proxmox API calls in scan_drift: get_proxmox_client raises ValueError before try block when PROXMOX_HOST missing; scan_drift wraps calls to gracefully degrade
 - [Phase 11-drift-detection]: asyncssh.connect() called directly in drift_detection.py (not ssh_connect wrapper) so test can patch at homelab_mcp.drift_detection.asyncssh.connect
+- [Phase 11-drift-detection]: Local inline import of update_baseline_after_mutation in handlers to avoid circular import risk; try/except swallows baseline errors so handler always returns result
 
 ### Pending Todos
 
@@ -79,6 +80,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T18:47:13.903Z
-Stopped at: Completed 11-04-PLAN.md: drift_detection.py implementation
+Last session: 2026-03-12T18:57:53.794Z
+Stopped at: Completed 11-05-PLAN.md: MCP server wiring for drift detection
 Resume file: None
