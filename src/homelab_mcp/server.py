@@ -117,6 +117,16 @@ HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
 #: Populated by handle_subscribe_resource, cleared by handle_unsubscribe_resource.
 _subscriptions: set[str] = set()
 
+#: Tools that write new device rows to the database.
+#: A successful (non-error, non-dry-run) call to any of these tools triggers
+#: a notifications/resources/list_changed push to subscribed clients.
+MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        "discover_and_map",
+        "bulk_discover_and_map",
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Handler: list_resources
@@ -340,6 +350,8 @@ async def handle_call_tool(
 
     Converts the handler's legacy dict result format into MCP SDK content types.
     Detects error results and raises ToolError so the SDK sets isError=True.
+    After a successful call to a device-writing tool, emits
+    notifications/resources/list_changed to subscribed clients.
 
     Raises:
         ValueError: If the tool name is not recognized.
@@ -349,7 +361,20 @@ async def handle_call_tool(
     result = await handler(arguments or {})
     if _is_error_result(result):
         raise ToolError(_extract_error_text(result))
-    return _convert_result(result)
+    content = _convert_result(result)
+
+    # Notify subscribed clients when a device-writing tool succeeds.
+    # Dry-run calls are excluded — they do not mutate the database.
+    is_dry_run = bool((arguments or {}).get("dry_run", False))
+    if name in MUTATING_TOOLS and not is_dry_run:
+        try:
+            session = server.request_context.session
+            await session.send_resource_list_changed()
+        except LookupError:
+            # No active request context — handler called outside MCP lifecycle (e.g. tests).
+            logger.debug("No request context available for resource notification")
+
+    return content
 
 
 def _convert_result(
