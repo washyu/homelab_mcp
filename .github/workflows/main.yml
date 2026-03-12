@@ -147,9 +147,7 @@ jobs:
       run: uv sync --all-extras
 
     - name: Run core tests
-      run: |
-        uv run pytest tests/test_config.py tests/test_error_handling.py tests/test_database.py \
-          -v --tb=short
+      run: uv run pytest tests/test_config.py tests/test_error_handling.py tests/test_database.py -v --tb=short
 
   # Security scans - runs weekly and on releases
   security:
