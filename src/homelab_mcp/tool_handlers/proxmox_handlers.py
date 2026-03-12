@@ -181,6 +181,34 @@ async def handle_delete_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
 
     if host := arguments.get("host"):
         validate_hostname(host)
+
+    if arguments.get("dry_run", False):
+        from ..dry_run import build_dry_run_response
+
+        vm_status = await get_proxmox_vm_status(
+            node=arguments["node"],
+            vmid=arguments["vmid"],
+            host=arguments.get("host"),
+            vm_type=arguments.get("vm_type", "qemu"),
+            session=get_resource_manager().proxmox_session,
+        )
+        would_affect: list[dict[str, Any]] = [
+            {
+                "resource_type": "proxmox_vm",
+                "node": arguments["node"],
+                "vmid": arguments["vmid"],
+                "vm_type": arguments.get("vm_type", "qemu"),
+            }
+        ]
+        result = build_dry_run_response(
+            tool_name="delete_proxmox_vm",
+            would_affect=would_affect,
+            risk_level="high",
+            reversible=False,
+            preview_details=vm_status,
+        )
+        return result
+
     result = await delete_proxmox_vm(
         node=arguments["node"],
         vmid=arguments["vmid"],

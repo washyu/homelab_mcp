@@ -264,10 +264,24 @@ class TestDeleteProxmoxVmDryRun:
         "homelab_mcp.tool_handlers.proxmox_handlers.delete_proxmox_vm",
         new_callable=AsyncMock,
     )
-    async def test_delete_proxmox_vm_dry_run_returns_preview(self, mock_delete: AsyncMock) -> None:
+    @patch(
+        "homelab_mcp.tool_handlers.proxmox_handlers.get_proxmox_vm_status",
+        new_callable=AsyncMock,
+    )
+    @patch("homelab_mcp.server.get_resource_manager")
+    async def test_delete_proxmox_vm_dry_run_returns_preview(
+        self,
+        mock_get_rm: MagicMock,
+        mock_get_status: AsyncMock,
+        mock_delete: AsyncMock,
+    ) -> None:
         """handle_delete_proxmox_vm with dry_run=True must return mode='dry_run'."""
         from homelab_mcp.tool_handlers.proxmox_handlers import handle_delete_proxmox_vm
 
+        mock_rm = MagicMock()
+        mock_rm.proxmox_session = None
+        mock_get_rm.return_value = mock_rm
+        mock_get_status.return_value = {"status": "running", "vmid": 100}
         arguments = {"node": "pve", "vmid": 100, "dry_run": True}
         result = await handle_delete_proxmox_vm(arguments)
         assert result.get("mode") == "dry_run"
@@ -277,10 +291,24 @@ class TestDeleteProxmoxVmDryRun:
         "homelab_mcp.tool_handlers.proxmox_handlers.delete_proxmox_vm",
         new_callable=AsyncMock,
     )
-    async def test_delete_proxmox_vm_dry_run_no_delete(self, mock_delete: AsyncMock) -> None:
+    @patch(
+        "homelab_mcp.tool_handlers.proxmox_handlers.get_proxmox_vm_status",
+        new_callable=AsyncMock,
+    )
+    @patch("homelab_mcp.server.get_resource_manager")
+    async def test_delete_proxmox_vm_dry_run_no_delete(
+        self,
+        mock_get_rm: MagicMock,
+        mock_get_status: AsyncMock,
+        mock_delete: AsyncMock,
+    ) -> None:
         """delete_proxmox_vm must NOT be called when dry_run=True."""
         from homelab_mcp.tool_handlers.proxmox_handlers import handle_delete_proxmox_vm
 
+        mock_rm = MagicMock()
+        mock_rm.proxmox_session = None
+        mock_get_rm.return_value = mock_rm
+        mock_get_status.return_value = {"status": "running", "vmid": 100}
         arguments = {"node": "pve", "vmid": 100, "dry_run": True}
         await handle_delete_proxmox_vm(arguments)
         mock_delete.assert_not_called()
@@ -326,6 +354,9 @@ class TestDestroyTerraformServiceDryRun:
             mock_installer = MagicMock()
             mock_cls.return_value = mock_installer
             mock_installer.destroy_terraform_service = AsyncMock(return_value={"status": "destroyed"})
+            mock_installer.plan_terraform_service = AsyncMock(
+                return_value={"status": "success", "plan_output": "Plan: 0 to add, 0 to change, 1 to destroy."}
+            )
 
             arguments = {"service_name": "my-service", "dry_run": True}
             result = await handle_destroy_terraform_service(arguments)
@@ -342,6 +373,9 @@ class TestDestroyTerraformServiceDryRun:
             mock_installer = MagicMock()
             mock_cls.return_value = mock_installer
             mock_installer.destroy_terraform_service = AsyncMock(return_value={"status": "destroyed"})
+            mock_installer.plan_terraform_service = AsyncMock(
+                return_value={"status": "success", "plan_output": "Plan: 0 to add, 0 to change, 1 to destroy."}
+            )
 
             arguments = {"service_name": "my-service", "dry_run": True}
             await handle_destroy_terraform_service(arguments)

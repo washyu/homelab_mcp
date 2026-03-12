@@ -64,7 +64,29 @@ async def handle_plan_terraform_service(arguments: dict[str, Any]) -> dict[str, 
 async def handle_destroy_terraform_service(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle destroy_terraform_service tool."""
     installer = ServiceInstaller()
-    destroy_result = await installer.destroy_terraform_service(**arguments)
+
+    if arguments.get("dry_run", False):
+        from ..dry_run import build_dry_run_response
+
+        plan_args = {k: v for k, v in arguments.items() if k != "dry_run"}
+        plan_result = await installer.plan_terraform_service(**plan_args)
+        service_name = arguments.get("service_name", "")
+        if plan_result.get("status") == "error" or not plan_result.get("plan_output"):
+            would_affect: list[dict[str, Any]] = []
+        else:
+            would_affect = [{"resource_type": "terraform_service", "service_name": service_name}]
+        result = build_dry_run_response(
+            tool_name="destroy_terraform_service",
+            would_affect=would_affect,
+            risk_level="high",
+            reversible=False,
+            preview_details=plan_result,
+        )
+        return result
+
+    # Normal execution — strip dry_run so installer doesn't receive unknown kwarg
+    destroy_args = {k: v for k, v in arguments.items() if k != "dry_run"}
+    destroy_result = await installer.destroy_terraform_service(**destroy_args)
     return {"content": [{"type": "text", "text": json.dumps(destroy_result, indent=2)}]}
 
 
