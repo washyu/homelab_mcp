@@ -83,7 +83,10 @@ Plans:
   2. `homelab://devices` returns the current device inventory from SQLite with `last_seen` and `last_discovery_data` fields
   3. `homelab://services/{name}` returns the current status of the named service, including whether it is running
   4. Every resource JSON response includes a `scanned_at` ISO timestamp indicating when the data was fetched
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 09-01-PLAN.md — resource_readers.py module with live data fetchers (TDD)
+- [ ] 09-02-PLAN.md — Wire live readers into handle_read_resource in server.py
 
 ### Phase 10: Resource Notifications
 **Goal**: Subscribed clients receive `notifications/resources/list_changed` when new devices are discovered and `notifications/resources/updated` after any successful mutating tool call — keeping client caches coherent.
@@ -118,6 +121,6 @@ Plans:
 | 6. Tech Debt Cleanup | 2/3 | In Progress|  | - |
 | 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
 | 8. Dry-Run Mode | 2/4 | In Progress|  | - |
-| 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |
+| 9. MCP Resources Live Data | v1.1 | 0/2 | Not started | - |
 | 10. Resource Notifications | v1.1 | 0/TBD | Not started | - |
 | 11. Drift Detection | v1.1 | 0/TBD | Not started | - |
