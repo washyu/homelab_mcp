@@ -1,252 +1,211 @@
 # Homelab MCP Server — Manual Verification Checklist (v1.1)
 
-This is a post-install QA checklist for the v1.1 Safety & Observability milestone. Work through each section top-to-bottom against a live deployment. A live Proxmox node is required for sections 2, 3, 5, and the Proxmox-specific parts of section 4. Sections 1, 3.5, 4.2, and 6 can be verified with any MCP client connected via stdio transport.
+All tests are run by typing the quoted prompt into Claude Desktop chat with the MCP server connected.
+A live Proxmox node is required for Sections 2, 3, 4, and 5. Section 1 and Section 6 work without Proxmox.
 
 ---
 
 ## Prerequisites
 
-Complete all items before starting:
-
-- [ ] Server is running: `uv run python run_server.py` — no traceback on startup
-- [ ] MCP client is connected (Claude Desktop or any MCP-capable client via stdio)
-- [ ] Proxmox credentials configured in environment:
-  - Option A (password auth): `PROXMOX_HOST`, `PROXMOX_USER`, `PROXMOX_PASSWORD`
-  - Option B (token auth): `PROXMOX_HOST`, `PROXMOX_USER`, `PROXMOX_TOKEN_NAME`, `PROXMOX_TOKEN_VALUE`
-- [ ] At least one VM or LXC container exists on the Proxmox node
-- [ ] You know the Proxmox node name (e.g., `pve`) and at least one VMID
+- [ ] Server running: `uv run python run_server.py` — no traceback on startup
+- [ ] Claude Desktop connected to the server (check the hammer icon — tools should be listed)
+- [ ] Proxmox credentials set in environment (`PROXMOX_HOST`, `PROXMOX_USER`, `PROXMOX_PASSWORD` or token equivalent)
+- [ ] At least one VM or LXC container exists on your Proxmox node
+- [ ] You know your Proxmox node name (e.g., `pve`) and at least one VMID
 
 ---
 
 ## Section 1: Server Startup and Tool Discovery
 
-Verify the server starts and exposes all expected tools.
+### 1.1 Tools are available
 
-- [ ] Server starts without errors: `uv run python run_server.py` produces no traceback on stdout/stderr
-- [ ] The `initialize` response (sent by server on first connection) includes `resources` in the `capabilities` object — confirms MCP Resources protocol support is advertised
-- [ ] `tools/list` returns exactly **50 tools** — count the entries in the response
-- [ ] `scan_infrastructure_drift` is present in the tools list
-- [ ] The following destructive tools each expose a `dry_run` boolean parameter in their input schema (check `tools/list` output):
-  - `decommission_device`
-  - `remove_vm`
-  - `remove_server`
-  - `delete_proxmox_vm`
-  - `destroy_terraform_service`
-  - `rollback_infrastructure_changes`
+> **Prompt:** `List all the homelab tools you have available`
 
----
+**Pass if:** Claude lists tools and the total count is **50**. You should see `scan_infrastructure_drift` in the list.
 
-## Section 2: Dry-Run Mode (Phase 08 — DRY-01 through DRY-07)
+### 1.2 Destructive tools have dry-run support
 
-Each destructive tool supports a `dry_run: true` parameter. When set, the tool must return a preview response without executing any real action. Verify each one.
+> **Prompt:** `Do any of your tools support a dry_run parameter? List which ones do.`
 
-**Expected dry-run response fields (all four must be present):**
+**Pass if:** Claude confirms `dry_run` is available on all six of these tools:
+- `decommission_device`
+- `remove_vm`
+- `remove_server`
+- `delete_proxmox_vm`
+- `destroy_terraform_service`
+- `rollback_infrastructure_changes`
 
-| Field | Type | Description |
-|---|---|---|
-| `mode` | string | Must equal `"dry_run"` |
-| `would_affect` | array | Resources that would be removed or modified |
-| `risk_level` | string | One of `"high"`, `"medium"`, or `"low"` |
-| `reversible` | boolean | Whether the operation could be undone |
+### 1.3 MCP Resources are advertised
 
-### 2.1 decommission_device dry-run
+> **Prompt:** `What homelab resources can you read? List the available resource URIs.`
 
-- [ ] Call `decommission_device` with `dry_run: true` and a known device hostname or device ID
-- [ ] Response contains `mode: "dry_run"`
-- [ ] Response contains `would_affect` (list of resources that would be removed)
-- [ ] Response contains `risk_level` (one of `"high"`, `"medium"`, `"low"`)
-- [ ] Response contains `reversible` (boolean)
-- [ ] Confirm the device is still present in the database after the call: call `list_registered_servers` or run `discover_and_map` and verify device still appears
-
-### 2.2 remove_vm dry-run
-
-- [ ] Call `remove_vm` with `dry_run: true` and a known VM name (as registered with the server)
-- [ ] Response contains all four dry-run fields: `mode`, `would_affect`, `risk_level`, `reversible`
-- [ ] No SSH command was executed against the target host — verify the VM process is still running on the host
-
-### 2.3 remove_server dry-run
-
-- [ ] Call `remove_server` with `dry_run: true` and a registered server hostname
-- [ ] Response contains all four dry-run fields
-- [ ] Server record still present in database after the call — verify by calling `list_registered_servers` and confirming the hostname still appears
-
-### 2.4 delete_proxmox_vm dry-run
-
-- [ ] Call `delete_proxmox_vm` with `dry_run: true`, providing `node` (e.g., `"pve"`) and `vmid` (integer)
-- [ ] Response contains all four dry-run fields
-- [ ] VM still exists on Proxmox after the call — verify by calling `get_proxmox_vm_status` with the same `node` and `vmid`
-
-### 2.5 destroy_terraform_service dry-run
-
-- [ ] Call `destroy_terraform_service` with `dry_run: true` and a service `name`
-- [ ] Response contains all four dry-run fields
-- [ ] No `terraform destroy` process was spawned — verify service state is unchanged
-
-### 2.6 rollback_infrastructure_changes dry-run
-
-- [ ] Call `rollback_infrastructure_changes` with `dry_run: true`
-- [ ] Response contains all four dry-run fields
-- [ ] No rollback action was executed — infrastructure state is unchanged
-
-### 2.7 Live execution regression check
-
-- [ ] Call any one of the dry-run tools WITHOUT `dry_run: true` (or explicitly with `dry_run: false`) using a non-critical or expendable target
-- [ ] Response does NOT contain `mode: "dry_run"` — confirms live path is not intercepted
-- [ ] Actual operation proceeds normally (e.g., device is actually removed, or server record is actually deleted)
+**Pass if:** Claude lists at minimum `homelab://vms`, `homelab://devices`, and `homelab://services`.
 
 ---
 
-## Section 3: MCP Resources Protocol (Phases 07 + 09 — RES-01 through RES-06)
+## Section 2: Dry-Run Mode
 
-Verify `resources/list` and `resources/read` work correctly.
+Each destructive tool must preview its action without making any real changes when `dry_run` is requested.
 
-### 3.1 resources/list
+**Expected in every dry-run response:** `mode: dry_run`, a list of what would be affected, a risk level, and whether it's reversible.
 
-- [ ] Call `resources/list`
-- [ ] Response returns at minimum three resource entries with URIs: `homelab://vms`, `homelab://devices`, `homelab://services`
-- [ ] Each resource entry has:
-  - `uri` field
-  - `name` field (human-readable label)
-  - `mimeType: "application/json"`
+### 2.1 decommission_device
 
-### 3.2 homelab://vms (live data)
+> **Prompt:** `Run decommission_device in dry-run mode on the device with hostname [YOUR_DEVICE_HOSTNAME]`
 
-- [ ] Call `resources/read` with `uri: "homelab://vms"`
-- [ ] Response is a valid JSON payload (not an error)
-- [ ] JSON payload contains a `vms` array — compare the list against `list_proxmox_resources` output to confirm it reflects live Proxmox state (not placeholder data)
-- [ ] JSON payload contains a `scanned_at` field in ISO 8601 format (e.g., `"2026-03-12T10:00:00+00:00"`)
-- [ ] JSON payload contains a `total` integer equal to the length of the `vms` array
+**Pass if:** Response describes what would be removed, says `dry_run` mode, and the device still shows up when you ask Claude to list registered devices afterward.
 
-### 3.3 homelab://devices (live data)
+### 2.2 remove_vm
 
-- [ ] Call `resources/read` with `uri: "homelab://devices"`
-- [ ] Response returns a JSON payload with a `devices` array containing records from the SQLite database
-- [ ] Each device record includes:
-  - `last_seen` field (timestamp or null if never seen)
-  - `last_discovery_data` field (discovery blob or null if no history)
-- [ ] JSON payload includes a `scanned_at` ISO 8601 timestamp
+> **Prompt:** `Do a dry run of remove_vm for the VM named [YOUR_VM_NAME]`
 
-### 3.4 homelab://services/{name} (live data)
+**Pass if:** Response shows a preview of what would happen. The VM is still present when you check.
 
-- [ ] Call `resources/read` with `uri: "homelab://services/nginx"` (substitute any installed service name, or set `MCP_DEFAULT_SERVICE_HOST` to a reachable host)
-- [ ] Response is a JSON payload indicating whether the service is running on the target host
-- [ ] JSON payload includes a `scanned_at` ISO 8601 timestamp
-- [ ] Note: if no `MCP_DEFAULT_SERVICE_HOST` is set and no devices are in the DB, response will contain `status: "unconfigured"` — this is expected behavior, not a failure
+### 2.3 remove_server
 
-### 3.5 Unknown URI returns MCP error -32002
+> **Prompt:** `Dry run remove_server for [YOUR_SERVER_HOSTNAME]`
 
-- [ ] Call `resources/read` with `uri: "homelab://nonexistent"`
-- [ ] Response is an MCP error (not a 200 with empty data)
-- [ ] Error code is `-32002` (resource not found)
+**Pass if:** Response shows a preview. Server record still exists — confirm by asking `list all registered servers`.
+
+### 2.4 delete_proxmox_vm
+
+> **Prompt:** `Dry run delete_proxmox_vm for vmid [YOUR_VMID] on node pve`
+
+**Pass if:** Response shows what would be deleted. VM still exists — ask `get_proxmox_vm_status` for the same VMID to confirm.
+
+### 2.5 destroy_terraform_service
+
+> **Prompt:** `Dry run destroy_terraform_service for service named [YOUR_SERVICE_NAME]`
+
+**Pass if:** Response shows a destroy preview. No actual Terraform process runs.
+
+### 2.6 rollback_infrastructure_changes
+
+> **Prompt:** `Do a dry run of rollback_infrastructure_changes`
+
+**Pass if:** Response describes what a rollback would do. No actual changes are made.
+
+### 2.7 Live execution still works (regression check)
+
+> **Prompt:** `Run remove_server (NOT dry run) for a test/expendable server hostname [YOUR_TEST_HOSTNAME]`
+
+**Pass if:** The response does NOT say `dry_run` mode — it actually removes the record. This confirms dry-run logic doesn't intercept live calls.
 
 ---
 
-## Section 4: Resource Notifications (Phase 10 — RES-07)
+## Section 3: MCP Resources (Live Data)
 
-Verify the server emits `notifications/resources/list_changed` after discovery mutations. Only `discover_and_map` and `bulk_discover_and_map` are in the `MUTATING_TOOLS` set and trigger notifications.
+### 3.1 VM resource
 
-### 4.1 Notification after ssh_discover (discover_and_map)
+> **Prompt:** `Read the homelab://vms resource and show me the raw data`
 
-- [ ] Subscribe to `homelab://devices` via `resources/subscribe` with `uri: "homelab://devices"`
-- [ ] Call `discover_and_map` with a valid `subnet` (e.g., `"192.168.1.0/24"`)
-- [ ] After discovery completes successfully, the client receives a `notifications/resources/list_changed` notification
-- [ ] Optional — check server logs: a "Sending resource notification" log line should appear when new devices were discovered
-- [ ] Optional — if no new devices were discovered (subnet already fully known), no notification is sent; this is expected behavior
+**Pass if:** Response contains a `vms` array with your Proxmox VMs, a `total` count, and a `scanned_at` timestamp.
+
+### 3.2 Devices resource
+
+> **Prompt:** `Read the homelab://devices resource`
+
+**Pass if:** Response contains a `devices` array (may be empty if no discovery has run yet) and a `scanned_at` timestamp. Each device should have `last_seen` and `last_discovery_data` fields.
+
+### 3.3 Service resource
+
+> **Prompt:** `Read the homelab://services/nginx resource`
+
+**Pass if:** Response returns service status for nginx (running/stopped/unknown) with a `scanned_at` timestamp. If no `MCP_DEFAULT_SERVICE_HOST` is set, a `status: unconfigured` response is also a pass.
+
+### 3.4 Unknown resource returns an error
+
+> **Prompt:** `Read the resource homelab://nonexistent`
+
+**Pass if:** Claude reports an error (not empty data). The error should indicate the resource was not found.
+
+---
+
+## Section 4: Resource Notifications
+
+These verify the server notifies the client when discovery changes the device list.
+
+### 4.1 Notification after discover_and_map
+
+> **Prompt:** `Run discover_and_map on subnet [YOUR_SUBNET e.g. 192.168.1.0/24]`
+
+**Pass if:** Discovery completes and Claude's response mentions devices found or updated. In Claude Desktop's developer tools (Help → Developer Tools → MCP tab) you can confirm a `notifications/resources/list_changed` event was received.
 
 ### 4.2 No notification after dry-run
 
-- [ ] Call any dry-run-capable tool (e.g., `delete_proxmox_vm`) with `dry_run: true`
-- [ ] Confirm no `notifications/resources/updated` or `notifications/resources/list_changed` notification is emitted to the client
-- [ ] Optional — check server logs: there should be NO "Sending resource notification" line associated with the dry-run call
+> **Prompt:** `Dry run delete_proxmox_vm for vmid [YOUR_VMID] on node pve`
+
+**Pass if:** No resource update notification appears in the MCP developer tools tab. Dry runs must not trigger notifications.
 
 ### 4.3 Notification after bulk_discover_and_map
 
-- [ ] Call `bulk_discover_and_map` with a `subnets` list containing at least one reachable subnet
-- [ ] Client receives `notifications/resources/list_changed` notification after completion
-- [ ] Notification is sent once per successful discovery run that finds or updates devices
+> **Prompt:** `Run bulk_discover_and_map on subnets ["192.168.1.0/24"]`
+
+**Pass if:** Discovery completes. A `notifications/resources/list_changed` notification is visible in the MCP dev tools if any devices were found or updated.
 
 ---
 
-## Section 5: Drift Detection (Phase 11 — DRFT-01 through DRFT-05)
+## Section 5: Drift Detection
 
-Verify drift scanning and baseline management work correctly against a live Proxmox node.
+Requires baselines from a previous scan. Run 5.1 first, then 5.2–5.5.
 
-### 5.1 scan_infrastructure_drift — initial run (no baselines)
+### 5.1 Initial scan (no baselines yet)
 
-- [ ] Call `scan_infrastructure_drift` with a valid `node` parameter (e.g., `"pve"`)
-  - Optional parameters: `vm_type` — one of `"qemu"`, `"lxc"`, `"all"` (default: `"all"`)
-- [ ] Response is a structured dict (not an error string)
-- [ ] Response contains `scan_timestamp` in ISO 8601 format
-- [ ] Response contains `config_drift` list (may be empty on first run — no baselines yet)
-- [ ] Response contains `state_drift` list (may be empty on first run)
-- [ ] After first run, baselines are now stored in SQLite (`drift_baselines` table)
+> **Prompt:** `Scan infrastructure drift on node pve`
 
-### 5.2 scan_infrastructure_drift — state drift detection
+**Pass if:** Response is a structured report with `scan_timestamp`, `config_drift` list, and `state_drift` list. Lists may be empty on the first run — that's expected. Baselines are now stored.
 
-To test this, a VM must have a stored baseline from a previous scan (run 5.1 first):
+### 5.2 State drift detection
 
-- [ ] On Proxmox, manually stop a VM that was scanned in 5.1 and whose baseline shows it as `running` — do this outside of MCP (e.g., via Proxmox web UI or CLI)
-- [ ] Call `scan_infrastructure_drift` for the same node
-- [ ] The stopped VM appears in the `state_drift` list in the response
-- [ ] Each state drift finding includes:
-  - `drift_type` field (e.g., `"state_drift"` or `"vm_offline"`)
-  - `expected` field (showing the previously known running state)
-  - `actual` field (showing the current stopped state)
-  - `scan_timestamp` field
-- [ ] The finding is labeled as a point-in-time observation, not a confirmed permanent failure
+First, stop a VM via the Proxmox web UI (outside of MCP). Then:
 
-### 5.3 scan_infrastructure_drift — config drift detection
+> **Prompt:** `Scan infrastructure drift on node pve again`
 
-To test this, a VM must have a stored baseline from a previous scan (run 5.1 first):
+**Pass if:** The stopped VM appears in the `state_drift` section with `expected: running` and `actual: stopped`.
 
-- [ ] On Proxmox, manually change a VM's CPU count or memory allocation outside of MCP (e.g., via Proxmox web UI or `qm set`)
-- [ ] Call `scan_infrastructure_drift` for the same node
-- [ ] The modified VM appears in the `config_drift` list in the response
-- [ ] Each config drift finding includes:
-  - `drift_type: "config_drift"`
-  - `expected` field (showing the old CPU/memory values from the baseline)
-  - `actual` field (showing the new values from live Proxmox)
-  - `scan_timestamp` field
+### 5.3 Config drift detection
+
+First, change a VM's CPU count or memory in Proxmox (outside of MCP). Then:
+
+> **Prompt:** `Scan infrastructure drift on node pve`
+
+**Pass if:** The modified VM appears in `config_drift` with the old values under `expected` and new values under `actual`.
 
 ### 5.4 Baseline auto-update after MCP mutation
 
-Verify that VMs created or cloned through MCP do not generate false drift findings:
+> **Prompt:** `Create a new VM on node pve with [your parameters], then immediately scan infrastructure drift`
 
-- [ ] Note the current state: call `scan_infrastructure_drift` and confirm no existing drift for a known VM
-- [ ] Create a new VM through MCP: call `create_proxmox_vm` or `clone_proxmox_vm` with valid parameters
-- [ ] Wait for the MCP tool call to complete successfully
-- [ ] Call `scan_infrastructure_drift` immediately after
-- [ ] The newly created or cloned VM does NOT appear as config drift — baseline was written automatically after the MCP mutation
-- [ ] If the new VM has the expected CPU/memory from the `create_proxmox_vm` call, confirm those values match in the scan result (no drift)
+**Pass if:** The newly created VM does NOT appear as drift — its baseline was written automatically at creation time.
 
-### 5.5 Drift baselines persist across restarts
+### 5.5 Baselines persist across restarts
 
-- [ ] While the server is running and has accumulated baselines (from 5.1–5.4), note a VM's baseline values
-- [ ] Stop the MCP server (Ctrl-C or kill the process)
-- [ ] Restart: `uv run python run_server.py`
-- [ ] Call `scan_infrastructure_drift` again for the same node
-- [ ] Baselines are preserved — previously-known VMs with unchanged config do NOT reappear as fresh drift
+1. Stop the server (`Ctrl-C`)
+2. Restart: `uv run python run_server.py`
+3. Reconnect Claude Desktop
+
+> **Prompt:** `Scan infrastructure drift on node pve`
+
+**Pass if:** VMs with unchanged config do NOT appear as fresh drift — baselines survived the restart.
 
 ---
 
 ## Section 6: Automated Test Suite (Regression Gate)
 
-Run the automated suite to confirm no regressions were introduced.
+Run locally — no Proxmox required.
 
-- [ ] `uv run pytest tests/ -m "not integration" -v` — all unit tests pass (zero failures, zero errors)
-- [ ] `uv run ruff check src/ tests/` — no linting errors reported
-- [ ] `uv run mypy src/` — no new type errors (pre-existing deferred errors documented in MILESTONE-AUDIT.md are acceptable; any NEW errors require investigation)
+- [ ] `uv run pytest tests/ -m "not integration" -v` — all unit tests pass (zero failures)
+- [ ] `uv run ruff check src/ tests/` — no linting errors
+- [ ] `uv run mypy src/` — no new type errors
 
 ---
 
-## Section 7: HTTP Transport Auth (DEBT-02 Regression)
+## Section 7: HTTP Transport Auth (optional — skip if using stdio only)
 
-Only applicable when running the HTTP transport with `MCP_API_KEY` configured. Skip if running stdio transport only.
+Requires restarting the server with `MCP_API_KEY=test-key` and HTTP transport enabled.
 
-- [ ] Set `MCP_API_KEY=test-key` in environment, then start the HTTP transport
-- [ ] Send a request to any MCP endpoint WITHOUT an `Authorization` header — expect `401` or `403`
-- [ ] Send the same request WITH `Authorization: Bearer test-key` — expect a successful response
-- [ ] Access the `/health` endpoint WITHOUT any auth header — expect `200 OK` (health endpoint is public)
+- [ ] Request without `Authorization` header → expect `401` or `403`
+- [ ] Request with `Authorization: Bearer test-key` → expect success
+- [ ] `GET /health` without auth → expect `200 OK`
 
 ---
 
@@ -254,12 +213,12 @@ Only applicable when running the HTTP transport with `MCP_API_KEY` configured. S
 
 | Section | Result | Notes |
 |---------|--------|-------|
-| Section 1: Server Startup + Tool Discovery | | |
-| Section 2: Dry-Run Mode (6 tools) | | |
-| Section 3: MCP Resources Protocol | | |
-| Section 4: Resource Notifications | | |
+| Section 1: Tool Discovery | | |
+| Section 2: Dry-Run Mode | | |
+| Section 3: MCP Resources | | |
+| Section 4: Notifications | | |
 | Section 5: Drift Detection | | |
-| Section 6: Automated Test Suite | | |
+| Section 6: Automated Tests | | |
 | Section 7: HTTP Auth (optional) | | |
 
 **Verified by:** _______________
@@ -272,25 +231,25 @@ Only applicable when running the HTTP transport with `MCP_API_KEY` configured. S
 
 | Requirement ID | Description | Verified In |
 |---|---|---|
-| DRY-01 | dry_run parameter on decommission_device | Section 2.1 |
-| DRY-02 | dry_run parameter on remove_vm | Section 2.2 |
-| DRY-03 | dry_run parameter on remove_server | Section 2.3 |
-| DRY-04 | dry_run parameter on delete_proxmox_vm | Section 2.4 |
-| DRY-05 | dry_run parameter on destroy_terraform_service | Section 2.5 |
-| DRY-06 | dry_run parameter on rollback_infrastructure_changes | Section 2.6 |
+| DRY-01 | dry_run on decommission_device | Section 2.1 |
+| DRY-02 | dry_run on remove_vm | Section 2.2 |
+| DRY-03 | dry_run on remove_server | Section 2.3 |
+| DRY-04 | dry_run on delete_proxmox_vm | Section 2.4 |
+| DRY-05 | dry_run on destroy_terraform_service | Section 2.5 |
+| DRY-06 | dry_run on rollback_infrastructure_changes | Section 2.6 |
 | DRY-07 | Live execution not blocked by dry_run logic | Section 2.7 |
-| RES-01 | resources/list exposes homelab:// URIs | Section 3.1 |
-| RES-02 | homelab://vms returns live Proxmox data | Section 3.2 |
-| RES-03 | homelab://devices returns DB device records | Section 3.3 |
-| RES-04 | homelab://services/{name} returns service status | Section 3.4 |
-| RES-05 | Unknown URI returns -32002 error | Section 3.5 |
-| RES-06 | All resource responses include scanned_at timestamp | Sections 3.2–3.4 |
-| RES-07 | Notifications emitted after discovery mutations | Section 4.1, 4.3 |
-| DRFT-01 | scan_infrastructure_drift tool exists and returns structured report | Section 5.1 |
-| DRFT-02 | State drift detected (VM stopped outside MCP) | Section 5.2 |
-| DRFT-03 | Config drift detected (CPU/memory changed outside MCP) | Section 5.3 |
+| RES-01 | resources/list exposes homelab:// URIs | Section 1.3 |
+| RES-02 | homelab://vms returns live Proxmox data | Section 3.1 |
+| RES-03 | homelab://devices returns DB device records | Section 3.2 |
+| RES-04 | homelab://services/{name} returns service status | Section 3.3 |
+| RES-05 | Unknown URI returns error | Section 3.4 |
+| RES-06 | All resource responses include scanned_at timestamp | Sections 3.1–3.3 |
+| RES-07 | Notifications emitted after discovery mutations | Sections 4.1, 4.3 |
+| DRFT-01 | scan_infrastructure_drift returns structured report | Section 5.1 |
+| DRFT-02 | State drift detected | Section 5.2 |
+| DRFT-03 | Config drift detected | Section 5.3 |
 | DRFT-04 | Baseline auto-updated after MCP mutation | Section 5.4 |
-| DRFT-05 | Baselines persist in SQLite across restarts | Section 5.5 |
-| DEBT-01 | Tool annotations (readOnlyHint, destructiveHint) exposed | Section 1 |
+| DRFT-05 | Baselines persist across restarts | Section 5.5 |
+| DEBT-01 | Tool annotations exposed | Section 1.2 |
 | DEBT-02 | HTTP transport API key auth | Section 7 |
-| DEBT-03 | Dry-run calls do not emit resource notifications | Section 4.2 |
+| DEBT-03 | Dry-run calls do not emit notifications | Section 4.2 |
