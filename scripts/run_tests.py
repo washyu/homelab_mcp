@@ -269,9 +269,7 @@ def main():
     exit_code = 0
 
     if args.mode == "unit":
-        exit_code = run_unit_tests(
-            coverage=not args.no_coverage, fail_under=args.fail_under
-        )
+        exit_code = run_unit_tests(coverage=not args.no_coverage, fail_under=args.fail_under)
 
     elif args.mode == "integration":
         exit_code = run_integration_tests()
@@ -293,9 +291,7 @@ def main():
         print("\n🏭 Running CI/CD Pipeline")
         print("=" * 50)
 
-        unit_code = run_unit_tests(
-            coverage=not args.no_coverage, fail_under=args.fail_under
-        )
+        unit_code = run_unit_tests(coverage=not args.no_coverage, fail_under=args.fail_under)
         quality_code = run_quality_checks()
 
         exit_code = unit_code or quality_code
@@ -310,9 +306,7 @@ def main():
         print("\n🌟 Running Complete Test Suite")
         print("=" * 50)
 
-        unit_code = run_unit_tests(
-            coverage=not args.no_coverage, fail_under=args.fail_under
-        )
+        unit_code = run_unit_tests(coverage=not args.no_coverage, fail_under=args.fail_under)
         integration_code = run_integration_tests()
         quality_code = run_quality_checks()
 

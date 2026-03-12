@@ -49,17 +49,11 @@ Examples:
     subparsers.add_parser("setup-postgres", help="Setup PostgreSQL database")
 
     # Migration command
-    migrate_parser = subparsers.add_parser(
-        "migrate", help="Migrate from SQLite to PostgreSQL"
-    )
-    migrate_parser.add_argument(
-        "--dry-run", action="store_true", help="Test migration without making changes"
-    )
+    migrate_parser = subparsers.add_parser("migrate", help="Migrate from SQLite to PostgreSQL")
+    migrate_parser.add_argument("--dry-run", action="store_true", help="Test migration without making changes")
 
     # Config template command
-    subparsers.add_parser(
-        "config-template", help="Generate PostgreSQL configuration template"
-    )
+    subparsers.add_parser("config-template", help="Generate PostgreSQL configuration template")
 
     args = parser.parse_args()
 

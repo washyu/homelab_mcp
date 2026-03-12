@@ -173,6 +173,16 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disallow_untyped_decorators = false
 
+[[tool.mypy.overrides]]
+# Compatibility shim: try/except import of StreamableHTTPSessionManager from
+# two different MCP SDK module paths. The `type: ignore` on the fallback import
+# is needed when running mypy against the installed MCP package (which has the
+# class in streamable_http but mypy reports attr-defined + no-redef), yet the
+# same comment is "unused" when running with --ignore-missing-imports (pre-commit
+# isolated env). Disable warn_unused_ignores for this module only.
+module = "homelab_mcp.http_app"
+warn_unused_ignores = false
+
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B601"]  # Skip assert_used and shell=True warnings in tests

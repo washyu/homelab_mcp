@@ -61,12 +61,8 @@ def main():
     import subprocess
 
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "list"], capture_output=True, text=True
-        )
-        docker_packages = [
-            line for line in result.stdout.split("\n") if "docker" in line.lower()
-        ]
+        result = subprocess.run([sys.executable, "-m", "pip", "list"], capture_output=True, text=True)
+        docker_packages = [line for line in result.stdout.split("\n") if "docker" in line.lower()]
         if docker_packages:
             print("Docker-related packages:")
             for pkg in docker_packages:
