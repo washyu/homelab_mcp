@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 08-04-PLAN.md: dry_run for delete_proxmox_vm and destroy_terraform_service"
-last_updated: "2026-03-12T01:58:09.656Z"
+stopped_at: "Completed 09-01-PLAN.md: resource_readers module with three async reader functions"
+last_updated: "2026-03-12T04:19:08.193Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Key v1.1 decisions:
 - [Phase 08-02]: dry-run handlers return build_dry_run_response() directly (not content-wrapped); tests assert result.get('mode') == 'dry_run' on raw handler return value
 - [Phase 08-03]: dry-run handlers return raw build_dry_run_response() dict directly (not content-wrapped); filter dry_run key from args before passing to remove_server(); get_database_adapter() not DatabaseManager
 - [Phase 08-04]: pre-commit mirrors-mypy upgraded v1.13.0 to v1.18.1 with asyncssh/aiohttp stubs to resolve mypy version conflict; dry-run handlers return raw dict; test stubs need get_proxmox_vm_status and plan_terraform_service AsyncMock setup
+- [Phase 09-01]: Module-level import of get_resource_manager used (not local/deferred) because server.py does not import resource_readers — no circular import exists and tests can patch at module level
 
 ### Pending Todos
 
@@ -64,6 +65,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:52:36.971Z
-Stopped at: Completed 08-04-PLAN.md: dry_run for delete_proxmox_vm and destroy_terraform_service
+Last session: 2026-03-12T04:19:08.190Z
+Stopped at: Completed 09-01-PLAN.md: resource_readers module with three async reader functions
 Resume file: None
