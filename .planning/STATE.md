@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 09-01-PLAN.md: resource_readers module with three async reader functions"
-last_updated: "2026-03-12T04:19:08.193Z"
+stopped_at: "Completed 09-02-PLAN.md: live resource dispatch in server.py with circular import fix"
+last_updated: "2026-03-12T04:27:44.702Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -53,6 +53,8 @@ Key v1.1 decisions:
 - [Phase 08-03]: dry-run handlers return raw build_dry_run_response() dict directly (not content-wrapped); filter dry_run key from args before passing to remove_server(); get_database_adapter() not DatabaseManager
 - [Phase 08-04]: pre-commit mirrors-mypy upgraded v1.13.0 to v1.18.1 with asyncssh/aiohttp stubs to resolve mypy version conflict; dry-run handlers return raw dict; test stubs need get_proxmox_vm_status and plan_terraform_service AsyncMock setup
 - [Phase 09-01]: Module-level import of get_resource_manager used (not local/deferred) because server.py does not import resource_readers — no circular import exists and tests can patch at module level
+- [Phase 09-02]: Deferred/local import of get_resource_manager inside reader functions to break circular import; test_resource_readers.py patches updated to homelab_mcp.server.get_resource_manager
+- [Phase 09-02]: HOMELAB_RESOURCES stub keys removed; handle_read_resource now dispatches to live readers; homelab://services/{name} supported as template URI
 
 ### Pending Todos
 
@@ -65,6 +67,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T04:19:08.190Z
-Stopped at: Completed 09-01-PLAN.md: resource_readers module with three async reader functions
+Last session: 2026-03-12T04:27:44.699Z
+Stopped at: Completed 09-02-PLAN.md: live resource dispatch in server.py with circular import fix
 Resume file: None
