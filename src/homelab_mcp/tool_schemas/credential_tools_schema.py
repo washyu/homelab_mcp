@@ -103,6 +103,11 @@ CREDENTIAL_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Hostname to look up (optional if credential_id provided)",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return a preview of what would be affected without executing any changes.",
+                },
             },
             "required": [],
         },

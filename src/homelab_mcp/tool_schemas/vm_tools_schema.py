@@ -170,6 +170,11 @@ VM_TOOLS: dict[str, dict[str, Any]] = {
                     "default": False,
                     "description": "Force removal without graceful shutdown",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return a preview of what would be affected without executing any changes.",
+                },
             },
             "required": ["device_id", "platform", "vm_name"],
         },
