@@ -71,9 +71,7 @@ async def handle_remove_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         connection_info = await manager.get_device_connection_info(arguments["device_id"])
         if not connection_info:
             would_affect: list[dict[str, Any]] = []
-            preview_details: dict[str, Any] | None = {
-                "error": f"Device {arguments['device_id']} not found"
-            }
+            preview_details: dict[str, Any] | None = {"error": f"Device {arguments['device_id']} not found"}
         else:
             would_affect = [
                 {

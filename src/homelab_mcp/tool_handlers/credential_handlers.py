@@ -50,13 +50,9 @@ async def handle_remove_server(arguments: dict[str, Any]) -> dict[str, Any]:
         if not cred:
             identifier = hostname or str(credential_id)
             would_affect: list[dict[str, Any]] = []
-            preview_details: dict[str, Any] | None = {
-                "error": f"Server '{identifier}' not found"
-            }
+            preview_details: dict[str, Any] | None = {"error": f"Server '{identifier}' not found"}
         else:
-            would_affect = [
-                {"resource_type": "server_credential", "hostname": hostname}
-            ]
+            would_affect = [{"resource_type": "server_credential", "hostname": hostname}]
             preview_details = {"hostname": hostname}
         return build_dry_run_response(
             tool_name="remove_server",
