@@ -17,12 +17,12 @@ repos:
 
   # Mypy - type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v1.18.1
     hooks:
       - id: mypy
         name: mypy type check
         args: [--ignore-missing-imports]
-        additional_dependencies: [types-pyyaml]
+        additional_dependencies: [types-pyyaml, asyncssh>=2.14.0, aiohttp>=3.9.0]
         pass_filenames: false
         entry: mypy src
 

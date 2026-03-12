@@ -327,6 +327,11 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Proxmox host (optional)",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return a preview of what would be affected without executing any changes.",
+                },
             },
             "required": ["node", "vmid"],
         },

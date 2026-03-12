@@ -179,6 +179,11 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                     "description": "SSH port (default: 22)",
                     "default": 22,
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return a preview of what would be affected without executing any changes.",
+                },
             },
             "required": ["service_name", "hostname"],
         },
