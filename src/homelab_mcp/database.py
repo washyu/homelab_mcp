@@ -108,6 +108,34 @@ class DatabaseAdapter(ABC):
         """Update the last_verified timestamp for a credential."""
         pass
 
+    # Drift baseline CRUD methods
+    @abstractmethod
+    def upsert_drift_baseline(
+        self,
+        node: str,
+        vmid: int,
+        vm_type: str,
+        baseline_config: dict[str, Any],
+        recorded_by: str,
+    ) -> None:
+        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
+        pass
+
+    @abstractmethod
+    def get_drift_baseline(
+        self,
+        node: str,
+        vmid: int,
+        vm_type: str,
+    ) -> dict[str, Any] | None:
+        """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
+        pass
+
+    @abstractmethod
+    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
+        """Return all stored drift baselines ordered by node, vmid."""
+        pass
+
 
 class SQLiteAdapter(DatabaseAdapter):
     """SQLite database adapter."""
@@ -605,6 +633,85 @@ class SQLiteAdapter(DatabaseAdapter):
 
         self.connection.commit()
         return cursor.rowcount > 0
+
+    # Drift baseline CRUD methods
+    def upsert_drift_baseline(
+        self,
+        node: str,
+        vmid: int,
+        vm_type: str,
+        baseline_config: dict[str, Any],
+        recorded_by: str,
+    ) -> None:
+        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO drift_baselines
+                (node, vmid, vm_type, baseline_config, recorded_at, recorded_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                node,
+                vmid,
+                vm_type,
+                json.dumps(baseline_config),
+                datetime.now().isoformat(),
+                recorded_by,
+            ),
+        )
+        self.connection.commit()
+
+    def get_drift_baseline(
+        self,
+        node: str,
+        vmid: int,
+        vm_type: str,
+    ) -> dict[str, Any] | None:
+        """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
+            FROM drift_baselines
+            WHERE node = ? AND vmid = ? AND vm_type = ?
+            """,
+            (node, vmid, vm_type),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["baseline_config"] = json.loads(result["baseline_config"])
+        return result
+
+    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
+        """Return all stored drift baselines ordered by node, vmid."""
+        if not self.connection:
+            self.connect()
+
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
+            FROM drift_baselines ORDER BY node, vmid
+            """
+        )
+        results = []
+        for row in cursor.fetchall():
+            entry = dict(row)
+            entry["baseline_config"] = json.loads(entry["baseline_config"])
+            results.append(entry)
+        return results
 
 
 class PostgreSQLAdapter(DatabaseAdapter):
@@ -1123,6 +1230,31 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self.connection.commit()
         rowcount: int = cursor.rowcount
         return rowcount > 0
+
+    # Drift baseline CRUD methods (Phase 11 scope: SQLite only — stubs for ABC compliance)
+    def upsert_drift_baseline(
+        self,
+        node: str,
+        vmid: int,
+        vm_type: str,
+        baseline_config: dict[str, Any],
+        recorded_by: str,
+    ) -> None:
+        """Not implemented for PostgreSQL in Phase 11 scope."""
+        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
+
+    def get_drift_baseline(
+        self,
+        node: str,
+        vmid: int,
+        vm_type: str,
+    ) -> dict[str, Any] | None:
+        """Not implemented for PostgreSQL in Phase 11 scope."""
+        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
+
+    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
+        """Not implemented for PostgreSQL in Phase 11 scope."""
+        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
