@@ -35,6 +35,18 @@ async def handle_update_device_config(arguments: dict[str, Any]) -> dict[str, An
 
 async def handle_decommission_device(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle decommission_device tool."""
+    if arguments.get("dry_run", False):
+        from ..dry_run import build_dry_run_response
+
+        would_affect: list[dict[str, Any]] = [
+            {"resource_type": "device", "device_id": arguments["device_id"]},
+        ]
+        return build_dry_run_response(
+            tool_name="decommission_device",
+            would_affect=would_affect,
+            risk_level="high",
+            reversible=False,
+        )
     result = await decommission_network_device(
         device_id=arguments["device_id"],
         migration_plan=arguments.get("migration_plan"),
@@ -81,6 +93,18 @@ async def handle_rollback_infrastructure_changes(
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
     """Handle rollback_infrastructure_changes tool."""
+    if arguments.get("dry_run", False):
+        from ..dry_run import build_dry_run_response
+
+        would_affect: list[dict[str, Any]] = [
+            {"resource_type": "infrastructure", "backup_id": arguments["backup_id"]},
+        ]
+        return build_dry_run_response(
+            tool_name="rollback_infrastructure_changes",
+            would_affect=would_affect,
+            risk_level="high",
+            reversible=False,
+        )
     result = await rollback_infrastructure_to_backup(
         backup_id=arguments["backup_id"],
         rollback_scope=arguments.get("rollback_scope", "full"),
