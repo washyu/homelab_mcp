@@ -63,6 +63,35 @@ async def handle_get_vm_logs(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_remove_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle remove_vm tool."""
+    if arguments.get("dry_run", False):
+        from ..dry_run import build_dry_run_response
+        from ..vm_operations import VMManager
+
+        manager = VMManager()
+        connection_info = await manager.get_device_connection_info(arguments["device_id"])
+        if not connection_info:
+            would_affect: list[dict[str, Any]] = []
+            preview_details: dict[str, Any] | None = {
+                "error": f"Device {arguments['device_id']} not found"
+            }
+        else:
+            would_affect = [
+                {
+                    "resource_type": "vm",
+                    "name": arguments["vm_name"],
+                    "platform": arguments["platform"],
+                    "device_id": arguments["device_id"],
+                    "host": connection_info["hostname"],
+                }
+            ]
+            preview_details = None
+        return build_dry_run_response(
+            tool_name="remove_vm",
+            would_affect=would_affect,
+            risk_level="high",
+            reversible=False,
+            preview_details=preview_details,
+        )
     result = await remove_vm(
         device_id=arguments["device_id"],
         platform=arguments["platform"],
