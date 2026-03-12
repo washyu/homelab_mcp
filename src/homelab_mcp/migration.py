@@ -65,6 +65,31 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
         applied_migrations.append("create_ssh_credentials_table")
         print("✓ Created ssh_credentials table")
 
+    # Check if drift_baselines table exists
+    cursor.execute("""
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='drift_baselines'
+    """)
+    if not cursor.fetchone():
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS drift_baselines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node TEXT NOT NULL,
+                vmid INTEGER NOT NULL,
+                vm_type TEXT NOT NULL DEFAULT 'qemu',
+                baseline_config TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                recorded_by TEXT NOT NULL,
+                UNIQUE(node, vmid, vm_type)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
+            ON drift_baselines (node, vmid, vm_type)
+        """)
+        adapter.connection.commit()
+        applied_migrations.append("create_drift_baselines_table")
+
     adapter.close()
     return applied_migrations
 

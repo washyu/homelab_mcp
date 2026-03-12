@@ -231,6 +231,25 @@ class SQLiteAdapter(DatabaseAdapter):
             ON ssh_credentials (device_id)
         """)
 
+        # Create drift_baselines table for VM configuration baseline storage
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS drift_baselines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node TEXT NOT NULL,
+                vmid INTEGER NOT NULL,
+                vm_type TEXT NOT NULL DEFAULT 'qemu',
+                baseline_config TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                recorded_by TEXT NOT NULL,
+                UNIQUE(node, vmid, vm_type)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
+            ON drift_baselines (node, vmid, vm_type)
+        """)
+
         self.connection.commit()
 
     def store_device(self, device_data: dict[str, Any]) -> int:
