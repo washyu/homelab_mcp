@@ -21,7 +21,7 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 - [ ] **DRY-04**: User can pass `dry_run: true` to `delete_proxmox_vm` and see what would be affected
 - [ ] **DRY-05**: User can pass `dry_run: true` to `destroy_terraform_service` and see what would be affected
 - [ ] **DRY-06**: User can pass `dry_run: true` to `rollback_infrastructure_changes` and see what would be affected
-- [ ] **DRY-07**: All dry-run responses return structured JSON with `mode`, `would_affect`, `risk_level`, and `reversible` fields
+- [x] **DRY-07**: All dry-run responses return structured JSON with `mode`, `would_affect`, `risk_level`, and `reversible` fields
 
 ### Drift Detection
 
@@ -95,7 +95,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DRY-04 | Phase 8 | Pending |
 | DRY-05 | Phase 8 | Pending |
 | DRY-06 | Phase 8 | Pending |
-| DRY-07 | Phase 8 | Pending |
+| DRY-07 | Phase 8 | Complete |
 | DRFT-01 | Phase 11 | Pending |
 | DRFT-02 | Phase 11 | Pending |
 | DRFT-03 | Phase 11 | Pending |

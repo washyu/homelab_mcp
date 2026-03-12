@@ -117,7 +117,7 @@ Plans:
 | 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 6. Tech Debt Cleanup | 2/3 | In Progress|  | - |
 | 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
-| 8. Dry-Run Mode | v1.1 | 0/4 | Not started | - |
+| 8. Dry-Run Mode | 1/4 | In Progress|  | - |
 | 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |
 | 10. Resource Notifications | v1.1 | 0/TBD | Not started | - |
 | 11. Drift Detection | v1.1 | 0/TBD | Not started | - |

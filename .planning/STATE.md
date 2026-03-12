@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 07-01-PLAN.md: MCP Resources list/read/subscribe handlers"
-last_updated: "2026-03-11T23:41:03.968Z"
+stopped_at: "Completed 08-01-PLAN.md: dry_run contract builder and TDD test scaffold"
+last_updated: "2026-03-12T01:19:17.573Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 8
+  completed_plans: 5
   percent: 0
 ---
 
@@ -47,6 +47,8 @@ Key v1.1 decisions:
 - [Phase 06-02]: Exclude '/' from APIKeyAuth exclude_paths — it uses prefix matching and '/' matches all paths; only use exact paths or paths ending in '/' for real prefix routes
 - [Phase 06-02]: APIKeyAuth wrapping is conditional: create_http_app() returns Starlette | APIKeyAuth; callers receive ASGI-compatible object in both cases
 - [Phase 07-01]: AnyUrl('homelab://vms') stringifies without triple slash in pydantic v2; RESOURCE_NOT_FOUND=-32002 constant added; subscribe/unsubscribe use set for idempotency
+- [Phase 08-dry-run-mode]: build_dry_run_response() returns flat dict with mode, tool, would_affect, risk_level, reversible; preview merged only when preview_details given
+- [Phase 08-dry-run-mode]: get_resource_manager patched at homelab_mcp.server (not proxmox_handlers) since it is a local import; remove_server uses MagicMock not AsyncMock (sync function)
 
 ### Pending Todos
 
@@ -59,6 +61,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-11T23:37:47.877Z
-Stopped at: Completed 07-01-PLAN.md: MCP Resources list/read/subscribe handlers
+Last session: 2026-03-12T01:19:17.570Z
+Stopped at: Completed 08-01-PLAN.md: dry_run contract builder and TDD test scaffold
 Resume file: None
