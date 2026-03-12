@@ -15,12 +15,12 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 
 ### Dry-Run
 
-- [ ] **DRY-01**: User can pass `dry_run: true` to `decommission_device` and see what would be affected
+- [x] **DRY-01**: User can pass `dry_run: true` to `decommission_device` and see what would be affected
 - [x] **DRY-02**: User can pass `dry_run: true` to `remove_vm` and see what would be affected
 - [x] **DRY-03**: User can pass `dry_run: true` to `remove_server` and see what would be affected
 - [x] **DRY-04**: User can pass `dry_run: true` to `delete_proxmox_vm` and see what would be affected
 - [x] **DRY-05**: User can pass `dry_run: true` to `destroy_terraform_service` and see what would be affected
-- [ ] **DRY-06**: User can pass `dry_run: true` to `rollback_infrastructure_changes` and see what would be affected
+- [x] **DRY-06**: User can pass `dry_run: true` to `rollback_infrastructure_changes` and see what would be affected
 - [x] **DRY-07**: All dry-run responses return structured JSON with `mode`, `would_affect`, `risk_level`, and `reversible` fields
 
 ### Drift Detection
@@ -89,12 +89,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEBT-01 | Phase 6 | Complete |
 | DEBT-02 | Phase 6 | Complete |
 | DEBT-03 | Phase 6 | Complete |
-| DRY-01 | Phase 8 | Pending |
+| DRY-01 | Phase 8 | Complete |
 | DRY-02 | Phase 8 | Complete |
 | DRY-03 | Phase 8 | Complete |
 | DRY-04 | Phase 8 | Complete |
 | DRY-05 | Phase 8 | Complete |
-| DRY-06 | Phase 8 | Pending |
+| DRY-06 | Phase 8 | Complete |
 | DRY-07 | Phase 8 | Complete |
 | DRFT-01 | Phase 11 | Pending |
 | DRFT-02 | Phase 11 | Pending |
@@ -116,4 +116,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-11*
-*Last updated: 2026-03-11 after roadmap creation — all 22 requirements mapped*
+*Last updated: 2026-03-12 after phase 08 execution — DRY-01 through DRY-07 complete*

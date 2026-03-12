@@ -10,7 +10,7 @@ progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Key v1.1 decisions:
 - [Phase 07-01]: AnyUrl('homelab://vms') stringifies without triple slash in pydantic v2; RESOURCE_NOT_FOUND=-32002 constant added; subscribe/unsubscribe use set for idempotency
 - [Phase 08-dry-run-mode]: build_dry_run_response() returns flat dict with mode, tool, would_affect, risk_level, reversible; preview merged only when preview_details given
 - [Phase 08-dry-run-mode]: get_resource_manager patched at homelab_mcp.server (not proxmox_handlers) since it is a local import; remove_server uses MagicMock not AsyncMock (sync function)
+- [Phase 08-02]: dry-run handlers return build_dry_run_response() directly (not content-wrapped); tests assert result.get('mode') == 'dry_run' on raw handler return value
 - [Phase 08-03]: dry-run handlers return raw build_dry_run_response() dict directly (not content-wrapped); filter dry_run key from args before passing to remove_server(); get_database_adapter() not DatabaseManager
 - [Phase 08-04]: pre-commit mirrors-mypy upgraded v1.13.0 to v1.18.1 with asyncssh/aiohttp stubs to resolve mypy version conflict; dry-run handlers return raw dict; test stubs need get_proxmox_vm_status and plan_terraform_service AsyncMock setup
 
