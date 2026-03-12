@@ -67,7 +67,12 @@ Plans:
   2. Every dry-run response includes `mode: "dry_run"`, `would_affect` (list of affected resources), `risk_level` (`high`/`medium`/`low`), and `reversible` (`true`/`false`) fields
   3. Calling the same tool without `dry_run: true` (or with `dry_run: false`) still executes the real operation unchanged
   4. Tool schemas in `tools.py` expose `dry_run` as an optional boolean parameter for all six tools
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 08-01-PLAN.md — dry_run.py contract builder + TDD test scaffold (RED state)
+- [ ] 08-02-PLAN.md — Dry-run for decommission_device + rollback_infrastructure_changes
+- [ ] 08-03-PLAN.md — Dry-run for remove_vm + remove_server
+- [ ] 08-04-PLAN.md — Dry-run for delete_proxmox_vm + destroy_terraform_service
 
 ### Phase 9: MCP Resources Live Data
 **Goal**: `resources/read` on every declared URI returns live data — VMs from Proxmox/Docker/LXD, devices from SQLite, services from SSH status — with a `scanned_at` timestamp in every response.
@@ -112,7 +117,7 @@ Plans:
 | 5. Documentation | v1.0 | 2/2 | Complete | 2026-03-11 |
 | 6. Tech Debt Cleanup | 2/3 | In Progress|  | - |
 | 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
-| 8. Dry-Run Mode | v1.1 | 0/TBD | Not started | - |
+| 8. Dry-Run Mode | v1.1 | 0/4 | Not started | - |
 | 9. MCP Resources Live Data | v1.1 | 0/TBD | Not started | - |
 | 10. Resource Notifications | v1.1 | 0/TBD | Not started | - |
 | 11. Drift Detection | v1.1 | 0/TBD | Not started | - |
