@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 11-01-PLAN.md: Wave-0 TDD test stubs for drift detection"
-last_updated: "2026-03-12T18:29:37.714Z"
+stopped_at: "Completed 11-02-PLAN.md: drift baseline storage layer"
+last_updated: "2026-03-12T18:36:34.267Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
   percent: 0
 ---
 
@@ -61,6 +61,9 @@ Key v1.1 decisions:
 - [Phase 11-drift-detection]: Module-level import in test_drift_detection.py causes ImportError at collection time — valid RED state for Wave-0 TDD scaffolding
 - [Phase 11-drift-detection]: TestDriftBaselines uses real in-memory SQLite with init_schema() so tests go GREEN automatically once schema migration runs
 - [Phase 11-drift-detection]: test_ssh_probe_unreachable patches homelab_mcp.drift_detection.asyncssh.connect and get_proxmox_vm_status to isolate SSH probe failure path
+- [Phase 11-drift-detection]: drift_baselines table added to init_schema() (not just migration.py) because TestDriftBaselines fixture uses :memory: SQLite via init_schema()
+- [Phase 11-drift-detection]: PostgreSQLAdapter drift baseline stubs raise NotImplementedError — explicit failure is better than silent no-op for Phase 11 SQLite-only scope
+- [Phase 11-drift-detection]: UNIQUE(node, vmid, vm_type) + INSERT OR REPLACE keeps upsert logic entirely in SQL with no application-level conflict handling
 
 ### Pending Todos
 
@@ -73,6 +76,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T18:29:37.711Z
-Stopped at: Completed 11-01-PLAN.md: Wave-0 TDD test stubs for drift detection
+Last session: 2026-03-12T18:36:34.265Z
+Stopped at: Completed 11-02-PLAN.md: drift baseline storage layer
 Resume file: None
