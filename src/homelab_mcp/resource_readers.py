@@ -8,8 +8,9 @@ Three async reader functions that fetch live data for each MCP resource:
 These functions are intentionally isolated from server.py so they are
 independently testable. server.py dispatches to these in Plan 02.
 
-All readers use a local import of get_resource_manager() to avoid circular
-imports, and always return graceful error payloads instead of raising.
+get_resource_manager is imported locally inside each function to avoid the
+circular import that arises when server.py also imports from resource_readers.
+Tests patch at 'homelab_mcp.server.get_resource_manager'.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .proxmox_api import list_proxmox_resources
-from .server import get_resource_manager
 from .service_installer import ServiceInstaller
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,8 @@ async def read_vms_resource() -> dict[str, Any]:
         On RuntimeError (no ResourceManager): {"vms": [], "scanned_at": "...", "error": "..."}
         On other exceptions: {"vms": [], "scanned_at": "...", "error": "..."}
     """
+    from .server import get_resource_manager  # deferred to avoid circular import
+
     scanned_at = datetime.now(UTC).isoformat()
 
     try:
@@ -81,6 +83,8 @@ async def read_devices_resource() -> dict[str, Any]:
         On RuntimeError (no ResourceManager): {"devices": [], "scanned_at": "...", "error": "..."}
         On other exceptions: {"devices": [], "scanned_at": "...", "error": "..."}
     """
+    from .server import get_resource_manager  # deferred to avoid circular import
+
     scanned_at = datetime.now(UTC).isoformat()
 
     try:
@@ -134,6 +138,8 @@ async def read_service_resource(service_name: str) -> dict[str, Any]:
         On RuntimeError (no ResourceManager): {"service": name, "status": "error", "error": "...", "scanned_at": "..."}
     """
     scanned_at = datetime.now(UTC).isoformat()
+
+    from .server import get_resource_manager  # deferred to avoid circular import
 
     # Resolve hostname
     hostname: str | None = os.environ.get("MCP_DEFAULT_SERVICE_HOST")

@@ -10,6 +10,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 import mcp.types as types
@@ -19,7 +20,7 @@ from mcp.shared.exceptions import McpError
 from pydantic import AnyUrl
 
 from .config import MCPConfig, get_config
-from .log_filter import CredentialFilter
+from .log_filter import CredentialFilter, sanitize_error
 from .progress import (
     LOG_LEVEL_ORDER,
     emit_progress,
@@ -27,6 +28,7 @@ from .progress import (
     should_emit,
 )
 from .resource_manager import ResourceManager
+from .resource_readers import read_devices_resource, read_service_resource, read_vms_resource
 from .tool_annotations import get_tool_annotations
 from .tool_handlers import get_tool_handler
 from .tool_schemas import get_all_tool_schemas
@@ -94,22 +96,20 @@ server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
 
 #: Registry of homelab:// resources exposed via resources/list and resources/read.
 #: Keys must match str(AnyUrl("homelab://...")) output exactly.
-#: Values are dicts with: name, description, stub (the JSON payload returned by read).
+#: Values are dicts with: name, description (used by handle_list_resources for metadata).
+#: Live data dispatch is handled by handle_read_resource via resource_readers module.
 HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
     "homelab://vms": {
         "name": "Virtual Machines",
         "description": "Proxmox, Docker, and LXD VM/container inventory from all managed hosts",
-        "stub": {"vms": [], "_note": "stub - Phase 9 wires live data"},
     },
     "homelab://devices": {
         "name": "Device Inventory",
         "description": "All devices discovered on the homelab network via SSH and mDNS scanning",
-        "stub": {"devices": [], "_note": "stub - Phase 9 wires live data"},
     },
     "homelab://services": {
         "name": "Services",
         "description": "Status of installed services (Docker, Proxmox, custom stacks) across all hosts",
-        "stub": {"services": [], "_note": "stub - Phase 9 wires live data"},
     },
 }
 
@@ -150,23 +150,57 @@ async def handle_list_resources() -> list[types.Resource]:
 
 @server.read_resource()  # type: ignore[misc]
 async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
-    """Return stub JSON content for a known homelab:// resource URI.
+    """Return live JSON content for a known homelab:// resource URI.
+
+    Dispatches to the appropriate reader function from resource_readers module.
+    Non-McpError exceptions are caught and returned as error payloads (not raised).
 
     Raises:
-        McpError: With code -32002 if the URI is not in HOMELAB_RESOURCES.
+        McpError: With code -32002 if the URI is not recognized, or if
+            homelab://services/ is requested without a service name.
     """
     uri_str = str(uri)
-    if uri_str not in HOMELAB_RESOURCES:
-        raise McpError(
-            types.ErrorData(
-                code=RESOURCE_NOT_FOUND,
-                message="Resource not found",
-                data={"uri": uri_str},
+
+    try:
+        if uri_str == "homelab://vms":
+            payload = await read_vms_resource()
+        elif uri_str == "homelab://devices":
+            payload = await read_devices_resource()
+        elif uri_str.startswith("homelab://services/"):
+            service_name = uri_str.removeprefix("homelab://services/")
+            if not service_name:
+                raise McpError(
+                    types.ErrorData(
+                        code=RESOURCE_NOT_FOUND,
+                        message="Service name required",
+                        data={"uri": uri_str},
+                    )
+                )
+            payload = await read_service_resource(service_name)
+        elif uri_str in HOMELAB_RESOURCES:
+            # Bare homelab://services or other registered URIs without a live reader
+            payload = {
+                "_note": "Use homelab://services/{name} for specific service status",
+                "scanned_at": datetime.now(UTC).isoformat(),
+            }
+        else:
+            raise McpError(
+                types.ErrorData(
+                    code=RESOURCE_NOT_FOUND,
+                    message="Resource not found",
+                    data={"uri": uri_str},
+                )
             )
-        )
-    meta = HOMELAB_RESOURCES[uri_str]
-    stub = meta["stub"]
-    return [ReadResourceContents(content=json.dumps(stub), mime_type="application/json")]
+    except McpError:
+        raise
+    except Exception as e:
+        logger.exception("Error reading resource %s", uri_str)
+        payload = {
+            "error": sanitize_error(e),
+            "scanned_at": datetime.now(UTC).isoformat(),
+        }
+
+    return [ReadResourceContents(content=json.dumps(payload), mime_type="application/json")]
 
 
 # ---------------------------------------------------------------------------
