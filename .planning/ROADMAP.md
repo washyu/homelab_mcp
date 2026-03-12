@@ -109,7 +109,13 @@ Plans:
   3. Config drift correctly identifies VM resources (CPU, memory, network) that changed outside MCP by comparing live Proxmox VM config against stored baselines
   4. Drift baselines stored in SQLite update automatically after every successful MCP mutation — intentional changes do not appear as drift on the next scan
   5. State drift findings are labeled as point-in-time observations (not "confirmed drift") to prevent false positives from transient VM reboot states
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+- [ ] 11-01-PLAN.md — Wave 0 test scaffolds (RED state stubs for DRFT-01..05)
+- [ ] 11-02-PLAN.md — drift_baselines SQLite migration + DatabaseAdapter CRUD methods
+- [ ] 11-03-PLAN.md — get_proxmox_vm_config() Proxmox config endpoint function
+- [ ] 11-04-PLAN.md — drift_detection.py core: scan_drift, _diff_vm_config, update_baseline_after_mutation
+- [ ] 11-05-PLAN.md — Tool registration + baseline mutation hooks in proxmox handlers
 
 ## Progress
 
@@ -125,4 +131,4 @@ Plans:
 | 8. Dry-Run Mode | 2/4 | In Progress|  | - |
 | 9. MCP Resources Live Data | v1.1 | 0/2 | Not started | - |
 | 10. Resource Notifications | 1/1 | Complete    | 2026-03-12 | - |
-| 11. Drift Detection | v1.1 | 0/TBD | Not started | - |
+| 11. Drift Detection | v1.1 | 0/5 | Not started | - |
