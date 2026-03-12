@@ -26,7 +26,7 @@
 - [x] **Phase 7: MCP Resources Plumbing** - Wire the Resources protocol skeleton (list, read, subscribe, error handling) with stub data (completed 2026-03-11)
 - [ ] **Phase 8: Dry-Run Mode** - Add `dry_run: true` to all six destructive tools with structured preview output
 - [ ] **Phase 9: MCP Resources Live Data** - Connect ResourceFetcher to real Proxmox, Docker, SQLite data sources
-- [ ] **Phase 10: Resource Notifications** - Emit `listChanged` and `resourceUpdated` notifications after mutations and discoveries
+- [x] **Phase 10: Resource Notifications** - Emit `listChanged` and `resourceUpdated` notifications after mutations and discoveries (completed 2026-03-12)
 - [ ] **Phase 11: Drift Detection** - Build on-demand infrastructure drift scanner with config and state drift reporting
 
 ## Phase Details
@@ -124,5 +124,5 @@ Plans:
 | 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
 | 8. Dry-Run Mode | 2/4 | In Progress|  | - |
 | 9. MCP Resources Live Data | v1.1 | 0/2 | Not started | - |
-| 10. Resource Notifications | v1.1 | 0/1 | Not started | - |
+| 10. Resource Notifications | 1/1 | Complete   | 2026-03-12 | - |
 | 11. Drift Detection | v1.1 | 0/TBD | Not started | - |

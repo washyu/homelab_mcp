@@ -39,7 +39,7 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 - [x] **RES-04**: `homelab://services/{name}` resource returns individual service status
 - [x] **RES-05**: All resources return `application/json` content via `resources/read`
 - [x] **RES-06**: Server returns error code `-32002` for unknown resource URIs
-- [ ] **RES-07**: Server emits `notifications/resources/list_changed` after `ssh_discover` adds new devices
+- [x] **RES-07**: Server emits `notifications/resources/list_changed` after `ssh_discover` adds new devices
 
 ## Future Requirements
 
@@ -107,7 +107,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RES-04 | Phase 9 | Complete |
 | RES-05 | Phase 7 | Complete |
 | RES-06 | Phase 7 | Complete |
-| RES-07 | Phase 10 | Pending |
+| RES-07 | Phase 10 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 22 total
