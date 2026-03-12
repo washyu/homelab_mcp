@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 49 tools across 7 categories, comprehensive documentation, and security hardening. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
+A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 50 tools across 7 categories, comprehensive documentation, security hardening, dry-run previews for destructive operations, infrastructure drift detection, and live infrastructure state via MCP Resources. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
 
 ## Core Value
 
@@ -36,20 +36,19 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ Proxmox API integration (nodes, VMs, storage, tasks) — existing
 - ✓ Interactive shell sessions via WebSocket — existing
 - ✓ Infrastructure lifecycle management (deploy/update/decommission) — existing
+- ✓ ResourceManager.proxmox_session consumed by handler chain — v1.1
+- ✓ API key authentication enforced on HTTP transport endpoints — v1.1
+- ✓ vm_providers error paths return structured error dicts — v1.1
+- ✓ Dry-run preview for all 6 destructive operations with structured response — v1.1
+- ✓ Infrastructure drift detection — config drift (CPU, memory, network) — v1.1
+- ✓ Infrastructure drift detection — state drift (services stopped, VMs offline) — v1.1
+- ✓ On-demand `scan_infrastructure_drift` tool with structured report — v1.1
+- ✓ MCP Resources exposing live infrastructure state (VMs, devices, services) — v1.1
+- ✓ `notifications/resources/list_changed` after device discovery mutations — v1.1
 
 ### Active
 
-<!-- v1.1 Safety & Observability -->
-
-- [ ] Dry-run preview for destructive operations (show what would happen before executing)
-- [ ] Infrastructure drift detection — config drift (CPU, memory, network changed outside MCP)
-- [ ] Infrastructure drift detection — state drift (services stopped, VMs offline unexpectedly)
-- [ ] On-demand drift scan tool with structured report
-- [ ] MCP Resources exposing live infrastructure state (VM list, service status, device inventory)
-- [ ] MCP Resource subscriptions for state change notifications
-- [ ] Fix: ResourceManager.proxmox_session wiring (created but never consumed by handler chain)
-- [ ] Fix: API key authentication wired into HTTP transport
-- [ ] Fix: vm_providers error handling (replace raw str(e) with structured errors)
+<!-- v1.2 requirements — TBD via /gsd:new-milestone -->
 
 ### Out of Scope
 
@@ -64,30 +63,23 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - PyPI package distribution — deferred to v1.2
 - Auto-detect drift with periodic background checks — deferred, start with on-demand scan
 - Full workflow simulation (dry-run beyond destructive ops) — deferred, start with destructive preview
-
-## Current Milestone: v1.1 Safety & Observability
-
-**Goal:** Make the server trustworthy for real use — preview before breaking things, detect when reality drifts from expectations, expose live infra state via MCP Resources, and clean up v1.0 tech debt.
-
-**Target features:**
-- Dry-run preview for destructive operations (delete, stop, restart show what would happen first)
-- Infrastructure drift detection — config and state drift with on-demand scan
-- MCP Resources for live infrastructure state with subscriptions
-- Tech debt cleanup (proxmox_session wiring, API key auth, vm_providers errors)
+- Resource subscriptions with `notifications/resources/updated` — deferred to v1.2 (DRY-08, RES-08, RES-09)
+- Drift report via MCP Resource (`homelab://drift/latest`) — deferred to v1.2 (DRFT-07)
 
 ## Context
 
-- Shipped v1.0 with 13K LOC Python (src/) + 13K LOC tests (479 unit tests passing)
+- Shipped v1.1 with ~14,300 LOC Python (src/) | 115 files changed from v1.0 baseline
 - Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, SQLite
-- 49 tools organized into 7 categories: SSH, network, VM, service, infrastructure, credential, Proxmox
+- 50 tools organized into 7 categories: SSH, network, VM, service, infrastructure, credential, Proxmox
 - MCP SDK lowlevel.Server with stdio and Streamable HTTP transports
-- Integration tests exist with Docker-based SSH testing
-- Documentation: setup guide, tool reference (49 tools), configuration reference
+- New modules added in v1.1: `dry_run.py`, `drift_detection.py`, `resource_readers.py`
+- SQLite schema extended with `drift_baselines` table (node, vmid, vm_type, config JSON, upsert via INSERT OR REPLACE)
+- Mypy upgraded to v1.18.1 with asyncssh/aiohttp stubs — pre-commit hook now runs clean
 
 ## Constraints
 
 - **Tech stack**: Python 3.12+, uv, asyncssh, mcp[cli] — established, not changing
-- **Distribution**: Clone + uv sync for 1.0 (PyPI planned for future)
+- **Distribution**: Clone + uv sync for v1.x (PyPI planned for future)
 - **Target platform**: Linux primary (Proxmox hosts are Linux)
 - **MCP compatibility**: Must work with any MCP-compatible client, not just Claude
 - **Security**: SSH TOFU, Proxmox SSL, input validation, credential redaction all enforced
@@ -100,10 +92,15 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | Implement all stubs | Called code that does nothing is a bug, not tech debt | ✓ Good — sitemap auto-update, device rediscovery, script install all working |
 | Clone + uv sync distribution | Simplest path to 1.0, PyPI can come later | ✓ Good — works, documented in setup guide |
 | Target Proxmox users | Clear persona, existing integration, testable | ✓ Good — clear scope, 10 Proxmox-specific tools |
-| All tools must work | "Everything works" bar — no stubs, no broken tools | ✓ Good — 49 tools annotated and functional |
+| All tools must work | "Everything works" bar — no stubs, no broken tools | ✓ Good — 50 tools annotated and functional |
 | MCP SDK lowlevel.Server (not FastMCP) | Maximum control over protocol details | ✓ Good — enabled custom lifespan, annotations, ToolError pattern |
-| ResourceManager with module-level accessor | Avoids threading request_context through every handler | ⚠️ Revisit — proxmox_session never consumed by handler chain |
+| ResourceManager with module-level accessor | Avoids threading request_context through every handler | ✓ Good — proxmox_session now fully threaded (DEBT-01 fixed in v1.1) |
 | Pure ASGI middleware for Origin validation | Better performance than BaseHTTPMiddleware | ✓ Good — clean integration with Starlette middleware stack |
+| APIKeyAuth as conditional ASGI wrapper | HTTP auth only activates when MCP_API_KEY is set | ✓ Good — stdio deployments unaffected; HTTP deployments secured |
+| Local import of get_resource_manager in handlers | Avoids server.py → tool_handlers → server.py circular import | ✓ Good — clean pattern, established in Phase 06, reused in 09/11 |
+| Dry-run handlers return flat dict | build_dry_run_response() not content-wrapped — _convert_result fallback handles it | ⚠️ Revisit — low severity but inconsistent with live-execution response format |
+| drift_baselines uses UNIQUE(node, vmid, vm_type) + INSERT OR REPLACE | Upsert entirely in SQL, no application-level conflict handling | ✓ Good — clean, SQLite-idiomatic |
+| scan_drift labels state findings as point-in-time observations | Avoids false positives from transient VM reboot states | ✓ Good — honest reporting design |
 
 ---
-*Last updated: 2026-03-11 after v1.1 milestone initialization*
+*Last updated: 2026-03-12 after v1.1 milestone*
