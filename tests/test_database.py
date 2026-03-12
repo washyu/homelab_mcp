@@ -318,3 +318,117 @@ class TestUtilityFunctions:
         assert hash1 == hash2  # Same data should have same hash
         assert hash1 != hash3  # Different data should have different hash
         assert len(hash1) == 64  # SHA256 produces 64-character hex string
+
+
+class TestDriftBaselines:
+    """Tests for DRFT-04: SQLiteAdapter drift baseline CRUD methods.
+
+    These tests will fail with AttributeError until Plan 02 implements
+    upsert_drift_baseline, get_drift_baseline, and get_all_drift_baselines
+    on SQLiteAdapter — that is the expected RED state.
+    """
+
+    @pytest.fixture
+    def adapter(self):
+        """Create an in-memory SQLite adapter with schema initialized."""
+        db = SQLiteAdapter(":memory:")
+        db.init_schema()
+        return db
+
+    def test_upsert_and_get_baseline(self, adapter):
+        """upsert_drift_baseline stores config; get_drift_baseline retrieves it."""
+        baseline_config = {"cores": 2, "memory": 2048, "net0": "virtio,bridge=vmbr0"}
+
+        adapter.upsert_drift_baseline(
+            node="pve",
+            vmid=100,
+            vm_type="qemu",
+            baseline_config=baseline_config,
+            recorded_by="test_tool",
+        )
+
+        result = adapter.get_drift_baseline(node="pve", vmid=100, vm_type="qemu")
+
+        assert result is not None
+        assert result["node"] == "pve"
+        assert result["vmid"] == 100
+        assert result["vm_type"] == "qemu"
+        assert result["baseline_config"] == baseline_config
+
+    def test_upsert_replaces_existing(self, adapter):
+        """Second upsert for same (node, vmid, vm_type) replaces the previous baseline."""
+        adapter.upsert_drift_baseline(
+            node="pve",
+            vmid=100,
+            vm_type="qemu",
+            baseline_config={"cores": 2},
+            recorded_by="initial_tool",
+        )
+        adapter.upsert_drift_baseline(
+            node="pve",
+            vmid=100,
+            vm_type="qemu",
+            baseline_config={"cores": 4, "memory": 4096},
+            recorded_by="resize_vm",
+        )
+
+        result = adapter.get_drift_baseline(node="pve", vmid=100, vm_type="qemu")
+
+        assert result is not None
+        assert result["baseline_config"]["cores"] == 4
+        assert result["baseline_config"].get("memory") == 4096
+
+        # Verify only one baseline exists for this VM
+        all_baselines = adapter.get_all_drift_baselines()
+        pve_100 = [b for b in all_baselines if b["node"] == "pve" and b["vmid"] == 100]
+        assert len(pve_100) == 1
+
+    def test_get_returns_none_when_absent(self, adapter):
+        """get_drift_baseline returns None for an unknown vmid."""
+        result = adapter.get_drift_baseline(node="pve", vmid=9999, vm_type="qemu")
+
+        assert result is None
+
+    def test_get_all_drift_baselines(self, adapter):
+        """get_all_drift_baselines returns a list containing all stored baselines."""
+        adapter.upsert_drift_baseline(
+            node="pve",
+            vmid=100,
+            vm_type="qemu",
+            baseline_config={"cores": 2},
+            recorded_by="tool_a",
+        )
+        adapter.upsert_drift_baseline(
+            node="pve",
+            vmid=101,
+            vm_type="lxc",
+            baseline_config={"cores": 1},
+            recorded_by="tool_b",
+        )
+
+        all_baselines = adapter.get_all_drift_baselines()
+
+        assert isinstance(all_baselines, list)
+        assert len(all_baselines) >= 2
+        vmids = [b["vmid"] for b in all_baselines]
+        assert 100 in vmids
+        assert 101 in vmids
+
+    def test_baseline_config_is_full_dict(self, adapter):
+        """Retrieved baseline_config is a dict (deserialized from JSON), not a raw string."""
+        config = {"cores": 4, "memory": 8192, "net0": "virtio,bridge=vmbr0"}
+
+        adapter.upsert_drift_baseline(
+            node="pve",
+            vmid=200,
+            vm_type="qemu",
+            baseline_config=config,
+            recorded_by="some_tool",
+        )
+
+        result = adapter.get_drift_baseline(node="pve", vmid=200, vm_type="qemu")
+
+        assert result is not None
+        assert isinstance(result["baseline_config"], dict)
+        assert result["baseline_config"]["cores"] == 4
+        assert result["baseline_config"]["net0"] == "virtio,bridge=vmbr0"
