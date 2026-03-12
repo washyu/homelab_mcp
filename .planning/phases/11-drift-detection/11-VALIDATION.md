@@ -1,9 +1,9 @@
 ---
 phase: 11
 slug: drift-detection
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: ready
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-12
 ---
 
@@ -52,8 +52,8 @@ created: 2026-03-12
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_drift_detection.py` — stubs for DRFT-01, DRFT-02, DRFT-03, DRFT-05 (new file)
-- [ ] `tests/test_database.py::TestDriftBaselines` — stubs for DRFT-04 (add class to existing file)
+- [x] `tests/test_drift_detection.py` — stubs for DRFT-01, DRFT-02, DRFT-03, DRFT-05 (new file); includes test_ssh_probe_unreachable for DRFT-02 SSH probe path
+- [x] `tests/test_database.py::TestDriftBaselines` — stubs for DRFT-04 (add class to existing file)
 
 ---
 
@@ -68,11 +68,11 @@ created: 2026-03-12
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 15s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 15s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** confirmed
