@@ -95,7 +95,9 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. After `ssh_discover` completes and adds new devices to the database, the server emits `notifications/resources/list_changed` to the connected client
   2. Subscribed clients do not receive notifications for dry-run executions (only real mutations trigger notifications)
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 10-01-PLAN.md — MUTATING_TOOLS constant + notification dispatch in handle_call_tool (TDD)
 
 ### Phase 11: Drift Detection
 **Goal**: Users can run `scan_infrastructure_drift` to get a structured report of config drift (CPU/memory/network changed outside MCP) and state drift (VMs/services offline that should be running), with baselines that stay current after every MCP mutation.
@@ -122,5 +124,5 @@ Plans:
 | 7. MCP Resources Plumbing | 1/1 | Complete   | 2026-03-11 | - |
 | 8. Dry-Run Mode | 2/4 | In Progress|  | - |
 | 9. MCP Resources Live Data | v1.1 | 0/2 | Not started | - |
-| 10. Resource Notifications | v1.1 | 0/TBD | Not started | - |
+| 10. Resource Notifications | v1.1 | 0/1 | Not started | - |
 | 11. Drift Detection | v1.1 | 0/TBD | Not started | - |
