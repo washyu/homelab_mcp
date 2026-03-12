@@ -9,6 +9,7 @@ from .credential_handlers import (
     handle_remove_server,
     handle_update_server_credentials,
 )
+from .drift_handlers import handle_scan_infrastructure_drift
 from .infrastructure_handlers import (
     handle_create_infrastructure_backup,
     handle_decommission_device,
@@ -117,6 +118,8 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "list_registered_servers": handle_list_registered_servers,
     "update_server_credentials": handle_update_server_credentials,
     "remove_server": handle_remove_server,
+    # Drift tools
+    "scan_infrastructure_drift": handle_scan_infrastructure_drift,
     # Proxmox tools
     "search_proxmox_scripts": handle_search_proxmox_scripts,
     "get_proxmox_script_info": handle_get_proxmox_script_info,
@@ -138,4 +141,4 @@ def get_tool_handler(tool_name: str) -> ToolHandler:
     return TOOL_HANDLERS[tool_name]
 
 
-__all__ = ["TOOL_HANDLERS", "get_tool_handler", "ToolHandler"]
+__all__ = ["TOOL_HANDLERS", "get_tool_handler", "ToolHandler", "handle_scan_infrastructure_drift"]

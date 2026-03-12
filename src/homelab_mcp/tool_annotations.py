@@ -34,6 +34,7 @@ _READ_ONLY_TOOLS = [
     "get_vm_status",
     "get_vm_logs",
     "list_registered_servers",
+    "scan_infrastructure_drift",
     "search_proxmox_scripts",
     "get_proxmox_script_info",
     "list_proxmox_resources",

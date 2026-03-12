@@ -3,6 +3,7 @@
 from typing import Any
 
 from .credential_tools_schema import CREDENTIAL_TOOLS
+from .drift_tools_schema import DRIFT_TOOLS
 from .infrastructure_tools_schema import INFRASTRUCTURE_TOOLS
 from .network_tools_schema import NETWORK_TOOLS
 from .proxmox_tools_schema import PROXMOX_TOOLS
@@ -21,6 +22,7 @@ def get_all_tool_schemas() -> dict[str, dict[str, Any]]:
         **SERVICE_TOOLS,
         **CREDENTIAL_TOOLS,
         **PROXMOX_TOOLS,
+        **DRIFT_TOOLS,
     }
 
 
