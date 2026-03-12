@@ -1571,9 +1571,9 @@ class TestHandlerSessionThreading:
 
         mock_list.assert_called_once()
         call_kwargs = mock_list.call_args
-        assert (
-            call_kwargs.kwargs.get("session") is mock_session
-        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        assert call_kwargs.kwargs.get("session") is mock_session, (
+            f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        )
 
     @pytest.mark.asyncio
     async def test_handler_uses_shared_session_node_status(self):
@@ -1594,9 +1594,9 @@ class TestHandlerSessionThreading:
 
         mock_fn.assert_called_once()
         call_kwargs = mock_fn.call_args
-        assert (
-            call_kwargs.kwargs.get("session") is mock_session
-        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        assert call_kwargs.kwargs.get("session") is mock_session, (
+            f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        )
 
     @pytest.mark.asyncio
     async def test_handler_uses_shared_session_manage_vm(self):
@@ -1625,9 +1625,9 @@ class TestHandlerSessionThreading:
 
         mock_fn.assert_called_once()
         call_kwargs = mock_fn.call_args
-        assert (
-            call_kwargs.kwargs.get("session") is mock_session
-        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        assert call_kwargs.kwargs.get("session") is mock_session, (
+            f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        )
 
     @pytest.mark.asyncio
     async def test_handler_uses_shared_session_delete_vm(self):
@@ -1656,9 +1656,9 @@ class TestHandlerSessionThreading:
 
         mock_fn.assert_called_once()
         call_kwargs = mock_fn.call_args
-        assert (
-            call_kwargs.kwargs.get("session") is mock_session
-        ), f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        assert call_kwargs.kwargs.get("session") is mock_session, (
+            f"Expected session={mock_session!r} in call, got {call_kwargs}"
+        )
 
     @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
@@ -1677,6 +1677,6 @@ class TestHandlerSessionThreading:
         # manage_proxmox_vm should have been called with session=mock_session
         mock_manage_vm.assert_called_once()
         call_kwargs = mock_manage_vm.call_args
-        assert (
-            call_kwargs.kwargs.get("session") is mock_session
-        ), f"Expected session={mock_session!r} in manage_proxmox_vm call, got {call_kwargs}"
+        assert call_kwargs.kwargs.get("session") is mock_session, (
+            f"Expected session={mock_session!r} in manage_proxmox_vm call, got {call_kwargs}"
+        )

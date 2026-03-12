@@ -70,9 +70,9 @@ async def test_list_resources_has_homelab_uris() -> None:
     """Every returned Resource.uri starts with 'homelab://'."""
     resources = await handle_list_resources()
     for resource in resources:
-        assert str(resource.uri).startswith(
-            "homelab://"
-        ), f"Resource URI {resource.uri!r} does not start with 'homelab://'"
+        assert str(resource.uri).startswith("homelab://"), (
+            f"Resource URI {resource.uri!r} does not start with 'homelab://'"
+        )
 
 
 @pytest.mark.asyncio
@@ -80,9 +80,9 @@ async def test_list_resources_has_json_mimetype() -> None:
     """Every returned Resource has mimeType == 'application/json'."""
     resources = await handle_list_resources()
     for resource in resources:
-        assert (
-            resource.mimeType == "application/json"
-        ), f"Resource {resource.uri!r} has mimeType {resource.mimeType!r}, expected 'application/json'"
+        assert resource.mimeType == "application/json", (
+            f"Resource {resource.uri!r} has mimeType {resource.mimeType!r}, expected 'application/json'"
+        )
 
 
 # ---------------------------------------------------------------------------

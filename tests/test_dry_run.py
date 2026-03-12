@@ -112,9 +112,9 @@ class TestDecommissionDeviceDryRun:
             kwargs = call.kwargs if call.kwargs else {}
             args = call.args if call.args else ()
             validate_only = kwargs.get("validate_only", args[3] if len(args) > 3 else None)
-            assert (
-                validate_only is not False
-            ), "decommission_network_device called with validate_only=False during dry-run"
+            assert validate_only is not False, (
+                "decommission_network_device called with validate_only=False during dry-run"
+            )
 
     @pytest.mark.asyncio
     @patch(
@@ -441,9 +441,9 @@ class TestRollbackInfrastructureDryRun:
             kwargs = call.kwargs if call.kwargs else {}
             args = call.args if call.args else ()
             validate_only = kwargs.get("validate_only", args[3] if len(args) > 3 else None)
-            assert (
-                validate_only is not False
-            ), "rollback_infrastructure_to_backup called with validate_only=False during dry-run"
+            assert validate_only is not False, (
+                "rollback_infrastructure_to_backup called with validate_only=False during dry-run"
+            )
 
     @pytest.mark.asyncio
     @patch(
