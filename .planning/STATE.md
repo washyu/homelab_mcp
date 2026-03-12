@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed quick/2-run-all-pre-commit-checks-before-push
-last_updated: "2026-03-12T20:10:40.741Z"
+stopped_at: Completed quick/3-fix-windows-cross-platform-ci-failures
+last_updated: "2026-03-12T20:36:00Z"
 last_activity: 2026-03-12 — v1.1 archived
 progress:
   total_phases: 0
@@ -59,9 +59,10 @@ None — clean slate for v1.2.
 |---|-------------|------|--------|-----------|
 | 1 | Fix ruff CI/CD pipeline failures | 2026-03-12 | a169427 | [1-fix-ruff-ci-cd-pipeline-failures](./quick/1-fix-ruff-ci-cd-pipeline-failures/) |
 | 2 | Run all pre-commit checks before push | 2026-03-12 | 668487d | [2-run-all-pre-commit-checks-before-push](./quick/2-run-all-pre-commit-checks-before-push/) |
+| 3 | Fix Windows cross-platform CI failures | 2026-03-12 | abc79e8 | [3-fix-windows-cross-platform-ci-failures](./quick/3-fix-windows-cross-platform-ci-failures/) |
 
 ## Session Continuity
 
-Last session: 2026-03-12T20:20:25Z
-Stopped at: Completed quick task 2: Run all pre-commit checks before push
+Last session: 2026-03-12T20:36:00Z
+Stopped at: Completed quick task 3: Fix Windows cross-platform CI failures
 Resume file: None
