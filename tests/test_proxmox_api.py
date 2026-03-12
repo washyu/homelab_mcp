@@ -19,6 +19,7 @@ from src.homelab_mcp.proxmox_api import (
     delete_proxmox_vm,
     get_proxmox_client,
     get_proxmox_node_status,
+    get_proxmox_vm_config,
     get_proxmox_vm_status,
     list_proxmox_resources,
     manage_proxmox_vm,
@@ -482,6 +483,110 @@ class TestGetProxmoxVMStatus:
         # THEN: Should default to qemu
         assert result["type"] == "qemu"
         mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/status/current")
+
+
+class TestGetProxmoxVMConfig:
+    """Test get_proxmox_vm_config function."""
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    async def test_get_vm_config_qemu_success(self, mock_get_client):
+        """Test getting config of a QEMU VM."""
+        # GIVEN: Mock client with VM config
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.return_value = {
+            "cores": 2,
+            "memory": 2048,
+            "sockets": 1,
+            "net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0",
+        }
+
+        # WHEN: Getting VM config
+        result = await get_proxmox_vm_config(node="pve", vmid=100, vm_type="qemu")
+
+        # THEN: Should return success with config fields
+        assert result["status"] == "success"
+        assert result["node"] == "pve"
+        assert result["vmid"] == 100
+        assert result["type"] == "qemu"
+        assert result["data"]["cores"] == 2
+        assert result["data"]["memory"] == 2048
+
+        # AND: Should call the /config endpoint (not /status/current)
+        mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/config")
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    async def test_get_vm_config_lxc_success(self, mock_get_client):
+        """Test getting config of an LXC container."""
+        # GIVEN: Mock client with container config
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.return_value = {
+            "cores": 1,
+            "memory": 512,
+            "hostname": "mycontainer",
+        }
+
+        # WHEN: Getting LXC config
+        result = await get_proxmox_vm_config(node="pve", vmid=101, vm_type="lxc")
+
+        # THEN: Should return success with container config
+        assert result["status"] == "success"
+        assert result["type"] == "lxc"
+        assert result["vmid"] == 101
+
+        # AND: Should call LXC config endpoint
+        mock_client.get.assert_called_once_with("/nodes/pve/lxc/101/config")
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    async def test_get_vm_config_vm_not_found(self, mock_get_client):
+        """Test getting config of non-existent VM returns error."""
+        # GIVEN: Mock client that raises exception
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = ClientError("VM 999 does not exist")
+
+        # WHEN: Getting config of non-existent VM
+        result = await get_proxmox_vm_config(node="pve", vmid=999)
+
+        # THEN: Should return error with message
+        assert result["status"] == "error"
+        assert "Failed to get VM config" in result["message"]
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    async def test_get_vm_config_default_type_is_qemu(self, mock_get_client):
+        """Test that default VM type is qemu."""
+        # GIVEN: Mock client
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.return_value = {"cores": 4, "memory": 4096}
+
+        # WHEN: Getting VM config without specifying type
+        result = await get_proxmox_vm_config(node="pve", vmid=100)
+
+        # THEN: Should default to qemu
+        assert result["type"] == "qemu"
+        mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/config")
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    async def test_get_vm_config_value_error_returns_error(self, mock_get_client):
+        """Test that ValueError is also caught and returned as error."""
+        # GIVEN: Mock client that raises ValueError
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = ValueError("Invalid API response: {}")
+
+        # WHEN: Getting VM config
+        result = await get_proxmox_vm_config(node="pve", vmid=100)
+
+        # THEN: Should return error
+        assert result["status"] == "error"
+        assert "Failed to get VM config" in result["message"]
 
 
 class TestManageProxmoxVM:
