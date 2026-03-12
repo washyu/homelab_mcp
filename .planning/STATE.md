@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 11-02-PLAN.md: drift baseline storage layer"
-last_updated: "2026-03-12T18:36:34.267Z"
+stopped_at: "Completed 11-03-PLAN.md: get_proxmox_vm_config function"
+last_updated: "2026-03-12T18:40:53.815Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -64,6 +64,7 @@ Key v1.1 decisions:
 - [Phase 11-drift-detection]: drift_baselines table added to init_schema() (not just migration.py) because TestDriftBaselines fixture uses :memory: SQLite via init_schema()
 - [Phase 11-drift-detection]: PostgreSQLAdapter drift baseline stubs raise NotImplementedError — explicit failure is better than silent no-op for Phase 11 SQLite-only scope
 - [Phase 11-drift-detection]: UNIQUE(node, vmid, vm_type) + INSERT OR REPLACE keeps upsert logic entirely in SQL with no application-level conflict handling
+- [Phase 11-drift-detection]: [Phase 11-03]: get_proxmox_vm_config follows get_proxmox_vm_status pattern exactly — same signature, same error handling, only endpoint differs (/config vs /status/current)
 
 ### Pending Todos
 
@@ -76,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T18:36:34.265Z
-Stopped at: Completed 11-02-PLAN.md: drift baseline storage layer
+Last session: 2026-03-12T18:40:53.813Z
+Stopped at: Completed 11-03-PLAN.md: get_proxmox_vm_config function
 Resume file: None
