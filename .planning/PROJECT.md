@@ -46,9 +46,19 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ MCP Resources exposing live infrastructure state (VMs, devices, services) — v1.1
 - ✓ `notifications/resources/list_changed` after device discovery mutations — v1.1
 
+## Current Milestone: v1.2 Protocol Completeness
+
+**Goal:** Complete MCP protocol surface — Prompts, Resources, and correct dry-run tool semantics — plus PyPI distribution for easier installation.
+
+**Target features:**
+- Dry-run tool split (6 destructive tools → `*_preview` variants with `readOnlyHint: true`)
+- MCP Prompts (`prompts/list` + `prompts/get` with homelab workflow templates)
+- PyPI distribution (`uvx homelab-mcp` install path)
+- Drift MCP Resource (`homelab://drift/latest` live resource)
+
 ### Active
 
-<!-- v1.2 requirements — TBD via /gsd:new-milestone -->
+<!-- Populated during requirements definition -->
 
 ### Out of Scope
 
@@ -103,4 +113,4 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | scan_drift labels state findings as point-in-time observations | Avoids false positives from transient VM reboot states | ✓ Good — honest reporting design |
 
 ---
-*Last updated: 2026-03-12 after v1.1 milestone*
+*Last updated: 2026-03-12 after v1.2 milestone start*

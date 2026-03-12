@@ -25,11 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Milestone: v1.1 Safety & Observability — **SHIPPED**
-Status: Complete — all 6 phases, 16 plans, 22/22 requirements satisfied
-Last activity: 2026-03-12 — v1.1 archived
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-12 — Milestone v1.2 started
 
 ## Accumulated Context
 
