@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Safety & Observability
 status: planning
-stopped_at: "Completed 10-01-PLAN.md: MUTATING_TOOLS constant and notifications/resources/list_changed dispatch"
-last_updated: "2026-03-12T17:53:19.160Z"
+stopped_at: "Completed 11-01-PLAN.md: Wave-0 TDD test stubs for drift detection"
+last_updated: "2026-03-12T18:29:37.714Z"
 last_activity: 2026-03-11 — v1.1 roadmap created, 22/22 requirements mapped
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 16
+  completed_plans: 12
   percent: 0
 ---
 
@@ -58,6 +58,9 @@ Key v1.1 decisions:
 - [Phase 10-01]: MUTATING_TOOLS frozenset for immutable O(1) membership check before notification dispatch
 - [Phase 10-01]: Test mock uses src.homelab_mcp.server patch path and PropertyMock on type(server) for request_context
 - [Phase 10-01]: LookupError from request_context swallowed silently at DEBUG level for out-of-lifecycle callers
+- [Phase 11-drift-detection]: Module-level import in test_drift_detection.py causes ImportError at collection time — valid RED state for Wave-0 TDD scaffolding
+- [Phase 11-drift-detection]: TestDriftBaselines uses real in-memory SQLite with init_schema() so tests go GREEN automatically once schema migration runs
+- [Phase 11-drift-detection]: test_ssh_probe_unreachable patches homelab_mcp.drift_detection.asyncssh.connect and get_proxmox_vm_status to isolate SSH probe failure path
 
 ### Pending Todos
 
@@ -70,6 +73,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T17:47:35.662Z
-Stopped at: Completed 10-01-PLAN.md: MUTATING_TOOLS constant and notifications/resources/list_changed dispatch
+Last session: 2026-03-12T18:29:37.711Z
+Stopped at: Completed 11-01-PLAN.md: Wave-0 TDD test stubs for drift detection
 Resume file: None

@@ -25,11 +25,11 @@ Requirements for v1.1 Safety & Observability milestone. Each maps to roadmap pha
 
 ### Drift Detection
 
-- [ ] **DRFT-01**: User can run `scan_infrastructure_drift` to get a report of all detected drift
-- [ ] **DRFT-02**: State drift detects when VMs/services are offline that should be running (SSH + Proxmox status)
-- [ ] **DRFT-03**: Config drift detects when VM/device config changed outside MCP (CPU, memory, network)
-- [ ] **DRFT-04**: Drift baselines are stored in SQLite as full config dicts for field-level diffing
-- [ ] **DRFT-05**: Drift baselines update after successful MCP mutations to avoid false positives
+- [x] **DRFT-01**: User can run `scan_infrastructure_drift` to get a report of all detected drift
+- [x] **DRFT-02**: State drift detects when VMs/services are offline that should be running (SSH + Proxmox status)
+- [x] **DRFT-03**: Config drift detects when VM/device config changed outside MCP (CPU, memory, network)
+- [x] **DRFT-04**: Drift baselines are stored in SQLite as full config dicts for field-level diffing
+- [x] **DRFT-05**: Drift baselines update after successful MCP mutations to avoid false positives
 
 ### MCP Resources
 
@@ -96,11 +96,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DRY-05 | Phase 8 | Complete |
 | DRY-06 | Phase 8 | Complete |
 | DRY-07 | Phase 8 | Complete |
-| DRFT-01 | Phase 11 | Pending |
-| DRFT-02 | Phase 11 | Pending |
-| DRFT-03 | Phase 11 | Pending |
-| DRFT-04 | Phase 11 | Pending |
-| DRFT-05 | Phase 11 | Pending |
+| DRFT-01 | Phase 11 | Complete |
+| DRFT-02 | Phase 11 | Complete |
+| DRFT-03 | Phase 11 | Complete |
+| DRFT-04 | Phase 11 | Complete |
+| DRFT-05 | Phase 11 | Complete |
 | RES-01 | Phase 7 | Complete |
 | RES-02 | Phase 9 | Complete |
 | RES-03 | Phase 9 | Complete |
