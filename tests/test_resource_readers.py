@@ -36,7 +36,7 @@ async def test_read_vms_resource_returns_scanned_at() -> None:
 
     with (
         patch(
-            "homelab_mcp.resource_readers.get_resource_manager",
+            "homelab_mcp.server.get_resource_manager",
             return_value=mock_rm,
         ),
         patch(
@@ -62,7 +62,7 @@ async def test_read_vms_resource_no_proxmox_config() -> None:
 
     with (
         patch(
-            "homelab_mcp.resource_readers.get_resource_manager",
+            "homelab_mcp.server.get_resource_manager",
             return_value=mock_rm,
         ),
         patch(
@@ -83,7 +83,7 @@ async def test_read_vms_resource_no_proxmox_config() -> None:
 async def test_read_vms_resource_no_resource_manager() -> None:
     """read_vms_resource returns graceful error payload when ResourceManager unavailable."""
     with patch(
-        "homelab_mcp.resource_readers.get_resource_manager",
+        "homelab_mcp.server.get_resource_manager",
         side_effect=RuntimeError("ResourceManager not available -- server lifespan not started"),
     ):
         from homelab_mcp.resource_readers import read_vms_resource
@@ -113,7 +113,7 @@ async def test_read_devices_resource_returns_scanned_at() -> None:
     mock_rm.db_adapter.get_device_changes.return_value = []
 
     with patch(
-        "homelab_mcp.resource_readers.get_resource_manager",
+        "homelab_mcp.server.get_resource_manager",
         return_value=mock_rm,
     ):
         from homelab_mcp.resource_readers import read_devices_resource
@@ -141,7 +141,7 @@ async def test_read_devices_resource_includes_last_discovery_data() -> None:
     ]
 
     with patch(
-        "homelab_mcp.resource_readers.get_resource_manager",
+        "homelab_mcp.server.get_resource_manager",
         return_value=mock_rm,
     ):
         from homelab_mcp.resource_readers import read_devices_resource
@@ -165,7 +165,7 @@ async def test_read_devices_resource_no_history() -> None:
     mock_rm.db_adapter.get_device_changes.return_value = []
 
     with patch(
-        "homelab_mcp.resource_readers.get_resource_manager",
+        "homelab_mcp.server.get_resource_manager",
         return_value=mock_rm,
     ):
         from homelab_mcp.resource_readers import read_devices_resource
@@ -189,7 +189,7 @@ async def test_read_service_resource_unconfigured() -> None:
 
     with (
         patch(
-            "homelab_mcp.resource_readers.get_resource_manager",
+            "homelab_mcp.server.get_resource_manager",
             return_value=mock_rm,
         ),
         patch.dict(os.environ, {}, clear=False),
@@ -221,7 +221,7 @@ async def test_read_service_resource_returns_status() -> None:
 
     with (
         patch(
-            "homelab_mcp.resource_readers.get_resource_manager",
+            "homelab_mcp.server.get_resource_manager",
             return_value=mock_rm,
         ),
         patch(
@@ -248,7 +248,7 @@ async def test_read_service_resource_ssh_error() -> None:
 
     with (
         patch(
-            "homelab_mcp.resource_readers.get_resource_manager",
+            "homelab_mcp.server.get_resource_manager",
             return_value=mock_rm,
         ),
         patch(

@@ -6,19 +6,23 @@ Tests cover:
 - read_resource raises McpError(-32002) for unknown URIs
 - Server capabilities include non-None resources field
 - subscribe/unsubscribe update the _subscriptions tracker
+- Live dispatch to reader functions (Phase 9 Plan 02)
 """
 
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock
 
 import mcp.types as types
 import pytest
 from mcp.shared.exceptions import McpError
 from pydantic import AnyUrl
+from pytest_mock import MockerFixture
 
 from src.homelab_mcp.server import (
     HOMELAB_RESOURCES,
+    RESOURCE_NOT_FOUND,
     _subscriptions,
     handle_list_resources,
     handle_read_resource,
@@ -171,3 +175,64 @@ async def test_subscribe_idempotent() -> None:
     uri_str = str(AnyUrl("homelab://vms"))
     matching = [s for s in _subscriptions if s == uri_str]
     assert len(matching) == 1
+
+
+# ---------------------------------------------------------------------------
+# Live dispatch tests (Phase 9 Plan 02)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_read_vms_resource_has_scanned_at(mocker: MockerFixture) -> None:
+    """handle_read_resource dispatches to read_vms_resource and response includes scanned_at."""
+    mocker.patch(
+        "homelab_mcp.server.read_vms_resource",
+        new=AsyncMock(return_value={"vms": [], "scanned_at": "2026-01-01T00:00:00+00:00", "total": 0}),
+    )
+    result = await handle_read_resource(AnyUrl("homelab://vms"))
+    assert len(result) == 1
+    assert result[0].mime_type == "application/json"
+    data = json.loads(result[0].content)
+    assert "scanned_at" in data
+
+
+@pytest.mark.asyncio
+async def test_read_devices_resource_has_scanned_at(mocker: MockerFixture) -> None:
+    """handle_read_resource dispatches to read_devices_resource and response includes scanned_at."""
+    mocker.patch(
+        "homelab_mcp.server.read_devices_resource",
+        new=AsyncMock(return_value={"devices": [], "scanned_at": "2026-01-01T00:00:00+00:00", "total": 0}),
+    )
+    result = await handle_read_resource(AnyUrl("homelab://devices"))
+    assert len(result) == 1
+    assert result[0].mime_type == "application/json"
+    data = json.loads(result[0].content)
+    assert "scanned_at" in data
+
+
+@pytest.mark.asyncio
+async def test_read_services_template_uri(mocker: MockerFixture) -> None:
+    """handle_read_resource dispatches homelab://services/nginx to read_service_resource('nginx')."""
+    mocker.patch(
+        "homelab_mcp.server.read_service_resource",
+        new=AsyncMock(
+            return_value={
+                "service": "nginx",
+                "status": "running",
+                "scanned_at": "2026-01-01T00:00:00+00:00",
+            }
+        ),
+    )
+    result = await handle_read_resource(AnyUrl("homelab://services/nginx"))
+    assert len(result) == 1
+    assert result[0].mime_type == "application/json"
+    data = json.loads(result[0].content)
+    assert "service" in data
+
+
+@pytest.mark.asyncio
+async def test_read_services_empty_name_error() -> None:
+    """handle_read_resource for homelab://services/ (empty name) raises McpError -32002."""
+    with pytest.raises(McpError) as exc_info:
+        await handle_read_resource(AnyUrl("homelab://services/"))
+    assert exc_info.value.error.code == RESOURCE_NOT_FOUND
