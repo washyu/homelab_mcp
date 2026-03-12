@@ -84,6 +84,24 @@ addopts = [
     "--cov-report=xml",
 ]
 testpaths = ["tests"]
+norecursedirs = [
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "venv",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "*.egg",
+    "__pycache__",
+    ".uv",
+    "setup-uv-cache",
+    "_temp",
+]
 filterwarnings = [
     "error",
     "ignore::UserWarning",
