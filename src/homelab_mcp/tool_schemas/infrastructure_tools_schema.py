@@ -136,6 +136,11 @@ INFRASTRUCTURE_TOOLS: dict[str, dict[str, Any]] = {
                     "default": False,
                     "description": "Only validate decommission plan without executing",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return a preview of what would be affected without executing any changes.",
+                },
             },
             "required": ["device_id"],
         },
@@ -255,6 +260,11 @@ INFRASTRUCTURE_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "boolean",
                     "default": False,
                     "description": "Only validate rollback plan without executing",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, return a preview of what would be affected without executing any changes.",
                 },
             },
             "required": ["backup_id"],
