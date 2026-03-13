@@ -2,7 +2,7 @@
 
 Wave 0 update (Phase 12, Plan 01):
 - TEMPLATES_DIR module-level patch removed (PKG-03: constant will be gone after Plan 03)
-- New patch target: homelab_mcp.service_installer.files (importlib.resources.files)
+- New patch target: src.homelab_mcp.service_installer.files (importlib.resources.files)
 - All template-loading tests now use a MagicMock Traversable via the new patch target
 - Added test_templates_loaded_from_package for VALIDATION.md PKG-03 contract
 """
@@ -208,7 +208,7 @@ def test_templates_loaded_from_package() -> None:
     fake_files_fn = _make_fake_files_fn(traversable)
 
     # Patch target: importlib.resources.files as imported in service_installer module
-    with patch("homelab_mcp.service_installer.files", fake_files_fn):
+    with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
         installer = ServiceInstaller()
 
     assert len(installer.templates) == 1, f"Expected 1 template, got {len(installer.templates)}"
@@ -232,7 +232,7 @@ class TestServiceInstaller:
         traversable = _make_fake_traversable(self.sample_template, filename="test-service.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -445,7 +445,7 @@ class TestServiceInstaller:
         fake_pkg.joinpath.return_value = fake_traversable
         fake_files_fn = MagicMock(return_value=fake_pkg)
 
-        with patch("homelab_mcp.service_installer.files", fake_files_fn):
+        with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
             installer = ServiceInstaller()
 
         assert "test-service" in installer.templates
@@ -476,7 +476,7 @@ class TestServiceInstaller:
         traversable = _make_fake_traversable(complex_template, filename="complex-service.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        with patch("homelab_mcp.service_installer.files", fake_files_fn):
+        with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
             installer = ServiceInstaller()
 
         info = installer.get_service_info("complex-service")
@@ -564,7 +564,7 @@ class TestServiceInstallerAnsibleMethod:
         traversable = _make_fake_traversable(self.ansible_template, filename="ansible-service.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -681,7 +681,7 @@ class TestServiceInstallerScriptMethod:
         traversable = _make_fake_traversable(self.script_template, filename="script-service.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -768,7 +768,7 @@ class TestServiceInstallerVariableSubstitution:
         traversable = _make_fake_traversable(self.variable_template, filename="variable-service.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -818,7 +818,7 @@ class TestServiceInstallerVariableSubstitution:
         traversable = _make_fake_traversable(template_with_defaults, filename="defaults-service.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        with patch("homelab_mcp.service_installer.files", fake_files_fn):
+        with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
             installer = ServiceInstaller()
 
         info = installer.get_service_info("defaults-service")
@@ -868,7 +868,7 @@ class TestInstallScriptServiceDirect:
         traversable = _make_fake_traversable(minimal, filename="dummy.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
@@ -974,7 +974,7 @@ class TestServiceInstallerISOMethod:
         traversable = _make_fake_traversable(self.iso_template, filename="truenas-iso.yaml")
         fake_files_fn = _make_fake_files_fn(traversable)
 
-        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()

@@ -3,7 +3,7 @@
 import json
 import logging
 import subprocess
-from pathlib import Path
+from importlib.resources import files
 from typing import Any
 
 import yaml
@@ -13,9 +13,6 @@ from .progress import emit_progress
 from .ssh_tools import ssh_execute_command
 
 logger = logging.getLogger(__name__)
-
-# Service templates directory
-TEMPLATES_DIR = Path(__file__).parent / "service_templates"
 
 
 class AnsibleRunner:
@@ -92,22 +89,17 @@ class ServiceInstaller:
         self.templates = self._load_service_templates()
 
     def _load_service_templates(self) -> dict[str, dict[str, Any]]:
-        """Load all service templates from the templates directory."""
-        templates = {}
-
-        # Ensure templates directory exists
-        TEMPLATES_DIR.mkdir(exist_ok=True)
-
-        # Load YAML template files
-        for template_file in TEMPLATES_DIR.glob("*.yaml"):
-            try:
-                with open(template_file) as f:
-                    service_data = yaml.safe_load(f)
-                    service_name = template_file.stem
+        """Load all service templates from the package resources."""
+        templates: dict[str, dict[str, Any]] = {}
+        templates_dir = files("homelab_mcp").joinpath("service_templates")
+        for item in templates_dir.iterdir():
+            if item.is_file() and item.name.endswith(".yaml"):
+                try:
+                    service_data = yaml.safe_load(item.read_text(encoding="utf-8"))
+                    service_name = item.name.removesuffix(".yaml")
                     templates[service_name] = service_data
-            except Exception as e:
-                print(f"Warning: Failed to load template {template_file}: {e}")
-
+                except Exception as e:
+                    print(f"Warning: Failed to load template {item.name}: {e}")
         return templates
 
     def get_available_services(self) -> list[str]:

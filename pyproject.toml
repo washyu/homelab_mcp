@@ -45,6 +45,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/homelab_mcp"]
+include = [
+    "src/homelab_mcp/**/*.yaml",
+]
 
 [dependency-groups]
 dev = [
