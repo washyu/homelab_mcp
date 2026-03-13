@@ -1,0 +1,97 @@
+# Requirements: Homelab MCP Server
+
+**Defined:** 2026-03-12
+**Core Value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
+
+## v1.2 Requirements
+
+Requirements for v1.2 Protocol Completeness milestone. Each maps to roadmap phases.
+
+### PyPI Distribution (PKG)
+
+- [ ] **PKG-01**: User can install the server with `uvx homelab-mcp` and run it without cloning the repo
+- [ ] **PKG-02**: Version is reported consistently — `pyproject.toml`, `__init__.py`, and server version string all agree via `importlib.metadata`
+- [ ] **PKG-03**: `service_templates/*.yaml` files are included in the wheel and loaded via `importlib.resources` (not `__file__`-relative paths)
+
+### Preview Tools (PREV)
+
+- [ ] **PREV-01**: User can call `decommission_device_preview` to preview decommission without a confirmation dialog
+- [ ] **PREV-02**: User can call `delete_proxmox_vm_preview` to preview VM deletion without a confirmation dialog
+- [ ] **PREV-03**: User can call `remove_vm_preview` to preview VM removal without a confirmation dialog
+- [ ] **PREV-04**: User can call `remove_server_preview` to preview server removal without a confirmation dialog
+- [ ] **PREV-05**: User can call `destroy_terraform_service_preview` to preview Terraform destroy without a confirmation dialog
+- [ ] **PREV-06**: User can call `rollback_infrastructure_changes_preview` to preview rollback without a confirmation dialog
+- [ ] **PREV-07**: All 6 `*_preview` tools are annotated `readOnlyHint=True, destructiveHint=False` so MCP clients skip confirmation dialogs
+- [ ] **PREV-08**: Original 6 destructive tools retain their `dry_run` parameter for backward compatibility
+
+### Drift Resource (DRFT)
+
+- [ ] **DRFT-07**: `homelab://drift/latest` resource is declared in `resources/list` and readable via `resources/read`
+- [ ] **DRFT-08**: `homelab://drift/latest` returns `{drift_detected: null}` state before any scan has run
+- [ ] **DRFT-09**: `scan_infrastructure_drift` tool stores its result so `homelab://drift/latest` reflects the latest scan
+- [ ] **DRFT-10**: Server emits `notifications/resources/updated` after each drift scan so subscribed clients re-fetch
+
+### MCP Prompts (PRMT)
+
+- [ ] **PRMT-01**: Server declares `prompts` capability in `initialize` and responds to `prompts/list` and `prompts/get`
+- [ ] **PRMT-02**: `decommission_device_workflow` prompt guides the AI to call `decommission_device_preview` first, confirm with the user, then execute
+- [ ] **PRMT-03**: `deploy_service_workflow` prompt guides the AI through pre-flight checks before service installation
+- [ ] **PRMT-04**: `homelab_health_check` prompt guides the AI to read `homelab://vms`, `homelab://devices`, and `homelab://drift/latest` and summarize infra state
+
+### Quality (QA)
+
+- [ ] **QA-01**: All pre-commit checks (ruff, mypy, bandit) pass cleanly across all v1.2 changes
+
+## Future Requirements
+
+### Tool Naming (v1.3)
+
+- **NAME-01**: `remove_vm` and `delete_proxmox_vm` renamed with consistent provider-scoped naming convention
+- **NAME-02**: All VM/container tools follow a unified naming pattern that scales to Podman and Kubernetes
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| CI auto-publish to PyPI | Manual first publish for v1.2; automate in v1.3+ once release process is proven |
+| Per-device drift resources (`homelab://drift/device/{id}`) | Requires per-device scans (not implemented); single report sufficient |
+| Dynamic prompts (runtime-generated) | Complexity without value for single-operator homelab; static registry is correct |
+| FastMCP migration | Would lose subscribe/unsubscribe, send_resource_list_changed, and ASGI middleware control |
+| Tool naming refactor | Breaking change for allowlist users; dedicated v1.3 milestone with deprecation strategy |
+| Kubernetes management | Fundamentally different domain from Proxmox VMs/LXC |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| PKG-01 | — | Pending |
+| PKG-02 | — | Pending |
+| PKG-03 | — | Pending |
+| PREV-01 | — | Pending |
+| PREV-02 | — | Pending |
+| PREV-03 | — | Pending |
+| PREV-04 | — | Pending |
+| PREV-05 | — | Pending |
+| PREV-06 | — | Pending |
+| PREV-07 | — | Pending |
+| PREV-08 | — | Pending |
+| DRFT-07 | — | Pending |
+| DRFT-08 | — | Pending |
+| DRFT-09 | — | Pending |
+| DRFT-10 | — | Pending |
+| PRMT-01 | — | Pending |
+| PRMT-02 | — | Pending |
+| PRMT-03 | — | Pending |
+| PRMT-04 | — | Pending |
+| QA-01 | — | Pending |
+
+**Coverage:**
+- v1.2 requirements: 20 total
+- Mapped to phases: 0
+- Unmapped: 20 ⚠️
+
+---
+*Requirements defined: 2026-03-12*
+*Last updated: 2026-03-12 after initial definition*
