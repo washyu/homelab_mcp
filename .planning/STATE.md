@@ -1,34 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Protocol Completeness
-status: executing
-stopped_at: Completed 16-quality-gate Plan 01 — all three quality gates (ruff, mypy, bandit) passing cleanly
-last_updated: "2026-03-13T22:13:24.672Z"
-last_activity: 2026-03-13 — Phase 13 Plan 01 complete (Wave 0 test scaffold)
+milestone: v1.3
+milestone_name: (planning)
+status: idle
+stopped_at: v1.2 Protocol Completeness milestone complete — archived 2026-03-13
+last_updated: "2026-03-13T23:00:00.000Z"
+last_activity: 2026-03-13 — v1.2 milestone complete
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 10
-  completed_plans: 10
-  percent: 80
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-12)
+See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 13: Drift Resource (MCP resource for infrastructure drift)
+**Current focus:** Planning v1.3 milestone
 
 ## Current Position
 
-Phase: 13 of 16 (Drift Resource)
-Plan: 02 (next)
-Status: In progress
-Last activity: 2026-03-13 — Phase 13 Plan 01 complete (Wave 0 test scaffold)
+Phase: — (between milestones)
+Plan: —
+Status: Idle — v1.2 shipped, ready for v1.3 planning
+Last activity: 2026-03-13 — v1.2 milestone complete
 
 Progress: [████████░░] 80%
 
@@ -105,9 +105,8 @@ None.
 
 ### Blockers/Concerns
 
-- Package name decision (`homelab-mcp` vs `homelab-mcp-server`) must be made before Phase 12 completes — affects PyPI publish URL and `uvx` install command
-- PyPI Trusted Publisher (OIDC) requires one-time manual setup at pypi.org before CI can publish — must be done by project owner before first publish attempt
-- `uvx --from ./dist/*.whl homelab-mcp --help` smoke test must be run locally before PyPI publish (cannot be automated until wheel is built)
+None for v1.3 — v1.2 shipped cleanly. Tech debt from v1.2:
+- PRMT-02: decommission_device_workflow prompt uses hostname= but tool needs device_id= (see v1.2-MILESTONE-AUDIT.md)
 
 ## Session Continuity
 

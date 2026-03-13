@@ -90,6 +90,49 @@
 
 ---
 
+## Milestone: v1.2 — Protocol Completeness
+
+**Shipped:** 2026-03-13
+**Phases:** 5 | **Plans:** 10
+
+### What Was Built
+- PyPI distribution: published `homelab-mcp` 1.2.0 — `uvx homelab-mcp` now works; version unified via `importlib.metadata`; service_templates YAML bundled via `importlib.resources`
+- `homelab://drift/latest` MCP Resource with `notifications/resources/updated` push after each drift scan
+- MCP Prompts capability with three workflow templates (decommission preview workflow, deploy service pre-flight, homelab health check)
+- 6 `*_preview` tool variants with `readOnlyHint=True` so MCP clients skip confirmation dialogs; 56 total tools
+- Full quality gate: ruff + mypy exit 0; 9 targeted bandit nosec annotations
+
+### What Worked
+- Wave-0 TDD pattern scaled well across 3 feature phases (13, 14, 15) — RED stubs in plan-01, GREEN in plan-02 was fast and caught the test structure before implementation
+- Local import inside test function bodies pattern (established in v1.1) completely eliminated collection-level ImportError problems for not-yet-implemented symbols
+- Thin delegation handlers for preview tools (3-line `return await handle_parent({**args, "dry_run": True})`) kept all dry-run logic centralized in parent handlers — zero duplication
+- Deferred circular import pattern (import inside function body) correctly handled the `resource_readers ↔ server` circular dependency without restructuring
+- Quality gate as final phase (16) was the right call — swept the entire src/ tree for issues introduced across all 4 prior phases in one pass
+
+### What Was Inefficient
+- Integration checker (run at audit time) caught a parameter mismatch in PRMT-02 that unit tests missed — `test_decommission_workflow_prompt` checked for the tool name but not that the example parameter matched the schema. A more thorough prompt test would have caught this earlier.
+- SUMMARY.md files lack `requirements_completed` frontmatter — forced the 3-source audit cross-reference to fall back to VERIFICATION.md detail only; partial signal from source 2 throughout v1.2
+- `gsd-tools milestone complete` CLI created archive files but left REQUIREMENTS.md and ROADMAP.md in place — the AI step to delete originals and rewrite ROADMAP.md is still fully manual. This is expected behavior per the workflow design but worth noting.
+
+### Patterns Established
+- `importlib.metadata.version("pkg")` with `PackageNotFoundError` fallback pattern for all version-reporting sites in a package
+- `importlib.resources.files("pkg").joinpath("subdir")` for data file access in installed packages (replaces `__file__`-relative paths)
+- `readOnlyHint=True` + delegation wrapper as the standard pattern for adding preview variants of destructive tools
+- Frozenset constants (`DRIFT_SCAN_TOOLS`, `MUTATING_TOOLS`) for O(1) membership checks before notification dispatch
+- PyPI publish workflow: `uv build` → `uv publish --token $PYPI_TOKEN` → confirm with `uvx homelab-mcp --help`
+
+### Key Lessons
+1. Prompt parameter alignment is a cross-cutting concern — verifying that a prompt's argument names match the tool schema it references requires an integration-level test, not just a string-contains unit test. Add this to future prompt test scaffolds.
+2. SUMMARY.md `requirements_completed` frontmatter should be populated — the 3-source cross-reference degrades gracefully without it but loses early signal; either populate it during execution or acknowledge the gap per-milestone.
+3. PyPI distribution is a one-time manual bootstrap — OIDC Trusted Publisher setup at pypi.org is required before CI can auto-publish. Doing it manually for v1.2 was correct; automate in v1.3+.
+4. Quality gate as the last phase works well when the prior phases are disciplined about ruff/mypy during execution — Phase 16 had very little to fix because Phases 12-15 already kept the code clean.
+
+### Cost Observations
+- Timeline: 1 day (2026-03-13) — most compact milestone to date
+- Notable: 5 phases, 10 plans, 56 tools shipped with zero gap closure phases needed; single integration mismatch (PRMT-02) found at audit but accepted as tech debt
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -98,6 +141,7 @@
 |-----------|--------|-------|------------|
 | v1.0 | 5 | 15 | Initial milestone — established verification loop, gap closure, and documentation patterns |
 | v1.1 | 6 | 16 | Tech-debt-first ordering; Wave-0 TDD scaffolding; audit confirmed 0 gaps needed |
+| v1.2 | 5 | 10 | PyPI distribution; full MCP protocol surface; integration checker found cross-phase param mismatch |
 
 ### Cumulative Quality
 
@@ -105,10 +149,12 @@
 |-----------|-------|------------|
 | v1.0 | 479 | 19/19 requirements satisfied, 5/5 E2E flows verified |
 | v1.1 | ~500+ | 22/22 requirements satisfied, 6/6 E2E flows, 0 gap closure phases |
+| v1.2 | 603 | 20/20 requirements satisfied (18 full, 2 partial), 1 integration semantic mismatch in tech debt |
 
 ### Top Lessons (Verified Across Milestones)
 
 1. Verification loops are essential — they caught 2 real gaps in v1.0 that would have shipped as bugs
-2. Phase ordering matters — security after architecture (v1.0); tech debt before features (v1.1)
+2. Phase ordering matters — security after architecture (v1.0); tech debt before features (v1.1); quality gate last (v1.2)
 3. Upgrade tooling when first encountered — deferring mypy upgrade from Phase 06 to Phase 08 added friction across 3 phases
 4. "Build infrastructure, wire it later" fails — v1.0 proxmox_session was orphaned; v1.1 fixed it by treating tech debt as Phase 1
+5. Integration-level tests required for cross-phase contracts — unit tests verify individual components; integration checker is the only thing that caught the PRMT-02 parameter mismatch across Phase 14 and Phase 15

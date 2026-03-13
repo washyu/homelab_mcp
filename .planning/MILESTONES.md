@@ -1,5 +1,25 @@
 # Milestones
 
+## v1.2 Protocol Completeness (Shipped: 2026-03-13)
+
+**Phases completed:** 5 phases, 10 plans
+**Timeline:** 1 day (Mar 13, 2026)
+**Stats:** 72 files changed, +8,519 / -481 lines | 14,944 LOC src | 15,924 LOC tests
+
+**Key accomplishments:**
+1. Published homelab-mcp 1.2.0 to PyPI — `uvx homelab-mcp` and `pip install homelab-mcp` now work; version unified via `importlib.metadata` across all modules
+2. Added `homelab://drift/latest` MCP Resource with live `notifications/resources/updated` push after each drift scan — clients can subscribe and cache
+3. Implemented MCP Prompts capability (`prompts/list` + `prompts/get`) with three workflow templates: decommission preview workflow, deploy service pre-flight, and homelab health check referencing all three resources
+4. Split 6 destructive tools into `*_preview` variants annotated `readOnlyHint=True, destructiveHint=False` — MCP clients skip confirmation dialogs for preview calls; 56 total tools
+5. ruff and mypy both exit 0 across full source tree; 9 targeted bandit nosec annotations suppress pre-existing medium findings without masking new ones
+
+**Tech debt carried forward:**
+- PRMT-02 parameter mismatch: `decommission_device_workflow` prompt uses `hostname=` but tool schema requires `device_id=` — AI following prompt will encounter a validation error
+- All 5 Nyquist VALIDATION.md files exist but remain in draft status (nyquist_compliant: false)
+- SUMMARY.md files lack `requirements_completed` frontmatter — 3-source audit cross-reference fell back to VERIFICATION.md evidence
+
+---
+
 ## v1.1 Safety & Observability (Shipped: 2026-03-12)
 
 **Phases completed:** 6 phases, 16 plans
