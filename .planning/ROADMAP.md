@@ -42,7 +42,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 12: PyPI Distribution** - Fix live entrypoint bug, unify versioning, and validate the wheel before any PyPI publish (completed 2026-03-13)
 - [x] **Phase 13: Drift Resource** - Expose `homelab://drift/latest` as a live MCP Resource with `notifications/resources/updated` after each scan (completed 2026-03-13)
 - [x] **Phase 14: MCP Prompts** - Implement `prompts/list` and `prompts/get` with three homelab workflow prompt templates (completed 2026-03-13)
-- [ ] **Phase 15: Preview Tool Split** - Add 6 `*_preview` tool variants with `readOnlyHint: true` so MCP clients skip confirmation dialogs
+- [x] **Phase 15: Preview Tool Split** - Add 6 `*_preview` tool variants with `readOnlyHint: true` so MCP clients skip confirmation dialogs (completed 2026-03-13)
 - [ ] **Phase 16: Quality Gate** - Pass all pre-commit checks (ruff, mypy, bandit) cleanly across the full v1.2 change surface
 
 ## Phase Details
@@ -136,5 +136,5 @@ Plans:
 | 12. PyPI Distribution | v1.2 | 3/3 | Complete | 2026-03-13 |
 | 13. Drift Resource | 2/2 | Complete    | 2026-03-13 | - |
 | 14. MCP Prompts | 2/2 | Complete    | 2026-03-13 | - |
-| 15. Preview Tool Split | 1/2 | In Progress|  | - |
+| 15. Preview Tool Split | 2/2 | Complete   | 2026-03-13 | - |
 | 16. Quality Gate | v1.2 | 0/TBD | Not started | - |
