@@ -29,7 +29,7 @@ from .progress import (
     should_emit,
 )
 from .resource_manager import ResourceManager
-from .resource_readers import read_devices_resource, read_service_resource, read_vms_resource
+from .resource_readers import read_devices_resource, read_drift_resource, read_service_resource, read_vms_resource
 from .tool_annotations import get_tool_annotations
 from .tool_handlers import get_tool_handler
 from .tool_schemas import get_all_tool_schemas
@@ -59,6 +59,21 @@ def get_resource_manager() -> ResourceManager:
     if _resource_manager is None:
         raise RuntimeError("ResourceManager not available -- server lifespan not started")
     return _resource_manager
+
+
+#: Latest drift scan result. None until scan_infrastructure_drift has run.
+_latest_drift_report: dict[str, Any] | None = None
+
+
+def get_latest_drift_report() -> dict[str, Any] | None:
+    """Return the latest drift scan result, or None if no scan has run."""
+    return _latest_drift_report
+
+
+def set_latest_drift_report(report: dict[str, Any] | None) -> None:
+    """Store a completed drift scan result for homelab://drift/latest."""
+    global _latest_drift_report  # noqa: PLW0603
+    _latest_drift_report = report
 
 
 @asynccontextmanager
@@ -121,6 +136,10 @@ HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
         "name": "Services",
         "description": "Status of installed services (Docker, Proxmox, custom stacks) across all hosts",
     },
+    "homelab://drift/latest": {
+        "name": "Drift Report",
+        "description": "Latest infrastructure drift scan result from scan_infrastructure_drift",
+    },
 }
 
 #: Set of URI strings currently subscribed by MCP clients.
@@ -136,6 +155,10 @@ MUTATING_TOOLS: frozenset[str] = frozenset(
         "bulk_discover_and_map",
     }
 )
+
+#: Tools that update the drift report resource.
+#: A successful call triggers notifications/resources/updated for homelab://drift/latest.
+DRIFT_SCAN_TOOLS: frozenset[str] = frozenset({"scan_infrastructure_drift"})
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +220,8 @@ async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
                     )
                 )
             payload = await read_service_resource(service_name)
+        elif uri_str == "homelab://drift/latest":
+            payload = await read_drift_resource()
         elif uri_str in HOMELAB_RESOURCES:
             # Bare homelab://services or other registered URIs without a live reader
             payload = {
@@ -383,6 +408,14 @@ async def handle_call_tool(
         except LookupError:
             # No active request context — handler called outside MCP lifecycle (e.g. tests).
             logger.debug("No request context available for resource notification")
+
+    # Notify subscribed clients when the drift scan completes (resource content changed).
+    if name in DRIFT_SCAN_TOOLS:
+        try:
+            session = server.request_context.session
+            await session.send_resource_updated(AnyUrl("homelab://drift/latest"))
+        except LookupError:
+            logger.debug("No request context available for drift resource notification")
 
     return content
 

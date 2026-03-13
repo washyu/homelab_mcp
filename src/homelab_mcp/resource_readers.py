@@ -124,6 +124,20 @@ async def read_devices_resource() -> dict[str, Any]:
         }
 
 
+async def read_drift_resource() -> dict[str, Any]:
+    """Return the latest drift scan result.
+
+    Returns {"drift_detected": None} before any scan has run (DRFT-08).
+    Returns the full structured report after scan_infrastructure_drift completes (DRFT-09).
+    """
+    from .server import get_latest_drift_report  # deferred to avoid circular import
+
+    report = get_latest_drift_report()
+    if report is None:
+        return {"drift_detected": None}
+    return report
+
+
 async def read_service_resource(service_name: str) -> dict[str, Any]:
     """Fetch live service status via SSH.
 
