@@ -39,7 +39,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 **Milestone Goal:** Complete the MCP protocol surface — Prompts, Resources, and correct dry-run tool semantics — plus PyPI distribution for easier installation.
 
-- [ ] **Phase 12: PyPI Distribution** - Fix live entrypoint bug, unify versioning, and validate the wheel before any PyPI publish
+- [x] **Phase 12: PyPI Distribution** - Fix live entrypoint bug, unify versioning, and validate the wheel before any PyPI publish (completed 2026-03-13)
 - [ ] **Phase 13: Drift Resource** - Expose `homelab://drift/latest` as a live MCP Resource with `notifications/resources/updated` after each scan
 - [ ] **Phase 14: MCP Prompts** - Implement `prompts/list` and `prompts/get` with three homelab workflow prompt templates
 - [ ] **Phase 15: Preview Tool Split** - Add 6 `*_preview` tool variants with `readOnlyHint: true` so MCP clients skip confirmation dialogs
@@ -121,7 +121,7 @@ Plans:
 | 9. MCP Resources Live Data | v1.1 | 2/2 | Complete | 2026-03-12 |
 | 10. Resource Notifications | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 11. Drift Detection | v1.1 | 5/5 | Complete | 2026-03-12 |
-| 12. PyPI Distribution | 2/3 | In Progress|  | - |
+| 12. PyPI Distribution | 3/3 | Complete   | 2026-03-13 | - |
 | 13. Drift Resource | v1.2 | 0/TBD | Not started | - |
 | 14. MCP Prompts | v1.2 | 0/TBD | Not started | - |
 | 15. Preview Tool Split | v1.2 | 0/TBD | Not started | - |
