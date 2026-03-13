@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: planning
-stopped_at: "Checkpoint 12-03 Task 3: awaiting local smoke test and PyPI publish"
-last_updated: "2026-03-13T19:07:56.522Z"
+stopped_at: Completed 12-pypi-distribution Plan 03 — Phase 12 fully complete
+last_updated: "2026-03-13T19:48:37.227Z"
 last_activity: 2026-03-12 — v1.2 roadmap created, Phase 12 is next
 progress:
   total_phases: 5
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 12-pypi-distribution P01 | 4 | 2 tasks | 2 files |
 | Phase 12-pypi-distribution P02 | 15 | 2 tasks | 6 files |
 | Phase 12-pypi-distribution P03 | 8 | 2 tasks | 4 files |
+| Phase 12-pypi-distribution P03 | 45 | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,7 @@ Key architectural patterns carried into v1.2:
 - [Phase 12-pypi-distribution]: main() entry point imports argparse/asyncio/os/sys locally to avoid module-level import overhead on server startup
 - [Phase 12-pypi-distribution]: Patch target for importlib.resources.files must be src.homelab_mcp.service_installer.files due to dual module path in sys.modules when ServiceInstaller imported via src. prefix
 - [Phase 12-pypi-distribution]: _make_files_mock(dict) helper pattern established for multi-template mocking in tests replacing TEMPLATES_DIR patch approach
+- [Phase 12-pypi-distribution]: homelab-mcp 1.2.0 published to PyPI; uvx homelab-mcp --help confirmed working from PyPI index — PKG-03 complete
 
 ### Pending Todos
 
@@ -87,6 +89,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T19:07:56.520Z
-Stopped at: Checkpoint 12-03 Task 3: awaiting local smoke test and PyPI publish
+Last session: 2026-03-13T19:48:37.225Z
+Stopped at: Completed 12-pypi-distribution Plan 03 — Phase 12 fully complete
 Resume file: None
