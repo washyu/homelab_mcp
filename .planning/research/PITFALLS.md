@@ -1,367 +1,413 @@
-# Pitfalls Research
+# Domain Pitfalls
 
-**Domain:** Adding dry-run mode, drift detection, and MCP Resources to an existing Python MCP server
-**Researched:** 2026-03-11
-**Confidence:** HIGH (codebase analysis + verified against MCP spec + IaC/drift detection community patterns)
+**Domain:** Python MCP server — v1.2 Protocol Completeness (PyPI packaging, MCP Prompts, dry-run tool split, drift MCP Resource)
+**Researched:** 2026-03-12
+**Project context:** homelab-mcp-server v1.2, existing lowlevel.Server, hatchling build backend, service_templates YAML files on disk
 
-> **Note:** This file covers v1.1 Safety & Observability pitfalls. v1.0 pitfalls (SSH TOFU,
-> command injection, silent exceptions, connection pooling) are in the git history of this file.
+> **Note:** This file covers v1.2 Protocol Completeness pitfalls.
+> v1.1 Safety & Observability pitfalls (dry-run divergence, drift false positives, ResourceManager session wiring, MCP Resource staleness) are appended at the bottom of this file.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Dry-Run Preview That Cannot Execute the Real Path
+Mistakes that cause broken installs, silent protocol failures, or rewrites.
 
-**What goes wrong:** The dry-run implementation is written as a separate code path — a parallel
-simulation that approximates what would happen — rather than running the actual execution logic
-with writes intercepted. Over time, the simulation drifts from the real path. A user sees a
-preview that says "will stop VM pve-101, then delete disk /dev/sdb" and approves. The actual
-execution stops VM pve-201 and deletes a different disk. The preview was accurate at the time
-it was written but fell behind after a refactor to the real handler.
+---
 
-**Why it happens:** The instinct when adding dry-run to `decommission_device`, `remove_vm`, and
-`delete_proxmox_vm` is to write a separate inspection function: read state, describe what would
-change, return. This feels clean. But it creates two representations of the same logic.
+### Pitfall 1: service_templates YAML files excluded from wheel
 
-**How to avoid:** Structure dry-run as a parameter to the existing handler, not a separate
-function. The handler checks `dry_run=True` and short-circuits before the mutation step. The
-read/validate/plan portion is shared code. Only the final write/commit step is gated. Pattern:
+**What goes wrong:** `service_templates/*.yaml` files live inside the Python package directory (`src/homelab_mcp/service_templates/`) but are not `.py` files. With hatchling as the build backend, non-Python files inside the package tree are included in wheels by default, but this is version-dependent and can be silently broken by an accidental `exclude` rule or a future hatchling upgrade. If the wheel ships without them, `ServiceInstaller` raises `FileNotFoundError` at runtime on any `uvx`-installed deployment.
 
+**Why it happens:** The pyproject.toml declares `[tool.hatch.build.targets.wheel] packages = ["src/homelab_mcp"]`. This covers Python modules. YAML template inclusion relies on hatchling's implicit behaviour, which is fragile under tooling churn. The current code reads templates from `__file__`-relative paths that work in a local clone but depend on disk layout assumptions that wheels do not guarantee.
+
+**Consequences:** Server starts, tools register, `list_available_services` returns names, but any actual `install_service` call fails with a path error. Not caught by unit tests that mock `ServiceInstaller`. Only manifests on installed packages, not in `uv run` dev mode.
+
+**Prevention:**
+- Explicitly declare YAML inclusion in pyproject.toml using hatchling's `include` pattern:
+  ```toml
+  [tool.hatch.build.targets.wheel]
+  packages = ["src/homelab_mcp"]
+  # Ensure non-Python package data is included
+  artifacts = ["src/homelab_mcp/service_templates/*.yaml"]
+  ```
+- Migrate template path resolution from `__file__`-relative to `importlib.resources.files("homelab_mcp.service_templates")`, which is the correct approach for installed packages and works identically in dev and installed modes.
+- Add a build smoke test: unzip the built wheel and assert each YAML filename is present before publishing.
+
+**Detection:** `python -c "import zipfile, glob; [print(zipfile.ZipFile(w).namelist()) for w in glob.glob('dist/*.whl')]"` — scan for `.yaml` in the output.
+
+**Phase:** PyPI packaging phase.
+
+---
+
+### Pitfall 2: Version mismatch between pyproject.toml and `__init__.py`
+
+**What goes wrong:** `pyproject.toml` has `version = "0.2.0"` but `src/homelab_mcp/__init__.py` hard-codes `__version__ = "0.1.0"`. These will continue to diverge with every release. Users checking `homelab_mcp.__version__` programmatically see `0.1.0`; `importlib.metadata.version("homelab-mcp-server")` returns `0.2.0`; the MCP server's `version=` argument in `server.py` hard-codes `"0.2.0"` as a third value. Three sources of truth that can never all be correct simultaneously.
+
+**Why it happens:** The `__init__.__version__` was added before the project migrated to a pyproject.toml-first workflow. Manual synchronisation is unreliable.
+
+**Consequences:** Incorrect version reported in MCP `initialize` response; misleading debug output; CI/release automation that reads `__version__` will be wrong; MCP Inspector shows wrong server version.
+
+**Prevention:** Remove `__version__` from `__init__.py` and read it dynamically from package metadata:
 ```python
-async def decommission_device(..., dry_run: bool = False) -> dict:
-    # Shared path: read state, validate, compute impact
-    device = await _fetch_device(device_id)
-    impact = _compute_impact(device)  # what would be deleted
-
-    if dry_run:
-        return {"status": "dry_run", "would_affect": impact, "skipped": True}
-
-    # Real path: only reachable when dry_run=False
-    await _execute_decommission(device)
-    return {"status": "success"}
+from importlib.metadata import version, PackageNotFoundError
+try:
+    __version__ = version("homelab-mcp-server")
+except PackageNotFoundError:
+    __version__ = "dev"  # running from source without install
 ```
+This makes pyproject.toml the single source of truth. The `Server("homelab-mcp", version=...)` instantiation in `server.py` should also use this value.
 
-**Warning signs:**
-- Any function named `_preview_*` or `_simulate_*` that duplicates logic from `_execute_*`
-- Dry-run tests pass but real execution diverges when you add a new step
-- The dry-run result mentions resources by ID but the real execution resolves by name (or vice versa)
+**Detection:** `grep -rn "__version__" src/` and compare with `grep "^version" pyproject.toml`.
 
-**Phase to address:** Dry-run implementation phase. The single-path design must be established
-before any destructive operations get dry-run support. Retrofit is painful.
+**Phase:** PyPI packaging phase.
 
 ---
 
-### Pitfall 2: Dry-Run Performs Real Side Effects
+### Pitfall 3: `uvx homelab-mcp` fails because `server.py:main` does not exist
 
-**What goes wrong:** The dry-run preview claims to be safe but silently performs real operations
-as part of "checking" what would happen. Common examples in this codebase:
+**What goes wrong:** The pyproject.toml declares `homelab-mcp = "homelab_mcp.server:main"` as the console script entry point. If `server.py` does not export a `main()` function (the existing startup logic lives in `run_server.py`), `uvx homelab-mcp` fails with `AttributeError: module 'homelab_mcp.server' has no attribute 'main'`. This only surfaces when installing from PyPI — local `uv run python run_server.py` continues to work, so the bug is invisible during development.
 
-- Proxmox API authentication (`_authenticate()` in `proxmox_api.py`) is called to check current
-  VM state for the preview. Authentication itself writes a session ticket on the Proxmox server.
-- SSH connection is established to gather current device state. If `setup_mcp_admin` was part
-  of a plan, dry-run would connect and check user existence — but the connection itself leaves
-  traces in auth logs and potentially triggers `fail2ban`.
-- `discover_and_map` as part of a deploy preview would update the SQLite sitemap.
+**Why it happens:** Entry point targets are validated by the build tool at install time by checking that the module is importable and the attribute exists, but this check only happens on the installing machine. If the developer uses `run_server.py` as the dev path and never calls `homelab_mcp.server.main()` directly, the gap is undetected until a user installs the package.
 
-The user is told "no changes will be made" but changes are made.
+**Consequences:** Every user who installs via `uvx` gets a crash on first run. First impression of the PyPI package is a failure.
 
-**Why it happens:** State-read operations feel side-effect-free but they are not. Proxmox API
-calls consume rate limit budget. SSH connections consume file descriptors and appear in auth logs.
-Database reads in `NetworkSiteMap` also run schema initialization (`_init_database()`) on every
-instantiation — a write.
+**Prevention:**
+- Add `def main() -> None:` to `server.py` that replicates the startup logic from `run_server.py`.
+- Add a test: `from homelab_mcp.server import main; assert callable(main)`.
+- After building, run `uvx --from ./dist/homelab_mcp_server-*.whl homelab-mcp --help` locally to confirm the entry point resolves before publishing to PyPI.
 
-**How to avoid:**
-1. Define precisely what "no changes made" means for this server: no mutations to Proxmox state,
-   no mutations to remote host state, no mutations to the local SQLite database.
-2. Read operations against Proxmox and SSH are acceptable in dry-run — they gather state to
-   compute the preview. Document this explicitly.
-3. Database writes are NOT acceptable in dry-run. Pass `read_only=True` to `NetworkSiteMap` when
-   running dry-run, or skip sitemap updates entirely.
-4. Annotate each destructive handler with what dry-run will and will not do.
+**Detection:** `python -c "from homelab_mcp.server import main"` after `uv sync` — must succeed without error.
 
-**Warning signs:**
-- Dry-run tests that check only return value but not SQLite state after execution
-- `NetworkSiteMap()` instantiation inside a dry-run code path (it calls `_init_database()`)
-- Any `await emit_progress(...)` in the dry-run path that logs "deploying X" (misleads)
-
-**Phase to address:** Dry-run implementation phase. Add a test that runs dry-run and then asserts
-the database is unchanged.
+**Phase:** PyPI packaging phase.
 
 ---
 
-### Pitfall 3: Drift Detection That Mistakes Transient State for Drift
+### Pitfall 4: `*_preview` dry-run tools omitted from `tool_annotations.py` — silent annotation gap
 
-**What goes wrong:** The drift scanner queries Proxmox or SSH to get current state and compares
-it against stored baseline. A VM that is rebooting, a service that is restarting, or a host
-temporarily unreachable is flagged as "DRIFTED: VM stopped unexpectedly" or "DRIFTED: service
-not running." The user sees an alarm, investigates, finds nothing wrong because the system had
-recovered by the time they checked. After several false positives, they stop trusting drift
-reports entirely — which defeats the purpose.
+**What goes wrong:** Adding 6 `*_preview` tool variants requires parallel updates to three files: the tool schema (in `tool_schemas/`), the tool handler (in `tool_handlers/`), and the annotations registry (`tool_annotations.py`). If annotations are omitted, `get_tool_annotations(name)` returns `None` for the new tools. The server emits those tools without any `readOnlyHint`, `destructiveHint`, or `idempotentHint` annotations. MCP clients that use annotations to gate operations will not recognise preview tools as safe/read-only, defeating the purpose of the split.
 
-**Why it happens:** Infrastructure is not a static snapshot. Point-in-time queries during
-transient operations produce states that look like drift but are expected. On-demand scans make
-this worse than polling because the timing is unpredictable — a scan might hit exactly during
-a service restart.
+**Why it happens:** `tool_annotations.py` is a separate registry with no compile-time enforcement. The three-file parallel update pattern has already caused annotation gaps in the codebase (the existing 50 tools are only complete because of explicit audit). Preview tools will be added during a focused sprint and annotations are the step most likely to be forgotten.
 
-**How to avoid:**
-1. For state drift (VM stopped, service not running): report "possibly drifted" with a
-   `last_stable_at` timestamp. Require the anomalous state to persist for N minutes before
-   classifying as confirmed drift. For v1.1 on-demand scans, include a `scan_age_warning` in
-   the report: "This is a point-in-time scan. Transient states (rebooting, restarting) may
-   appear as drift."
-2. For config drift (CPU/memory/network changed): this is less transient — config changes
-   persist. High confidence classification is appropriate.
-3. Track `mcp_last_known_good` timestamps in the database. A drift item is only alarming if
-   the last-known-good was more recent than a configurable threshold.
+**Consequences:** Preview tools appear unannoted. Clients may prompt users for destructive-tool confirmation even for dry-run previews. MCP Inspector will show preview tools as having no safety metadata.
 
-**Warning signs:**
-- Drift reports that show the same VM as drifted one minute and healthy the next
-- Tests that mock `get_proxmox_vm_status` returning "stopped" and assert the result is
-   classified as confirmed drift (should be "suspected drift")
-- No `scan_timestamp` in the drift report output
+**Prevention:**
+- Add an automated test that asserts every key in `get_all_tool_schemas()` has a corresponding entry in `TOOL_ANNOTATIONS`:
+  ```python
+  def test_all_tools_have_annotations():
+      from homelab_mcp.tool_schemas import get_all_tool_schemas
+      from homelab_mcp.tool_annotations import TOOL_ANNOTATIONS
+      missing = set(get_all_tool_schemas().keys()) - set(TOOL_ANNOTATIONS.keys())
+      assert missing == set(), f"Tools missing annotations: {missing}"
+  ```
+- This test will fail CI as soon as any new tool (including `*_preview` variants) is added without annotations.
 
-**Phase to address:** Drift detection implementation phase. The baseline storage schema and
-drift classification logic must handle transient states from the start — retrofitting
-"suspected vs confirmed" later requires schema changes.
+**Detection:** Run the test above after adding preview tool schemas.
+
+**Phase:** Dry-run tool split phase.
 
 ---
 
-### Pitfall 4: MCP Resources Returning Stale Data Without Signaling It
+### Pitfall 5: Renaming existing destructive tools breaks MCP clients that have allowlisted them
 
-**What goes wrong:** `homelab://vms` is registered as an MCP Resource exposing live VM state.
-The client reads it and gets a list of VMs with statuses. An hour later, a VM crashes. The
-client still has the cached resource content. The client never re-reads it because the server
-never sent a `notifications/resources/updated` notification. The AI assistant answers "yes, all
-your VMs are running" based on the stale resource.
+**What goes wrong:** Some MCP clients maintain allowlists keyed by tool name, or users have saved workflows/automations referencing specific tool names like `delete_proxmox_vm`. If the dry-run split renames existing destructive tools to `delete_proxmox_vm_preview`, any client configuration or user automation referencing the old name breaks silently — the tool no longer appears in `tools/list` for the old name and the LLM may hallucinate or silently skip the operation.
 
-Since subscriptions are opt-in and many MCP clients (including Claude Desktop as of 2025) do
-not support resource subscriptions, the server cannot rely on push notifications to keep clients
-current. Resource content is fundamentally pull-based.
+**Why it happens:** MCP has no tool versioning or aliasing mechanism. A tool name change is a breaking API change. The split feels like a rename ("the old tool becomes the preview") but clients and users experience it as deletion.
 
-**Why it happens:** Adding `@server.list_resources()` and `@server.read_resource()` decorators
-feels complete. But the protocol only guarantees freshness at the moment of read. Without either
-a subscription push or a client that re-reads regularly, the data ages.
+**Consequences:** Existing user workflows break after upgrade. Users who have stored prompts or Claude Desktop instructions referencing tool names by name get silent failures.
 
-**How to avoid:**
-1. Include a `scanned_at` timestamp in every resource's JSON content. Clients see how old the
-   data is.
-2. For resources that expose live state (VM list, service status), set `mimeType:
-   "application/json"` and include `"warning": "Point-in-time snapshot. Re-read for current state."`
-3. Implement `notifications/resources/updated` via
-   `ctx.session.send_resource_updated(AnyUrl(uri))` when a tool mutation succeeds — at minimum
-   after `manage_proxmox_vm`, `control_vm`, `remove_vm`, `deploy_vm`.
-4. Do not advertise `subscribe: true` in server capabilities unless notifications are actually
-   implemented. An empty capability declaration is worse than omitting it.
+**Prevention:**
+- Keep all existing destructive tool names unchanged. Add `*_preview` variants as new, additional tools (additive-only, not replacement).
+- The 6 existing destructive tools (`decommission_device`, `remove_vm`, `remove_server`, `delete_proxmox_vm`, `destroy_terraform_service`, `rollback_infrastructure_changes`) retain their names, schemas, and annotations exactly as they are.
+- New `*_preview` variants are separate entries with `readOnlyHint: true` and descriptions that clarify they preview-only.
+- Document this in the CHANGELOG as "added `*_preview` variants; original tools unchanged and backward-compatible."
 
-**Warning signs:**
-- Resource handlers that fetch from Proxmox API without timestamps in the response
-- No calls to `send_resource_updated` anywhere in tool handlers after mutations
-- Tests that read a resource, mutate state, read again, and never assert the content changed
+**Detection:** Diff `tools.py` (or `tool_schemas/`) after the phase — zero existing tool names should be removed, only added.
 
-**Phase to address:** MCP Resources phase. Notification sending must be planned as part of the
-resource implementation, not added afterward.
+**Phase:** Dry-run tool split phase.
 
 ---
 
-### Pitfall 5: ResourceManager.proxmox_session Not Wired Into Handlers (Known Tech Debt)
+### Pitfall 6: `homelab://drift/latest` not added to `HOMELAB_RESOURCES` — resource invisible to clients
 
-**What goes wrong:** This is a documented issue in PROJECT.md: the `proxmox_session`
-(an `aiohttp.ClientSession` created in `ResourceManager.initialize()`) is never consumed by
-`ProxmoxAPIClient`. Every Proxmox tool call creates its own session via `aiohttp.ClientSession()`
-inside the handler, ignoring the shared one. The shared session exists but is orphaned.
+**What goes wrong:** The `HOMELAB_RESOURCES` dict in `server.py` drives `handle_list_resources()`. If `homelab://drift/latest` is handled in the `handle_read_resource()` dispatch block but omitted from `HOMELAB_RESOURCES`, the resource can be read by URI (if the client knows it) but is not discoverable. Clients that call `resources/list` to discover available resources will not see it. Documentation may say it exists but MCP Inspector and Claude Desktop will not show it.
 
-When v1.1 adds MCP Resources that query Proxmox (e.g., `homelab://vms` reading
-`list_proxmox_resources`), if the resource handler also creates its own session, the problem
-multiplies. A single `resources/read` call could open a new session, authenticate, query, and
-leave the session unclosed if the handler does not use `async with`.
+**Why it happens:** The `HOMELAB_RESOURCES` dict and the `handle_read_resource` dispatch are in the same file but are two separate data structures. Adding a dispatch case without updating the registry is a common cut-and-paste error.
 
-**Why it happens:** The ResourceManager was designed before the ProxmoxAPIClient was written.
-The client defaulted to creating its own session because the shared one was not accessible
-from the call site. The module-level `get_resource_manager()` was the intended solution but
-was never plumbed through to Proxmox handlers.
+**Consequences:** The drift resource is not discoverable. Users must know the URI in advance, undermining the MCP discovery model.
 
-**How to avoid:** Fix the wiring in the tech debt phase (before MCP Resources are implemented).
-`ProxmoxAPIClient.__init__` already accepts `session: aiohttp.ClientSession | None`. The fix
-is to pass `get_resource_manager().proxmox_session` at the call site in each Proxmox handler.
-This must be done before Resource handlers are written, otherwise Resources will also bypass
-the shared session.
+**Prevention:**
+- Add `homelab://drift/latest` to `HOMELAB_RESOURCES` in the same commit as the reader function.
+- Add a test asserting that every URI handled in `handle_read_resource` is registered in `HOMELAB_RESOURCES`. This is the same structural completeness check as the annotations test.
 
-**Warning signs:**
-- `grep -r "ClientSession()" src/homelab_mcp/proxmox_api.py` returns hits in non-init methods
-- `ResourceManager.proxmox_session` is never accessed outside `resource_manager.py` itself
-- Any new code in resource handlers that instantiates `aiohttp.ClientSession` directly
+**Detection:** Compare the URI strings in `HOMELAB_RESOURCES.keys()` with the URI patterns matched in `handle_read_resource`.
 
-**Phase to address:** Tech debt cleanup phase — must precede MCP Resources phase. Resource
-handlers will call into the same Proxmox API code and need the session wired correctly.
+**Phase:** Drift MCP Resource phase.
 
 ---
 
-### Pitfall 6: Drift Baseline That Does Not Track "Expected" Changes
+## Moderate Pitfalls
 
-**What goes wrong:** User asks MCP to stop VM pve-101 for maintenance. MCP stops it
-successfully. The drift scanner runs an hour later and reports: "DRIFT DETECTED: VM pve-101
-expected state=running, actual state=stopped." The drift detection cannot distinguish between
-"MCP stopped it intentionally" and "it crashed." The user now has a noisy drift report that
-always flags everything MCP recently changed as drift.
+### Pitfall 1: `homelab://drift/latest` serves stale data with no staleness indicator
 
-**Why it happens:** Drift detection compares current state against a stored baseline without
-knowing which changes MCP itself made. If the baseline was set before MCP ran the stop command,
-the baseline is now intentionally stale.
+**What goes wrong:** The new drift Resource returns the most recent scan result from SQLite. If the last scan was hours ago (or never run), the Resource returns old or null data without signalling staleness. The LLM treats cached data as current state and may recommend incorrect remediation.
 
-**How to avoid:**
-1. After every successful mutation (tool call that changes infrastructure state), update the
-   stored baseline for the affected resource. The baseline should reflect "last known intended
-   state," not "initial state."
-2. Store `mcp_last_changed_at` and `mcp_last_changed_by_tool` alongside baseline values.
-   Drift is only flagged when current state differs from the baseline AND the baseline was set
-   after the last MCP mutation.
-3. Schema: add `expected_state` and `last_mcp_update` columns to the device/VM tracking tables
-   in SQLite.
+**Why it happens:** The existing resource readers (`read_vms_resource`, `read_devices_resource`) already include `scanned_at` timestamps — but a new drift reader added without this discipline will be the odd one out.
 
-**Warning signs:**
-- Drift reports that flag VMs or services that were recently modified by MCP tools
-- No database writes after successful `manage_proxmox_vm` or `control_vm` calls
-- Drift schema that stores only a static snapshot with no mutation timestamps
+**Consequences:** LLM-driven drift remediation acts on stale data. A VM fixed an hour ago still appears as drifted.
 
-**Phase to address:** Drift detection implementation phase. The baseline update-on-mutation
-pattern must be designed before implementing the scanner — the scanner depends on it.
+**Prevention:**
+- Always include `scanned_at` (ISO 8601 UTC) in the drift Resource payload, matching the pattern in `resource_readers.py`.
+- Add a `staleness_warning` field when the scan age exceeds a threshold (e.g., 30 minutes): `"staleness_warning": "Drift data is 47 minutes old; run scan_infrastructure_drift to refresh."`
+- Document that the Resource is a point-in-time snapshot, not a live stream.
+
+**Phase:** Drift MCP Resource phase.
 
 ---
 
-## Technical Debt Patterns
+### Pitfall 2: `homelab://drift/latest` crashes when no scan has ever run
 
-Shortcuts that seem reasonable but create long-term problems.
+**What goes wrong:** If `scan_infrastructure_drift` has never been called, the `drift_baselines` table has no scan result to return. A `read_resource` for `homelab://drift/latest` must return a well-formed response — not raise an unhandled exception, not return an empty body, and not return malformed JSON.
 
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| `dry_run` as a flag checked at the top of the function with early return | Quick to add | Preview drifts from real execution as code changes; two code paths to maintain | Never — use the shared-path pattern instead |
-| Registering MCP Resources without `notifications/resources/updated` | Simple first implementation | Clients cache stale data with no indication it is stale | Only as an explicitly documented v1.1 limitation with `scanned_at` timestamps in every response |
-| Drift baseline as a static table populated once | Simple schema | Every MCP mutation creates false drift alarms; users lose trust in reports | Never for a tool that mutates infrastructure |
-| Fixing `proxmox_session` wiring only in ResourceManager without updating call sites | Minimal code change | Resource handlers will bypass the fix and open their own sessions | Never — fix must propagate to all Proxmox call sites |
-| Storing drift config snapshot as JSON blob | Easy to extend | No queryability, hard to compare field-by-field, migrations require JSON parsing | Acceptable for v1.1; plan structured columns for v1.2 if drift comparison logic grows |
+**Why it happens:** The existing resource readers all handle empty-state gracefully (`{"vms": [], ...}`). A drift reader added without the same empty-state discipline will be the first resource to crash on first access.
 
----
+**Consequences:** `McpError` or unhandled exception on the user's first read of the drift resource; the client may display an unhelpful error or crash.
 
-## Integration Gotchas
+**Prevention:**
+- Mirror the existing pattern: return a structured no-data response:
+  ```json
+  {"drift_report": null, "scanned_at": null, "status": "no_scan_run",
+   "message": "Run scan_infrastructure_drift to generate a drift report."}
+  ```
+- Add a test for the no-scan-yet case that asserts the response is well-formed and `status == "no_scan_run"`.
 
-Common mistakes when connecting these new features to existing code.
-
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| Dry-run + `emit_progress()` | Emitting "Deploying X" progress messages during dry-run misleads the AI/user | Gate progress messages behind `if not dry_run:` or use different message prefix "Would deploy X" |
-| MCP Resources + `get_resource_manager()` | Resource handlers calling `get_resource_manager()` before lifespan starts during tests | Mock the resource manager or ensure lifespan context is set in test fixtures |
-| Drift scanner + `NetworkSiteMap()` | Constructing `NetworkSiteMap()` in drift scanner runs `_init_database()` (a write) | Pass the existing db_adapter from `ResourceManager` instead of constructing a new `NetworkSiteMap` |
-| MCP Resources + lowlevel.Server | Declaring `resources` capability in server init but not registering `@server.list_resources()` handler causes protocol errors | Always pair capability declaration with handler registration |
-| Dry-run + existing `validate_only=True` parameter | `infrastructure_crud.py` already has `validate_only=True` in several functions; adding a separate `dry_run=True` creates two similar but different modes | Align on one parameter name (`dry_run`) and deprecate `validate_only` in the same phase |
-| Tech debt fix + existing 479 tests | Wiring `proxmox_session` into Proxmox handlers changes how tests must mock the session | Update test fixtures in the same PR as the wiring fix; do not split across phases |
+**Phase:** Drift MCP Resource phase.
 
 ---
 
-## Performance Traps
+### Pitfall 3: MCP Prompts ignored by non-Claude clients
 
-Patterns that work for a homelab but fail under specific conditions.
+**What goes wrong:** As of the MCP 2025-11-25 specification, `prompts/list` and `prompts/get` are first-class operations, but client support is inconsistent. Claude Desktop supports prompts; many other MCP-compatible clients (Cursor, Continue, custom HTTP clients) do not call `prompts/list` at all and do not declare `prompts` in their `initialize` capabilities. If homelab workflow prompts are designed as the primary user-facing interface, they will be invisible to a large fraction of users.
 
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Drift scan queries all VMs and devices in serial | Scan takes 30-120 seconds on larger homelabs, hits the 45-second `execute_tool` timeout | Use `asyncio.gather()` for parallel Proxmox + SSH queries; increase timeout for drift scan tool | Any homelab with 6+ VMs or 4+ devices |
-| Resource `read_resource` that calls Proxmox API synchronously | MCP client UI hangs waiting for slow API; appears unresponsive | Add timeout to resource read; return cached last-scan data if API is slow | Any time Proxmox is under load or network is congested |
-| Storing full VM config JSON in drift baseline per-scan | SQLite rows grow unboundedly if scans happen frequently | Store only fields relevant to drift (status, CPU, memory, network config), not full API response | After ~100 scans on a 10-VM homelab, rows become large but still manageable; mainly wastes space |
-| Sending `notifications/resources/updated` for every tool call | Noisy; clients that do support subscriptions get flooded | Only send notification when the resource content would actually change (compare hash before/after) | Any client that subscribes to multiple resources and triggers many tools |
+**Why it happens:** The MCP ecosystem built momentum around tools. Prompts are newer and clients treat them as optional capability.
 
----
+**Consequences:** Prompts work in Claude Desktop testing but are invisible to other clients. The feature ships but is narrowly useful.
 
-## Security Mistakes
+**Prevention:**
+- Design prompts as convenience shortcuts layered on top of tools, not as required paths. Every operation achievable via a prompt must also be achievable by direct tool calls.
+- Test prompts against MCP Inspector (which supports the full spec) and document which clients support them.
+- Do not gate critical functionality behind `prompts/get`.
 
-Domain-specific security issues for dry-run and drift detection features.
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Dry-run response includes full VM config / disk layout in "would affect" field | Credential or topology information leak via AI context | Sanitize dry-run output through the same `sanitize_error` / `CredentialFilter` as real responses |
-| Drift report exposes Proxmox API token format or SSH private key paths in "config drift" fields | Credential exposure in tool output | Ensure drift comparison excludes credential fields; add credential fields to `CredentialFilter` patterns |
-| MCP Resource URI scheme that encodes device IPs directly (`homelab://device/192.168.1.5`) | URI leaks network topology in client logs | Use opaque IDs: `homelab://device/{device_id}` where ID is the SQLite row ID, not the IP |
-| API key auth fix (`Fix: API key authentication wired into HTTP transport`) disables auth during the refactor window | Unauthenticated access if deployed mid-refactor | Fix auth in a single atomic commit; add a test that asserts HTTP requests without a valid key are rejected before merging |
+**Phase:** MCP Prompts phase.
 
 ---
 
-## UX Pitfalls
+### Pitfall 4: Prompt argument injection via unvalidated user-supplied strings
 
-How these features will be experienced by the AI assistant and the homelab user.
+**What goes wrong:** MCP Prompts accept user-supplied argument values (e.g., `hostname`, `service_name`, `vmid`) and interpolate them into rendered message templates. If these values are embedded into shell command strings or path components in the rendered prompt, an adversarial or malformed value can steer the LLM toward unintended tool calls.
 
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| Dry-run output is a wall of technical JSON | AI cannot summarize it; user gets confused | Structure dry-run output as `{"action": "stop_vm", "target": "pve-101", "reason": "...", "reversible": true}` — human-readable action items |
-| Drift report lists every minor config variation as drift | User gets alert fatigue; stops caring about real drift | Distinguish severity: CRITICAL (VM down), WARNING (config changed), INFO (minor variation). Only surface CRITICAL and WARNING by default |
-| MCP Resource for VM list includes every Proxmox field | AI includes irrelevant data in context; wastes token budget | Project to a minimal schema: `{id, name, status, node, cpu_cores, memory_mb}` — enough to reason about, not a full API dump |
-| "Dry-run succeeded" message with no action summary | User approves without understanding what will happen | Dry-run response must include `"actions": [...]` listing every operation that would execute, ordered by execution sequence |
+**Why it happens:** Prompts are text templates. The rendered message is passed to the LLM as context. The LLM may then call tools based on that context. This is the same attack surface as indirect prompt injection, but the input is user-supplied prompt arguments rather than external data.
 
----
+**Consequences:** For a homelab server, the blast radius is the user's own infrastructure — data loss, VM deletion, SSH credential exposure. Low external threat, high internal trust risk.
 
-## "Looks Done But Isn't" Checklist
+**Prevention:**
+- Validate all prompt arguments using the same validators in `validation.py` that tool inputs use: hostname format, IP range, alphanumeric-only service names, vmid numeric range.
+- Do not interpolate raw argument values into rendered shell command strings within prompts.
+- Keep prompt templates as structured guidance (`"To deploy {service_name}, use the install_service tool"`) rather than raw command strings.
 
-Things that appear complete but are missing critical pieces.
-
-- [ ] **Dry-run for `decommission_device`:** Often missing cascade impact — what services depend on
-  the device. Verify the dry-run output includes dependent services, not just "device would be removed."
-- [ ] **Drift detection baseline:** Often missing mutation tracking. Verify that after a successful
-  `manage_proxmox_vm` call, the drift baseline for that VM is updated in SQLite.
-- [ ] **MCP Resources capability declared:** Often missing actual handler registration. Verify
-  `resources/list` returns the declared resources and `resources/read` works for each URI.
-- [ ] **`notifications/resources/updated` after mutations:** Often declared as "will implement"
-  but never wired. Verify at least one tool handler calls `send_resource_updated` after a
-  successful Proxmox or VM state change.
-- [ ] **Tech debt: `proxmox_session` wiring:** Fix appears done when `get_resource_manager()` is
-  called, but session may still not reach `ProxmoxAPIClient`. Verify with
-  `grep -r "ClientSession()" src/homelab_mcp/proxmox_api.py` — should have zero results in
-  non-init code after the fix.
-- [ ] **Dry-run + existing `validate_only` param:** Two different parameters doing similar things.
-  Verify they are aligned or one is removed before the phase closes.
-- [ ] **Drift scanner excludes transient states:** Verify the scanner output includes a
-  `scan_timestamp` and a disclaimer for state-type drift findings.
+**Phase:** MCP Prompts phase.
 
 ---
 
-## Recovery Strategies
+### Pitfall 5: MCP Prompts handler crashes on missing required arguments
 
-When pitfalls occur despite prevention, how to recover.
+**What goes wrong:** The MCP spec allows prompt arguments to declare `required: true`. The SDK's `prompts/get` handler receives argument values but does not enforce presence of required arguments — it passes whatever the client sends to the handler. If the handler assumes required arguments are present and does not guard against their absence, it raises `KeyError` or `AttributeError` when a client omits them.
 
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Dry-run diverged from real execution path | HIGH | Audit every destructive handler; refactor to single-path pattern; add comparison tests that run both paths and assert they describe the same actions |
-| Drift baseline full of false positives from MCP mutations | MEDIUM | Add `mcp_last_changed_at` column; run a migration to set it to `now()` for all existing rows; re-run baseline scan |
-| MCP Resources declared but no notifications wired | LOW | Add `send_resource_updated` calls in tool handler post-success paths; no schema change needed |
-| `proxmox_session` wiring incomplete; Resource handlers open their own sessions | MEDIUM | Identify all Proxmox API instantiation sites; pass shared session; update all affected mocks in tests |
-| Dry-run executing real side effects (db writes, SSH mutations) | HIGH | Add integration test asserting db is unchanged after dry-run; add SSH operation audit; fix each side effect site |
+**Why it happens:** The SDK treats argument validation as the server's responsibility, not its own (same as tools, where input schema validation is also not enforced). This is consistent behaviour but can surprise developers expecting the SDK to enforce required fields.
+
+**Consequences:** Prompt handlers crash with unstructured internal errors when clients call `prompts/get` without required arguments.
+
+**Prevention:**
+- Validate argument presence at the start of each prompt handler. Check for missing required keys explicitly and raise `McpError` with a descriptive message rather than letting a `KeyError` propagate.
+- Add tests for each prompt that call `prompts/get` with missing required arguments and assert the error response is well-formed.
+
+**Phase:** MCP Prompts phase.
 
 ---
 
-## Pitfall-to-Phase Mapping
+### Pitfall 6: PyPI package name / import name / command name three-way split confuses users
 
-How roadmap phases should address these pitfalls.
+**What goes wrong:** The PyPI package is `homelab-mcp-server` (install with `pip install homelab-mcp-server`), the Python import is `homelab_mcp` (no "server"), and the entry point command is `homelab-mcp`. Users who see the PyPI name may try `import homelab_mcp_server` and get `ImportError`. This is a documentation and discoverability problem, not a functional bug.
 
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| Dry-run diverging from real path | Dry-run implementation | Test: run dry-run then real execution, assert descriptions match |
-| Dry-run performing real side effects | Dry-run implementation | Test: run dry-run, assert SQLite unchanged, assert no SSH mutations |
-| Drift false positives from transient state | Drift detection implementation | Test: mock VM as "stopped" briefly, assert classified as "suspected" not "confirmed" |
-| Drift baseline not updated on mutation | Drift detection implementation | Test: call `manage_proxmox_vm`, assert SQLite baseline row has updated `expected_state` |
-| MCP Resources stale without notification | MCP Resources implementation | Test: call tool that changes VM state, assert `send_resource_updated` was called |
-| `proxmox_session` not wired | Tech debt cleanup (before Resources phase) | `grep -r "ClientSession()" src/homelab_mcp/proxmox_api.py` returns zero non-init hits |
-| `validate_only` vs `dry_run` parameter collision | Dry-run implementation | `grep -r "validate_only" src/` — zero hits after alignment |
-| API key auth not wired during fix | Tech debt cleanup | Integration test: HTTP request without API key returns 401 |
+**Why it happens:** Python packaging conventions allow and even encourage divergent names, but this creates a three-way split that users must learn explicitly.
+
+**Consequences:** First-time users hit import errors or can't find the command. Documentation confusion leads to GitHub issues.
+
+**Prevention:**
+- Make the three-name split explicit in the README installation section with a code block showing each form.
+- Evaluate whether the PyPI package can be renamed to `homelab-mcp` (matching the command name) at publication time, since it is currently unpublished and the name is still available.
+
+**Phase:** PyPI packaging phase.
+
+---
+
+### Pitfall 7: `read_resource` exceptions surface as successful JSON rather than McpError
+
+**What goes wrong:** The MCP Python SDK has a documented inconsistency (SDK issue #396): exceptions raised inside `@app.call_tool` handlers are not correctly translated to JSON-RPC error responses — they are returned as plain-text successful responses. While `@app.read_resource` exceptions are documented to propagate as `McpError`, an unhandled non-`McpError` exception in a resource reader may behave differently depending on SDK version.
+
+**Why it happens:** The existing `handle_read_resource` in `server.py` already wraps all non-`McpError` exceptions and returns structured JSON payloads — this is the correct pattern. But a new drift reader that raises a bare exception (e.g., a raw `KeyError`) rather than catching it will bypass this protection if the outer handler's except clause only catches specific types.
+
+**Consequences:** Clients receive a 200-equivalent response with error data embedded in the JSON body rather than a proper JSON-RPC error. Some clients will not recognise this as an error state and will use the malformed payload.
+
+**Prevention:**
+- All new reader functions (`read_drift_resource`) must follow the pattern established in `resource_readers.py`: wrap all exceptions in try/except, return structured dicts with `error` or `status` fields, never raise bare exceptions from a reader function.
+- The outer `handle_read_resource` dispatch should have a catch-all `except Exception` that wraps unexpected errors as `McpError`, consistent with the existing `RESOURCE_NOT_FOUND` pattern.
+
+**Phase:** Drift MCP Resource phase.
+
+---
+
+## Minor Pitfalls
+
+### Pitfall 1: `uvx homelab-mcp` installs a different version than local dev
+
+**What goes wrong:** `uvx` runs tools from PyPI in isolated ephemeral environments. Users with a local clone at v1.1 who also install via `uvx homelab-mcp@latest` may have two server versions running under different Claude Desktop profiles without realising it. Configuration and tool schemas may differ between versions.
+
+**Prevention:** Document in README that `uvx` always fetches from PyPI. Instruct users who need a specific version to use `uvx homelab-mcp@1.2.0`.
+
+**Phase:** PyPI packaging phase.
+
+---
+
+### Pitfall 2: Tool count in README/docs not updated after adding `*_preview` variants
+
+**What goes wrong:** The README and PROJECT.md currently reference "50 tools." Adding 6 `*_preview` tools without updating documentation creates documentation drift.
+
+**Prevention:** Automate the tool count in CI: `python -c "from homelab_mcp.tool_schemas import get_all_tool_schemas; print(len(get_all_tool_schemas()))"`. Use this number in release notes. Never hard-code the count in prose.
+
+**Phase:** Dry-run tool split phase.
+
+---
+
+### Pitfall 3: `notifications/resources/list_changed` emitted outside request context panics
+
+**What goes wrong:** The SDK's `send_resource_list_changed()` must be called from within an active MCP request context. The existing `MUTATING_TOOLS` pattern in `call_tool` handler gates notification emission correctly. If drift or a background task emits notifications outside a request context, the SDK raises `RuntimeError`.
+
+**Prevention:** Only emit resource notifications from within tool handler post-call paths (the existing pattern). Do not emit from background tasks, lifespan hooks, or module-level code.
+
+**Phase:** Drift MCP Resource phase.
+
+---
+
+### Pitfall 4: `*_preview` tool response format inconsistent with `build_dry_run_response()`
+
+**What goes wrong:** The existing `build_dry_run_response()` in `dry_run.py` returns a flat dict. The existing `_convert_result` fallback in the tool dispatcher handles this. New `*_preview` tools added without using `build_dry_run_response()` will produce ad-hoc response shapes that are inconsistent with each other and with the structured dry-run contract.
+
+**Prevention:** All 6 `*_preview` handlers must call `build_dry_run_response()` and return its output unchanged. Do not add ad-hoc `mode: dry_run` dicts inline in handlers.
+
+**Phase:** Dry-run tool split phase.
+
+---
+
+## Phase-Specific Warnings
+
+| Phase Topic | Likely Pitfall | Mitigation |
+|---|---|---|
+| PyPI packaging | YAML service templates missing from wheel | Explicit hatchling include rule + wheel smoke test |
+| PyPI packaging | `__version__` / pyproject.toml version divergence | Single source via `importlib.metadata.version()` |
+| PyPI packaging | Missing `server.py:main` entry point | Add `main()` function; test and smoke-test pre-publish |
+| PyPI packaging | Package name / import name / command name confusion | Explicit three-name table in README |
+| Dry-run tool split | `*_preview` tools missing from `tool_annotations.py` | Annotation coverage test asserting full parity |
+| Dry-run tool split | Renaming existing tools breaks client allowlists | Additive-only: add `*_preview` names, keep originals |
+| Dry-run tool split | Ad-hoc response shapes bypassing `build_dry_run_response()` | Enforce single response builder in all preview handlers |
+| Dry-run tool split | Tool count docs not updated | Automate count from schema registry |
+| MCP Prompts | Clients that don't support prompts silently ignore them | Prompts as convenience layer; tools remain primary path |
+| MCP Prompts | Missing required arguments crash handler | Validate arguments at handler entry; raise `McpError` |
+| MCP Prompts | Prompt injection via unvalidated argument strings | Use `validation.py` validators on all argument values |
+| Drift Resource | No-scan-yet state raises exception | Empty-state handling: return `status: no_scan_run` |
+| Drift Resource | Stale data served without staleness indicator | Include `scanned_at` + staleness warning in payload |
+| Drift Resource | URI omitted from `HOMELAB_RESOURCES` dict | Add to registry atomically with reader function |
+| Drift Resource | Exception in reader surfaces as successful JSON | Follow `resource_readers.py` try/except pattern exactly |
 
 ---
 
 ## Sources
 
-- Direct codebase analysis of `/home/shaun/projects/mcp_python_server/src/` — HIGH confidence
-- MCP Resources specification at https://modelcontextprotocol.io/specification/2025-06-18/server/resources — HIGH confidence
-- MCP Python SDK `send_resource_updated` / `send_resource_list_changed` patterns (community discussion https://github.com/orgs/modelcontextprotocol/discussions/301) — MEDIUM confidence
-- Terraform dry-run (plan vs apply) discrepancy patterns — https://spacelift.io/blog/terraform-dry-run — MEDIUM confidence
-- Infrastructure drift detection false positive causes — https://snyk.io/blog/infrastructure-drift-detection-mitigation/ — MEDIUM confidence
-- Kubernetes dry-run implementation design (side effects handling) — https://github.com/kubernetes/enhancements/blob/master/keps/sig-api-machinery/576-dry-run/README.md — HIGH confidence (well-established pattern)
-- Known MCP client subscription support limitations (Claude Desktop does not support resource subscriptions as of 2025) — https://github.com/orgs/modelcontextprotocol/discussions/391 — MEDIUM confidence
+- [MCP Prompts specification (2025-06-18)](https://modelcontextprotocol.io/specification/2025-06-18/server/prompts) — HIGH confidence
+- [MCP SDK issue #396: Inconsistent exception handling in call_tool vs list_resources](https://github.com/modelcontextprotocol/python-sdk/issues/396) — HIGH confidence (confirmed SDK bug, first-party issue tracker)
+- [SEP-986: MCP tool naming format standardisation](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986) — MEDIUM confidence
+- [The Silent Breakage: MCP tool versioning strategy](https://minherz.medium.com/the-silent-breakage-a-versioning-strategy-for-production-ready-mcp-tools-fbb998e3f71f) — MEDIUM confidence
+- [MCP tool annotations (readOnlyHint, destructiveHint)](https://blog.marcnuri.com/mcp-tool-annotations-introduction) — HIGH confidence
+- [uv building and publishing packages](https://docs.astral.sh/uv/guides/package/) — HIGH confidence (official docs)
+- [Dynamic versioning with uv projects](https://slhck.info/software/2025/10/01/dynamic-versioning-uv-projects.html) — MEDIUM confidence
+- [MCP prompt injection (Simon Willison, 2025)](https://simonwillison.net/2025/Apr/9/mcp-prompt-injection/) — MEDIUM confidence
+- [MCP client capability gap (PulseMCP)](https://www.pulsemcp.com/posts/mcp-client-capabilities-gap) — MEDIUM confidence
+- [MCP 2025-11-25 specification overview](https://workos.com/blog/mcp-2025-11-25-spec-update) — MEDIUM confidence
+- [MCP notifications/resources discussion](https://github.com/orgs/modelcontextprotocol/discussions/1192) — MEDIUM confidence
+- Codebase inspection: `server.py`, `resource_readers.py`, `dry_run.py`, `tool_annotations.py`, `pyproject.toml`, `__init__.py`, `service_templates/` — HIGH confidence (first-party)
 
 ---
-*Pitfalls research for: v1.1 Safety & Observability — dry-run, drift detection, MCP Resources, tech debt*
-*Researched: 2026-03-11*
+
+---
+
+## Appendix: v1.1 Safety & Observability Pitfalls
+
+> Preserved from prior milestone research. These pitfalls are addressed in v1.1 and should be verified complete before v1.2 phases begin.
+
+**Domain:** Adding dry-run mode, drift detection, and MCP Resources to an existing Python MCP server
+**Researched:** 2026-03-11
+
+### Critical: Dry-Run Preview That Cannot Execute the Real Path
+
+The dry-run implementation must be structured as a parameter to the existing handler (shared read/validate/plan path, gated write step), not as a separate simulation function. Separate simulation functions drift from the real path after refactors.
+
+**Phase:** Dry-run implementation — completed in v1.1.
+
+---
+
+### Critical: Dry-Run Performs Real Side Effects
+
+Dry-run must not mutate SQLite, SSH connections must not trigger host-side operations, and Proxmox API calls during dry-run should be read-only state queries only.
+
+**Phase:** Dry-run implementation — completed in v1.1.
+
+---
+
+### Critical: Drift Detection That Mistakes Transient State for Drift
+
+Point-in-time drift scans will flag rebooting VMs and restarting services. Reports must include `scan_timestamp` and a transient-state disclaimer. State drift (VM stopped) should be "suspected drift," not "confirmed drift." Config drift (CPU/memory changed) is higher confidence.
+
+**Phase:** Drift detection implementation — completed in v1.1.
+
+---
+
+### Critical: MCP Resources Returning Stale Data Without Signaling It
+
+Every resource payload must include `scanned_at`. `notifications/resources/updated` must be sent after relevant tool mutations. Do not advertise `subscribe: true` unless notifications are actually wired.
+
+**Phase:** MCP Resources implementation — completed in v1.1.
+
+---
+
+### Critical: ResourceManager.proxmox_session Not Wired Into Handlers
+
+`ProxmoxAPIClient` was creating its own `aiohttp.ClientSession` per call, bypassing the shared session in `ResourceManager`. Fix was to pass `get_resource_manager().proxmox_session` at each Proxmox handler call site.
+
+**Phase:** Tech debt cleanup — completed in v1.1.
+
+---
+
+### Critical: Drift Baseline That Does Not Track Expected Changes
+
+After every successful mutation tool call, the stored baseline must be updated to reflect the new intended state. Baselines that store only the initial state will flag every MCP-driven change as drift.
+
+**Phase:** Drift detection implementation — completed in v1.1.
+
+---
+
+*v1.1 pitfalls section condensed. Full detail in git history of this file.*
+
+---
+
+*Pitfalls research for: v1.2 Protocol Completeness — PyPI packaging, MCP Prompts, dry-run tool split, drift MCP Resource*
+*Researched: 2026-03-12*

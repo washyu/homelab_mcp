@@ -1,372 +1,254 @@
-# Stack Research — v1.1 Safety & Observability
+# Technology Stack
 
-**Domain:** Safety & observability additions to an existing Python MCP server
-**Researched:** 2026-03-11
-**Confidence:** HIGH overall (most decisions use already-installed dependencies; no new heavy libraries required)
-
----
-
-## Scope
-
-This is a **delta research document** for v1.1. The existing stack (Python 3.12+, uv, mcp[cli] 1.9.4, asyncssh, aiohttp, SQLite, lowlevel.Server) is validated and not re-researched here. This covers only what is **added or changed** to implement:
-
-1. Dry-run preview for destructive operations
-2. Infrastructure drift detection (config drift + state drift)
-3. MCP Resources with subscriptions
-4. Tech debt cleanup (proxmox_session wiring, API key auth, vm_providers errors)
+**Project:** Homelab MCP Server — v1.2 Protocol Completeness
+**Researched:** 2026-03-12
+**Scope:** Stack additions and changes for PyPI distribution, MCP Prompts support, and dry-run tool variants. Does not re-research the validated v1.0/v1.1 stack.
 
 ---
 
-## Recommended Stack Additions
+## Summary: What Changes for v1.2
 
-### No New Runtime Dependencies Required
+Three features, three verdicts:
 
-All three feature areas can be implemented with the current dependency set. The analysis below explains why.
+| Feature | Stack Change? | Verdict |
+|---------|--------------|---------|
+| MCP Prompts | No new deps | `@server.list_prompts()` and `@server.get_prompt()` exist in mcp 1.9.4 (installed) |
+| Dry-run tool split | No new deps | Purely structural: new `*_preview` tool schemas + handler dispatch |
+| PyPI distribution | No new deps, one structural fix | `main()` function must exist in installed package; entry point is misconfigured today |
+
+**Net new runtime dependencies for v1.2: zero.**
 
 ---
 
-## Feature Area 1: Dry-Run Preview
+## Recommended Stack
 
-### Approach: Native Python pattern, no library needed
+### Core Framework — No Changes
 
-**Confidence: HIGH**
+| Technology | Version Pinned | Purpose | Why |
+|------------|---------------|---------|-----|
+| Python | 3.12+ | Runtime | Established, not changing |
+| uv | latest | Package manager, build runner, publisher | Established; `uv build` + `uv publish` handles PyPI distribution |
+| mcp[cli] | >=1.9.1 (1.9.4 installed) | MCP SDK, lowlevel.Server | Already supports Prompts — no upgrade needed |
+| hatchling | via build-system | Build backend | Keep — handles src/ layout correctly; uv_build migration adds risk for zero benefit |
 
-Dry-run for destructive operations is a structural pattern, not a library problem. The project already has:
+### Supporting Libraries — No Changes
 
-- `destructiveHint=True` annotations on the 6 destructive tools in `tool_annotations.py`
-- A `validate_only` parameter precedent in `infrastructure_crud.py` (`deploy_infrastructure_plan`)
+All of asyncssh, aiohttp, starlette, uvicorn, SQLite, rich, websockets, pydantic (transitive) remain exactly as in v1.1.
 
-The right pattern for this codebase is a `dry_run: bool` parameter on each destructive tool handler that:
+---
 
-1. Introspects what the operation **would** do (reads state, resolves targets)
-2. Returns a structured preview dict instead of executing
-3. Never calls the mutating operation
+## Feature 1: MCP Prompts
 
-**Why not a dry-run library (drypy, dryable)?**
+**Confidence: HIGH** — verified by direct inspection of installed mcp 1.9.4 SDK source.
 
-Both `drypy` and `dryable` are minimal libraries (<200 lines) that intercept calls with a global flag and log them. They assume you can skip the entire function body on dry-run. For this server, dry-run needs to **return a rich preview** (which VMs would be stopped, what IDs, current state), not just log "would have called delete_vm(42)". A library decorator that silences calls is actively harmful — it would return `None` instead of the preview. Custom per-handler logic is the correct approach.
+### No New Dependencies
 
-**Pattern:**
+`lowlevel.Server` in mcp 1.9.4 already provides two decorator methods for Prompts:
 
 ```python
-# In each destructive tool handler:
-async def handle_delete_proxmox_vm(vmid: int, node: str, dry_run: bool = False) -> dict:
-    # Always resolve — never skip this:
-    vm_info = await proxmox_api.get_vm_status(node, vmid)
+# Signatures from .venv/lib/python3.12/site-packages/mcp/server/lowlevel/server.py
+@server.list_prompts()
+async def handle_list_prompts() -> list[types.Prompt]:
+    ...
 
-    if dry_run:
-        return {
-            "status": "dry_run",
-            "would_delete": {"vmid": vmid, "node": node, "name": vm_info["name"], "status": vm_info["status"]},
-            "warning": "This action is irreversible. Re-run with dry_run=False to execute."
-        }
-
-    # Actually execute:
-    return await proxmox_api.delete_vm(node, vmid)
-```
-
-**Tool schema addition** — each destructive tool gets a new `dry_run` boolean property in its `inputSchema`:
-
-```json
-"dry_run": {
-    "type": "boolean",
-    "description": "If true, show what would happen without executing. Default false.",
-    "default": false
-}
-```
-
-**No new dependencies.** No version bumps needed.
-
----
-
-## Feature Area 2: Drift Detection
-
-### Approach: deepdiff for comparison, stdlib dataclasses for models
-
-**Confidence: HIGH for deepdiff; HIGH for stdlib dataclasses**
-
-Drift detection requires comparing two snapshots of infrastructure state: "what MCP last recorded" (stored in SQLite) vs "what is actually running now" (queried from Proxmox API / SSH).
-
-#### deepdiff — for structural comparison
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| deepdiff | 8.6.1 (latest) | Compare expected vs actual infrastructure state | Handles nested dicts/lists that characterize infrastructure state responses. `ignore_order=True` is essential for list comparison (interface lists, tag lists). Returns structured diff objects that serialize cleanly to JSON. Already handles the "exclude transient fields" use case via `exclude_paths`. |
-
-**Confidence: HIGH** — verified via PyPI (released September 3, 2025). Requires Python 3.9+. Compatible with Python 3.12.
-
-**Why not manual comparison?** Infrastructure state is deeply nested (Proxmox VM status has 30+ fields; network interfaces are lists). Hand-rolling deep comparison for every field type is error-prone and verbose. deepdiff handles this correctly in 10 lines.
-
-**Why not jsondiff or dictdiffer?** deepdiff is the most actively maintained with 8.x releases through 2025. jsondiff (last release 2022) and dictdiffer (last release 2019) are effectively unmaintained.
-
-**Installation:**
-
-```bash
-# Add to pyproject.toml [project.dependencies]:
-uv add deepdiff
-```
-
-**Typical usage pattern for this project:**
-
-```python
-from deepdiff import DeepDiff
-
-def compute_drift(expected: dict, actual: dict) -> dict:
-    """Compare expected (stored) vs actual (live) infrastructure state."""
-    diff = DeepDiff(
-        expected,
-        actual,
-        ignore_order=True,
-        exclude_paths=[
-            "root['uptime']",       # Transient, always changes
-            "root['cpu_usage']",    # Telemetry, not config
-            "root['last_seen']",    # Tracking timestamp
-        ]
-    )
-    return {
-        "has_drift": bool(diff),
-        "changes": diff.to_dict() if diff else {},
-    }
-```
-
-#### Data models — stdlib dataclasses, no Pydantic needed
-
-Drift scan results are internal data structures serialized to JSON for tool responses. Python 3.12 `dataclasses` with `__post_init__` validation is sufficient. Pydantic is a transitive dependency but adding it as a **direct** dependency for drift models is overengineering for this use case.
-
-**Drift report structure:**
-
-```python
-from dataclasses import dataclass, field
-from datetime import datetime
-
-@dataclass
-class DriftItem:
-    resource_type: str   # "vm", "lxc", "device", "service"
-    resource_id: str     # vmid, device hostname, service name
-    drift_type: str      # "config_drift" | "state_drift"
-    expected: dict
-    actual: dict
-    changes: dict        # deepdiff output
-    severity: str        # "critical" | "warning" | "info"
-
-@dataclass
-class DriftReport:
-    scanned_at: datetime
-    resources_checked: int
-    drift_items: list[DriftItem] = field(default_factory=list)
-
-    @property
-    def has_drift(self) -> bool:
-        return len(self.drift_items) > 0
-```
-
-**No new dependencies beyond deepdiff.** SQLite already stores device/VM state snapshots.
-
-#### What triggers drift detection
-
-- **Config drift**: Compare Proxmox VM config (cores, memory, network) stored in SQLite after last MCP operation vs current Proxmox API response
-- **State drift**: Compare expected VM/service status ("running" after `start_vm`) vs current Proxmox task status
-
-Both use the same deepdiff comparison pattern. The `on-demand scan` tool queries all tracked resources via existing Proxmox API client and SSH connections, then diffs each against stored baselines.
-
----
-
-## Feature Area 3: MCP Resources with Subscriptions
-
-### Approach: mcp[cli] lowlevel.Server built-in handlers (already installed)
-
-**Confidence: HIGH** for Resources API; **MEDIUM** for subscription implementation details
-
-The project already uses `mcp[cli] 1.9.4` with `lowlevel.Server`. The SDK includes built-in support for Resources via the same decorator pattern already in use for tools.
-
-#### MCP SDK resource capability (verified against MCP spec and PyPI 1.26.0 docs)
-
-The MCP protocol defines a full resource lifecycle:
-
-- `resources/list` — client discovers available resources
-- `resources/read` — client fetches a resource by URI
-- `resources/subscribe` — client subscribes to change notifications for a URI
-- `notifications/resources/updated` — server notifies subscribed client of change
-- `notifications/resources/list_changed` — server notifies when resource list changes
-
-Server capability declaration (required):
-
-```json
-{
-  "capabilities": {
-    "resources": {
-      "subscribe": true,
-      "listChanged": true
-    }
-  }
-}
-```
-
-#### lowlevel.Server handler registration
-
-```python
-@server.list_resources()
-async def handle_list_resources() -> list[types.Resource]:
-    return [
-        types.Resource(
-            uri=AnyUrl("homelab://vms"),
-            name="VM List",
-            description="Live list of all VMs and containers across Proxmox nodes",
-            mimeType="application/json",
-        ),
-        types.Resource(
-            uri=AnyUrl("homelab://devices"),
-            name="Device Inventory",
-            description="All discovered devices in the network sitemap",
-            mimeType="application/json",
-        ),
-        types.Resource(
-            uri=AnyUrl("homelab://services"),
-            name="Service Status",
-            description="Installed service health across managed hosts",
-            mimeType="application/json",
-        ),
-    ]
-
-@server.read_resource()
-async def handle_read_resource(uri: AnyUrl) -> str:
-    uri_str = str(uri)
-    if uri_str == "homelab://vms":
-        rm = get_resource_manager()
-        vms = await proxmox_api.list_all_vms(rm.proxmox_session)
-        return json.dumps(vms)
+@server.get_prompt()
+async def handle_get_prompt(
+    name: str, arguments: dict[str, str] | None
+) -> types.GetPromptResult:
     ...
 ```
 
-**Confidence: HIGH** — `list_resources` and `read_resource` decorators are confirmed in official API reference (https://anish-natekar.github.io/mcp_docs/api-reference.html) and consistent with the existing `list_tools` / `call_tool` pattern already shipping in `server.py`.
+Capability advertisement is automatic: `get_capabilities()` checks whether `types.ListPromptsRequest` is registered in `request_handlers` and sets `prompts=PromptsCapability(listChanged=...)`. No manual capability wiring needed — same behaviour as tools and resources.
 
-#### Subscription implementation
+### Types Available in mcp.types (1.9.4)
 
-The `subscribe_resource` decorator and `send_resource_updated` notification are present in the SDK (`ServerSession.send_resource_updated` is confirmed in the API reference). The exact integration with lowlevel.Server requires verification against the installed SDK source.
+All types needed are already present with no imports from new packages:
 
-**Required investigation before implementation** (Phase-specific research flag):
+| Type | Purpose |
+|------|---------|
+| `types.Prompt` | Prompt descriptor — name, description, arguments |
+| `types.PromptArgument` | Argument definition — name, description, required |
+| `types.GetPromptResult` | Response from get_prompt — description, messages |
+| `types.PromptMessage` | Single message — role, content |
+| `types.ListPromptsResult` | Wrapper; SDK constructs internally, not needed in handler return |
+| `types.PromptsCapability` | Capability flag; SDK constructs via get_capabilities() |
+| `types.PromptListChangedNotification` | Push notification for prompt list changes (static prompts: not needed) |
 
-1. Verify `@server.subscribe_resource()` decorator exists in mcp 1.9.4 (check `.venv/lib/python3.12/site-packages/mcp/server/lowlevel/server.py`)
-2. Verify how to call `server.request_context.session.send_resource_updated(uri)` or equivalent from within a background notification task
-3. Understand whether capability flags (`subscribe: true`) are auto-detected from registered handlers or must be manually declared in `Server()` constructor
+### Implementation Pattern
 
-**Subscription tracking — stdlib asyncio, no library needed:**
+Mirrors the existing `@server.list_resources()` / `@server.read_resource()` pattern in `server.py`. The natural home for v1.2 is:
 
-The subscription registry is a simple in-memory dict mapping URI strings to sets of subscriber identifiers. For a single-user homelab server (one MCP client at a time), this is trivially simple:
+1. `@server.list_prompts()` handler in `server.py` — returns static `list[types.Prompt]`
+2. `@server.get_prompt()` handler in `server.py` — dispatches on `name`, returns `types.GetPromptResult`
+3. New module `src/homelab_mcp/prompt_handlers.py` — homelab workflow template logic (mirrors `resource_readers.py`)
 
-```python
-# In resource_manager.py or a new resources.py module:
-_subscriptions: dict[str, set[str]] = {}  # uri -> set of session_ids
+For v1.2 static prompt templates, `NotificationOptions(prompts_changed=False)` is correct. Set `prompts_changed=True` only if prompts will change at runtime — not required here.
 
-def add_subscription(uri: str, session_id: str) -> None:
-    _subscriptions.setdefault(uri, set()).add(session_id)
+### What NOT to Add for Prompts
 
-def remove_subscription(uri: str, session_id: str) -> None:
-    _subscriptions.get(uri, set()).discard(session_id)
+| Avoid | Why |
+|-------|-----|
+| Jinja2 / string.Template | Prompt templates are Python dicts with f-strings; a template engine adds unnecessary dependency |
+| FastMCP | Contradicts the established lowlevel.Server decision; FastMCP abstracts away protocol control the project needs |
+| Separate prompts microservice | All prompts are homelab-domain-specific; same process is correct |
 
-def has_subscribers(uri: str) -> bool:
-    return bool(_subscriptions.get(uri))
+---
+
+## Feature 2: Dry-Run Tool Split
+
+**Confidence: HIGH** — structural decision, no library research needed.
+
+### No New Dependencies
+
+The v1.2 change splits the 6 destructive tools that currently accept `dry_run: bool` into:
+- `tool_name` — mutates, `destructiveHint: true`, no dry_run parameter
+- `tool_name_preview` — never mutates, `readOnlyHint: true`, no dry_run parameter (inherently preview)
+
+This is schema changes in `tool_schemas.py` / `tool_annotations.py` and handler dispatch in `tool_handlers.py`. No new libraries.
+
+The `_preview` variants must:
+- Mirror the same input schema minus any `dry_run` parameter
+- Always call the existing dry-run code path internally (the `dry_run.py` module from v1.1)
+- Carry `readOnlyHint: true` in `get_tool_annotations()`
+
+The existing `dry_run.py` module from v1.1 remains unchanged. The split is a calling convention change, not a logic change.
+
+---
+
+## Feature 3: PyPI Distribution
+
+**Confidence: HIGH** on gap identification (direct source inspection); **MEDIUM** on publish workflow details (official docs via WebSearch).
+
+### What Already Works
+
+The `pyproject.toml` has the correct build infrastructure:
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/homelab_mcp"]
+
+[project.scripts]
+homelab-mcp = "homelab_mcp.server:main"
 ```
 
-**No asyncio pub/sub library needed.** Libraries like `asyncio-multisubscriber-queue` solve the multi-producer/multi-consumer broadcast problem. This server has one producer (the MCP server process) and one subscriber (the connected MCP client). A plain dict + direct notification call is correct.
+`uv build` produces wheel + sdist. `uv publish` publishes to PyPI. `uvx homelab-mcp` resolves `[project.scripts]` entry points automatically — no additional tooling needed.
 
-**Notification trigger** — subscriptions are passive (notify on read-resource cache miss or explicit tool call). The v1.1 scope explicitly defers "auto-detect drift with periodic background checks." Notifications are sent when:
+### Critical Gap: Missing `main()` Function
 
-1. A destructive tool completes → `notifications/resources/updated` for affected resource URIs
-2. An on-demand drift scan detects changes → `notifications/resources/updated` for drifted resources
+The entry point `homelab_mcp.server:main` is declared but **`main()` does not exist in `server.py`**. The actual entrypoint logic lives in `run_server.py`, which also imports from `src.homelab_mcp.server` — a path that only resolves from the project root, not from an installed package.
 
-This means notification sends happen synchronously within existing tool handlers, not from a background task. No asyncio background tasks, no polling loops.
+This means `uvx homelab-mcp` would fail with `AttributeError` today.
 
-#### Resource URIs for this project
+**Fix required:**
 
-| URI | Content | MimeType |
-|-----|---------|----------|
-| `homelab://vms` | All Proxmox VMs/LXCs with status | `application/json` |
-| `homelab://devices` | Network sitemap device inventory | `application/json` |
-| `homelab://services` | Service health across managed hosts | `application/json` |
-| `homelab://drift/{scan_id}` | Drift scan results (templated) | `application/json` |
+1. Create `src/homelab_mcp/__main__.py` containing `main()` — replicates `parse_args()` + `asyncio.run(run_stdio() | run_http())` from `run_server.py`, importing from `homelab_mcp.server` (not `src.homelab_mcp.server`)
+2. Update `pyproject.toml` entry point to `homelab_mcp.__main__:main`
+3. Keep `run_server.py` at project root for the current `uv run python run_server.py` development workflow (fix its import to `homelab_mcp.server` too, or retire it in favour of `python -m homelab_mcp`)
 
-Custom URI scheme `homelab://` is valid per MCP spec (RFC 3986 compliant, custom schemes allowed). Prefer this over `file://` since these are not filesystem resources.
+The `__main__.py` approach also enables `python -m homelab_mcp` as a supported invocation.
+
+### pyproject.toml Changes Required
+
+```toml
+# Change [project.scripts]:
+[project.scripts]
+homelab-mcp = "homelab_mcp.__main__:main"
+
+# No new [project.dependencies] entries needed.
+# No new [dependency-groups] dev entries needed.
+```
+
+### Build and Publish Commands
+
+```bash
+# Build wheel + sdist
+uv build
+
+# Publish to PyPI (preferred: Trusted Publisher — no token needed)
+# Configure at pypi.org/manage/project/homelab-mcp-server/settings/publishing/
+uv publish
+
+# Or with token
+UV_PUBLISH_TOKEN=pypi-... uv publish
+```
+
+### GitHub Actions Publish Job
+
+Add to `.github/workflows/main.yml`, triggered on version tags:
+
+```yaml
+publish:
+  needs: [test]
+  if: startsWith(github.ref, 'refs/tags/v')
+  runs-on: ubuntu-latest
+  environment: pypi
+  permissions:
+    id-token: write
+  steps:
+    - uses: actions/checkout@v4
+    - uses: astral-sh/setup-uv@v5
+    - run: uv build
+    - run: uv publish
+```
+
+PyPI Trusted Publishers with OIDC (`id-token: write`) is preferred — avoids long-lived API token secrets in GitHub. Configure once at pypi.org before first publish.
+
+### Build Backend: Keep Hatchling
+
+Do not migrate to `uv_build` in v1.2. Hatchling handles the `src/` layout with `[tool.hatch.build.targets.wheel]` correctly. The `uv_build` backend became stable only mid-2025, and migration from hatchling adds risk for zero functional benefit in this milestone.
+
+### Package Name Verification
+
+The current `[project.name]` is `homelab-mcp-server`. The `[project.scripts]` key `homelab-mcp` is the installed command name. These are independent. Verify `homelab-mcp-server` is available on PyPI before publishing — `pip index versions homelab-mcp-server` (no conflicting package was found in search results, but a direct check is required before the publish step).
 
 ---
 
-## Feature Area 4: Tech Debt Cleanup
+## Alternatives Considered
 
-### proxmox_session wiring
-
-**No new dependencies.** The fix is passing `get_resource_manager().proxmox_session` into `ProxmoxAPIClient` at handler call time, replacing per-request session creation. Already wired in `ResourceManager.proxmox_session` — the bug is that handlers call `ProxmoxAPIClient()` directly and create their own sessions. Fix: inject the pooled session.
-
-### API key authentication
-
-**No new dependencies.** The `auth.py` module already exists. The fix connects the existing `APIKeyMiddleware` (in `http_app.py`) to actually reject unauthenticated requests when `MCP_API_KEY` is set. This is configuration wiring, not a library gap.
-
-### vm_providers error handling
-
-**No new dependencies.** Replace `str(e)` patterns with `sanitize_error()` from `log_filter.py` (already used in `infrastructure_crud.py`). Pure code cleanup.
-
----
-
-## Summary: Dependencies Delta
-
-| Package | Action | Version | Rationale |
-|---------|--------|---------|-----------|
-| `deepdiff` | **ADD** | `>=8.0.0` | Drift comparison engine. Current: 8.6.1. No alternative avoids verbose manual deep comparison. |
-| Everything else | No change | — | All other v1.1 features are implementable with the current stack. |
-
-**What NOT to add:**
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `drypy` / `dryable` | Returns None on dry-run; can't return rich preview | Per-handler `dry_run: bool` parameter |
-| `asyncio-multisubscriber-queue` | Multi-subscriber broadcast for single-client server is overengineering | `dict[str, set[str]]` subscription registry |
-| `apscheduler` / `aiocron` | Periodic background drift checks are explicitly out of scope for v1.1 | On-demand scan tool only |
-| `jsondiff` / `dictdiffer` | Unmaintained (2019-2022); no Python 3.12 validation | deepdiff 8.x |
-| `pydantic` (as direct dep) | Already transitive; overkill for internal drift models | stdlib dataclasses |
-| Redis / message queue | Single-user homelab has one subscriber; no fan-out needed | In-memory dict |
-
----
-
-## Version Compatibility
-
-| Package | Requires | Compatible With | Notes |
-|---------|---------|-----------------|-------|
-| deepdiff 8.6.1 | Python 3.9+ | Python 3.12 ✓ | No conflicts with existing deps |
-| mcp[cli] 1.9.4 | — | Resources API confirmed present | subscribe_resource decorator needs verification in installed version |
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Build backend | hatchling (keep) | uv_build | Stable mid-2025; migration risk with no functional benefit for v1.2 |
+| PyPI publish auth | Trusted Publisher (OIDC) | UV_PUBLISH_TOKEN secret | Token-based requires secret rotation; OIDC is keyless and auto-expiring |
+| Prompts wiring | Add to server.py (mirrors resources) | New dedicated prompts module | server.py is the registration point; template logic goes in prompt_handlers.py |
+| Prompts templating | Python dicts + f-strings | Jinja2 | No new dependency warranted for a handful of static workflow templates |
+| Dry-run split | `*_preview` tool variants | Keep `dry_run: bool` parameter | A parameter-based approach cannot carry `readOnlyHint: true` correctly |
+| Entrypoint | `__main__.py:main` | Inline `main()` in server.py | `__main__.py` enables `python -m homelab_mcp`; keeps server.py focused on MCP protocol |
 
 ---
 
 ## Installation
 
+No new packages to install for v1.2. The only changes are:
+
 ```bash
-# Add deepdiff to pyproject.toml [project.dependencies], then:
-uv add deepdiff
+# No uv add commands needed
 
-# Verify: should show deepdiff 8.x
-uv run python -c "import deepdiff; print(deepdiff.__version__)"
+# After adding __main__.py and fixing entry point, verify locally:
+uv run homelab-mcp --help
+
+# Build for PyPI
+uv build
+
+# Publish (first time: configure Trusted Publisher at pypi.org)
+uv publish
 ```
-
----
-
-## Phase-Specific Research Flags
-
-| Phase | What Needs Verification | How to Verify |
-|-------|------------------------|---------------|
-| MCP Resources | `@server.subscribe_resource()` decorator availability in mcp 1.9.4 | `grep -r "subscribe_resource" .venv/lib/python3.12/site-packages/mcp/` |
-| MCP Resources | How to send `resource_updated` notification from within tool handler (session reference) | Read `.venv/lib/python3.12/site-packages/mcp/server/lowlevel/server.py` directly |
-| MCP Resources | Capability flag declaration — auto-detected or manual in `Server()` constructor | Same source inspection |
-| Drift Detection | SQLite schema for baseline snapshots (what columns exist, what to add) | Read `src/homelab_mcp/database.py` and migration system |
 
 ---
 
 ## Sources
 
-- PyPI `mcp` package page — version 1.26.0 (latest), confirmed subscribe/listChanged capabilities exist; v1.9.4 is installed in this project (verified from uv.lock)
-- PyPI `deepdiff` package page — version 8.6.1, released September 3, 2025; Python 3.9+ requirement confirmed
-- MCP spec resources documentation (https://modelcontextprotocol.io/docs/concepts/resources) — subscribe/listChanged capability JSON structure, protocol messages, notification flow verified
-- MCP API reference (https://anish-natekar.github.io/mcp_docs/api-reference.html) — `list_resources()`, `read_resource()` decorator signatures confirmed; `send_resource_updated`, `send_resource_list_changed` confirmed on ServerSession
-- Project source inspection: `src/homelab_mcp/server.py`, `src/homelab_mcp/resource_manager.py`, `src/homelab_mcp/tool_annotations.py`, `src/homelab_mcp/infrastructure_crud.py`, `pyproject.toml`, `uv.lock`
-- deepdiff GitHub (https://github.com/seperman/deepdiff) — active maintenance, 8.x series through 2025
-- `drypy` (https://github.com/dzanotelli/drypy) and `dryable` (https://github.com/haarcuba/dryable) — evaluated and rejected; confirmed via search
+- mcp 1.9.4 SDK — direct inspection of installed sources (HIGH confidence):
+  - `.venv/lib/python3.12/site-packages/mcp/server/lowlevel/server.py` — `list_prompts()`, `get_prompt()` decorators and capability auto-detection
+  - `.venv/lib/python3.12/site-packages/mcp/types.py` — `Prompt`, `PromptArgument`, `GetPromptResult`, `PromptMessage`, `PromptListChangedNotification`
+- `pyproject.toml` and `run_server.py` — direct inspection revealing the missing `main()` gap (HIGH confidence)
+- [uv Building and publishing a package](https://docs.astral.sh/uv/guides/package/) — MEDIUM confidence (official docs, WebSearch-found)
+- [uv Build backend](https://docs.astral.sh/uv/concepts/build-backend/) — MEDIUM confidence (official docs, WebSearch-found)
+- [PyPI Trusted Publishers](https://docs.pypi.org/trusted-publishers/) — MEDIUM confidence (official docs, WebSearch-found)
+- [Python Build Backends in 2025: uv_build vs Hatchling](https://medium.com/@dynamicy/python-build-backends-in-2025-what-to-use-and-why-uv-build-vs-hatchling-vs-poetry-core-94dd6b92248f) — LOW confidence (Medium article; corroborates stable date for uv_build)
 
 ---
 
@@ -374,14 +256,14 @@ uv run python -c "import deepdiff; print(deepdiff.__version__)"
 
 | Area | Level | Reason |
 |------|-------|--------|
-| Dry-run pattern (no library) | HIGH | Pattern already present in codebase (`validate_only`); decorator libraries confirmed unsuitable |
-| deepdiff selection | HIGH | Version verified via PyPI; no competing maintained alternatives |
-| MCP Resources list/read | HIGH | Decorator pattern confirmed in API reference, consistent with existing `list_tools` usage |
-| MCP Resources subscriptions | MEDIUM | Protocol spec confirmed; Python SDK subscribe decorator and notification send API needs source verification in installed 1.9.4 |
-| Subscription registry (stdlib) | HIGH | Single-client server; fan-out complexity not needed |
-| Tech debt fixes (no new deps) | HIGH | All are wiring/pattern fixes in existing modules |
+| MCP Prompts — SDK support | HIGH | Direct inspection of installed mcp 1.9.4 source; decorators and types verified present |
+| MCP Prompts — implementation pattern | HIGH | Mirrors existing resources pattern in codebase |
+| Dry-run split — no new deps | HIGH | Structural decision; verified against existing dry_run.py module |
+| PyPI — missing main() gap | HIGH | Direct source inspection of server.py (no main) and run_server.py (src-prefixed imports) |
+| PyPI — build/publish workflow | MEDIUM | Official uv docs found via WebSearch; not directly fetched |
+| PyPI — Trusted Publisher setup | MEDIUM | Official PyPI docs found via WebSearch; process well-documented |
 
 ---
 
-*Stack research for: Homelab MCP Server v1.1 Safety & Observability*
-*Researched: 2026-03-11*
+*Stack research for: Homelab MCP Server v1.2 Protocol Completeness*
+*Researched: 2026-03-12*
