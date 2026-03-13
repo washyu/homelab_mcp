@@ -1,14 +1,39 @@
 """Tests for Ansible integration functionality."""
 
 import json
-import tempfile
-from pathlib import Path
-from unittest.mock import patch
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
 
 from src.homelab_mcp.service_installer import ServiceInstaller
+
+
+def _make_files_mock(templates: dict[str, Any]) -> MagicMock:
+    """Return a mock for importlib.resources.files() that yields the given templates.
+
+    Args:
+        templates: dict mapping service-name (without .yaml) to template data dict.
+
+    Returns a mock that mimics:
+        files("homelab_mcp").joinpath("service_templates").iterdir()
+    """
+    fake_files: list[MagicMock] = []
+    for name, data in templates.items():
+        fake_file = MagicMock()
+        fake_file.is_file.return_value = True
+        fake_file.name = f"{name}.yaml"
+        fake_file.read_text.return_value = yaml.dump(data)
+        fake_files.append(fake_file)
+
+    fake_traversable = MagicMock()
+    fake_traversable.iterdir.return_value = iter(fake_files)
+
+    fake_pkg = MagicMock()
+    fake_pkg.joinpath.return_value = fake_traversable
+
+    return MagicMock(return_value=fake_pkg)
 
 
 class MockAnsibleRunner:
@@ -55,11 +80,6 @@ class TestAnsibleServiceIntegration:
 
     def setup_method(self):
         """Set up test method."""
-        # Create temporary directory structure
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
-
         # Create comprehensive Ansible service template
         self.ansible_template = {
             "name": "comprehensive-ansible-service",
@@ -229,13 +249,9 @@ services:
             },
         }
 
-        # Save template to file
-        template_file = self.template_dir / "comprehensive-ansible-service.yaml"
-        with open(template_file, "w") as f:
-            yaml.dump(self.ansible_template, f)
-
-        # Patch templates directory
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        # Patch importlib.resources.files to provide the template
+        fake_files_fn = _make_files_mock({"comprehensive-ansible-service": self.ansible_template})
+        self.patcher = patch("src.homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         # Create service installer
@@ -244,9 +260,6 @@ services:
     def teardown_method(self):
         """Tear down test method."""
         self.patcher.stop()
-        import shutil
-
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @pytest.mark.skip(reason="Ansible service integration not fully implemented")
     @pytest.mark.asyncio
@@ -564,18 +577,6 @@ class TestAnsiblePlaybookRunner:
 class TestAnsibleServiceTemplateProcessing:
     """Test Ansible service template processing and validation."""
 
-    def setup_method(self):
-        """Set up test method."""
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
-
-    def teardown_method(self):
-        """Tear down test method."""
-        import shutil
-
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
-
     def test_complex_ansible_template_parsing(self):
         """Test parsing of complex Ansible templates."""
         complex_template = {
@@ -630,11 +631,8 @@ class TestAnsibleServiceTemplateProcessing:
             },
         }
 
-        template_file = self.template_dir / "multi-tier-app.yaml"
-        with open(template_file, "w") as f:
-            yaml.dump(complex_template, f)
-
-        with patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir):
+        fake_files_fn = _make_files_mock({"multi-tier-app": complex_template})
+        with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
             installer = ServiceInstaller()
             info = installer.get_service_info("multi-tier-app")
 
@@ -683,11 +681,8 @@ class TestAnsibleServiceTemplateProcessing:
             },
         }
 
-        template_file = self.template_dir / "conditional-service.yaml"
-        with open(template_file, "w") as f:
-            yaml.dump(conditional_template, f)
-
-        with patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir):
+        fake_files_fn = _make_files_mock({"conditional-service": conditional_template})
+        with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
             installer = ServiceInstaller()
             info = installer.get_service_info("conditional-service")
 
@@ -741,11 +736,8 @@ class TestAnsibleServiceTemplateProcessing:
             },
         }
 
-        template_file = self.template_dir / "multi-instance-service.yaml"
-        with open(template_file, "w") as f:
-            yaml.dump(loop_template, f)
-
-        with patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir):
+        fake_files_fn = _make_files_mock({"multi-instance-service": loop_template})
+        with patch("src.homelab_mcp.service_installer.files", fake_files_fn):
             installer = ServiceInstaller()
             info = installer.get_service_info("multi-instance-service")
 
