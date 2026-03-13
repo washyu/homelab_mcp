@@ -121,7 +121,7 @@ Plans:
 | 9. MCP Resources Live Data | v1.1 | 2/2 | Complete | 2026-03-12 |
 | 10. Resource Notifications | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 11. Drift Detection | v1.1 | 5/5 | Complete | 2026-03-12 |
-| 12. PyPI Distribution | 3/3 | Complete   | 2026-03-13 | - |
+| 12. PyPI Distribution | 3/3 | Complete    | 2026-03-13 | - |
 | 13. Drift Resource | v1.2 | 0/TBD | Not started | - |
 | 14. MCP Prompts | v1.2 | 0/TBD | Not started | - |
 | 15. Preview Tool Split | v1.2 | 0/TBD | Not started | - |
