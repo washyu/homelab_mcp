@@ -87,7 +87,11 @@ Plans:
   2. `prompts/list` returns at least three prompts: `decommission_device_workflow`, `deploy_service_workflow`, and `homelab_health_check`
   3. `prompts/get decommission_device_workflow` returns a prompt that instructs the AI to call `decommission_device_preview` first and present the result to the user before executing the real operation
   4. `prompts/get homelab_health_check` returns a prompt that instructs the AI to read `homelab://vms`, `homelab://devices`, and `homelab://drift/latest` and summarize infrastructure state
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — Wave 0 test scaffold (tests/test_mcp_prompts.py, 6 RED tests)
+- [ ] 14-02-PLAN.md — Implementation: prompt_registry.py + list_prompts/get_prompt handlers in server.py
 
 ### Phase 15: Preview Tool Split
 **Goal**: All six destructive tools have `*_preview` variants annotated `readOnlyHint: true` — MCP clients show no confirmation dialog for preview calls — while the original six tools remain unchanged and backward-compatible.
@@ -127,6 +131,6 @@ Plans:
 | 11. Drift Detection | v1.1 | 5/5 | Complete | 2026-03-12 |
 | 12. PyPI Distribution | v1.2 | 3/3 | Complete | 2026-03-13 |
 | 13. Drift Resource | 2/2 | Complete    | 2026-03-13 | - |
-| 14. MCP Prompts | v1.2 | 0/TBD | Not started | - |
+| 14. MCP Prompts | v1.2 | 0/2 | Not started | - |
 | 15. Preview Tool Split | v1.2 | 0/TBD | Not started | - |
 | 16. Quality Gate | v1.2 | 0/TBD | Not started | - |
