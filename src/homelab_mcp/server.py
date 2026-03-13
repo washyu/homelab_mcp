@@ -28,6 +28,7 @@ from .progress import (
     set_min_log_level,
     should_emit,
 )
+from .prompt_registry import HOMELAB_PROMPTS, get_prompt_result
 from .resource_manager import ResourceManager
 from .resource_readers import read_devices_resource, read_drift_resource, read_service_resource, read_vms_resource
 from .tool_annotations import get_tool_annotations
@@ -268,6 +269,28 @@ async def handle_subscribe_resource(uri: AnyUrl) -> None:
 async def handle_unsubscribe_resource(uri: AnyUrl) -> None:
     """Remove URI from subscription tracker (no-op if not present)."""
     _subscriptions.discard(str(uri))
+
+
+# ---------------------------------------------------------------------------
+# Handler: list_prompts
+# ---------------------------------------------------------------------------
+
+
+@server.list_prompts()  # type: ignore[misc]
+async def handle_list_prompts() -> list[types.Prompt]:
+    """Return all homelab prompt templates."""
+    return list(HOMELAB_PROMPTS.values())
+
+
+# ---------------------------------------------------------------------------
+# Handler: get_prompt
+# ---------------------------------------------------------------------------
+
+
+@server.get_prompt()  # type: ignore[misc]
+async def handle_get_prompt(name: str, arguments: dict[str, str] | None) -> types.GetPromptResult:
+    """Return the rendered messages for a named prompt."""
+    return get_prompt_result(name, arguments)
 
 
 # ---------------------------------------------------------------------------
