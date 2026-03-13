@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: planning
-stopped_at: Completed 12-pypi-distribution 12-01-PLAN.md
-last_updated: "2026-03-13T18:51:42.123Z"
+stopped_at: Completed 12-pypi-distribution 12-02-PLAN.md
+last_updated: "2026-03-13T18:57:02.180Z"
 last_activity: 2026-03-12 — v1.2 roadmap created, Phase 12 is next
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 12-pypi-distribution P01 | 4 | 2 tasks | 2 files |
+| Phase 12-pypi-distribution P02 | 15 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Key architectural patterns carried into v1.2:
 - `INSERT OR REPLACE` + UNIQUE constraint for SQLite upsert (established in drift_baselines, extend for drift_latest_report)
 - [Phase 12-pypi-distribution]: Wave 0 tests are intentionally RED at commit time -- correctness verified by pytest --collect-only
 - [Phase 12-pypi-distribution]: PKG-03 patch target: homelab_mcp.service_installer.files (importlib.resources.files as imported), replacing src.homelab_mcp.service_installer.TEMPLATES_DIR
+- [Phase 12-pypi-distribution]: Package renamed from homelab-mcp-server to homelab-mcp (enables uvx homelab-mcp)
+- [Phase 12-pypi-distribution]: importlib.metadata version pattern with try/except PackageNotFoundError -> fallback 'unknown' used in all 4 locations
+- [Phase 12-pypi-distribution]: main() entry point imports argparse/asyncio/os/sys locally to avoid module-level import overhead on server startup
 
 ### Pending Todos
 
@@ -80,6 +84,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T18:51:42.121Z
-Stopped at: Completed 12-pypi-distribution 12-01-PLAN.md
+Last session: 2026-03-13T18:57:02.178Z
+Stopped at: Completed 12-pypi-distribution 12-02-PLAN.md
 Resume file: None
