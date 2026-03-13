@@ -136,5 +136,5 @@ Plans:
 | 12. PyPI Distribution | v1.2 | 3/3 | Complete | 2026-03-13 |
 | 13. Drift Resource | 2/2 | Complete    | 2026-03-13 | - |
 | 14. MCP Prompts | 2/2 | Complete    | 2026-03-13 | - |
-| 15. Preview Tool Split | v1.2 | 0/2 | Not started | - |
+| 15. Preview Tool Split | 1/2 | In Progress|  | - |
 | 16. Quality Gate | v1.2 | 0/TBD | Not started | - |

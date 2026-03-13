@@ -15,14 +15,14 @@ Requirements for v1.2 Protocol Completeness milestone. Each maps to roadmap phas
 
 ### Preview Tools (PREV)
 
-- [ ] **PREV-01**: User can call `decommission_device_preview` to preview decommission without a confirmation dialog
-- [ ] **PREV-02**: User can call `delete_proxmox_vm_preview` to preview VM deletion without a confirmation dialog
-- [ ] **PREV-03**: User can call `remove_vm_preview` to preview VM removal without a confirmation dialog
-- [ ] **PREV-04**: User can call `remove_server_preview` to preview server removal without a confirmation dialog
-- [ ] **PREV-05**: User can call `destroy_terraform_service_preview` to preview Terraform destroy without a confirmation dialog
-- [ ] **PREV-06**: User can call `rollback_infrastructure_changes_preview` to preview rollback without a confirmation dialog
-- [ ] **PREV-07**: All 6 `*_preview` tools are annotated `readOnlyHint=True, destructiveHint=False` so MCP clients skip confirmation dialogs
-- [ ] **PREV-08**: Original 6 destructive tools retain their `dry_run` parameter for backward compatibility
+- [x] **PREV-01**: User can call `decommission_device_preview` to preview decommission without a confirmation dialog
+- [x] **PREV-02**: User can call `delete_proxmox_vm_preview` to preview VM deletion without a confirmation dialog
+- [x] **PREV-03**: User can call `remove_vm_preview` to preview VM removal without a confirmation dialog
+- [x] **PREV-04**: User can call `remove_server_preview` to preview server removal without a confirmation dialog
+- [x] **PREV-05**: User can call `destroy_terraform_service_preview` to preview Terraform destroy without a confirmation dialog
+- [x] **PREV-06**: User can call `rollback_infrastructure_changes_preview` to preview rollback without a confirmation dialog
+- [x] **PREV-07**: All 6 `*_preview` tools are annotated `readOnlyHint=True, destructiveHint=False` so MCP clients skip confirmation dialogs
+- [x] **PREV-08**: Original 6 destructive tools retain their `dry_run` parameter for backward compatibility
 
 ### Drift Resource (DRFT)
 
@@ -69,14 +69,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PKG-01 | Phase 12 | Complete |
 | PKG-02 | Phase 12 | Complete |
 | PKG-03 | Phase 12 | Complete |
-| PREV-01 | Phase 15 | Pending |
-| PREV-02 | Phase 15 | Pending |
-| PREV-03 | Phase 15 | Pending |
-| PREV-04 | Phase 15 | Pending |
-| PREV-05 | Phase 15 | Pending |
-| PREV-06 | Phase 15 | Pending |
-| PREV-07 | Phase 15 | Pending |
-| PREV-08 | Phase 15 | Pending |
+| PREV-01 | Phase 15 | Complete |
+| PREV-02 | Phase 15 | Complete |
+| PREV-03 | Phase 15 | Complete |
+| PREV-04 | Phase 15 | Complete |
+| PREV-05 | Phase 15 | Complete |
+| PREV-06 | Phase 15 | Complete |
+| PREV-07 | Phase 15 | Complete |
+| PREV-08 | Phase 15 | Complete |
 | DRFT-07 | Phase 13 | Complete |
 | DRFT-08 | Phase 13 | Complete |
 | DRFT-09 | Phase 13 | Complete |

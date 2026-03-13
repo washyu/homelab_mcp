@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: executing
-stopped_at: Completed 14-mcp-prompts Plan 02 — MCP Prompts implementation
-last_updated: "2026-03-13T20:58:46.527Z"
+stopped_at: Completed 15-preview-tool-split Plan 01 — Wave 0 test scaffold for preview tools
+last_updated: "2026-03-13T21:39:39.096Z"
 last_activity: 2026-03-13 — Phase 13 Plan 01 complete (Wave 0 test scaffold)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 9
+  completed_plans: 8
   percent: 80
 ---
 
@@ -58,6 +58,7 @@ Progress: [████████░░] 80%
 | Phase 13-drift-resource P02 | 132 | 2 tasks | 3 files |
 | Phase 14-mcp-prompts P01 | 1 | 1 tasks | 1 files |
 | Phase 14-mcp-prompts P02 | 4 | 2 tasks | 3 files |
+| Phase 15-preview-tool-split P01 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ Key architectural patterns carried into v1.2:
 - [Phase 14-mcp-prompts]: Plain def (non-async) test functions throughout — get_prompt_result is synchronous
 - [Phase 14-mcp-prompts]: prompt_registry.py imports only mcp.types/mcp.shared.exceptions — no homelab_mcp imports (circular import prevention)
 - [Phase 14-mcp-prompts]: HOMELAB_PROMPTS is dict[str, types.Prompt] keyed by name; @server.list_prompts() registration auto-advertises PromptsCapability
+- [Phase 15-preview-tool-split]: Wave 0 tests use local imports inside test function bodies — avoids collection-level ImportError (consistent with Phase 13/14 pattern)
+- [Phase 15-preview-tool-split]: test_preview_tool_schema_has_no_dry_run_param uses pytest.skip() rather than ERROR when schema not present — keeps test RED not ERROR
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T20:56:07.262Z
-Stopped at: Completed 14-mcp-prompts Plan 02 — MCP Prompts implementation
+Last session: 2026-03-13T21:39:39.093Z
+Stopped at: Completed 15-preview-tool-split Plan 01 — Wave 0 test scaffold for preview tools
 Resume file: None
