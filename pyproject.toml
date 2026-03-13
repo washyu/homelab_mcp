@@ -204,6 +204,13 @@ disallow_untyped_decorators = false
 module = "homelab_mcp.http_app"
 warn_unused_ignores = false
 
+[[tool.mypy.overrides]]
+# psycopg2 is an optional PostgreSQL backend dependency imported inside a
+# try/except ImportError block in database.py. No stubs package exists in
+# this environment. Suppress missing-import errors for the whole module family.
+module = ["psycopg2", "psycopg2.*"]
+ignore_missing_imports = true
+
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B601"]  # Skip assert_used and shell=True warnings in tests
