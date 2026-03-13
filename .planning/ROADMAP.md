@@ -102,7 +102,11 @@ Plans:
   2. All six `*_preview` tools are present in `tools/list` with `readOnlyHint: true` and `destructiveHint: false` in their annotations
   3. The six original destructive tools (`decommission_device`, `delete_proxmox_vm`, `remove_vm`, `remove_server`, `destroy_terraform_service`, `rollback_infrastructure_changes`) still exist in `tools/list` with their `dry_run` parameter intact
   4. A test asserts that every key in the tool schema registry has a corresponding entry in the annotations registry — schema/annotation parity is enforced by CI
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — Wave 0 test scaffold (tests/test_preview_tools.py, 9 RED stubs + tool count update)
+- [ ] 15-02-PLAN.md — Implementation: 6 preview schemas, 6 delegation handlers, annotations, __init__.py wiring
 
 ### Phase 16: Quality Gate
 **Goal**: All pre-commit checks pass cleanly across the entire v1.2 change surface — ruff, mypy, and bandit report zero errors on every file touched in Phases 12-15.
@@ -132,5 +136,5 @@ Plans:
 | 12. PyPI Distribution | v1.2 | 3/3 | Complete | 2026-03-13 |
 | 13. Drift Resource | 2/2 | Complete    | 2026-03-13 | - |
 | 14. MCP Prompts | 2/2 | Complete    | 2026-03-13 | - |
-| 15. Preview Tool Split | v1.2 | 0/TBD | Not started | - |
+| 15. Preview Tool Split | v1.2 | 0/2 | Not started | - |
 | 16. Quality Gate | v1.2 | 0/TBD | Not started | - |
