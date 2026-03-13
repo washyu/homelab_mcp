@@ -13,8 +13,8 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 50
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, and drift tools
+        len(tools) == 56
+    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift tools, and preview tools
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
     assert "verify_mcp_admin" in tools
