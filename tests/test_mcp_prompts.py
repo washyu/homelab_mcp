@@ -30,7 +30,7 @@ def test_list_prompts_returns_prompts() -> None:
     from homelab_mcp.prompt_registry import HOMELAB_PROMPTS  # type: ignore[import]
 
     assert len(HOMELAB_PROMPTS) >= 3
-    prompt_names = [p.name for p in HOMELAB_PROMPTS]
+    prompt_names = [p.name for p in HOMELAB_PROMPTS.values()]
     assert "decommission_device_workflow" in prompt_names
     assert "deploy_service_workflow" in prompt_names
     assert "homelab_health_check" in prompt_names
@@ -41,8 +41,9 @@ def test_decommission_workflow_prompt() -> None:
 
     Will be RED until Plan 02 implements get_prompt_result in prompt_registry.py.
     """
-    from homelab_mcp.prompt_registry import get_prompt_result  # type: ignore[import]
     from mcp.types import GetPromptResult  # type: ignore[import]
+
+    from homelab_mcp.prompt_registry import get_prompt_result  # type: ignore[import]
 
     result = get_prompt_result("decommission_device_workflow", {"hostname": "test-host"})
     assert isinstance(result, GetPromptResult)
@@ -90,8 +91,9 @@ def test_get_unknown_prompt_raises_mcp_error() -> None:
 
     Will be RED until Plan 02 implements error handling in prompt_registry.py.
     """
-    from homelab_mcp.prompt_registry import get_prompt_result  # type: ignore[import]
     from mcp.shared.exceptions import McpError  # type: ignore[import]
+
+    from homelab_mcp.prompt_registry import get_prompt_result  # type: ignore[import]
 
     with pytest.raises(McpError) as exc_info:
         get_prompt_result("nonexistent_prompt", {})
