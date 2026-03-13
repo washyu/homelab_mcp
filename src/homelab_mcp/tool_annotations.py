@@ -1,6 +1,6 @@
 """Tool annotations for MCP spec compliance.
 
-Maps all 49 tool names to ToolAnnotations instances with readOnlyHint,
+Maps all 56 tool names to ToolAnnotations instances with readOnlyHint,
 destructiveHint, and idempotentHint set. MCP clients use these hints
 to distinguish read-only from destructive tools and provide safety warnings.
 """
@@ -43,6 +43,12 @@ _READ_ONLY_TOOLS = [
     "verify_mcp_admin",
     "check_ansible_service",
     "validate_infrastructure_changes",
+    "decommission_device_preview",
+    "delete_proxmox_vm_preview",
+    "remove_vm_preview",
+    "remove_server_preview",
+    "destroy_terraform_service_preview",
+    "rollback_infrastructure_changes_preview",
 ]
 
 # ---------------------------------------------------------------------------

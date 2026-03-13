@@ -65,3 +65,12 @@ async def handle_remove_server(arguments: dict[str, Any]) -> dict[str, Any]:
     clean_args = {k: v for k, v in arguments.items() if k != "dry_run"}
     result = remove_server(**clean_args)
     return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_remove_server_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle remove_server_preview tool.
+
+    Delegates to handle_remove_server with dry_run=True injected.
+    No server credentials are removed.
+    """
+    return await handle_remove_server({**arguments, "dry_run": True})

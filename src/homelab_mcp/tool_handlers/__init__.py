@@ -7,14 +7,17 @@ from .credential_handlers import (
     handle_list_registered_servers,
     handle_register_server,
     handle_remove_server,
+    handle_remove_server_preview,
     handle_update_server_credentials,
 )
 from .drift_handlers import handle_scan_infrastructure_drift
 from .infrastructure_handlers import (
     handle_create_infrastructure_backup,
     handle_decommission_device,
+    handle_decommission_device_preview,
     handle_deploy_infrastructure,
     handle_rollback_infrastructure_changes,
+    handle_rollback_infrastructure_changes_preview,
     handle_scale_services,
     handle_update_device_config,
     handle_validate_infrastructure_changes,
@@ -32,6 +35,7 @@ from .proxmox_handlers import (
     handle_create_proxmox_lxc,
     handle_create_proxmox_vm,
     handle_delete_proxmox_vm,
+    handle_delete_proxmox_vm_preview,
     handle_get_proxmox_node_status,
     handle_get_proxmox_script_info,
     handle_get_proxmox_vm_status,
@@ -43,6 +47,7 @@ from .service_handlers import (
     handle_check_ansible_service,
     handle_check_service_requirements,
     handle_destroy_terraform_service,
+    handle_destroy_terraform_service_preview,
     handle_get_service_info,
     handle_get_service_status,
     handle_install_service,
@@ -66,6 +71,7 @@ from .vm_handlers import (
     handle_get_vm_status,
     handle_list_vms,
     handle_remove_vm,
+    handle_remove_vm_preview,
 )
 
 # Type alias for handler functions
@@ -91,10 +97,12 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "deploy_infrastructure": handle_deploy_infrastructure,
     "update_device_config": handle_update_device_config,
     "decommission_device": handle_decommission_device,
+    "decommission_device_preview": handle_decommission_device_preview,
     "scale_services": handle_scale_services,
     "validate_infrastructure_changes": handle_validate_infrastructure_changes,
     "create_infrastructure_backup": handle_create_infrastructure_backup,
     "rollback_infrastructure_changes": handle_rollback_infrastructure_changes,
+    "rollback_infrastructure_changes_preview": handle_rollback_infrastructure_changes_preview,
     # VM tools
     "deploy_vm": handle_deploy_vm,
     "control_vm": handle_control_vm,
@@ -102,6 +110,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "list_vms": handle_list_vms,
     "get_vm_logs": handle_get_vm_logs,
     "remove_vm": handle_remove_vm,
+    "remove_vm_preview": handle_remove_vm_preview,
     # Service tools
     "list_available_services": handle_list_available_services,
     "get_service_info": handle_get_service_info,
@@ -110,6 +119,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "get_service_status": handle_get_service_status,
     "plan_terraform_service": handle_plan_terraform_service,
     "destroy_terraform_service": handle_destroy_terraform_service,
+    "destroy_terraform_service_preview": handle_destroy_terraform_service_preview,
     "refresh_terraform_service": handle_refresh_terraform_service,
     "check_ansible_service": handle_check_ansible_service,
     "run_ansible_playbook": handle_run_ansible_playbook,
@@ -118,6 +128,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "list_registered_servers": handle_list_registered_servers,
     "update_server_credentials": handle_update_server_credentials,
     "remove_server": handle_remove_server,
+    "remove_server_preview": handle_remove_server_preview,
     # Drift tools
     "scan_infrastructure_drift": handle_scan_infrastructure_drift,
     # Proxmox tools
@@ -131,6 +142,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "create_proxmox_vm": handle_create_proxmox_vm,
     "clone_proxmox_vm": handle_clone_proxmox_vm,
     "delete_proxmox_vm": handle_delete_proxmox_vm,
+    "delete_proxmox_vm_preview": handle_delete_proxmox_vm_preview,
 }
 
 

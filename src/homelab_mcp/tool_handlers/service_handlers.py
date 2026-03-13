@@ -109,3 +109,12 @@ async def handle_run_ansible_playbook(arguments: dict[str, Any]) -> dict[str, An
     installer = ServiceInstaller()
     playbook_result = await installer.run_ansible_playbook(**arguments)
     return {"content": [{"type": "text", "text": json.dumps(playbook_result, indent=2)}]}
+
+
+async def handle_destroy_terraform_service_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle destroy_terraform_service_preview tool.
+
+    Delegates to handle_destroy_terraform_service with dry_run=True injected.
+    No resources are destroyed.
+    """
+    return await handle_destroy_terraform_service({**arguments, "dry_run": True})

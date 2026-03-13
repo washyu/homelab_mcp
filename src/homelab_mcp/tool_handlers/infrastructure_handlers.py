@@ -112,3 +112,21 @@ async def handle_rollback_infrastructure_changes(
         validate_only=arguments.get("validate_only", False),
     )
     return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_decommission_device_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle decommission_device_preview tool.
+
+    Delegates to handle_decommission_device with dry_run=True injected.
+    No infrastructure is modified.
+    """
+    return await handle_decommission_device({**arguments, "dry_run": True})
+
+
+async def handle_rollback_infrastructure_changes_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle rollback_infrastructure_changes_preview tool.
+
+    Delegates to handle_rollback_infrastructure_changes with dry_run=True injected.
+    No infrastructure is modified.
+    """
+    return await handle_rollback_infrastructure_changes({**arguments, "dry_run": True})

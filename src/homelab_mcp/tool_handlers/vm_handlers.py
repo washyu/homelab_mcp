@@ -97,3 +97,12 @@ async def handle_remove_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         force=arguments.get("force", False),
     )
     return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_remove_vm_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle remove_vm_preview tool.
+
+    Delegates to handle_remove_vm with dry_run=True injected.
+    No VM is removed.
+    """
+    return await handle_remove_vm({**arguments, "dry_run": True})

@@ -260,3 +260,12 @@ async def handle_delete_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         session=get_resource_manager().proxmox_session,
     )
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
+
+async def handle_delete_proxmox_vm_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle delete_proxmox_vm_preview tool.
+
+    Delegates to handle_delete_proxmox_vm with dry_run=True injected.
+    No VM is deleted.
+    """
+    return await handle_delete_proxmox_vm({**arguments, "dry_run": True})
