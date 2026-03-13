@@ -56,7 +56,12 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. Running `python -m homelab_mcp --help` from within a venv with the package installed also prints help text
   3. The version string returned at server startup matches `pyproject.toml` — there is no separate hardcoded version in `__init__.py` or `server.py`
   4. Unzipping the built wheel confirms `service_templates/*.yaml` files are present inside the package directory
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — Wave 0 test scaffold (test_packaging.py + updated test_service_installer.py)
+- [ ] 12-02-PLAN.md — Package rename, version unification, main() entry point
+- [ ] 12-03-PLAN.md — service_installer importlib.resources fix, wheel build, publish
 
 ### Phase 13: Drift Resource
 **Goal**: The `homelab://drift/latest` resource is registered, readable, and kept current — clients can passively read the latest scan result, receive an update notification after each scan, and get a well-formed empty-state response before any scan has run.
