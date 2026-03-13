@@ -126,7 +126,7 @@ Plans:
 | 10. Resource Notifications | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 11. Drift Detection | v1.1 | 5/5 | Complete | 2026-03-12 |
 | 12. PyPI Distribution | v1.2 | 3/3 | Complete | 2026-03-13 |
-| 13. Drift Resource | v1.2 | 0/2 | Not started | - |
+| 13. Drift Resource | 1/2 | In Progress|  | - |
 | 14. MCP Prompts | v1.2 | 0/TBD | Not started | - |
 | 15. Preview Tool Split | v1.2 | 0/TBD | Not started | - |
 | 16. Quality Gate | v1.2 | 0/TBD | Not started | - |

@@ -26,10 +26,10 @@ Requirements for v1.2 Protocol Completeness milestone. Each maps to roadmap phas
 
 ### Drift Resource (DRFT)
 
-- [ ] **DRFT-07**: `homelab://drift/latest` resource is declared in `resources/list` and readable via `resources/read`
-- [ ] **DRFT-08**: `homelab://drift/latest` returns `{drift_detected: null}` state before any scan has run
-- [ ] **DRFT-09**: `scan_infrastructure_drift` tool stores its result so `homelab://drift/latest` reflects the latest scan
-- [ ] **DRFT-10**: Server emits `notifications/resources/updated` after each drift scan so subscribed clients re-fetch
+- [x] **DRFT-07**: `homelab://drift/latest` resource is declared in `resources/list` and readable via `resources/read`
+- [x] **DRFT-08**: `homelab://drift/latest` returns `{drift_detected: null}` state before any scan has run
+- [x] **DRFT-09**: `scan_infrastructure_drift` tool stores its result so `homelab://drift/latest` reflects the latest scan
+- [x] **DRFT-10**: Server emits `notifications/resources/updated` after each drift scan so subscribed clients re-fetch
 
 ### MCP Prompts (PRMT)
 
@@ -77,10 +77,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PREV-06 | Phase 15 | Pending |
 | PREV-07 | Phase 15 | Pending |
 | PREV-08 | Phase 15 | Pending |
-| DRFT-07 | Phase 13 | Pending |
-| DRFT-08 | Phase 13 | Pending |
-| DRFT-09 | Phase 13 | Pending |
-| DRFT-10 | Phase 13 | Pending |
+| DRFT-07 | Phase 13 | Complete |
+| DRFT-08 | Phase 13 | Complete |
+| DRFT-09 | Phase 13 | Complete |
+| DRFT-10 | Phase 13 | Complete |
 | PRMT-01 | Phase 14 | Pending |
 | PRMT-02 | Phase 14 | Pending |
 | PRMT-03 | Phase 14 | Pending |

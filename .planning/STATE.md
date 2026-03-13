@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: planning
-stopped_at: Completed 12-pypi-distribution Plan 03 — Phase 12 fully complete
-last_updated: "2026-03-13T19:57:14.493Z"
+stopped_at: Completed 13-drift-resource Plan 01 — Wave 0 test scaffold
+last_updated: "2026-03-13T20:15:52.110Z"
 last_activity: 2026-03-12 — v1.2 roadmap created, Phase 12 is next
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 5
+  completed_plans: 4
   percent: 0
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 12: PyPI Distribution (v1.2 start)
+**Current focus:** Phase 13: Drift Resource (MCP resource for infrastructure drift)
 
 ## Current Position
 
-Phase: 12 of 16 (PyPI Distribution)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-03-12 — v1.2 roadmap created, Phase 12 is next
+Phase: 13 of 16 (Drift Resource)
+Plan: 02 (next)
+Status: In progress
+Last activity: 2026-03-13 — Phase 13 Plan 01 complete (Wave 0 test scaffold)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 12-pypi-distribution P02 | 15 | 2 tasks | 6 files |
 | Phase 12-pypi-distribution P03 | 8 | 2 tasks | 4 files |
 | Phase 12-pypi-distribution P03 | 45 | 3 tasks | 4 files |
+| Phase 13-drift-resource P01 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,8 @@ Key architectural patterns carried into v1.2:
 - [Phase 12-pypi-distribution]: Patch target for importlib.resources.files must be src.homelab_mcp.service_installer.files due to dual module path in sys.modules when ServiceInstaller imported via src. prefix
 - [Phase 12-pypi-distribution]: _make_files_mock(dict) helper pattern established for multi-template mocking in tests replacing TEMPLATES_DIR patch approach
 - [Phase 12-pypi-distribution]: homelab-mcp 1.2.0 published to PyPI; uvx homelab-mcp --help confirmed working from PyPI index — PKG-03 complete
+- [Phase 13-drift-resource]: Wave 0 tests use local imports inside test function bodies — avoids collection-level ImportError for symbols not yet implemented
+- [Phase 13-drift-resource]: test_drift_resource_notification checks DRIFT_SCAN_TOOLS membership instead of MCP session mocking — simpler and sufficient for verifying DRFT-10 wiring constant
 
 ### Pending Todos
 
@@ -89,6 +92,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T19:48:37.225Z
-Stopped at: Completed 12-pypi-distribution Plan 03 — Phase 12 fully complete
+Last session: 2026-03-13T20:15:52.108Z
+Stopped at: Completed 13-drift-resource Plan 01 — Wave 0 test scaffold
 Resume file: None
