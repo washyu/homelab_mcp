@@ -113,3 +113,24 @@ CREDENTIAL_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+CREDENTIAL_TOOLS["remove_server_preview"] = {
+    "description": (
+        "Preview what remove_server would affect without executing. "
+        "Returns a structured dry-run report. No credentials are removed."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "credential_id": {
+                "type": "integer",
+                "description": "ID of the credential to remove (optional if hostname provided)",
+            },
+            "hostname": {
+                "type": "string",
+                "description": "Hostname to look up (optional if credential_id provided)",
+            },
+        },
+        "required": [],
+    },
+}

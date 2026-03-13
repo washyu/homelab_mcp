@@ -337,3 +337,39 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+PROXMOX_TOOLS["delete_proxmox_vm_preview"] = {
+    "description": (
+        "Preview what delete_proxmox_vm would affect without executing. "
+        "Returns a structured dry-run report. No VM is deleted."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "node": {
+                "type": "string",
+                "description": "Node name",
+            },
+            "vmid": {
+                "type": "integer",
+                "description": "VM/Container ID to delete",
+            },
+            "vm_type": {
+                "type": "string",
+                "description": "Type: 'qemu' for VM or 'lxc' for container",
+                "enum": ["qemu", "lxc"],
+                "default": "qemu",
+            },
+            "purge": {
+                "type": "boolean",
+                "description": "Remove from all related configurations",
+                "default": False,
+            },
+            "host": {
+                "type": "string",
+                "description": "Proxmox host (optional)",
+            },
+        },
+        "required": ["node", "vmid"],
+    },
+}

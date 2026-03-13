@@ -271,3 +271,78 @@ INFRASTRUCTURE_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+INFRASTRUCTURE_TOOLS["decommission_device_preview"] = {
+    "description": (
+        "Preview what decommission_device would affect without executing. "
+        "Returns a structured dry-run report. No infrastructure is modified."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "device_id": {
+                "type": "integer",
+                "description": "Database ID of the device to decommission",
+            },
+            "migration_plan": {
+                "type": "object",
+                "description": "Plan for migrating services to other devices",
+                "properties": {
+                    "target_devices": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Device IDs to migrate services to",
+                    },
+                    "service_mapping": {
+                        "type": "object",
+                        "description": "Mapping of services to target devices",
+                    },
+                },
+            },
+            "force_removal": {
+                "type": "boolean",
+                "default": False,
+                "description": "Force removal without migration (data loss possible)",
+            },
+            "validate_only": {
+                "type": "boolean",
+                "default": False,
+                "description": "Only validate decommission plan without executing",
+            },
+        },
+        "required": ["device_id"],
+    },
+}
+
+INFRASTRUCTURE_TOOLS["rollback_infrastructure_changes_preview"] = {
+    "description": (
+        "Preview what rollback_infrastructure_changes would affect without executing. "
+        "Returns a structured dry-run report. No infrastructure is modified."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "backup_id": {
+                "type": "string",
+                "description": "Backup ID to rollback to",
+            },
+            "rollback_scope": {
+                "type": "string",
+                "enum": ["full", "partial", "device_specific"],
+                "default": "full",
+                "description": "Scope of the rollback",
+            },
+            "device_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": "Specific device IDs to rollback (for partial/device_specific)",
+            },
+            "validate_only": {
+                "type": "boolean",
+                "default": False,
+                "description": "Only validate rollback plan without executing",
+            },
+        },
+        "required": ["backup_id"],
+    },
+}

@@ -296,3 +296,38 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+SERVICE_TOOLS["destroy_terraform_service_preview"] = {
+    "description": (
+        "Preview what destroy_terraform_service would affect without executing. "
+        "Returns a structured dry-run report. No resources are destroyed."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "service_name": {
+                "type": "string",
+                "description": "Name of the service to destroy",
+            },
+            "hostname": {
+                "type": "string",
+                "description": "Hostname or IP address of the device",
+            },
+            "username": {
+                "type": "string",
+                "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                "default": "mcp_admin",
+            },
+            "password": {
+                "type": "string",
+                "description": "SSH password (not needed for mcp_admin after setup)",
+            },
+            "port": {
+                "type": "integer",
+                "description": "SSH port (default: 22)",
+                "default": 22,
+            },
+        },
+        "required": ["service_name", "hostname"],
+    },
+}

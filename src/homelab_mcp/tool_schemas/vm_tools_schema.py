@@ -180,3 +180,34 @@ VM_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+VM_TOOLS["remove_vm_preview"] = {
+    "description": (
+        "Preview what remove_vm would affect without executing. "
+        "Returns a structured dry-run report. No infrastructure is modified."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "device_id": {
+                "type": "integer",
+                "description": "Database ID of the target device",
+            },
+            "platform": {
+                "type": "string",
+                "enum": ["docker", "lxd"],
+                "description": "VM platform",
+            },
+            "vm_name": {
+                "type": "string",
+                "description": "Name of the VM/container",
+            },
+            "force": {
+                "type": "boolean",
+                "default": False,
+                "description": "Force removal without graceful shutdown",
+            },
+        },
+        "required": ["device_id", "platform", "vm_name"],
+    },
+}
