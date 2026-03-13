@@ -43,7 +43,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] **Phase 13: Drift Resource** - Expose `homelab://drift/latest` as a live MCP Resource with `notifications/resources/updated` after each scan (completed 2026-03-13)
 - [x] **Phase 14: MCP Prompts** - Implement `prompts/list` and `prompts/get` with three homelab workflow prompt templates (completed 2026-03-13)
 - [x] **Phase 15: Preview Tool Split** - Add 6 `*_preview` tool variants with `readOnlyHint: true` so MCP clients skip confirmation dialogs (completed 2026-03-13)
-- [ ] **Phase 16: Quality Gate** - Pass all pre-commit checks (ruff, mypy, bandit) cleanly across the full v1.2 change surface
+- [x] **Phase 16: Quality Gate** - Pass all pre-commit checks (ruff, mypy, bandit) cleanly across the full v1.2 change surface (completed 2026-03-13)
 
 ## Phase Details
 
@@ -140,4 +140,4 @@ Plans:
 | 13. Drift Resource | 2/2 | Complete    | 2026-03-13 | - |
 | 14. MCP Prompts | 2/2 | Complete    | 2026-03-13 | - |
 | 15. Preview Tool Split | 2/2 | Complete    | 2026-03-13 | - |
-| 16. Quality Gate | v1.2 | 0/1 | Not started | - |
+| 16. Quality Gate | 1/1 | Complete   | 2026-03-13 | - |

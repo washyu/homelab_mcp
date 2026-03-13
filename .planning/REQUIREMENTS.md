@@ -40,7 +40,7 @@ Requirements for v1.2 Protocol Completeness milestone. Each maps to roadmap phas
 
 ### Quality (QA)
 
-- [ ] **QA-01**: All pre-commit checks (ruff, mypy, bandit) pass cleanly across all v1.2 changes
+- [x] **QA-01**: All pre-commit checks (ruff, mypy, bandit) pass cleanly across all v1.2 changes
 
 ## Future Requirements
 
@@ -85,7 +85,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRMT-02 | Phase 14 | Complete |
 | PRMT-03 | Phase 14 | Complete |
 | PRMT-04 | Phase 14 | Complete |
-| QA-01 | Phase 16 | Pending |
+| QA-01 | Phase 16 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 20 total

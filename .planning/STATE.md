@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: executing
-stopped_at: Completed 15-preview-tool-split Plan 02 — all 6 preview tools implemented, 56 tools total
-last_updated: "2026-03-13T21:48:28.149Z"
+stopped_at: Completed 16-quality-gate Plan 01 — all three quality gates (ruff, mypy, bandit) passing cleanly
+last_updated: "2026-03-13T22:06:11.025Z"
 last_activity: 2026-03-13 — Phase 13 Plan 01 complete (Wave 0 test scaffold)
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  completed_phases: 5
+  total_plans: 10
+  completed_plans: 10
   percent: 80
 ---
 
@@ -60,6 +60,7 @@ Progress: [████████░░] 80%
 | Phase 14-mcp-prompts P02 | 4 | 2 tasks | 3 files |
 | Phase 15-preview-tool-split P01 | 2 | 2 tasks | 2 files |
 | Phase 15-preview-tool-split P02 | 4 | 2 tasks | 12 files |
+| Phase 16-quality-gate P01 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Key architectural patterns carried into v1.2:
 - [Phase 15-preview-tool-split]: test_preview_tool_schema_has_no_dry_run_param uses pytest.skip() rather than ERROR when schema not present — keeps test RED not ERROR
 - [Phase 15-preview-tool-split]: Preview handlers inject dry_run=True transparently — callers never set it and schemas never expose it
 - [Phase 15-preview-tool-split]: Delegation pattern keeps preview handler logic to 3 lines; all dry-run logic lives in the parent handler
+- [Phase 16-quality-gate]: Use list syntax ["psycopg2", "psycopg2.*"] in mypy override — single string does not suppress submodule imports
+- [Phase 16-quality-gate]: nosec annotations are inline with specific B-code and justification comment — not bare nosec, not on the line above
+- [Phase 16-quality-gate]: Do NOT install types-psycopg2 stubs — psycopg2 is optional soft-dependency; false coverage risk
 
 ### Pending Todos
 
@@ -107,6 +111,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T21:45:24.737Z
-Stopped at: Completed 15-preview-tool-split Plan 02 — all 6 preview tools implemented, 56 tools total
+Last session: 2026-03-13T22:06:11.022Z
+Stopped at: Completed 16-quality-gate Plan 01 — all three quality gates (ruff, mypy, bandit) passing cleanly
 Resume file: None
