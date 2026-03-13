@@ -578,7 +578,7 @@ class SQLiteAdapter(DatabaseAdapter):
 
         cursor = self.connection.cursor()
         cursor.execute(
-            f"UPDATE ssh_credentials SET {set_clause} WHERE id = ?",
+            f"UPDATE ssh_credentials SET {set_clause} WHERE id = ?",  # nosec B608 — set_clause built from validated column names, not user input; values are parameterized
             values,
         )
 
@@ -1172,7 +1172,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         cursor = self.connection.cursor()
         cursor.execute(
-            f"UPDATE ssh_credentials SET {set_clause} WHERE id = %s",
+            f"UPDATE ssh_credentials SET {set_clause} WHERE id = %s",  # nosec B608 — set_clause built from validated column names, not user input; values are parameterized
             values,
         )
 

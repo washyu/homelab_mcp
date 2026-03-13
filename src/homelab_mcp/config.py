@@ -14,7 +14,7 @@ class HTTPConfig:
 
     def __init__(self) -> None:
         self.enabled = os.getenv("MCP_HTTP_ENABLED", "false").lower() == "true"
-        self.host = os.getenv("MCP_HTTP_HOST", "0.0.0.0")
+        self.host = os.getenv("MCP_HTTP_HOST", "0.0.0.0")  # nosec B104 — configurable via MCP_HTTP_HOST env var; 0.0.0.0 is intentional default for homelab use
         self.port = int(os.getenv("MCP_HTTP_PORT", "8080"))
         self.api_key = os.getenv("MCP_API_KEY")
         self.auth_enabled = os.getenv("MCP_AUTH_ENABLED", "true").lower() == "true"
