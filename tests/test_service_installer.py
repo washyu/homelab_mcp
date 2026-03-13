@@ -1,75 +1,262 @@
-"""Tests for the service installer module."""
+"""Tests for the service installer module.
+
+Wave 0 update (Phase 12, Plan 01):
+- TEMPLATES_DIR module-level patch removed (PKG-03: constant will be gone after Plan 03)
+- New patch target: homelab_mcp.service_installer.files (importlib.resources.files)
+- All template-loading tests now use a MagicMock Traversable via the new patch target
+- Added test_templates_loaded_from_package for VALIDATION.md PKG-03 contract
+"""
+
+from __future__ import annotations
 
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from src.homelab_mcp.service_installer import ServiceInstaller
+
+# ---------------------------------------------------------------------------
+# Shared helper: build a fake importlib.resources Traversable for a template
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_traversable(template_dict: dict[str, Any], filename: str = "test-service.yaml") -> MagicMock:
+    """Return a MagicMock that behaves like an importlib.resources Traversable directory.
+
+    The returned mock mimics the object returned by:
+        importlib.resources.files("homelab_mcp").joinpath("service_templates")
+
+    It has:
+        - .iterdir() -> [fake_file]
+        - fake_file.is_file() -> True
+        - fake_file.name -> filename
+        - fake_file.read_text() -> yaml.dump(template_dict)
+    """
+    fake_file = MagicMock()
+    fake_file.is_file.return_value = True
+    fake_file.name = filename
+    fake_file.read_text.return_value = yaml.dump(template_dict)
+
+    fake_traversable = MagicMock()
+    fake_traversable.iterdir.return_value = iter([fake_file])
+
+    return fake_traversable
+
+
+def _make_fake_files_fn(traversable: MagicMock) -> MagicMock:
+    """Return a mock for importlib.resources.files() that yields the given traversable.
+
+    When called as: files("homelab_mcp").joinpath("service_templates")
+    it returns the traversable mock.
+    """
+    fake_pkg = MagicMock()
+    fake_pkg.joinpath.return_value = traversable
+    fake_files_fn = MagicMock(return_value=fake_pkg)
+    return fake_files_fn
+
+
+# ---------------------------------------------------------------------------
+# Sample template definitions
+# ---------------------------------------------------------------------------
+
+SAMPLE_TEMPLATE: dict[str, Any] = {
+    "name": "test-service",
+    "description": "Test service for unit tests",
+    "category": "test",
+    "requirements": {"ports": [8080], "memory_gb": 1, "disk_gb": 5},
+    "installation": {
+        "method": "docker-compose",
+        "compose": {
+            "version": "3.8",
+            "services": {"test": {"image": "nginx:latest", "ports": ["8080:80"]}},
+        },
+    },
+}
+
+ANSIBLE_TEMPLATE: dict[str, Any] = {
+    "name": "ansible-service",
+    "description": "Test service using Ansible",
+    "category": "test",
+    "requirements": {"ports": [8080], "memory_gb": 2, "disk_gb": 10},
+    "installation": {
+        "method": "ansible",
+        "ansible": {
+            "pre_tasks": [
+                {
+                    "name": "Install Docker",
+                    "shell": "curl -fsSL https://get.docker.com | sh",
+                }
+            ],
+            "tasks": [
+                {
+                    "name": "Deploy service",
+                    "docker_container": {
+                        "name": "test-container",
+                        "image": "nginx:latest",
+                        "state": "started",
+                        "ports": ["8080:80"],
+                    },
+                }
+            ],
+            "post_tasks": [
+                {
+                    "name": "Verify service",
+                    "uri": {"url": "http://localhost:8080", "method": "GET"},
+                }
+            ],
+            "handlers": [
+                {
+                    "name": "restart service",
+                    "docker_container": {
+                        "name": "test-container",
+                        "state": "restarted",
+                    },
+                }
+            ],
+        },
+    },
+}
+
+SCRIPT_TEMPLATE: dict[str, Any] = {
+    "name": "script-service",
+    "description": "Test service using custom script",
+    "category": "test",
+    "requirements": {"ports": [3000], "memory_gb": 1, "disk_gb": 5},
+    "installation": {
+        "method": "script",
+        "script": {
+            "pre_install": [
+                "sudo apt-get update",
+                "sudo apt-get install -y curl",
+            ],
+            "install": [
+                "curl -fsSL https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.xz -o node.tar.xz",
+                "tar -xf node.tar.xz",
+                "sudo mv node-v18.17.0-linux-x64 /opt/nodejs",
+                "sudo ln -sf /opt/nodejs/bin/node /usr/local/bin/node",
+                "sudo ln -sf /opt/nodejs/bin/npm /usr/local/bin/npm",
+            ],
+            "post_install": ["node --version", "npm --version"],
+            "service_start": ["cd /opt/app", "npm start"],
+        },
+    },
+}
+
+VARIABLE_TEMPLATE: dict[str, Any] = {
+    "name": "variable-service",
+    "description": "Service with {{ service_description }}",
+    "category": "test",
+    "requirements": {
+        "ports": ["{{ service_port }}"],
+        "memory_gb": "{{ memory_size }}",
+        "disk_gb": 10,
+    },
+    "installation": {
+        "method": "docker-compose",
+        "compose": {
+            "version": "3.8",
+            "services": {
+                "{{ service_name }}": {
+                    "image": "{{ docker_image }}",
+                    "ports": ["{{ service_port }}:80"],
+                    "environment": {"ENV_VAR": "{{ env_value }}"},
+                }
+            },
+        },
+    },
+}
+
+ISO_TEMPLATE: dict[str, Any] = {
+    "name": "truenas-iso",
+    "description": "TrueNAS installation via ISO",
+    "category": "storage",
+    "requirements": {"memory_gb": 8, "disk_gb": 20, "cpu_cores": 2},
+    "installation": {
+        "method": "iso_installation",
+        "iso": {
+            "download_url": "https://download.truenas.com/TrueNAS-SCALE-22.12.0.iso",
+            "checksum": "sha256:abc123...",
+            "boot_options": {"console": "ttyS0", "quiet": True},
+            "installation_guide": "Manual installation required. Boot from ISO and follow setup wizard.",
+            "post_install_notes": "Access web interface at https://<ip>:443 after installation.",
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# PKG-03: Wave 0 contract test — template loading via importlib.resources
+# ---------------------------------------------------------------------------
+
+
+def test_templates_loaded_from_package() -> None:
+    """PKG-03: ServiceInstaller loads templates via importlib.resources.files, not TEMPLATES_DIR.
+
+    After Plan 03:
+    - TEMPLATES_DIR module constant is removed from service_installer.py
+    - _load_service_templates() uses importlib.resources.files("homelab_mcp").joinpath("service_templates")
+    - This test verifies the mock plumbing works correctly for all other tests in this file.
+
+    Wave 0: RED until Plan 03 lands.
+    """
+    traversable = _make_fake_traversable(SAMPLE_TEMPLATE, filename="test-service.yaml")
+    fake_files_fn = _make_fake_files_fn(traversable)
+
+    # Patch target: importlib.resources.files as imported in service_installer module
+    with patch("homelab_mcp.service_installer.files", fake_files_fn):
+        installer = ServiceInstaller()
+
+    assert len(installer.templates) == 1, f"Expected 1 template, got {len(installer.templates)}"
+    assert "test-service" in installer.templates, (
+        f"Expected 'test-service' in templates, got keys: {list(installer.templates.keys())}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestServiceInstaller — core tests using importlib.resources mock
+# ---------------------------------------------------------------------------
 
 
 class TestServiceInstaller:
     """Test ServiceInstaller class."""
 
-    def setup_method(self):
-        """Set up test method."""
-        # Create a temporary directory for templates
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
+    def setup_method(self) -> None:
+        """Set up test method using importlib.resources.files mock."""
+        self.sample_template = SAMPLE_TEMPLATE.copy()
 
-        # Create a sample service template
-        self.sample_template = {
-            "name": "test-service",
-            "description": "Test service for unit tests",
-            "category": "test",
-            "requirements": {"ports": [8080], "memory_gb": 1, "disk_gb": 5},
-            "installation": {
-                "method": "docker-compose",
-                "compose": {
-                    "version": "3.8",
-                    "services": {"test": {"image": "nginx:latest", "ports": ["8080:80"]}},
-                },
-            },
-        }
+        traversable = _make_fake_traversable(self.sample_template, filename="test-service.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-        template_file = self.template_dir / "test-service.yaml"
-        with open(template_file, "w") as f:
-            import yaml
-
-            yaml.dump(self.sample_template, f)
-
-        # Patch the templates directory
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Tear down test method."""
         self.patcher.stop()
-        import shutil
 
-        shutil.rmtree(self.temp_dir)
-
-    def test_load_service_templates(self):
-        """Test loading service templates from directory."""
+    def test_load_service_templates(self) -> None:
+        """Test loading service templates from package resources."""
         templates = self.installer.templates
 
         assert "test-service" in templates
         assert templates["test-service"]["name"] == "test-service"
         assert templates["test-service"]["category"] == "test"
 
-    def test_get_available_services(self):
+    def test_get_available_services(self) -> None:
         """Test getting list of available services."""
         services = self.installer.get_available_services()
 
         assert isinstance(services, list)
         assert "test-service" in services
 
-    def test_get_service_info(self):
+    def test_get_service_info(self) -> None:
         """Test getting service information."""
         info = self.installer.get_service_info("test-service")
 
@@ -79,16 +266,15 @@ class TestServiceInstaller:
         assert "requirements" in info
         assert "installation" in info
 
-    def test_get_service_info_nonexistent(self):
+    def test_get_service_info_nonexistent(self) -> None:
         """Test getting info for nonexistent service."""
         info = self.installer.get_service_info("nonexistent-service")
 
         assert info is None
 
     @pytest.mark.asyncio
-    async def test_check_service_requirements_success(self):
+    async def test_check_service_requirements_success(self) -> None:
         """Test checking service requirements when all are met."""
-        # Mock SSH execution for requirement checks
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
             # Mock port check (port available)
             mock_ssh.return_value = json.dumps(
@@ -100,8 +286,8 @@ class TestServiceInstaller:
             )
 
             # Mock memory check
-            def memory_check(*args, **kwargs):
-                if "free -m" in kwargs.get("command", ""):
+            def memory_check(*args: object, **kwargs: object) -> str:
+                if "free -m" in kwargs.get("command", ""):  # type: ignore[operator]
                     return json.dumps(
                         {
                             "status": "success",
@@ -123,13 +309,13 @@ class TestServiceInstaller:
             assert "checks" in result
 
     @pytest.mark.asyncio
-    async def test_check_service_requirements_port_conflict(self):
+    async def test_check_service_requirements_port_conflict(self) -> None:
         """Test checking requirements when port is in use."""
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
-            # Handle different commands appropriately
-            def command_handler(*args, **kwargs):
+
+            def command_handler(*args: object, **kwargs: object) -> str:
                 command = kwargs.get("command", "")
-                if "ss -tlnp" in command:  # Port check
+                if "ss -tlnp" in command:  # type: ignore[operator]
                     return json.dumps(
                         {
                             "status": "success",
@@ -137,7 +323,7 @@ class TestServiceInstaller:
                             "output": "tcp 0.0.0.0:8080 LISTEN",
                         }
                     )
-                elif "free -m" in command:  # Memory check
+                elif "free -m" in command:  # type: ignore[operator]
                     return json.dumps(
                         {
                             "status": "success",
@@ -145,7 +331,7 @@ class TestServiceInstaller:
                             "output": "Output:\n2048",  # 2GB available
                         }
                     )
-                elif "df /" in command:  # Disk check
+                elif "df /" in command:  # type: ignore[operator]
                     return json.dumps(
                         {
                             "status": "success",
@@ -167,7 +353,7 @@ class TestServiceInstaller:
             assert result["checks"]["port_8080"]["status"] == "fail"
 
     @pytest.mark.asyncio
-    async def test_check_service_requirements_unknown_service(self):
+    async def test_check_service_requirements_unknown_service(self) -> None:
         """Test checking requirements for unknown service."""
         result = await self.installer.check_service_requirements(
             "unknown-service", "test-host", "test-user", "test-pass"
@@ -177,13 +363,11 @@ class TestServiceInstaller:
         assert "Unknown service" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_install_service_docker_compose(self):
+    async def test_install_service_docker_compose(self) -> None:
         """Test installing service with Docker Compose method."""
-        # Mock successful requirement check
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True, "checks": {}}
 
-            # Mock Docker Compose installation
             with patch.object(self.installer, "_install_docker_compose_service") as mock_install:
                 mock_install.return_value = {
                     "status": "success",
@@ -197,11 +381,10 @@ class TestServiceInstaller:
                 assert result["service"] == "test-service"
                 assert result["method"] == "docker-compose"
 
-                # Verify requirement check was called
                 mock_check.assert_called_once_with("test-service", "test-host", "test-user", "test-pass")
 
     @pytest.mark.asyncio
-    async def test_install_service_requirements_not_met(self):
+    async def test_install_service_requirements_not_met(self) -> None:
         """Test installing service when requirements are not met."""
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {
@@ -216,7 +399,7 @@ class TestServiceInstaller:
             assert "requirement_check" in result
 
     @pytest.mark.asyncio
-    async def test_install_service_unknown_service(self):
+    async def test_install_service_unknown_service(self) -> None:
         """Test installing unknown service."""
         result = await self.installer.install_service("unknown-service", "test-host", "test-user", "test-pass")
 
@@ -224,12 +407,11 @@ class TestServiceInstaller:
         assert "Unknown service" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_install_docker_compose_service(self):
+    async def test_install_docker_compose_service(self) -> None:
         """Test Docker Compose installation method."""
         service_config = self.sample_template.copy()
 
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
-            # Mock successful command execution
             mock_ssh.return_value = json.dumps({"status": "success", "exit_code": 0, "output": "Success"})
 
             result = await self.installer._install_docker_compose_service(
@@ -242,26 +424,36 @@ class TestServiceInstaller:
             )
 
             assert "status" in result
-            # The actual implementation would have more specific assertions
 
-    def test_load_service_templates_with_invalid_yaml(self):
-        """Test loading templates with invalid YAML files."""
-        # Create invalid YAML file
-        invalid_file = self.template_dir / "invalid.yaml"
-        with open(invalid_file, "w") as f:
-            f.write("invalid: yaml: content: [unclosed")
+    def test_load_service_templates_with_invalid_yaml(self) -> None:
+        """Test loading templates with invalid YAML files — invalid files are skipped."""
+        # Build a traversable with two files: one valid, one invalid
+        valid_file = MagicMock()
+        valid_file.is_file.return_value = True
+        valid_file.name = "test-service.yaml"
+        valid_file.read_text.return_value = yaml.dump(self.sample_template)
 
-        # Reload installer
-        installer = ServiceInstaller()
+        invalid_file = MagicMock()
+        invalid_file.is_file.return_value = True
+        invalid_file.name = "invalid.yaml"
+        invalid_file.read_text.return_value = "invalid: yaml: content: [unclosed"
 
-        # Should load valid templates and skip invalid ones
+        fake_traversable = MagicMock()
+        fake_traversable.iterdir.return_value = iter([valid_file, invalid_file])
+
+        fake_pkg = MagicMock()
+        fake_pkg.joinpath.return_value = fake_traversable
+        fake_files_fn = MagicMock(return_value=fake_pkg)
+
+        with patch("homelab_mcp.service_installer.files", fake_files_fn):
+            installer = ServiceInstaller()
+
         assert "test-service" in installer.templates
         assert "invalid" not in installer.templates
 
-    def test_get_service_info_with_complex_template(self):
+    def test_get_service_info_with_complex_template(self) -> None:
         """Test service info with complex template structure."""
-        # Create more complex template
-        complex_template = {
+        complex_template: dict[str, Any] = {
             "name": "complex-service",
             "description": "Complex service with multiple features",
             "category": "infrastructure",
@@ -281,14 +473,11 @@ class TestServiceInstaller:
             },
         }
 
-        template_file = self.template_dir / "complex-service.yaml"
-        with open(template_file, "w") as f:
-            import yaml
+        traversable = _make_fake_traversable(complex_template, filename="complex-service.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-            yaml.dump(complex_template, f)
-
-        # Reload installer
-        installer = ServiceInstaller()
+        with patch("homelab_mcp.service_installer.files", fake_files_fn):
+            installer = ServiceInstaller()
 
         info = installer.get_service_info("complex-service")
 
@@ -300,47 +489,47 @@ class TestServiceInstaller:
         assert "configuration" in info
 
 
+# ---------------------------------------------------------------------------
+# TestServiceInstallerIntegration
+# ---------------------------------------------------------------------------
+
+
 class TestServiceInstallerIntegration:
     """Integration tests for ServiceInstaller with real YAML files."""
 
     @pytest.mark.asyncio
-    async def test_integration_with_mock_ssh(self):
+    async def test_integration_with_mock_ssh(self) -> None:
         """Test service installer with mocked SSH operations."""
         installer = ServiceInstaller()
 
-        # Skip if no templates available (in case templates directory is empty)
         if not installer.get_available_services():
             pytest.skip("No service templates available")
 
         service_name = installer.get_available_services()[0]
 
         with patch("src.homelab_mcp.service_installer.ssh_execute_command") as mock_ssh:
-            # Mock all SSH commands to return success
             mock_ssh.return_value = json.dumps(
                 {
                     "status": "success",
-                    "exit_code": 1,  # Assume ports are available
-                    "output": "Output:\n8192",  # Assume sufficient resources
+                    "exit_code": 1,
+                    "output": "Output:\n8192",
                 }
             )
 
-            # Check requirements
             result = await installer.check_service_requirements(service_name, "test-host", "test-user", "test-pass")
 
             assert "requirements_met" in result
             assert "checks" in result
 
-    def test_template_validation(self):
+    def test_template_validation(self) -> None:
         """Test that all loaded templates have required fields."""
         installer = ServiceInstaller()
 
         for service_name, template in installer.templates.items():
-            # Every template should have basic required fields
             assert "name" in template or service_name
             assert "installation" in template
             assert "method" in template["installation"]
 
-            # Method should be one of supported types
             supported_methods = [
                 "docker-compose",
                 "terraform",
@@ -350,7 +539,6 @@ class TestServiceInstallerIntegration:
             ]
             assert template["installation"]["method"] in supported_methods
 
-            # If requirements exist, they should be properly structured
             if "requirements" in template:
                 req = template["requirements"]
                 if "ports" in req:
@@ -361,88 +549,36 @@ class TestServiceInstallerIntegration:
                     assert isinstance(req["disk_gb"], int | float)
 
 
+# ---------------------------------------------------------------------------
+# TestServiceInstallerAnsibleMethod
+# ---------------------------------------------------------------------------
+
+
 class TestServiceInstallerAnsibleMethod:
     """Test Ansible installation method."""
 
-    def setup_method(self):
-        """Set up test method."""
-        # Create a temporary directory for templates
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
+    def setup_method(self) -> None:
+        """Set up test method using importlib.resources.files mock."""
+        self.ansible_template = ANSIBLE_TEMPLATE.copy()
 
-        # Create a sample Ansible service template
-        self.ansible_template = {
-            "name": "ansible-service",
-            "description": "Test service using Ansible",
-            "category": "test",
-            "requirements": {"ports": [8080], "memory_gb": 2, "disk_gb": 10},
-            "installation": {
-                "method": "ansible",
-                "ansible": {
-                    "pre_tasks": [
-                        {
-                            "name": "Install Docker",
-                            "shell": "curl -fsSL https://get.docker.com | sh",
-                        }
-                    ],
-                    "tasks": [
-                        {
-                            "name": "Deploy service",
-                            "docker_container": {
-                                "name": "test-container",
-                                "image": "nginx:latest",
-                                "state": "started",
-                                "ports": ["8080:80"],
-                            },
-                        }
-                    ],
-                    "post_tasks": [
-                        {
-                            "name": "Verify service",
-                            "uri": {"url": "http://localhost:8080", "method": "GET"},
-                        }
-                    ],
-                    "handlers": [
-                        {
-                            "name": "restart service",
-                            "docker_container": {
-                                "name": "test-container",
-                                "state": "restarted",
-                            },
-                        }
-                    ],
-                },
-            },
-        }
+        traversable = _make_fake_traversable(self.ansible_template, filename="ansible-service.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-        template_file = self.template_dir / "ansible-service.yaml"
-        with open(template_file, "w") as f:
-            import yaml
-
-            yaml.dump(self.ansible_template, f)
-
-        # Patch the templates directory
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Tear down test method."""
         self.patcher.stop()
-        import shutil
-
-        shutil.rmtree(self.temp_dir)
 
     @pytest.mark.asyncio
-    async def test_install_ansible_service_success(self):
+    async def test_install_ansible_service_success(self) -> None:
         """Test successful Ansible service installation."""
-        # Mock successful requirement check
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True, "checks": {}}
 
-            # Mock Ansible installation
             with patch.object(self.installer, "_install_ansible_service") as mock_install:
                 mock_install.return_value = {
                     "status": "success",
@@ -463,7 +599,7 @@ class TestServiceInstallerAnsibleMethod:
                 assert "playbook_result" in result
 
     @pytest.mark.asyncio
-    async def test_install_ansible_service_with_variables(self):
+    async def test_install_ansible_service_with_variables(self) -> None:
         """Test Ansible service installation with variable substitution."""
         variables = {
             "service_port": 9080,
@@ -484,13 +620,12 @@ class TestServiceInstallerAnsibleMethod:
                     "ansible-service", "test-host", "test-user", "test-pass", variables
                 )
 
-                # Verify variables were passed to ansible installer
                 mock_install.assert_called_once()
                 call_args = mock_install.call_args
-                assert call_args[0][5] == variables  # variables parameter
+                assert call_args[0][5] == variables
 
     @pytest.mark.asyncio
-    async def test_install_ansible_service_playbook_failure(self):
+    async def test_install_ansible_service_playbook_failure(self) -> None:
         """Test Ansible service installation with playbook failure."""
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
@@ -502,7 +637,7 @@ class TestServiceInstallerAnsibleMethod:
                     "failed_task": "Deploy service",
                     "playbook_result": {
                         "pre_tasks": 1,
-                        "tasks": 0,  # Failed here
+                        "tasks": 0,
                         "post_tasks": 0,
                         "handlers": 0,
                     },
@@ -514,7 +649,7 @@ class TestServiceInstallerAnsibleMethod:
                 assert "playbook failed" in result["error"].lower()
                 assert "failed_task" in result
 
-    def test_ansible_template_validation(self):
+    def test_ansible_template_validation(self) -> None:
         """Test Ansible template structure validation."""
         info = self.installer.get_service_info("ansible-service")
 
@@ -527,68 +662,36 @@ class TestServiceInstallerAnsibleMethod:
         assert "post_tasks" in ansible_config
         assert "handlers" in ansible_config
 
-        # Verify task structure
         assert len(ansible_config["tasks"]) > 0
         assert "name" in ansible_config["tasks"][0]
+
+
+# ---------------------------------------------------------------------------
+# TestServiceInstallerScriptMethod
+# ---------------------------------------------------------------------------
 
 
 class TestServiceInstallerScriptMethod:
     """Test script-based installation method."""
 
-    def setup_method(self):
-        """Set up test method."""
-        # Create a temporary directory for templates
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
+    def setup_method(self) -> None:
+        """Set up test method using importlib.resources.files mock."""
+        self.script_template = SCRIPT_TEMPLATE.copy()
 
-        # Create a sample script service template
-        self.script_template = {
-            "name": "script-service",
-            "description": "Test service using custom script",
-            "category": "test",
-            "requirements": {"ports": [3000], "memory_gb": 1, "disk_gb": 5},
-            "installation": {
-                "method": "script",
-                "script": {
-                    "pre_install": [
-                        "sudo apt-get update",
-                        "sudo apt-get install -y curl",
-                    ],
-                    "install": [
-                        "curl -fsSL https://nodejs.org/dist/v18.17.0/node-v18.17.0-linux-x64.tar.xz -o node.tar.xz",
-                        "tar -xf node.tar.xz",
-                        "sudo mv node-v18.17.0-linux-x64 /opt/nodejs",
-                        "sudo ln -sf /opt/nodejs/bin/node /usr/local/bin/node",
-                        "sudo ln -sf /opt/nodejs/bin/npm /usr/local/bin/npm",
-                    ],
-                    "post_install": ["node --version", "npm --version"],
-                    "service_start": ["cd /opt/app", "npm start"],
-                },
-            },
-        }
+        traversable = _make_fake_traversable(self.script_template, filename="script-service.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-        template_file = self.template_dir / "script-service.yaml"
-        with open(template_file, "w") as f:
-            import yaml
-
-            yaml.dump(self.script_template, f)
-
-        # Patch the templates directory
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Tear down test method."""
         self.patcher.stop()
-        import shutil
-
-        shutil.rmtree(self.temp_dir)
 
     @pytest.mark.asyncio
-    async def test_install_script_service_success(self):
+    async def test_install_script_service_success(self) -> None:
         """Test successful script-based service installation."""
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
@@ -612,7 +715,7 @@ class TestServiceInstallerScriptMethod:
                 assert "executed_commands" in result
 
     @pytest.mark.asyncio
-    async def test_install_script_service_command_failure(self):
+    async def test_install_script_service_command_failure(self) -> None:
         """Test script service installation with command failure."""
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
@@ -632,7 +735,7 @@ class TestServiceInstallerScriptMethod:
                 assert "Command failed" in result["error"]
                 assert "failed_command" in result
 
-    def test_script_template_validation(self):
+    def test_script_template_validation(self) -> None:
         """Test script template structure validation."""
         info = self.installer.get_service_info("script-service")
 
@@ -644,69 +747,38 @@ class TestServiceInstallerScriptMethod:
         assert isinstance(script_config["install"], list)
         assert len(script_config["install"]) > 0
 
-        # Optional sections should exist if defined
         if "pre_install" in script_config:
             assert isinstance(script_config["pre_install"], list)
         if "post_install" in script_config:
             assert isinstance(script_config["post_install"], list)
 
 
+# ---------------------------------------------------------------------------
+# TestServiceInstallerVariableSubstitution
+# ---------------------------------------------------------------------------
+
+
 class TestServiceInstallerVariableSubstitution:
     """Test template variable substitution functionality."""
 
-    def setup_method(self):
-        """Set up test method."""
-        # Create a temporary directory for templates
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
+    def setup_method(self) -> None:
+        """Set up test method using importlib.resources.files mock."""
+        self.variable_template = VARIABLE_TEMPLATE.copy()
 
-        # Create a template with variables
-        self.variable_template = {
-            "name": "variable-service",
-            "description": "Service with {{ service_description }}",
-            "category": "test",
-            "requirements": {
-                "ports": ["{{ service_port }}"],
-                "memory_gb": "{{ memory_size }}",
-                "disk_gb": 10,
-            },
-            "installation": {
-                "method": "docker-compose",
-                "compose": {
-                    "version": "3.8",
-                    "services": {
-                        "{{ service_name }}": {
-                            "image": "{{ docker_image }}",
-                            "ports": ["{{ service_port }}:80"],
-                            "environment": {"ENV_VAR": "{{ env_value }}"},
-                        }
-                    },
-                },
-            },
-        }
+        traversable = _make_fake_traversable(self.variable_template, filename="variable-service.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-        template_file = self.template_dir / "variable-service.yaml"
-        with open(template_file, "w") as f:
-            import yaml
-
-            yaml.dump(self.variable_template, f)
-
-        # Patch the templates directory
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Tear down test method."""
         self.patcher.stop()
-        import shutil
-
-        shutil.rmtree(self.temp_dir)
 
     @pytest.mark.asyncio
-    async def test_variable_substitution_in_installation(self):
+    async def test_variable_substitution_in_installation(self) -> None:
         """Test variable substitution during service installation."""
         variables = {
             "service_name": "custom-app",
@@ -727,18 +799,14 @@ class TestServiceInstallerVariableSubstitution:
                     "variable-service", "test-host", "test-user", "test-pass", variables
                 )
 
-                # Verify that template was passed with variables
                 mock_install.assert_called_once()
                 call_args = mock_install.call_args
                 call_args[0][1]  # template parameter
 
-                # Variables should be substituted in the template
-                # This would be verified in the actual implementation
-                assert call_args[0][5] == variables  # variables parameter
+                assert call_args[0][5] == variables
 
-    def test_get_template_with_defaults(self):
+    def test_get_template_with_defaults(self) -> None:
         """Test getting template info with default variable values."""
-        # Add defaults to template
         template_with_defaults = self.variable_template.copy()
         template_with_defaults["defaults"] = {
             "service_port": 3000,
@@ -747,14 +815,11 @@ class TestServiceInstallerVariableSubstitution:
             "service_name": "default-service",
         }
 
-        template_file = self.template_dir / "defaults-service.yaml"
-        with open(template_file, "w") as f:
-            import yaml
+        traversable = _make_fake_traversable(template_with_defaults, filename="defaults-service.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-            yaml.dump(template_with_defaults, f)
-
-        # Reload installer to pick up new template
-        installer = ServiceInstaller()
+        with patch("homelab_mcp.service_installer.files", fake_files_fn):
+            installer = ServiceInstaller()
 
         info = installer.get_service_info("defaults-service")
         assert info is not None
@@ -762,12 +827,10 @@ class TestServiceInstallerVariableSubstitution:
         assert info["defaults"]["service_port"] == 3000
 
     @pytest.mark.asyncio
-    async def test_missing_required_variables(self):
+    async def test_missing_required_variables(self) -> None:
         """Test installation failure when required variables are missing."""
-        # Provide only partial variables
         incomplete_variables = {
             "service_name": "test-app",
-            # Missing other required variables
         }
 
         with patch.object(self.installer, "check_service_requirements") as mock_check:
@@ -781,43 +844,38 @@ class TestServiceInstallerVariableSubstitution:
                 incomplete_variables,
             )
 
-            # Should return error about missing variables
-            # This would be implemented in the actual service installer
-            # For now, we test the basic structure is maintained
             assert "service" in result or "status" in result
+
+
+# ---------------------------------------------------------------------------
+# TestInstallScriptServiceDirect
+# ---------------------------------------------------------------------------
 
 
 class TestInstallScriptServiceDirect:
     """Tests for the _install_script_service method implementation."""
 
     def setup_method(self) -> None:
-        """Set up test method."""
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
-
-        # Create a minimal template so ServiceInstaller can init
-        import yaml
-
-        minimal = {
+        """Set up test method using importlib.resources.files mock."""
+        minimal: dict[str, Any] = {
             "name": "dummy",
             "description": "dummy",
             "category": "test",
             "requirements": {"ports": [], "memory_gb": 1, "disk_gb": 1},
             "installation": {"method": "script"},
         }
-        with open(self.template_dir / "dummy.yaml", "w") as f:
-            yaml.dump(minimal, f)
 
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        traversable = _make_fake_traversable(minimal, filename="dummy.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
+
+        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
+
         self.installer = ServiceInstaller()
 
     def teardown_method(self) -> None:
+        """Tear down test method."""
         self.patcher.stop()
-        import shutil
-
-        shutil.rmtree(self.temp_dir)
 
     @pytest.mark.asyncio
     async def test_install_script_success(self) -> None:
@@ -838,7 +896,6 @@ class TestInstallScriptServiceDirect:
             assert result["status"] == "success"
             assert result["service"] == "test-svc"
             mock_ssh.assert_called_once()
-            # Verify the script content was included in the command
             call_kwargs = mock_ssh.call_args
             assert "echo hello" in call_kwargs.kwargs.get("command", call_kwargs[1].get("command", ""))
 
@@ -879,7 +936,6 @@ class TestInstallScriptServiceDirect:
             assert result["status"] == "success"
             call_kwargs = mock_ssh.call_args
             command = call_kwargs.kwargs.get("command", call_kwargs[1].get("command", ""))
-            # Env vars should be exported before the script
             assert "export DB_HOST=" in command
             assert "export DB_PORT=" in command
 
@@ -903,55 +959,32 @@ class TestInstallScriptServiceDirect:
             assert result["service"] == "fail-svc"
 
 
+# ---------------------------------------------------------------------------
+# TestServiceInstallerISOMethod
+# ---------------------------------------------------------------------------
+
+
 class TestServiceInstallerISOMethod:
     """Test ISO installation method."""
 
-    def setup_method(self):
-        """Set up test method."""
-        # Create a temporary directory for templates
-        self.temp_dir = tempfile.mkdtemp()
-        self.template_dir = Path(self.temp_dir) / "service_templates"
-        self.template_dir.mkdir()
+    def setup_method(self) -> None:
+        """Set up test method using importlib.resources.files mock."""
+        self.iso_template = ISO_TEMPLATE.copy()
 
-        # Create a sample ISO service template
-        self.iso_template = {
-            "name": "truenas-iso",
-            "description": "TrueNAS installation via ISO",
-            "category": "storage",
-            "requirements": {"memory_gb": 8, "disk_gb": 20, "cpu_cores": 2},
-            "installation": {
-                "method": "iso_installation",
-                "iso": {
-                    "download_url": "https://download.truenas.com/TrueNAS-SCALE-22.12.0.iso",
-                    "checksum": "sha256:abc123...",
-                    "boot_options": {"console": "ttyS0", "quiet": True},
-                    "installation_guide": "Manual installation required. Boot from ISO and follow setup wizard.",
-                    "post_install_notes": "Access web interface at https://<ip>:443 after installation.",
-                },
-            },
-        }
+        traversable = _make_fake_traversable(self.iso_template, filename="truenas-iso.yaml")
+        fake_files_fn = _make_fake_files_fn(traversable)
 
-        template_file = self.template_dir / "truenas-iso.yaml"
-        with open(template_file, "w") as f:
-            import yaml
-
-            yaml.dump(self.iso_template, f)
-
-        # Patch the templates directory
-        self.patcher = patch("src.homelab_mcp.service_installer.TEMPLATES_DIR", self.template_dir)
+        self.patcher = patch("homelab_mcp.service_installer.files", fake_files_fn)
         self.patcher.start()
 
         self.installer = ServiceInstaller()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Tear down test method."""
         self.patcher.stop()
-        import shutil
-
-        shutil.rmtree(self.temp_dir)
 
     @pytest.mark.asyncio
-    async def test_install_iso_service_guidance(self):
+    async def test_install_iso_service_guidance(self) -> None:
         """Test ISO service installation provides proper guidance."""
         with patch.object(self.installer, "check_service_requirements") as mock_check:
             mock_check.return_value = {"requirements_met": True}
@@ -980,7 +1013,7 @@ class TestServiceInstallerISOMethod:
                 assert "installation_guide" in result
                 assert "next_steps" in result
 
-    def test_iso_template_validation(self):
+    def test_iso_template_validation(self) -> None:
         """Test ISO template structure validation."""
         info = self.installer.get_service_info("truenas-iso")
 
@@ -991,6 +1024,30 @@ class TestServiceInstallerISOMethod:
         assert "download_url" in iso_config
         assert "installation_guide" in iso_config
 
-        # Verify URL format
         assert iso_config["download_url"].startswith("http")
         assert iso_config["download_url"].endswith(".iso")
+
+
+# ---------------------------------------------------------------------------
+# Compatibility: keep old tempfile-based classes for tests that don't
+# depend on template loading (they patch at the method level, not module level)
+# ---------------------------------------------------------------------------
+
+
+class _TempDirBase:
+    """Mixin providing a real temp directory for tests that create template files on disk.
+
+    Used only by tests that need real filesystem access for other reasons
+    (e.g. testing the actual template parsing from disk vs. from package resources).
+    This is kept for reference but the canonical mock approach is the files() patch above.
+    """
+
+    def setup_method(self) -> None:
+        self.temp_dir = tempfile.mkdtemp()
+        self.template_dir = Path(self.temp_dir) / "service_templates"
+        self.template_dir.mkdir()
+
+    def teardown_method(self) -> None:
+        import shutil
+
+        shutil.rmtree(self.temp_dir)
