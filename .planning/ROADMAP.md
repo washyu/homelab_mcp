@@ -116,7 +116,10 @@ Plans:
   1. `uv run ruff check src/ tests/` exits 0 with no warnings or errors across all v1.2 changes
   2. `uv run mypy src/` exits 0 — all new functions, handlers, and modules have complete type annotations with no `Any` escapes
   3. `uv run bandit -r src/` exits 0 — no new medium or high severity security findings introduced
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 16-01-PLAN.md — mypy psycopg2 override + 9 bandit nosec annotations (config.py, database.py, infrastructure_crud.py)
 
 ## Progress
 
@@ -137,4 +140,4 @@ Plans:
 | 13. Drift Resource | 2/2 | Complete    | 2026-03-13 | - |
 | 14. MCP Prompts | 2/2 | Complete    | 2026-03-13 | - |
 | 15. Preview Tool Split | 2/2 | Complete    | 2026-03-13 | - |
-| 16. Quality Gate | v1.2 | 0/TBD | Not started | - |
+| 16. Quality Gate | v1.2 | 0/1 | Not started | - |
