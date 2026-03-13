@@ -66,32 +66,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PKG-01 | — | Pending |
-| PKG-02 | — | Pending |
-| PKG-03 | — | Pending |
-| PREV-01 | — | Pending |
-| PREV-02 | — | Pending |
-| PREV-03 | — | Pending |
-| PREV-04 | — | Pending |
-| PREV-05 | — | Pending |
-| PREV-06 | — | Pending |
-| PREV-07 | — | Pending |
-| PREV-08 | — | Pending |
-| DRFT-07 | — | Pending |
-| DRFT-08 | — | Pending |
-| DRFT-09 | — | Pending |
-| DRFT-10 | — | Pending |
-| PRMT-01 | — | Pending |
-| PRMT-02 | — | Pending |
-| PRMT-03 | — | Pending |
-| PRMT-04 | — | Pending |
-| QA-01 | — | Pending |
+| PKG-01 | Phase 12 | Pending |
+| PKG-02 | Phase 12 | Pending |
+| PKG-03 | Phase 12 | Pending |
+| PREV-01 | Phase 15 | Pending |
+| PREV-02 | Phase 15 | Pending |
+| PREV-03 | Phase 15 | Pending |
+| PREV-04 | Phase 15 | Pending |
+| PREV-05 | Phase 15 | Pending |
+| PREV-06 | Phase 15 | Pending |
+| PREV-07 | Phase 15 | Pending |
+| PREV-08 | Phase 15 | Pending |
+| DRFT-07 | Phase 13 | Pending |
+| DRFT-08 | Phase 13 | Pending |
+| DRFT-09 | Phase 13 | Pending |
+| DRFT-10 | Phase 13 | Pending |
+| PRMT-01 | Phase 14 | Pending |
+| PRMT-02 | Phase 14 | Pending |
+| PRMT-03 | Phase 14 | Pending |
+| PRMT-04 | Phase 14 | Pending |
+| QA-01 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️
+- Mapped to phases: 20
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 after initial definition*
+*Last updated: 2026-03-12 after roadmap creation*
