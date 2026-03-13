@@ -33,10 +33,10 @@ Requirements for v1.2 Protocol Completeness milestone. Each maps to roadmap phas
 
 ### MCP Prompts (PRMT)
 
-- [ ] **PRMT-01**: Server declares `prompts` capability in `initialize` and responds to `prompts/list` and `prompts/get`
-- [ ] **PRMT-02**: `decommission_device_workflow` prompt guides the AI to call `decommission_device_preview` first, confirm with the user, then execute
-- [ ] **PRMT-03**: `deploy_service_workflow` prompt guides the AI through pre-flight checks before service installation
-- [ ] **PRMT-04**: `homelab_health_check` prompt guides the AI to read `homelab://vms`, `homelab://devices`, and `homelab://drift/latest` and summarize infra state
+- [x] **PRMT-01**: Server declares `prompts` capability in `initialize` and responds to `prompts/list` and `prompts/get`
+- [x] **PRMT-02**: `decommission_device_workflow` prompt guides the AI to call `decommission_device_preview` first, confirm with the user, then execute
+- [x] **PRMT-03**: `deploy_service_workflow` prompt guides the AI through pre-flight checks before service installation
+- [x] **PRMT-04**: `homelab_health_check` prompt guides the AI to read `homelab://vms`, `homelab://devices`, and `homelab://drift/latest` and summarize infra state
 
 ### Quality (QA)
 
@@ -81,10 +81,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DRFT-08 | Phase 13 | Complete |
 | DRFT-09 | Phase 13 | Complete |
 | DRFT-10 | Phase 13 | Complete |
-| PRMT-01 | Phase 14 | Pending |
-| PRMT-02 | Phase 14 | Pending |
-| PRMT-03 | Phase 14 | Pending |
-| PRMT-04 | Phase 14 | Pending |
+| PRMT-01 | Phase 14 | Complete |
+| PRMT-02 | Phase 14 | Complete |
+| PRMT-03 | Phase 14 | Complete |
+| PRMT-04 | Phase 14 | Complete |
 | QA-01 | Phase 16 | Pending |
 
 **Coverage:**

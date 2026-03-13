@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: executing
-stopped_at: Completed 13-drift-resource Plan 02 — drift resource implementation
-last_updated: "2026-03-13T20:23:35.495Z"
+stopped_at: Completed 14-mcp-prompts Plan 01 — Wave 0 test scaffold for MCP prompts
+last_updated: "2026-03-13T20:51:26.884Z"
 last_activity: 2026-03-13 — Phase 13 Plan 01 complete (Wave 0 test scaffold)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
   percent: 80
 ---
 
@@ -56,6 +56,7 @@ Progress: [████████░░] 80%
 | Phase 12-pypi-distribution P03 | 45 | 3 tasks | 4 files |
 | Phase 13-drift-resource P01 | 2 | 1 tasks | 1 files |
 | Phase 13-drift-resource P02 | 132 | 2 tasks | 3 files |
+| Phase 14-mcp-prompts P01 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Key architectural patterns carried into v1.2:
 - [Phase 13-drift-resource]: test_drift_resource_notification checks DRIFT_SCAN_TOOLS membership instead of MCP session mocking — simpler and sufficient for verifying DRFT-10 wiring constant
 - [Phase 13-drift-resource]: set_latest_drift_report accepts None to support test teardown — widens signature from dict to dict|None
 - [Phase 13-drift-resource]: server.py and resource_readers.py committed together because mypy pre-commit hook requires both when server.py imports read_drift_resource
+- [Phase 14-mcp-prompts]: Wave 0 tests use local imports inside test function bodies — avoids collection-level ImportError for prompt_registry.py not yet implemented
+- [Phase 14-mcp-prompts]: Plain def (non-async) test functions throughout — get_prompt_result is synchronous
 
 ### Pending Todos
 
@@ -95,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T20:20:12.001Z
-Stopped at: Completed 13-drift-resource Plan 02 — drift resource implementation
+Last session: 2026-03-13T20:51:26.882Z
+Stopped at: Completed 14-mcp-prompts Plan 01 — Wave 0 test scaffold for MCP prompts
 Resume file: None
