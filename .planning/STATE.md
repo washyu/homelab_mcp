@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Protocol Completeness
 status: planning
-stopped_at: Phase 12 context gathered
-last_updated: "2026-03-13T18:30:43.909Z"
+stopped_at: Completed 12-pypi-distribution 12-01-PLAN.md
+last_updated: "2026-03-13T18:51:42.123Z"
 last_activity: 2026-03-12 — v1.2 roadmap created, Phase 12 is next
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 12-pypi-distribution P01 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,8 @@ Key architectural patterns carried into v1.2:
 - `MUTATING_TOOLS: frozenset[str]` for O(1) membership check before notification dispatch
 - New modules stay thin — business logic in dedicated modules, `server.py` is registration hub only
 - `INSERT OR REPLACE` + UNIQUE constraint for SQLite upsert (established in drift_baselines, extend for drift_latest_report)
+- [Phase 12-pypi-distribution]: Wave 0 tests are intentionally RED at commit time -- correctness verified by pytest --collect-only
+- [Phase 12-pypi-distribution]: PKG-03 patch target: homelab_mcp.service_installer.files (importlib.resources.files as imported), replacing src.homelab_mcp.service_installer.TEMPLATES_DIR
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T18:30:43.907Z
-Stopped at: Phase 12 context gathered
-Resume file: .planning/phases/12-pypi-distribution/12-CONTEXT.md
+Last session: 2026-03-13T18:51:42.121Z
+Stopped at: Completed 12-pypi-distribution 12-01-PLAN.md
+Resume file: None

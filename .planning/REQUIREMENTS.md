@@ -9,9 +9,9 @@ Requirements for v1.2 Protocol Completeness milestone. Each maps to roadmap phas
 
 ### PyPI Distribution (PKG)
 
-- [ ] **PKG-01**: User can install the server with `uvx homelab-mcp` and run it without cloning the repo
-- [ ] **PKG-02**: Version is reported consistently — `pyproject.toml`, `__init__.py`, and server version string all agree via `importlib.metadata`
-- [ ] **PKG-03**: `service_templates/*.yaml` files are included in the wheel and loaded via `importlib.resources` (not `__file__`-relative paths)
+- [x] **PKG-01**: User can install the server with `uvx homelab-mcp` and run it without cloning the repo
+- [x] **PKG-02**: Version is reported consistently — `pyproject.toml`, `__init__.py`, and server version string all agree via `importlib.metadata`
+- [x] **PKG-03**: `service_templates/*.yaml` files are included in the wheel and loaded via `importlib.resources` (not `__file__`-relative paths)
 
 ### Preview Tools (PREV)
 
@@ -66,9 +66,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PKG-01 | Phase 12 | Pending |
-| PKG-02 | Phase 12 | Pending |
-| PKG-03 | Phase 12 | Pending |
+| PKG-01 | Phase 12 | Complete |
+| PKG-02 | Phase 12 | Complete |
+| PKG-03 | Phase 12 | Complete |
 | PREV-01 | Phase 15 | Pending |
 | PREV-02 | Phase 15 | Pending |
 | PREV-03 | Phase 15 | Pending |
