@@ -72,7 +72,11 @@ Plans:
   2. `resources/read homelab://drift/latest` before any scan returns `{"drift_detected": null}` (not an error, not an empty object)
   3. After `scan_infrastructure_drift` completes, `resources/read homelab://drift/latest` returns the full structured report from that scan
   4. After each drift scan, the server emits `notifications/resources/updated` so subscribed clients know to re-fetch without polling
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Wave 0 test scaffold (tests/test_drift_resource.py, 5 RED tests)
+- [ ] 13-02-PLAN.md — Implementation: registry entry, cache, reader, notification dispatch
 
 ### Phase 14: MCP Prompts
 **Goal**: The server advertises the `prompts` capability and provides three workflow prompt templates that guide AI assistants through safe, structured homelab operations — including one that references the drift resource from Phase 13.
@@ -121,8 +125,8 @@ Plans:
 | 9. MCP Resources Live Data | v1.1 | 2/2 | Complete | 2026-03-12 |
 | 10. Resource Notifications | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 11. Drift Detection | v1.1 | 5/5 | Complete | 2026-03-12 |
-| 12. PyPI Distribution | 3/3 | Complete    | 2026-03-13 | - |
-| 13. Drift Resource | v1.2 | 0/TBD | Not started | - |
+| 12. PyPI Distribution | v1.2 | 3/3 | Complete | 2026-03-13 |
+| 13. Drift Resource | v1.2 | 0/2 | Not started | - |
 | 14. MCP Prompts | v1.2 | 0/TBD | Not started | - |
 | 15. Preview Tool Split | v1.2 | 0/TBD | Not started | - |
 | 16. Quality Gate | v1.2 | 0/TBD | Not started | - |
