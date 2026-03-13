@@ -11,6 +11,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import mcp.types as types
@@ -88,7 +89,16 @@ async def app_lifespan(server: Server[dict[str, Any], Any]) -> AsyncIterator[dic
 # Create the SDK server instance
 # ---------------------------------------------------------------------------
 
-server = Server("homelab-mcp", version="0.2.0", lifespan=app_lifespan)
+
+def _get_version() -> str:
+    """Return package version from installed dist-info."""
+    try:
+        return version("homelab-mcp")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+server = Server("homelab-mcp", version=_get_version(), lifespan=app_lifespan)
 
 # ---------------------------------------------------------------------------
 # MCP Resources registry
@@ -412,3 +422,122 @@ def _convert_result(
                 )
             )
     return converted
+
+
+def main() -> None:
+    """Console script entry point for `uvx homelab-mcp` and `python -m homelab_mcp`."""
+    import argparse
+    import asyncio
+    import os
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Homelab MCP Server - AI-powered homelab infrastructure management",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  uvx homelab-mcp                        # stdio mode (Claude Desktop)
+  uvx homelab-mcp --http --port 8080     # HTTP mode (OpenWebUI)
+""",
+    )
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        default=os.getenv("MCP_HTTP_ENABLED", "false").lower() == "true",
+        help="Run in HTTP mode instead of stdio mode",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.getenv("MCP_HTTP_HOST", "127.0.0.1"),
+        help="HTTP server host (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("MCP_HTTP_PORT", "8080")),
+        help="HTTP server port (default: 8080)",
+    )
+    parser.add_argument(
+        "--no-auth",
+        action="store_true",
+        default=os.getenv("MCP_AUTH_ENABLED", "true").lower() == "false",
+        help="Disable API key authentication",
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=os.getenv("MCP_API_KEY"),
+        help="API key for authentication",
+    )
+    parser.add_argument(
+        "--ssl-cert",
+        type=str,
+        default=os.getenv("MCP_SSL_CERT"),
+        help="Path to SSL certificate file (enables HTTPS)",
+    )
+    parser.add_argument(
+        "--ssl-key",
+        type=str,
+        default=os.getenv("MCP_SSL_KEY"),
+        help="Path to SSL private key file",
+    )
+    args = parser.parse_args()
+
+    if args.http:
+        import uvicorn  # noqa: PLC0415
+
+        from homelab_mcp.http_app import create_http_app  # noqa: PLC0415
+
+        protocol = "HTTPS" if args.ssl_cert else "HTTP"
+        print(f"MCP Server starting in {protocol} mode on {args.host}:{args.port}", file=sys.stderr)
+        app = create_http_app()
+        config = uvicorn.Config(
+            app=app,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            ssl_certfile=args.ssl_cert,
+            ssl_keyfile=args.ssl_key,
+        )
+        uvi_server = uvicorn.Server(config)
+        asyncio.run(uvi_server.serve())
+    else:
+        print("MCP Server starting in stdio mode...", file=sys.stderr)
+        asyncio.run(_run_stdio())
+
+
+async def _run_stdio() -> None:
+    """Run the MCP server in stdio mode. Internal helper for main()."""
+    import signal
+
+    import anyio
+    from mcp.server.stdio import stdio_server
+
+    shutdown_event = anyio.Event()
+
+    def _signal_handler(signum: int, frame: object) -> None:
+        import sys
+
+        print(f"\nReceived signal {signal.Signals(signum).name}, shutting down...", file=sys.stderr)
+        shutdown_event.set()
+
+    previous_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
+    previous_sigint = signal.signal(signal.SIGINT, _signal_handler)
+
+    try:
+        async with anyio.create_task_group() as tg:
+
+            async def _run_server() -> None:
+                async with stdio_server() as (read_stream, write_stream):
+                    await server.run(read_stream, write_stream, server.create_initialization_options())
+
+            async def _wait_for_shutdown() -> None:
+                await shutdown_event.wait()
+                tg.cancel_scope.cancel()
+
+            tg.start_soon(_run_server)
+            tg.start_soon(_wait_for_shutdown)
+    finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        signal.signal(signal.SIGINT, previous_sigint)

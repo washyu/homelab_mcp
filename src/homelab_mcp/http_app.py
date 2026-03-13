@@ -11,6 +11,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -38,6 +39,15 @@ except ImportError:
     )
 
 logger = logging.getLogger(__name__)
+
+
+def _get_pkg_version() -> str:
+    """Return package version from installed dist-info."""
+    try:
+        return version("homelab-mcp")
+    except PackageNotFoundError:
+        return "unknown"
+
 
 # Default origins considered safe (localhost variants)
 _DEFAULT_ALLOWED_ORIGINS: list[str] = [
@@ -128,7 +138,7 @@ async def handle_root(request: Request) -> Response:
     return JSONResponse(
         {
             "name": "homelab-mcp",
-            "version": "0.2.0",
+            "version": _get_pkg_version(),
             "protocol": "MCP",
             "transport": "streamable-http",
             "endpoints": {

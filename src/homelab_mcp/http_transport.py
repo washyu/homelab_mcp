@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
 
 from starlette.applications import Starlette
@@ -388,10 +389,14 @@ class MCPHTTPTransport:
 
     async def _handle_root(self, request: Request) -> Response:
         """Handle root endpoint for service discovery."""
+        try:
+            _pkg_version = version("homelab-mcp")
+        except PackageNotFoundError:
+            _pkg_version = "unknown"
         return JSONResponse(
             {
                 "name": "homelab-mcp",
-                "version": "0.2.0",
+                "version": _pkg_version,
                 "protocol": "MCP",
                 "transport": "streamable-http",
                 "endpoints": {
