@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.3
-milestone_name: (planning)
-status: idle
-stopped_at: v1.2 Protocol Completeness milestone complete — archived 2026-03-13
-last_updated: "2026-03-13T23:00:00.000Z"
-last_activity: 2026-03-13 — v1.2 milestone complete
+milestone_name: Credentials & Release Automation
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-03-14T00:00:00.000Z"
+last_activity: 2026-03-14 — Milestone v1.3 started
 progress:
   total_phases: 0
   completed_phases: 0
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-03-13)
 
 Phase: — (between milestones)
 Plan: —
-Status: Idle — v1.2 shipped, ready for v1.3 planning
-Last activity: 2026-03-13 — v1.2 milestone complete
+Status: Defining requirements
+Last activity: 2026-03-14 — Milestone v1.3 started
 
 Progress: [████████░░] 80%
 

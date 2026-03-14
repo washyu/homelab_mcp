@@ -53,9 +53,21 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ 6 `*_preview` tool variants with `readOnlyHint=True` for confirmation-free dry runs — v1.2
 - ✓ Schema/annotation parity enforced by CI (56/56 tools) — v1.2
 
+## Current Milestone: v1.3 Credentials & Release Automation
+
+**Goal:** Give users a secure local credential store for SSH and Proxmox access, and automate PyPI releases via CI/CD so publishing is a one-command tag push.
+
+**Target features:**
+- Automated PyPI publish in GitHub Actions on `git tag v*` push
+- `homelab-mcp --version` CLI flag
+- `homelab-mcp credentials add/list/remove` CLI subcommand backed by OS keyring
+- Auto-inject stored credentials into SSH tools when hostname matches
+- Proxmox API credentials storable via CLI as alternative to env vars (env vars take precedence)
+- Fix PRMT-02: `decommission_device_workflow` prompt uses `hostname=` but tool requires `device_id=`
+
 ### Active
 
-<!-- Populated during v1.3 requirements definition — run /gsd:new-milestone -->
+<!-- Populated during v1.3 requirements definition -->
 
 ### Out of Scope
 
@@ -115,4 +127,4 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | decommission_device_workflow prompt uses hostname= argument | Prompt accepts hostname for human-readable input | ⚠️ Revisit — tool schema requires device_id=; AI following prompt will encounter validation error |
 
 ---
-*Last updated: 2026-03-13 after v1.2 milestone*
+*Last updated: 2026-03-14 after v1.3 milestone start*
