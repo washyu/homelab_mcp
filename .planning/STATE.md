@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
-status: defining_requirements
+status: roadmap_ready
 stopped_at: null
 last_updated: "2026-03-14T00:00:00.000Z"
-last_activity: 2026-03-14 — Milestone v1.3 started
+last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,24 +18,24 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-13)
+See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Planning v1.3 milestone
+**Current focus:** v1.3 — Credentials & Release Automation (Phase 17 next)
 
 ## Current Position
 
-Phase: — (between milestones)
+Phase: 17 — Credential Store Foundation (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-14 — Milestone v1.3 started
+Status: Roadmap ready — begin with Phase 17
+Last activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 
 Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0 (v1.2)
+- Total plans completed: 0 (v1.3, in progress)
 - Average duration: — min
 - Total execution time: — hours
 
@@ -99,17 +99,25 @@ Key architectural patterns carried into v1.2:
 - [Phase 16-quality-gate]: nosec annotations are inline with specific B-code and justification comment — not bare nosec, not on the line above
 - [Phase 16-quality-gate]: Do NOT install types-psycopg2 stubs — psycopg2 is optional soft-dependency; false coverage risk
 
+Key constraints for v1.3 (from research):
+- `credential_store.py` must have no homelab_mcp imports — circular import prevention
+- Every keyring call path must catch `NoKeyringError`, `RuntimeError`, and `Exception` — headless Linux is the primary deploy target
+- Never call keyring at module import time or during server startup — only at first lookup
+- `parser.set_defaults(func=_run_server)` + `getattr(args, 'func', _run_server)(args)` dispatch pattern — prevents bare `homelab-mcp` regression
+- `sanitize_error(e)` from `log_filter.py` in every except block touching credential values — prevents credential leak in logs
+- PyPI OIDC trusted publisher must be manually registered at pypi.org before pushing any v* tag
+
 ### Pending Todos
 
 None.
 
 ### Blockers/Concerns
 
-None for v1.3 — v1.2 shipped cleanly. Tech debt from v1.2:
-- PRMT-02: decommission_device_workflow prompt uses hostname= but tool needs device_id= (see v1.2-MILESTONE-AUDIT.md)
+- PyPI OIDC trusted publisher setup (Phase 20) requires one-time manual step at pypi.org/manage/project/homelab-mcp/settings/publishing/ before the first production tag push
+- PRMT-02 parameter mismatch carried from v1.2 — resolved in Phase 20
 
 ## Session Continuity
 
-Last session: 2026-03-13T22:06:11.022Z
-Stopped at: Completed 16-quality-gate Plan 01 — all three quality gates (ruff, mypy, bandit) passing cleanly
+Last session: 2026-03-14T00:00:00.000Z
+Stopped at: v1.3 roadmap created — ready to begin Phase 17
 Resume file: None

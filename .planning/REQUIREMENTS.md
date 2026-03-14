@@ -62,27 +62,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CRED-01 | — | Pending |
-| CRED-02 | — | Pending |
-| CRED-03 | — | Pending |
-| CRED-04 | — | Pending |
-| CRED-05 | — | Pending |
-| CRED-06 | — | Pending |
-| CRED-07 | — | Pending |
-| INJECT-01 | — | Pending |
-| INJECT-02 | — | Pending |
-| INJECT-03 | — | Pending |
-| CICD-01 | — | Pending |
-| CICD-02 | — | Pending |
-| CICD-03 | — | Pending |
-| CLI-01 | — | Pending |
-| CLI-02 | — | Pending |
+| CRED-01 | Phase 18 | Pending |
+| CRED-02 | Phase 18 | Pending |
+| CRED-03 | Phase 18 | Pending |
+| CRED-04 | Phase 18 | Pending |
+| CRED-05 | Phase 18 | Pending |
+| CRED-06 | Phase 18 | Pending |
+| CRED-07 | Phase 17 | Pending |
+| INJECT-01 | Phase 19 | Pending |
+| INJECT-02 | Phase 19 | Pending |
+| INJECT-03 | Phase 19 | Pending |
+| CICD-01 | Phase 20 | Pending |
+| CICD-02 | Phase 20 | Pending |
+| CICD-03 | Phase 20 | Pending |
+| CLI-01 | Phase 18 | Pending |
+| CLI-02 | Phase 20 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 15 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-14*
-*Last updated: 2026-03-14 after initial definition*
+*Last updated: 2026-03-14 after roadmap creation (Phases 17-20)*
