@@ -67,7 +67,10 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   2. On a headless Linux host with no D-Bus session, every `credential_store` function call returns a safe fallback value — no exception escapes to the caller
   3. The server starts normally on a headless host — no warning about keyring appears at startup, only at the first credential lookup attempt
   4. `keyring>=25.6.0` is listed in `[project.dependencies]` in `pyproject.toml` (promoted from optional)
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 17-01-PLAN.md — TDD: credential_store.py with headless-safe keyring wrapper + pyproject.toml promotion
 
 ### Phase 18: Credentials CLI + --version
 **Goal**: Users can manage stored SSH and Proxmox credentials from the command line, and can verify their installed version
@@ -123,7 +126,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 14. MCP Prompts | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 15. Preview Tool Split | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 16. Quality Gate | v1.2 | 1/1 | Complete | 2026-03-13 |
-| 17. Credential Store Foundation | v1.3 | 0/TBD | Not started | - |
+| 17. Credential Store Foundation | v1.3 | 0/1 | Not started | - |
 | 18. Credentials CLI + --version | v1.3 | 0/TBD | Not started | - |
 | 19. Credential Auto-Inject | v1.3 | 0/TBD | Not started | - |
 | 20. Release Automation + PRMT-02 | v1.3 | 0/TBD | Not started | - |
