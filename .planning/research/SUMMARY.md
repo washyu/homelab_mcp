@@ -1,17 +1,17 @@
 # Project Research Summary
 
-**Project:** Homelab MCP Server — v1.2 Protocol Completeness
-**Domain:** Python MCP server — PyPI distribution, MCP Prompts, dry-run tool split, drift Resource
-**Researched:** 2026-03-12
+**Project:** Homelab MCP Server — v1.3 Credentials & Release Automation
+**Domain:** Python CLI tool — OS keyring credential management + CI/CD release automation
+**Researched:** 2026-03-14
 **Confidence:** HIGH
 
 ## Executive Summary
 
-The v1.2 milestone completes the MCP protocol surface of an already-functional homelab automation server. The foundation is solid: the installed mcp 1.9.4 SDK already ships all the types and decorator hooks needed for Prompts support, and the existing codebase patterns (resource readers, tool annotations, dry-run handlers) provide clear templates for every new feature. Zero new runtime dependencies are required. The recommended approach is to implement the four v1.2 features in dependency order — entrypoint fix first (it is a live bug blocking PyPI), then drift Resource, then Prompts, then the dry-run tool split — with each phase building on structural patterns already established in v1.1.
+v1.3 is a tightly scoped, low-risk milestone with one net-new runtime dependency and no architectural changes. The work breaks cleanly into three independent tracks: (1) credential store — a new `credential_store.py` module wrapping `keyring>=25.6.0` with full headless fallback, wired into the existing SSH and Proxmox credential priority chains; (2) CLI extension — adding `--version` and `credentials add/list/remove` subcommands to the existing `server.py` `main()` argparse entrypoint without breaking bare invocation; (3) CI/CD automation — a `publish` job added to `main.yml` using OIDC trusted publishing. All integration points have been verified by direct codebase inspection; all patterns are well-established. The only genuinely novel element is the OIDC trusted publisher setup, which requires a one-time manual step in the PyPI project settings before any tag is pushed.
 
-The primary risk is not technical complexity but completeness discipline: each feature requires coordinated updates across multiple registries (schemas, handlers, annotations, resource dicts) and missing any one update produces a silent gap rather than an immediate error. Research identified six critical pitfalls, all of which have clear mechanical prevention strategies. An automated test asserting schema/annotation parity is the single highest-leverage safeguard and should be added at the start of the dry-run split phase to catch any gaps introduced throughout the milestone.
+The primary deployment target — headless Proxmox hosts — has no OS keyring backend available. This is the dominant risk in the milestone: every keyring call path must catch `keyring.errors.NoKeyringError` (and the older `RuntimeError` for pre-v24 compatibility) and fall back gracefully. The keyring feature is a convenience for desktop users; env vars remain the fully supported credential path for headless servers. The existing SQLite `ssh_credentials` table handles key-based SSH auth and is unchanged — keyring slots in at priority 2 for password-based auth, keeping all existing behaviour intact.
 
-PyPI distribution adds a secondary risk: the package entry point is currently broken (no `main()` function exists in `server.py`), and the `service_templates/*.yaml` files may be silently excluded from the wheel. Both must be fixed and smoke-tested before publishing. Once addressed, the distribution path is straightforward: `uv build` produces a working wheel, `uv publish` with OIDC Trusted Publisher is the recommended publish mechanism, and `uvx homelab-mcp` becomes the install path users will see.
+The bug fix for PRMT-02 (`_build_decommission_result()` generating `hostname=` instead of `device_id=` in tool call instructions) is independent of all other work and can be delivered in any phase. All seven work items in this milestone are P1 — there is no filler — but the build order is dictated by a single dependency: `credential_store.py` must exist before the CLI subcommands, SSH auto-inject, or Proxmox config fallback can be wired up.
 
 ---
 
@@ -19,106 +19,120 @@ PyPI distribution adds a secondary risk: the package entry point is currently br
 
 ### Recommended Stack
 
-No new runtime dependencies are needed for v1.2. The existing stack — Python 3.12+, uv, mcp[cli] 1.9.4, hatchling build backend — handles all four features without additions. The decision to keep hatchling rather than migrate to `uv_build` is correct: `uv_build` only stabilised mid-2025 and migration adds risk with no functional benefit at this milestone. See `.planning/research/STACK.md` for full rationale.
+v1.3 introduces one net-new runtime dependency: `keyring>=25.6.0` promoted from `[project.optional-dependencies] security` to `[project.dependencies]`. Version 25.6.0 specifically is required because it removes spurious no-backend warning logs, making the `NoKeyringError` fallback detection clean. All other runtime dependencies (asyncssh, aiohttp, starlette, uvicorn, rich, pydantic) are unchanged. The PyPI publish automation requires no new dependencies — `uv build` and `pypa/gh-action-pypi-publish@release/v1` are workflow-only additions. See `.planning/research/STACK.md` for full rationale and code patterns.
 
 **Core technologies:**
-- **mcp[cli] 1.9.4** (already installed): MCP Prompts SDK support — `@server.list_prompts()` and `@server.get_prompt()` decorators verified present in installed source; capability auto-detection is automatic on registration, matching the existing resources pattern
-- **hatchling** (keep as-is): Build backend — correctly packages `src/` layout; requires an explicit `artifacts` rule added to pyproject.toml to ensure `service_templates/*.yaml` files are included in the wheel
-- **uv build + uv publish**: PyPI distribution — no additional tooling needed; Trusted Publisher (OIDC) preferred over API token for CI publish; avoids long-lived secret management
-- **SQLite** (existing): Drift report cache — new single-row `drift_latest_report` table stores the most recent scan result for the `homelab://drift/latest` resource; uses existing `INSERT OR REPLACE` pattern
+- `keyring>=25.6.0`: OS keyring abstraction (GNOME Secret Service, macOS Keychain, Windows Credential Manager) — already in project optional deps; promotes to core because `credentials add` must work unconditionally for all install paths
+- `argparse` (stdlib, Python 3.12): credentials subcommands and `--version` flag — no new dependency; two-level subparser pattern is idiomatic; verified against existing `main()` structure
+- `pypa/gh-action-pypi-publish@release/v1`: PyPI OIDC trusted publishing in GitHub Actions — official PyPA action, keyless auth, `release/v1` rolling branch tracks security fixes automatically
 
 ### Expected Features
 
-Research cross-referenced against mcp 1.9.4 installed source, MCP spec (2025-06-18), and direct codebase analysis. See `.planning/research/FEATURES.md` for full prioritization.
+All v1.3 features are P1. Research confirms this is a complete and correctly scoped feature set with no ambiguity about what ships. See `.planning/research/FEATURES.md` for full prioritization matrix and dependency graph.
 
 **Must have (table stakes):**
-- `*_preview` tool variants for all 6 destructive tools — annotation accuracy: MCP clients show confirmation dialogs for all non-`readOnlyHint` tools; a dry-run preview that still triggers a "destructive operation" warning is degraded UX; PROJECT.md explicitly targets this; tool count grows 50 → 56 (acceptable)
-- MCP Prompts (`prompts/list` + `prompts/get`) with at least 3 homelab workflow templates — completing the MCP protocol surface; Claude Desktop and VS Code both surface the prompts UI; an empty prompt list defeats the purpose
-- `homelab://drift/latest` Resource — drift scan data is currently only accessible via tool call; a Resource exposes it passively for AI context and enables `notifications/resources/updated` without re-running the scan
-- `uvx homelab-mcp` install path — `[project.scripts]` entry point already exists in pyproject.toml but `main()` is missing; this is a live bug that will crash every user's first install
+- `credentials add/list/remove` CLI subcommands — fundamental CRUD; every credential-managing tool ships this
+- Auto-inject SSH credentials via keyring at priority 2 in `resolve_ssh_credentials()` — the core payoff of storing credentials; all 56 SSH tools benefit automatically through the single call site
+- `homelab-mcp --version` flag — every CLI tool has this; users verify what's running
+- Automated PyPI publish on `git tag v*` — `uvx homelab-mcp` users expect new versions without manual CI steps
+- Graceful `NoKeyringError` handling in all code paths — headless homelab servers lack GUI keyring; must not crash or silently fail
+- PRMT-02 bug fix in `_build_decommission_result()` — AI following the decommission workflow prompt hits a schema validation error on every invocation (`hostname=` vs `device_id=` mismatch)
 
 **Should have (differentiators):**
-- `notifications/resources/updated` emitted after `scan_infrastructure_drift` — 5-line addition that lets subscribed clients refresh without polling; extends the Phase 10 notification pattern from v1.1
-- Prompts that chain `*_preview` before destructive execution — bakes safety into the workflow, not just individual tools; makes the server meaningfully different from generic homelab automation
-- `python -m homelab_mcp` invocation — enabled automatically by creating `__main__.py`; no extra cost
+- Proxmox credentials storable via `credentials add --type proxmox` — alternative to `.env` file; useful for multi-host setups
+- Per-type service namespace (`homelab-mcp-ssh` vs `homelab-mcp-proxmox`) — isolated in OS keyring UI; no cross-type contamination
+- Password never visible in `credentials list` output — matches `gh auth status` / `git credential` UX convention
 
-**Defer to v1.3:**
-- Auto-publish CI (manual first publish is appropriate while the release process is being proven)
-- Per-device drift resources (`homelab://drift/device/{id}`) — requires device-scoped scans not yet implemented
-- Dynamic prompts that change based on infra state — adds complexity for minimal benefit in a single-operator homelab
-- Background drift polling
+**Defer to v1.x or v2+:**
+- `credentials verify <host>` — test SSH connectivity with stored creds
+- `credentials list --type proxmox` — separate listing by credential type
+- `credentials export --format env` — dump stored creds as `.env` for migration/backup
+- Credential import from existing `.env` files
 
 ### Architecture Approach
 
-All four v1.2 features follow structural patterns already established in v1.1. New features are new modules and registry entries, not architectural changes. The `server.py` file acts as the registration hub (decorator registrations, resource dicts, dispatch branches) while business logic lives in dedicated modules (`prompt_registry.py`, `preview_handlers.py`, `resource_readers.py`). The critical constraint is that `server.py` must not accumulate inline definitions — the established separation of schemas, handlers, annotations, and readers must be maintained. See `.planning/research/ARCHITECTURE.md` for component map and data flow diagrams.
+The architecture is additive: one new module (`credential_store.py`), four modified modules (`server.py`, `ssh_tools.py`, `config.py`, `prompt_registry.py`), and one modified CI file (`main.yml`). The new `credential_store.py` is intentionally isolated — it imports only `keyring` (optional, guarded) with no homelab_mcp imports, eliminating circular import risk. All keyring access is centralised there; other modules call `credential_store.get_credential(key)` without knowledge of keyring internals. The CLI extension uses the existing `homelab-mcp` console script entrypoint — `credentials` is a subparser that dispatches and exits before any server startup logic runs. See `.planning/research/ARCHITECTURE.md` for component map and data flow diagrams.
 
-**New or extended components:**
-1. `src/homelab_mcp/__main__.py` (new) — `main()` entrypoint for `uvx homelab-mcp` and `python -m homelab_mcp`; consolidates startup logic currently split across `run_server.py` and `server.py`
-2. `prompt_registry.py` (new) — `HOMELAB_PROMPTS` dict with `get_all_prompts()` and `get_prompt_by_name()`; mirrors the `tool_schemas/__init__.py` registry pattern exactly
-3. `tool_schemas/preview_tools_schema.py` + `tool_handlers/preview_handlers.py` (new) — 6 `*_preview` tool schemas and thin handler wrappers that call existing dry-run paths with `dry_run=True` injected implicitly
-4. `resource_readers.py` (extended) — `read_drift_resource()` reading from new `drift_latest_report` SQLite table
-5. `database.py` (extended) — `drift_latest_report` single-row table; `upsert_drift_latest()` and `get_drift_latest()` methods using existing `INSERT OR REPLACE` pattern
+**Major components:**
+1. `credential_store.py` (NEW) — keyring get/set/delete; `KEYRING_AVAILABLE` guard at module level; service name constants `homelab-mcp-ssh` / `homelab-mcp-proxmox`; all keyring exceptions caught and handled
+2. `server.py main()` (MODIFY) — add `--version` action and `credentials` subparser; local import of `credential_store` inside the credentials branch; `sys.exit(0)` before server starts
+3. `ssh_tools.resolve_ssh_credentials()` (MODIFY) — insert keyring lookup as priority 2 (after explicit args, before SQLite DB, before default mcp_admin key)
+4. `config.py MCPConfig` (MODIFY) — add keyring fallback for Proxmox password after env var check; env vars always win
+5. `prompt_registry.py _build_decommission_result()` (MODIFY) — PRMT-02 fix: replace `hostname=` tool call instruction with `list_devices` → `device_id` lookup step
+6. `main.yml publish job` (NEW) — OIDC trusted publishing via `pypa/gh-action-pypi-publish@release/v1`; gated on `v*` tags and `test-and-quality` passing; runs in parallel with existing `release` job
 
 ### Critical Pitfalls
 
-Full analysis in `.planning/research/PITFALLS.md`. Top five by severity and probability for v1.2:
+Full analysis in `.planning/research/PITFALLS.md`. Top five by severity and probability for v1.3:
 
-1. **Missing `server.py:main()` breaks `uvx homelab-mcp`** — every user who installs from PyPI gets an `AttributeError` on first run; fix by creating `__main__.py` with a `main()` function and updating the pyproject.toml entry point; smoke-test with `uvx --from ./dist/*.whl homelab-mcp --help` before publishing to PyPI
+1. **Keyring `NoKeyringError` crashes the server on headless Linux** — The primary deployment target (Proxmox host) has no D-Bus session; `keyring.get_password()` raises `NoKeyringError`. Wrap every keyring call in `try/except (keyring.errors.NoKeyringError, RuntimeError, Exception)`. Never call keyring at module import time or during server startup. Log at `DEBUG` level — this is expected behaviour, not an error.
 
-2. **`service_templates/*.yaml` excluded from wheel** — non-Python files may be silently dropped; fix by adding an explicit hatchling `artifacts` rule and migrating template path resolution to `importlib.resources.files()`; verify by unzipping the wheel and checking for `.yaml` files before publish
+2. **Argparse subparsers break the existing bare `homelab-mcp` invocation** — Adding `add_subparsers()` changes how argparse handles no-arg invocations. Use `parser.set_defaults(func=_run_server)` and `getattr(args, 'func', _run_server)(args)` for dispatch. Add an explicit regression test: `parse_args([])` must route to server startup; `parse_args(['--http'])` must set `args.http = True`.
 
-3. **`*_preview` tools missing from `tool_annotations.py`** — three-file parallel update (schema, handler, annotations) with no compile-time enforcement; fix by adding a test asserting every key in `get_all_tool_schemas()` has a corresponding entry in `TOOL_ANNOTATIONS`; add this test at the start of the dry-run split phase, before any schema changes
+3. **PyPI OIDC trusted publishing fails with `invalid-publisher`** — Configuration mismatches (workflow filename, environment name, hyphen vs underscore in package name, missing `id-token: write` at job level) cause silent 403 failures. Validate with a TestPyPI dry run before the first production tag push. The PyPI trusted publisher must be registered manually at `pypi.org/manage/project/homelab-mcp/settings/publishing/` before pushing `v1.3.0`.
 
-4. **Drift Resource URI not added to `HOMELAB_RESOURCES` dict** — the resource can be read by URI but is invisible to `resources/list`; fix by adding `homelab://drift/latest` to `HOMELAB_RESOURCES` in the same commit as the reader function; add a structural test comparing registered URIs to dispatch cases
+4. **Version/tag mismatch at publish time** — `pyproject.toml version = "1.2.0"` when pushing `git tag v1.3.0` causes PyPI to reject the upload or publish a permanently mismatched release. Add a CI step asserting the `pyproject.toml` version equals the tag name before the build runs.
 
-5. **Renaming existing destructive tools breaks client allowlists** — the dry-run split must be additive-only; the 6 existing tool names must remain unchanged and keep their `dry_run` parameter for backward compatibility; `*_preview` variants are new entries, not replacements
+5. **Credential leak through exception messages in new logging paths** — `log_filter.py`'s `_SENSITIVE_PATTERNS` are prefix-anchored; bare secret values in exception messages bypass all filters. Every `except` block in new credential-touching code must use `sanitize_error(e)` from `log_filter.py`, never `str(e)`. Require a test that asserts `caplog.text` contains no credential value after a failed SSH connection with auto-injected creds.
 
 ---
 
 ## Implications for Roadmap
 
-Based on research, the implementation dependency graph (confirmed in ARCHITECTURE.md build order) suggests four phases. Ordering is driven by two constraints: the entrypoint bug is a live defect and must be fixed before any PyPI-visible work; the drift Resource should precede Prompts because the most valuable prompt references `homelab://drift/latest`.
+The build order is dictated by one hard dependency: `credential_store.py` must exist before CLI subcommands, SSH auto-inject, or Proxmox config fallback. Everything else is parallelisable once that module is in place. PRMT-02 and CI/CD automation are fully independent of the credential work.
 
-### Phase 1: PyPI Entrypoint Fix
-**Rationale:** The missing `main()` function is a live bug that will make the package unusable the moment it is published. Structurally isolated — no dependencies on other v1.2 features. Fixing it first also unifies the version reporting and validates the build pipeline before feature work begins.
-**Delivers:** `uvx homelab-mcp` works; `python -m homelab_mcp` works; version reporting unified via `importlib.metadata.version()`; `service_templates/*.yaml` confirmed in wheel; pyproject.toml entry point correct
-**Addresses:** `uvx homelab-mcp` install path (table stakes)
-**Avoids:** Critical Pitfalls 1, 2 (entrypoint crash, YAML exclusion); version triple-divergence pitfall
+### Phase 1: Credential Store Foundation
 
-### Phase 2: Drift MCP Resource
-**Rationale:** Extends the established resource reader pattern with the riskiest new integration point (SQLite schema change + `send_resource_updated` notification wiring). Doing this before Prompts means the `homelab_health_check` prompt can reference a functioning `homelab://drift/latest` resource. The empty-state and staleness concerns are well-specified and straightforward to address.
-**Delivers:** `homelab://drift/latest` readable resource; `notifications/resources/updated` emitted after scan; `drift_latest_report` SQLite table; empty-state response before first scan
-**Addresses:** Drift Resource (table stakes); notifications/resources/updated (differentiator)
-**Avoids:** Critical Pitfall 4 (URI not registered); Moderate Pitfalls on stale data, no-scan-yet crash, and exception surfacing as JSON
+**Rationale:** `credential_store.py` is the blocking dependency for three other work items. Building it first with full test coverage (both `KEYRING_AVAILABLE=True` and `KEYRING_AVAILABLE=False` branches) de-risks the entire milestone. The headless fallback pattern established here must be correct before any consuming code is written.
+**Delivers:** `credential_store.py` with `get_credential`, `set_credential`, `delete_credential`; `KEYRING_AVAILABLE` guard; `homelab-mcp-ssh` / `homelab-mcp-proxmox` service name constants; `NoKeyringError` / `RuntimeError` / `ImportError` all handled; `keyring>=25.6.0` promoted to core in `pyproject.toml`
+**Addresses:** Prerequisite for `credentials` CLI subcommands, SSH auto-inject, and Proxmox config fallback
+**Avoids:** Pitfall 1 (keyring crashes on headless); Pitfall 5 (credential leak in exception messages)
 
-### Phase 3: MCP Prompts
-**Rationale:** Depends on Phase 2 because the `homelab_health_check` prompt references `homelab://drift/latest`. Depends on Phase 1 because Prompts are part of the publishable package. Self-contained new module (`prompt_registry.py`) with minimal server.py surface area — two new decorator registrations only.
-**Delivers:** `prompts/list` and `prompts/get` handlers; `prompt_registry.py` with 3–4 workflow templates (`decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`, optionally `audit_vm_drift`); `prompts` capability advertised in `initialize` response
-**Addresses:** MCP Prompts (table stakes); drift-aware workflow prompts (differentiator)
-**Avoids:** Moderate pitfalls on client support gap (prompts as convenience layer over tools, not replacement), argument injection, and missing required argument crashes
+### Phase 2: CLI Extension
 
-### Phase 4: Dry-Run Tool Split
-**Rationale:** Last because it touches the most files (schema registry, handler registry, annotations, two new modules) and has no dependents within the milestone. Placing it last isolates its change surface. The annotation coverage test written at the start of this phase also serves as a regression guard for any annotation gaps introduced in Phases 2–3.
-**Delivers:** 6 `*_preview` tool variants with `readOnlyHint=True`; tool count 50 → 56; original destructive tools unchanged and backward-compatible; `test_all_tools_have_annotations` coverage test
-**Addresses:** `*_preview` variants (table stakes); self-describing preview tools (differentiator)
-**Avoids:** Critical Pitfalls 3, 5 (annotation gap, backward compatibility break); response format consistency pitfall (all preview handlers must use `build_dry_run_response()`)
+**Rationale:** With `credential_store.py` available, the `credentials` subparser and `--version` flag can be added to `server.py main()`. This is the primary user-visible surface of the credential feature and must not break the existing bare invocation.
+**Delivers:** `homelab-mcp credentials add/list/remove` subcommands; `homelab-mcp --version` flag; `getpass.getpass()` for interactive password prompts; `sys.exit(0)` before server starts in credentials path
+**Uses:** `argparse` stdlib subparsers; `credential_store.py`; `importlib.metadata.version()` (already imported in `server.py`)
+**Avoids:** Pitfall 2 (bare invocation regression) — regression test for `parse_args([])` is a required quality gate
+
+### Phase 3: Credential Auto-Inject
+
+**Rationale:** Wires the stored credentials into live tool call paths (`resolve_ssh_credentials()` and `MCPConfig`). This phase modifies existing production code and must be TDD-first — priority order tests before implementation. The `sanitize_error()` discipline must be enforced in every new logging path.
+**Delivers:** Keyring at priority 2 in `resolve_ssh_credentials()` (after explicit args, before SQLite DB); Proxmox password keyring fallback after env var check in `MCPConfig`; `credential_source` informational field in tool responses when auto-inject fires; env var precedence verified by test
+**Avoids:** Pitfall 5 (credential leak in logs); Pitfall 6 (silent override of explicit credentials); stale Proxmox token from env var rotation
+
+### Phase 4: PRMT-02 Bug Fix
+
+**Rationale:** Fully independent of all other work. Pure text change in `_build_decommission_result()` — no schema changes, no new imports. Can be pulled into any earlier phase slot if needed, but placing it here keeps phases clean.
+**Delivers:** Decommission workflow prompt generates `list_devices` lookup step before `decommission_device` call; `device_id=<found_id>` replaces `hostname=` in generated tool call instructions; eliminates AI schema validation error on every decommission workflow
+**Avoids:** AI generating invalid tool calls on every invocation of the decommission workflow
+
+### Phase 5: CI/CD Release Automation
+
+**Rationale:** Independent of all code changes. Placing it last allows TestPyPI validation to use the fully assembled v1.3 codebase. The one-time PyPI trusted publisher registration must be completed manually before this phase's quality gate.
+**Delivers:** `publish` job in `main.yml` using `pypa/gh-action-pypi-publish@release/v1`; OIDC trusted publishing with `id-token: write` at job level; version/tag assertion CI step; `publish` and `release` jobs run in parallel on `v*` tags
+**Uses:** `uv build`; `pypa/gh-action-pypi-publish@release/v1`; `pypi` GitHub environment for protection rules
+**Avoids:** Pitfall 3 (OIDC `invalid-publisher`); Pitfall 4 (double publish on non-tag push); Pitfall 7 (version/tag mismatch at publish time)
 
 ### Phase Ordering Rationale
 
-- Phase 1 must be first: entrypoint bug is a live defect; build pipeline validation unblocks the other phases' ability to be smoke-tested via `uvx`
-- Phase 2 before Phase 3: `homelab://drift/latest` resource is referenced by the `homelab_health_check` prompt; shipping Prompts before the resource they depend on produces a degraded user experience
-- Phase 4 last: additive-only (no other v1.2 phase depends on `*_preview` tools), widest file footprint, and the annotation coverage test it introduces protects all earlier work
-- The `test_all_tools_have_annotations` test should be committed at the very start of Phase 4, before any schema additions, so CI catches gaps immediately
+- Phase 1 must precede Phases 2 and 3 — both consume `credential_store.py` and cannot be built without it
+- Phases 2 and 3 can be developed in parallel once Phase 1 is merged
+- Phase 4 has zero dependencies and can be pulled into any slot if there is a scheduling reason to do so
+- Phase 5 has zero code dependencies but benefits from being last so the TestPyPI dry run uses the complete v1.3 build
 
 ### Research Flags
 
-No phases require `/gsd:research-phase` — all integration points have been verified against the installed mcp 1.9.4 SDK source and existing codebase patterns. All four phases use standard, well-documented patterns.
+All phases use standard, well-documented patterns. No phase requires `/gsd:research-phase`.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1:** Established Python packaging patterns; `__main__.py` entry point is standard; `importlib.resources` usage is well-documented
-- **Phase 2:** Follows existing resource reader and notification patterns in the codebase exactly; SQLite schema addition is low-risk and follows existing `INSERT OR REPLACE` pattern
-- **Phase 3:** SDK decorators verified in installed source; implementation mirrors existing `list_resources` / `read_resource` pattern already in `server.py`
-- **Phase 4:** Additive schema/handler/annotation additions following established patterns; `build_dry_run_response()` contract already defined in `dry_run.py`
+- **Phase 1 (Credential Store):** `keyring` API is stable, documented, and already in the project; optional dep guard is a standard Python pattern; HIGH confidence throughout
+- **Phase 2 (CLI Extension):** argparse stdlib, two-level subparsers, `--version` action — all verified against existing `main()` structure; zero new patterns
+- **Phase 4 (PRMT-02 Fix):** Root cause confirmed by direct schema + prompt inspection; fix is text-only in a single function
+
+Phases warranting attention during execution (not more research, but implementation care):
+- **Phase 3 (Auto-Inject):** TDD-first is mandatory — the 5-priority SSH credential chain is complex, the silent-override pitfall is easy to miss, and `sanitize_error()` discipline must be enforced in every new exception handler
+- **Phase 5 (CI/CD):** The PyPI one-time manual setup step is external; TestPyPI dry run is a required quality gate before any production tag is pushed; version/tag alignment must be verified
 
 ---
 
@@ -126,47 +140,39 @@ Phases with standard patterns (skip research-phase):
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All SDK mechanics verified by direct inspection of installed mcp 1.9.4 source; no new dependencies to evaluate; build backend decision corroborated by multiple sources |
-| Features | HIGH | Feature set is well-scoped against PROJECT.md spec; table stakes verified against SDK capabilities; anti-features clearly reasoned with client behavior evidence |
-| Architecture | HIGH | All four integration points verified against installed SDK source and existing codebase patterns; component boundaries are clear; data flows specified with code references |
-| Pitfalls | HIGH | Critical pitfalls identified via direct source inspection (not inference); prevention strategies are mechanical (tests, explicit rules) rather than speculative |
+| Stack | HIGH | `keyring` 25.7.0 docs verified; `pypa/gh-action-pypi-publish` official action; argparse stdlib; `pyproject.toml` and `server.py` inspected directly; one net-new runtime dep with no uncertainty |
+| Features | HIGH | All features verified against codebase; credential priority chain matches existing `resolve_ssh_credentials()` structure confirmed by source inspection; PRMT-02 root cause confirmed by schema + prompt text inspection |
+| Architecture | HIGH | All integration points verified by direct source inspection; build order confirmed by dependency analysis; module boundary rationale consistent with existing codebase patterns |
+| Pitfalls | HIGH | Headless keyring failure confirmed by official docs and multiple real-world issue reports; argparse subparser behaviour verified against Python 3.12 docs; OIDC mismatch patterns from official PyPI troubleshooting docs |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Package name decision (`homelab-mcp` vs `homelab-mcp-server`):** FEATURES.md recommends renaming `[project.name]` to `homelab-mcp` for a cleaner `uvx homelab-mcp` experience; the name is currently unpublished and available; this decision must be made explicitly before Phase 1 completes and documented in the changelog
-- **`uvx --from ./dist/*.whl` smoke test:** Must be run locally before the first PyPI publish; cannot be automated until the first wheel is built; should be documented as a manual gate in the Phase 1 checklist
-- **PyPI Trusted Publisher setup:** Requires one-time OIDC configuration at pypi.org before CI can publish without a token secret; must be completed by the project owner before the first publish attempt
-- **Prompt argument validation scope:** PITFALLS.md recommends using `validation.py` validators on prompt arguments; the specific validators available for hostname, service name, and vmid formats were not enumerated in research; Phase 3 implementation should audit `validation.py` before wiring up prompt argument validation
+- **Proxmox `config.py` fallback insertion point:** ARCHITECTURE.md notes `config.py` was not deeply inspected in this research session. The env var precedence pattern is standard, but the exact insertion point for the keyring fallback should be verified against the actual constructor before writing tests.
+- **TestPyPI trusted publisher setup:** The first end-to-end OIDC publish cannot be validated before the PyPI trusted publisher is manually registered. Document the manual setup step explicitly in the Phase 5 plan; the TestPyPI dry run must be the first action taken in that phase.
+- **`keyring` behaviour on WSL2:** Confirmed headless failure from issue reports but not from a WSL2-specific test run. The `except Exception` guard handles this case regardless, so risk is low.
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `mcp/server/lowlevel/server.py` (installed, `.venv`) — `list_prompts()`, `get_prompt()` decorator signatures at lines 219–245; `get_capabilities()` auto-detection at lines 181–210
-- `mcp/types.py` (installed, `.venv`) — `Prompt`, `PromptArgument`, `GetPromptResult`, `PromptMessage` class definitions confirmed present
-- `mcp/server/session.py` (installed, `.venv`) — `send_resource_updated()` line 196; `send_prompt_list_changed()` line 309
-- `src/homelab_mcp/server.py` — existing handler patterns; `HOMELAB_RESOURCES` dict; notification block; confirmed absence of `main()` function
-- `pyproject.toml` — confirmed broken entry point (`homelab_mcp.server:main` with no `def main`); hatchling build backend; version `0.2.0`
-- `src/homelab_mcp/dry_run.py` — `build_dry_run_response()` contract
-- `src/homelab_mcp/tool_annotations.py` — annotation patterns for `_DESTRUCTIVE_TOOLS` and `_READ_ONLY_TOOLS`
-- [MCP tool annotations: readOnlyHint, destructiveHint](https://blog.marcnuri.com/mcp-tool-annotations-introduction) — client confirmation dialog behaviour
-- [MCP SDK issue #396](https://github.com/modelcontextprotocol/python-sdk/issues/396) — inconsistent exception handling in call_tool vs list_resources
-- [uv building and publishing packages](https://docs.astral.sh/uv/guides/package/) — build/publish workflow
+- [keyring 25.7.0 documentation](https://keyring.readthedocs.io/en/latest/) — API methods, `NoKeyringError`, `PYTHON_KEYRING_BACKEND`, backend list by platform
+- [keyring changelog](https://keyring.readthedocs.io/en/latest/history.html) — v25.6.0 warning removal confirmed; `NoKeyringError` present since v23.x
+- [PyPI Trusted Publishers documentation](https://docs.pypi.org/trusted-publishers/using-a-publisher/) — OIDC flow, required fields, one-time setup procedure
+- [PyPI Trusted Publishers: Troubleshooting](https://docs.pypi.org/trusted-publishers/troubleshooting/) — `invalid-publisher` causes enumerated
+- [pypa/gh-action-pypi-publish GitHub](https://github.com/pypa/gh-action-pypi-publish) — workflow YAML, `release/v1` recommendation, `id-token: write` requirement, PEP 740 attestations
+- [Python Packaging User Guide — publishing with CI/CD](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/) — canonical reference workflow
+- [Python stdlib argparse docs (3.12)](https://docs.python.org/3/library/argparse.html) — `add_subparsers`, `dest`, `set_defaults`, `action="version"`
+- Project codebase (first-party, direct inspection): `src/homelab_mcp/server.py`, `src/homelab_mcp/ssh_tools.py`, `src/homelab_mcp/config.py`, `src/homelab_mcp/database.py`, `src/homelab_mcp/prompt_registry.py`, `src/homelab_mcp/tool_schemas/infrastructure_tools_schema.py`, `pyproject.toml`, `.github/workflows/main.yml`
 
 ### Secondary (MEDIUM confidence)
-- [MCP Prompts specification (2025-06-18)](https://modelcontextprotocol.io/specification/2025-06-18/server/prompts) — protocol wire format
-- [PyPI Trusted Publishers](https://docs.pypi.org/trusted-publishers/) — OIDC keyless publish workflow
-- [uv Build backend](https://docs.astral.sh/uv/concepts/build-backend/) — hatchling vs uv_build decision
-- [MCP client capability gap (PulseMCP)](https://www.pulsemcp.com/posts/mcp-client-capabilities-gap) — prompts client support landscape
-- [MCP prompt injection (Simon Willison, 2025)](https://simonwillison.net/2025/Apr/9/mcp-prompt-injection/) — argument injection risk
-- [Dynamic versioning with uv projects](https://slhck.info/software/2025/10/01/dynamic-versioning-uv-projects.html) — single-source version via importlib.metadata
-
-### Tertiary (LOW confidence)
-- [Python Build Backends in 2025: uv_build vs Hatchling](https://medium.com/@dynamicy/python-build-backends-in-2025-what-to-use-and-why-uv-build-vs-hatchling-vs-poetry-core-94dd6b92248f) — corroborates uv_build stable date; not sole basis for the hatchling decision
+- [NoKeyringError in headless Linux — jaraco/keyring issue #566](https://github.com/jaraco/keyring/issues/566) — real-world confirmation of headless failure mode
+- [NoKeyringError in pypa/hatch — issue #671](https://github.com/pypa/hatch/issues/671) — second real-world confirmation from a different Python project
+- [PyPI Trusted Publisher pitfalls — dreamnetworking.nl, 2025](https://dreamnetworking.nl/blog/2025/01/07/pypi-trusted-publisher-management-and-pitfalls/) — hyphen/underscore mismatch, environment name mismatch cases
+- [GitHub Actions avoid double runs — Adam Johnson, 2025](https://adamj.eu/tech/2025/05/14/github-actions-avoid-simple-on/) — double-trigger prevention patterns
 
 ---
-*Research completed: 2026-03-12*
+*Research completed: 2026-03-14*
 *Ready for roadmap: yes*

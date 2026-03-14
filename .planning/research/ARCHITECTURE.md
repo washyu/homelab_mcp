@@ -1,348 +1,458 @@
-# Architecture Patterns — v1.2 Protocol Completeness
+# Architecture Research
 
-**Domain:** MCP Prompts + dry-run tool split + PyPI distribution + drift MCP Resource
-**Researched:** 2026-03-12
-**Confidence:** HIGH (all SDK mechanics verified against installed source at `.venv/lib/python3.12/site-packages/mcp/`)
+**Domain:** Python MCP server — credential store + CI/CD release automation (v1.3)
+**Researched:** 2026-03-14
+**Confidence:** HIGH (all integration points verified by direct source inspection)
 
 ---
 
-## Verified SDK Mechanics
+## System Overview
 
-All four integration points were verified directly against the installed MCP SDK source (`mcp[cli] 1.9.1`, installed version confirmed present in `.venv`).
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               CLI entrypoint  server.py main()                   │
+│                                                                  │
+│  ┌──────────────────────┐  ┌─────────────────────────────────┐  │
+│  │  --version  (NEW)    │  │  credentials subparser  (NEW)   │  │
+│  │  argparse VERSION    │  │  add / list / remove subcommands│  │
+│  │  exits immediately   │  └────────────┬────────────────────┘  │
+│  └──────────────────────┘               │ direct call           │
+│                                         ▼                        │
+│                          ┌──────────────────────────────────┐   │
+│                          │  credential_store.py  (NEW)      │   │
+│                          │  get / set / delete              │   │
+│                          │  keyring wrapper + dep guard     │   │
+│                          └──────────────┬───────────────────┘   │
+│                                         │ optional import        │
+│                          ┌──────────────▼───────────────────┐   │
+│                          │  keyring>=25.0.0                 │   │
+│                          │  [project.optional-dependencies] │   │
+│                          │  security extra (already listed) │   │
+│                          └──────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 
-### 1. MCP Prompts — `@server.list_prompts()` / `@server.get_prompt()`
+┌─────────────────────────────────────────────────────────────────┐
+│           MCP Tool Call Chain — SSH credential resolution        │
+│                                                                  │
+│  MCP client → server.py @call_tool handler                       │
+│    → tool_handlers/ssh_handlers.py                              │
+│        → ssh_tools.resolve_ssh_credentials()  ← EXISTING HOOK  │
+│            priority chain (extended in v1.3):                   │
+│            1. explicit args (password / key_path)  [unchanged]  │
+│            2. db.get_credential_by_hostname()      [unchanged]  │
+│            3. credential_store.get_credential()    [NEW step]   │
+│            4. default mcp_admin key fallback       [unchanged]  │
+│        → ssh_connection.ssh_connect()                           │
+└─────────────────────────────────────────────────────────────────┘
 
-**Confidence: HIGH** — Both decorators are confirmed in `mcp/server/lowlevel/server.py` lines 219–245.
+┌─────────────────────────────────────────────────────────────────┐
+│           Proxmox credential resolution                          │
+│                                                                  │
+│  config.py MCPConfig.__init__()                                  │
+│    1. os.getenv("PROXMOX_PASSWORD")      [env var, takes prec.] │
+│    2. credential_store.get_credential()  [NEW keyring fallback] │
+└─────────────────────────────────────────────────────────────────┘
 
-**Decorator signatures (from SDK source):**
+┌─────────────────────────────────────────────────────────────────┐
+│           GitHub Actions CI/CD — .github/workflows/main.yml      │
+│                                                                  │
+│  on: push / tags: v*  (already configured)                       │
+│                                                                  │
+│  test-and-quality  ─────────────────────────────┐               │
+│       (always)                                  │               │
+│                              needs ─────────────┼──────┐        │
+│                                                 ▼      ▼        │
+│                                  publish (NEW)    release        │
+│                                  PyPI OIDC        GitHub Release │
+│                                  tags only        tags only      │
+│                                  (NEW job,        (existing job) │
+│                                  same file)                      │
+└─────────────────────────────────────────────────────────────────┘
+```
 
+## Component Responsibilities
+
+| Component | Responsibility | Status for v1.3 |
+|-----------|----------------|-----------------|
+| `server.py main()` | argparse entrypoint (`homelab-mcp` console script) | MODIFY — add `--version`, add `credentials` subparser |
+| `credential_store.py` | keyring get/set/delete, service name convention, dep guard | NEW module |
+| `ssh_tools.resolve_ssh_credentials()` | SSH credential priority chain for all SSH handlers | MODIFY — insert keyring lookup as step 3 |
+| `config.py MCPConfig` | Proxmox session config construction | MODIFY — add keyring fallback after env var check |
+| `database.py SQLiteAdapter` | SSH credential metadata CRUD (ssh_credentials table) | UNCHANGED — already stores hostname/username/key_path |
+| `prompt_registry.py` | Static prompt text templates including decommission workflow | MODIFY — PRMT-02 fix in `_build_decommission_result()` |
+| `main.yml` publish job | PyPI OIDC publish on `v*` tag | NEW job in existing file |
+
+## Recommended Project Structure
+
+```
+src/homelab_mcp/
+├── credential_store.py      # NEW — keyring wrapper, optional dep guard
+├── server.py                # MODIFY — --version flag, credentials subparser
+├── ssh_tools.py             # MODIFY — step 3 in resolve_ssh_credentials()
+├── config.py                # MODIFY — Proxmox password keyring fallback
+├── prompt_registry.py       # MODIFY — PRMT-02 fix in _build_decommission_result()
+└── ... (all other modules unchanged)
+
+.github/workflows/
+└── main.yml                 # MODIFY — add publish job (peer to existing release job)
+```
+
+### Structure Rationale
+
+- **credential_store.py:** Isolated module with no homelab_mcp imports avoids circular import risk. All keyring calls centralised here; other modules call `credential_store.get_credential(key)` with no knowledge of keyring internals. Consistent with the existing pattern of module-per-concern (`database.py`, `error_handling.py`, etc.).
+- **main.yml (modify, not new file):** The `release` job in `main.yml` already fires on `v*` tags and already `needs: test-and-quality`. Adding `publish` as a peer job keeps all tag-triggered automation co-located and avoids duplicating the trigger definition in a second file.
+
+## Architectural Patterns
+
+### Pattern 1: Optional Dependency Guard in credential_store.py
+
+**What:** Import `keyring` inside a `try/except ImportError` block at module level. Expose a module-level `KEYRING_AVAILABLE: bool` constant. All public functions check this constant and return `None` (get) or raise `RuntimeError` with a user-facing install hint (set/delete) when keyring is absent.
+
+**When to use:** `keyring` is already listed in `[project.optional-dependencies] security` in `pyproject.toml`. Users who install `homelab-mcp` without `pip install homelab-mcp[security]` must not receive a hard import error on server startup.
+
+**Trade-offs:** Tests must cover both the `KEYRING_AVAILABLE = True` and `KEYRING_AVAILABLE = False` branches. Silent `None` return on get is safe — `resolve_ssh_credentials()` falls through to the mcp_admin key anyway.
+
+**Example:**
 ```python
-@server.list_prompts()
-async def handle_list_prompts() -> list[types.Prompt]:
-    ...
+# src/homelab_mcp/credential_store.py
+try:
+    import keyring as _keyring
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
 
-@server.get_prompt()
-async def handle_get_prompt(
-    name: str, arguments: dict[str, str] | None
-) -> types.GetPromptResult:
-    ...
+SERVICE_NAME = "homelab-mcp"
+
+def get_credential(key: str) -> str | None:
+    """Return stored secret for key, or None if keyring unavailable or key absent."""
+    if not KEYRING_AVAILABLE:
+        return None
+    return _keyring.get_password(SERVICE_NAME, key)
+
+def set_credential(key: str, secret: str) -> None:
+    """Store secret for key. Raises RuntimeError if keyring is not installed."""
+    if not KEYRING_AVAILABLE:
+        raise RuntimeError(
+            "keyring package is not installed. "
+            "Install with: pip install homelab-mcp[security]"
+        )
+    _keyring.set_password(SERVICE_NAME, key, secret)
+
+def delete_credential(key: str) -> bool:
+    """Delete credential for key. Returns True if deleted, False if absent."""
+    if not KEYRING_AVAILABLE:
+        return False
+    try:
+        _keyring.delete_password(SERVICE_NAME, key)
+        return True
+    except Exception:
+        return False
 ```
 
-**Key SDK types (from `mcp/types.py`):**
+### Pattern 2: Extend resolve_ssh_credentials() Priority Chain
 
+**What:** `ssh_tools.resolve_ssh_credentials()` already implements a three-step priority chain (explicit args → SQLite lookup → mcp_admin key fallback). Insert `credential_store.get_credential(f"{hostname}:{username}")` as step 3 — between the SQLite lookup and the mcp_admin fallback.
+
+**When to use:** This is the single call site that supplies credentials to every SSH handler. All 56 tools automatically benefit from keyring-stored passwords without any handler changes.
+
+**Key convention:** Keyring keys use `hostname:username` format (e.g., `192.168.1.10:admin`). This mirrors the `(hostname, username)` primary lookup in the SQLite `ssh_credentials` table.
+
+**The updated priority order:**
+1. Explicit `password` or `key_path` argument — backward compatible, unchanged
+2. `db.get_credential_by_hostname(hostname, username)` — SQLite metadata record — unchanged
+3. `credential_store.get_credential(f"{hostname}:{username or 'mcp_admin'}")` — keyring password — NEW
+4. Default `mcp_admin` key path — unchanged fallback
+
+**Trade-offs:** The keyring lookup adds one function call per SSH connection establishment. Since `credential_store.get_credential()` is synchronous and `resolve_ssh_credentials()` is already synchronous, no async complexity is introduced.
+
+### Pattern 3: argparse subparser for credentials subcommand
+
+**What:** Add `--version` as a top-level flag and `credentials` as a subparser in the existing `main()` function in `server.py`. The `credentials` subparser has three sub-subcommands: `add`, `list`, `remove`.
+
+**When to use:** The `homelab-mcp` console script points at `homelab_mcp.server:main`. Extending this function is the correct approach — adding a second console script would require users to remember two different commands.
+
+**Execution path:** When `sys.argv` includes `credentials`, `main()` dispatches to `credential_store` functions and calls `sys.exit(0)` before any server startup logic runs. `--version` uses `argparse`'s built-in `action="version"` and also exits without starting the server.
+
+**Key implementation note:** Import `credential_store` inside the credentials branch (local import), not at module top. This keeps `server.py`'s startup cost unchanged for the common case (starting the MCP server). Consistent with the established local import pattern used for circular import avoidance throughout the codebase (e.g., `tool_handlers/credential_handlers.py` line 34).
+
+**Example structure:**
 ```python
-class PromptArgument(BaseModel):
-    name: str
-    description: str | None = None
-    required: bool | None = None
+# In main(), after existing parser.add_argument() calls:
+parser.add_argument(
+    "--version",
+    action="version",
+    version=f"homelab-mcp {_get_version()}",
+)
+subparsers = parser.add_subparsers(dest="subcommand")
+cred_parser = subparsers.add_parser("credentials", help="Manage stored credentials")
+cred_sub = cred_parser.add_subparsers(dest="cred_action")
 
-class Prompt(BaseModel):
-    name: str
-    description: str | None = None
-    arguments: list[PromptArgument] | None = None
+add_p = cred_sub.add_parser("add")
+add_p.add_argument("--hostname", required=True)
+add_p.add_argument("--username", default="mcp_admin")
+add_p.add_argument("--password", required=True)
 
-class PromptMessage(BaseModel):
-    role: Role   # "user" | "assistant"
-    content: TextContent | ImageContent | EmbeddedResource
+cred_sub.add_parser("list")
 
-class GetPromptResult(Result):
-    description: str | None = None
-    messages: list[PromptMessage]
+remove_p = cred_sub.add_parser("remove")
+remove_p.add_argument("--hostname", required=True)
+remove_p.add_argument("--username", default="mcp_admin")
+
+args = parser.parse_args()
+
+if args.subcommand == "credentials":
+    from homelab_mcp.credential_store import (  # noqa: PLC0415
+        delete_credential, get_all_credentials, set_credential,
+    )
+    # dispatch to cred_action; sys.exit(0) when done
+    return
+# ... existing server startup ...
 ```
 
-**Capability auto-detection:** `get_capabilities()` in `lowlevel/server.py` lines 181–210 automatically sets `prompts_capability` when `types.ListPromptsRequest` is registered. Registering `@server.list_prompts()` is sufficient — no manual `Server()` constructor argument needed.
+### Pattern 4: PyPI OIDC Trusted Publisher in main.yml
 
-**Notification method (from `mcp/server/session.py` line 309):**
+**What:** Add a `publish` job to the existing `main.yml` that uses `pypa/gh-action-pypi-publish@release/v1` with `attestations: true`. Job runs only on `v*` tags, `needs: [test-and-quality]`, and declares `permissions: id-token: write`.
 
-```python
-await session.send_prompt_list_changed()
-# Sends: notifications/prompts/list_changed
+**When to use:** The existing `release` job already fires on `v*` tags. Add `publish` as a peer (not dependent) job — both need tests to pass, neither needs the other to finish first.
+
+**Why new job in main.yml, not a new file:** The tag trigger (`startsWith(github.ref, 'refs/tags/')`) is already in `main.yml`. A separate `publish.yml` would require duplicating this trigger and reasoning about two independent pipelines. Peer job in the same file is the standard pattern for projects that have both GitHub Release creation and PyPI publish.
+
+**OIDC setup prerequisite:** The PyPI project settings must have a Trusted Publisher configured (GitHub Actions / owner / repo / workflow name / environment). This is a one-time manual step done in the PyPI web UI before the workflow runs — it is not encoded in the workflow YAML.
+
+**Example job:**
+```yaml
+publish:
+  name: Publish to PyPI
+  runs-on: ubuntu-latest
+  needs: [test-and-quality]
+  if: startsWith(github.ref, 'refs/tags/')
+  permissions:
+    id-token: write
+
+  steps:
+  - uses: actions/checkout@v6
+
+  - name: Install uv
+    uses: astral-sh/setup-uv@v4
+    with:
+      enable-cache: true
+      cache-dependency-glob: "pyproject.toml"
+
+  - name: Set up Python
+    run: uv python install 3.12
+
+  - name: Build distribution
+    run: uv build
+
+  - name: Publish to PyPI
+    uses: pypa/gh-action-pypi-publish@release/v1
+    with:
+      attestations: true
 ```
 
-Access pattern (consistent with existing resource notification in `server.py` line 372):
+## Data Flow
 
-```python
-session = server.request_context.session
-await session.send_prompt_list_changed()
-```
-
----
-
-### 2. Dry-Run Tool Split — `*_preview` variants
-
-**Confidence: HIGH** — Pattern is derived from existing codebase structure, not new SDK mechanics.
-
-**Current state:** All 6 destructive tools already have `dry_run: bool` parameter in their `inputSchema` (confirmed in `tool_schemas/`). When `dry_run=True`, the existing handler returns a `build_dry_run_response()` dict instead of executing. The SDK `call_tool` decorator handles both paths identically — both return `list[types.TextContent]`.
-
-**v1.2 target:** Split each destructive tool into two separate tools:
-- `delete_proxmox_vm` (destructive, `readOnlyHint=False`, `destructiveHint=True`)
-- `delete_proxmox_vm_preview` (read-only, `readOnlyHint=True`, `destructiveHint=False`)
-
-The `_preview` variant calls the same underlying handler but passes `dry_run=True` implicitly (the caller never supplies a `dry_run` arg — the schema removes it entirely). This is semantically cleaner: the `_preview` tool always previews, the base tool always executes.
-
-**Why split rather than keep the flag?**
-
-The MCP spec's `readOnlyHint=True` is a client-visible signal. An AI assistant should be able to call `delete_proxmox_vm_preview` safely without user confirmation, then call `delete_proxmox_vm` only after showing the preview. The `dry_run` boolean on a destructive tool forces the model to reason about which value to set — `*_preview` makes the safe path a distinct, discoverable tool name.
-
----
-
-### 3. Drift MCP Resource — `homelab://drift/latest`
-
-**Confidence: HIGH** — Pattern is identical to existing resources; `read_resource` decorator already handles URI dispatch in `server.py`.
-
-**Integration point:** `HOMELAB_RESOURCES` dict in `server.py` (lines 101–114). Adding `homelab://drift/latest` to this dict makes it appear in `resources/list`. The `handle_read_resource` dispatcher calls `read_drift_resource()` from `resource_readers.py`.
-
-The drift scan result lives in `drift_detection.scan_drift()`. The resource reader needs to either:
-1. Re-run a lightweight scan on each read, or
-2. Serve the most recent scan result cached in SQLite.
-
-Option 2 is correct: add a `drift_latest` column or table in SQLite. The `scan_infrastructure_drift` tool writes to it; `read_drift_resource()` reads from it. This avoids triggering a full Proxmox+SSH scan on every resource read.
-
-**Notification:** After `scan_infrastructure_drift` tool succeeds, send `send_resource_updated(AnyUrl("homelab://drift/latest"))` via the session. The existing `handle_call_tool` notification block (server.py lines 366–376) is the right place to add this — extend `MUTATING_TOOLS` or add a new `DRIFT_UPDATING_TOOLS` frozenset.
-
----
-
-### 4. PyPI Distribution — `pyproject.toml` changes
-
-**Confidence: HIGH** — verified against pyproject.toml and Python packaging standards.
-
-**Current state:**
-- `name = "homelab-mcp-server"` (hyphenated, valid PyPI name)
-- `version = "0.2.0"` (needs bump to `1.2.0`)
-- `build-backend = "hatchling.build"` (already correct for PyPI)
-- Entry point: `homelab-mcp = "homelab_mcp.server:main"` — **`main` does not exist in `server.py`**. This is a live bug. The `__main__.py` module is also absent.
-
-**Required changes for `uvx homelab-mcp`:**
-
-1. Create `src/homelab_mcp/__main__.py` with a `main()` function that bootstraps the server (stdio + HTTP). This is what `uvx homelab-mcp` invokes.
-2. Fix entry point in `pyproject.toml` to point at `homelab_mcp.__main__:main` (per `milestone_context` spec) or keep `homelab_mcp.server:main` once `main` is added to `server.py`.
-3. Bump `version` to `1.2.0`.
-4. Add `[project.urls]` for PyPI metadata (Homepage, Repository, Changelog — optional but expected by PyPI consumers).
-5. Verify `[tool.hatch.build.targets.wheel] packages = ["src/homelab_mcp"]` — already correct.
-
-**Note on `uvx`:** `uvx` runs the entry point from the installed package without requiring a virtual environment. The `main()` function must handle the full startup path including argument parsing (stdio vs HTTP mode) and signal handling. Currently this logic lives in `run_server.py` (project root) — the `__main__.py` should consolidate it.
-
----
-
-## Component Map
-
-### Existing Components (unchanged in v1.2)
-
-| Component | File | Role |
-|-----------|------|------|
-| MCP server instance | `server.py` | `lowlevel.Server`, all handler decorators, lifespan |
-| ResourceManager | `resource_manager.py` | Proxmox session + SQLite lifecycle |
-| Tool handler registry | `tool_handlers/__init__.py` | `TOOL_HANDLERS` dict + `get_tool_handler()` |
-| Tool schemas | `tool_schemas/__init__.py` | Schema dicts per category |
-| Tool annotations | `tool_annotations.py` | `ToolAnnotations` per tool name |
-| Resource readers | `resource_readers.py` | `read_vms_resource`, `read_devices_resource`, `read_service_resource` |
-| Drift detection | `drift_detection.py` | `scan_drift()`, `update_baseline_after_mutation()` |
-| Drift handlers | `tool_handlers/drift_handlers.py` | `handle_scan_infrastructure_drift` |
-| HTTP app | `http_app.py` | Starlette + `StreamableHTTPSessionManager` + `OriginValidationMiddleware` + `APIKeyAuth` |
-
-### New Components for v1.2
-
-| Component | File | What It Does |
-|-----------|------|--------------|
-| Prompt registry | `prompt_registry.py` (new) | `HOMELAB_PROMPTS` dict + `get_all_prompts()` + `get_prompt_by_name()` |
-| Preview tool schemas | `tool_schemas/preview_tools_schema.py` (new) | Schemas for all 6 `*_preview` variants |
-| Preview tool handlers | `tool_handlers/preview_handlers.py` (new) | Thin wrappers that call existing handlers with `dry_run=True` |
-| Drift resource reader | `resource_readers.py` (extend) | `read_drift_resource()` added to existing module |
-| Entrypoint | `__main__.py` (new) | `main()` for `uvx homelab-mcp` |
-
-### Modified Components
-
-| Component | File | Change |
-|-----------|------|--------|
-| MCP server decorators | `server.py` | Add `@server.list_prompts()`, `@server.get_prompt()` decorators; extend `HOMELAB_RESOURCES` + `handle_read_resource` for `homelab://drift/latest`; add drift resource notification trigger in `handle_call_tool` |
-| Tool handler registry | `tool_handlers/__init__.py` | Import and register all 6 `*_preview` handlers |
-| Tool schema registry | `tool_schemas/__init__.py` | Include `PREVIEW_TOOLS` in `get_all_tool_schemas()` |
-| Tool annotations | `tool_annotations.py` | Add `_READ_ONLY` annotations for all 6 `*_preview` tool names |
-| Package manifest | `pyproject.toml` | Bump version; fix/add entrypoint; add `[project.urls]` |
-
----
-
-## Data Flow: MCP Prompts
+### SSH Credential Resolution (v1.3 updated flow)
 
 ```
-MCP client → prompts/list
-  server.py: handle_list_prompts()
-    → prompt_registry.get_all_prompts()
-    → returns list[types.Prompt]
-
-MCP client → prompts/get { name: "audit_vm_drift", arguments: {"node": "pve1"} }
-  server.py: handle_get_prompt(name, arguments)
-    → prompt_registry.get_prompt_by_name(name, arguments)
-    → messages_fn(arguments) → list[types.PromptMessage]
-    → returns types.GetPromptResult
+ssh_handler receives {hostname, username?, password?, key_path?}
+    ↓
+resolve_ssh_credentials(hostname, username, password, key_path)
+    │
+    ├── password or key_path present?
+    │       YES → SSHCredentials(explicit)          [backward compat, UNCHANGED]
+    │
+    ├── db.get_credential_by_hostname(hostname, username)
+    │       FOUND → SSHCredentials(from SQLite)     [UNCHANGED]
+    │
+    ├── credential_store.get_credential(f"{hostname}:{username or 'mcp_admin'}")
+    │       FOUND → SSHCredentials(password=keyring_secret)    [NEW]
+    │
+    └── username == "mcp_admin" and ~/.ssh/mcp/mcp_admin_key exists?
+            YES → SSHCredentials(mcp_admin key)     [UNCHANGED fallback]
+            NO  → SSHCredentials(bare)              [UNCHANGED]
 ```
 
-`prompt_registry.py` owns prompt definitions and exposes `get_all_prompts()` and `get_prompt_by_name()`, exactly mirroring how `tool_schemas/__init__.py` exposes `get_all_tool_schemas()`. This keeps prompt content out of `server.py`.
-
-### Suggested initial prompts (homelab workflow templates)
-
-| Prompt name | Purpose | Arguments |
-|-------------|---------|-----------|
-| `audit_vm_drift` | Guides drift scan + review workflow | `node` (optional), `vm_type` (optional) |
-| `decommission_device_safe` | Walks through preview → confirm → execute for decommission | `device_id` |
-| `deploy_new_vm` | Proxmox VM creation checklist | `node`, `vm_type`, `cores`, `memory` |
-| `service_health_check` | Check all services on a host | `hostname` |
-
-Four prompts is sufficient for v1.2. Prompts are static templates — no database or ResourceManager access needed inside `messages_fn`.
-
----
-
-## Data Flow: Dry-Run Tool Split
+### Proxmox Credential Resolution (v1.3 extended)
 
 ```
-MCP client → tools/call { name: "delete_proxmox_vm_preview", arguments: {node, vmid} }
-  server.py: handle_call_tool("delete_proxmox_vm_preview", arguments)
-    → get_tool_handler("delete_proxmox_vm_preview")
-    → preview_handlers.handle_delete_proxmox_vm_preview(arguments)
-    → proxmox_handlers.handle_delete_proxmox_vm({...arguments, dry_run: True})
-    → build_dry_run_response(...) in dry_run.py
-    → returns {"mode": "dry_run", "would_affect": [...], ...}
+MCPConfig.__init__()
+    │
+    ├── os.getenv("PROXMOX_PASSWORD") → use directly   [env var, takes precedence]
+    │
+    └── credential_store.get_credential("proxmox:password") → use if present  [NEW]
 ```
 
-Each preview handler in `preview_handlers.py` is a one-liner forwarding to the live handler with `dry_run=True` injected. No new business logic; `build_dry_run_response()` already handles the response contract.
+This path is only reached when `PROXMOX_PASSWORD` env var is absent.
 
----
-
-## Data Flow: Drift Resource
+### CLI credentials subcommand flow
 
 ```
-MCP client → tools/call { name: "scan_infrastructure_drift" }
-  → drift_handlers.handle_scan_infrastructure_drift(arguments)
-  → drift_detection.scan_drift(session, db_adapter)
-  → db.upsert_drift_latest(result)          ← NEW
-  → server.py: send_resource_updated(homelab://drift/latest)   ← NEW
-
-MCP client → resources/read { uri: "homelab://drift/latest" }
-  → server.py: handle_read_resource(uri)
-  → resource_readers.read_drift_resource()  ← NEW
-  → db.get_drift_latest()                   ← NEW
-  → returns JSON payload (last scan result or {"status": "no_scan_run"})
+homelab-mcp credentials add --hostname 192.168.1.10 --username admin --password s3cr3t
+    ↓
+main() detects args.subcommand == "credentials", args.cred_action == "add"
+    ↓
+credential_store.set_credential("192.168.1.10:admin", "s3cr3t")
+    ↓
+print("Credential stored for 192.168.1.10:admin")
+sys.exit(0)    [MCP server never starts]
 ```
 
-### SQLite change required
+### Tag-push PyPI publish flow
 
-New single-row table in `database.py`:
-
-```sql
-CREATE TABLE IF NOT EXISTS drift_latest_report (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    report_json TEXT NOT NULL,
-    recorded_at TEXT NOT NULL
-);
+```
+git tag v1.3.0 && git push origin v1.3.0
+    ↓
+main.yml triggers on push/tags/v*
+    ↓
+test-and-quality job (ruff, mypy, pytest -m "not integration")
+    ↓ needs: [test-and-quality]                        ↓ needs: [test-and-quality]
+publish job                                       release job
+  uv build → dist/                                 softprops/action-gh-release
+  pypa/gh-action-pypi-publish (OIDC)               generates release notes
+  uploads to PyPI                                  creates GitHub Release
 ```
 
-`upsert_drift_latest()` uses `INSERT OR REPLACE INTO drift_latest_report (id, report_json, recorded_at) VALUES (1, ?, ?)`. This is consistent with the `INSERT OR REPLACE` pattern already used for `drift_baselines`.
+The `publish` and `release` jobs run in parallel — neither depends on the other.
 
----
+### PRMT-02 Fix Data Flow
 
-## Anti-Patterns to Avoid
+```
+MCP client → prompts/get { name: "decommission_device_workflow",
+                           arguments: { hostname: "192.168.1.10" } }
+    ↓
+prompt_registry.get_prompt_result("decommission_device_workflow", args)
+    ↓
+_build_decommission_result(args)
+    ↓
+Returns PromptMessage text instructing AI to:
+  1. Call list_network_devices or get_device_info to resolve hostname → device_id
+  2. Call decommission_device_preview with device_id=<resolved_id>
+  3. Get confirmation
+  4. Call decommission_device with device_id=<resolved_id>
+```
 
-### Anti-Pattern 1: Calling scan_drift() inside read_drift_resource()
+The fix is purely in the rendered text of `_build_decommission_result()`. The `HOMELAB_PROMPTS` metadata entry (`hostname` argument) is correct — the prompt accepts hostname as human input. Only the tool call instructions in the rendered text need updating (two occurrences of `hostname=` → `device_id=`, plus a resolver step).
 
-**What:** Implement `read_drift_resource()` as a direct call to `scan_drift()`.
-**Why bad:** Resource reads must be fast. `scan_drift()` makes Proxmox API calls and SSH connections — under load, a resource read could take 10–30 seconds. The MCP spec treats resource reads as synchronous; slow reads block the client.
-**Instead:** Cache scan results in SQLite; `read_drift_resource()` reads only from the cache.
+## Integration Points
 
-### Anti-Pattern 2: Adding `dry_run: bool` parameter to `*_preview` tool schemas
+### New Module Boundaries
 
-**What:** Copy the live tool's schema verbatim including `dry_run: bool` for the `_preview` variant.
-**Why bad:** The `_preview` tool always previews. Exposing `dry_run` on it implies the client can set `dry_run=False` to execute — which contradicts the tool's purpose and confuses the AI assistant.
-**Instead:** Remove `dry_run` from the `_preview` schema; the handler injects it implicitly.
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `credential_store.py` → `ssh_tools.py` | `resolve_ssh_credentials()` calls `credential_store.get_credential()` directly | No circular risk: `credential_store` imports only `keyring` (optional) |
+| `credential_store.py` → `server.py main()` | Local import inside the `credentials` subcommand branch | Consistent with local import pattern established throughout tool_handlers |
+| `credential_store.py` → `config.py` | Called in `MCPConfig` constructor for Proxmox password fallback | After env var check; only imported if env var absent |
 
-### Anti-Pattern 3: Adding prompts to server.py directly
+### Modified Module Touch Points
 
-**What:** Define `HOMELAB_PROMPTS` inline in `server.py`.
-**Why bad:** `server.py` is already 415 lines. Adding prompt definitions breaks the established pattern where schemas live in `tool_schemas/`, handlers in `tool_handlers/`, and annotations in `tool_annotations.py`. Prompts need the same separation.
-**Instead:** `prompt_registry.py` owns prompt definitions and exposes `get_all_prompts()` and `get_prompt_by_name()`.
+| Module | What Changes | Lines / Scope |
+|--------|--------------|---------------|
+| `server.py main()` | Add `--version` action, add `credentials` subparser and dispatch | ~40 lines new; existing server startup logic unchanged |
+| `ssh_tools.resolve_ssh_credentials()` | Insert step 3: keyring lookup via credential_store | ~8 lines inserted in existing function body |
+| `config.py MCPConfig` | Add keyring fallback for Proxmox password after env var check | ~5 lines; conditional on `PROXMOX_PASSWORD` env var absent |
+| `prompt_registry.py _build_decommission_result()` | Update tool call instructions: add resolver step, change `hostname=` to `device_id=` | ~5 lines changed in prompt text string |
+| `.github/workflows/main.yml` | Add `publish` job after existing `release` job | ~25 lines new YAML |
 
-### Anti-Pattern 4: Keeping run_server.py as a parallel entry point
+### External Services
 
-**What:** Keep `run_server.py` as the development entry point and `__main__.py` only for packaging.
-**Why bad:** Two entry points diverge over time and cause "works in dev but not in production" bugs. The project already has this split — it's a liability, not an asset.
-**Instead:** `__main__.py` is the single entry point. `run_server.py` at project root becomes a one-liner shim or is deleted.
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| OS keyring (libsecret / macOS Keychain / Windows Credential Manager) | `keyring` library abstraction | Optional dep; absent = silent no-op in get, RuntimeError with install hint in set/delete |
+| PyPI | OIDC trusted publisher via `pypa/gh-action-pypi-publish@release/v1` | One-time manual PyPI project settings setup required before first publish |
+| GitHub Releases | `softprops/action-gh-release@v2` | Already present; `publish` job is a peer, not dependent |
 
----
+## Anti-Patterns
+
+### Anti-Pattern 1: Second console script entry point for credentials
+
+**What people do:** Add `homelab-mcp-credentials = "homelab_mcp.cli:credentials_main"` to `[project.scripts]` in `pyproject.toml`.
+
+**Why it's wrong:** Users must remember two different commands. The existing `homelab-mcp` console script already uses argparse and is the right extension point. A second script doubles distribution surface for no gain.
+
+**Do this instead:** Add `credentials` as a subparser in the existing `main()` function in `server.py`. When `args.subcommand is None`, existing server startup runs unchanged.
+
+### Anti-Pattern 2: Separate publish.yml workflow file
+
+**What people do:** Create `.github/workflows/publish.yml` with its own `on: push: tags:` trigger.
+
+**Why it's wrong:** Duplicates trigger logic already in `main.yml`. The existing `release` job in `main.yml` fires on `v*` tags; a second file creates two independent pipelines that are hard to reason about together.
+
+**Do this instead:** Add `publish` as a peer job to `release` inside `main.yml`. Both need `test-and-quality`, both fire on `v*` tags, clearly co-located.
+
+### Anti-Pattern 3: Scattering keyring calls across modules
+
+**What people do:** Call `keyring.get_password("homelab-mcp", key)` directly in `ssh_tools.py` and `config.py`.
+
+**Why it's wrong:** The service name `"homelab-mcp"` becomes an implicit coupling across files. The optional import guard must be duplicated. Bandit may flag direct keyring calls outside a purpose-built module.
+
+**Do this instead:** All keyring access through `credential_store.py`. The service name is a single module-level constant there. Other modules call `credential_store.get_credential(key)`.
+
+### Anti-Pattern 4: Storing passwords in both keyring and SQLite
+
+**What people do:** When `credentials add --password` is invoked, write the password to both `credential_store.set_credential()` and the SQLite `ssh_credentials` table.
+
+**Why it's wrong:** The SQLite DB (`~/.mcp/sitemap.db`) is a plaintext file. Duplicating secrets there defeats the security purpose of OS keyring. The existing `ssh_credentials` table correctly stores only `hostname`, `username`, `port`, and `key_path` — no passwords.
+
+**Do this instead:** SQLite stores non-secret metadata only. Keyring stores passwords only. `resolve_ssh_credentials()` checks SQLite for key-based auth records, then keyring for password-based auth, in that order.
 
 ## Build Order
 
-Ordered by implementation dependency:
+Ordered by implementation dependencies — each item can be Wave-0 RED-test scaffolded before implementation:
 
 ```
-Phase 1: __main__.py + pyproject.toml entrypoint fix
-  Prerequisite for PyPI publishing; broken entry point is a live bug.
-  New: src/homelab_mcp/__main__.py
-  Modifies: pyproject.toml (version bump, entrypoint fix, project.urls)
+1. credential_store.py
+   No homelab_mcp dependencies. Standalone module.
+   Tests mock keyring; cover KEYRING_AVAILABLE=True and False branches.
 
-Phase 2: Drift resource (homelab://drift/latest)
-  Prerequisite: drift_detection.py exists (v1.1 done).
-  New: drift_latest_report table in database.py + migration
-  Extends: resource_readers.py with read_drift_resource()
-  Modifies: server.py (HOMELAB_RESOURCES, dispatcher branch, notification trigger)
-  Modifies: tool_handlers/drift_handlers.py (write to drift_latest after scan)
+2. --version flag in server.py main()
+   Trivial: one argparse.add_argument call, one test.
+   No dependencies on step 1.
 
-Phase 3: MCP Prompts
-  No prerequisites; self-contained.
-  New: src/homelab_mcp/prompt_registry.py
-  Modifies: server.py (two new decorator registrations)
+3. credentials subparser in server.py main()
+   Depends on credential_store.py being importable (step 1).
+   Wave-0 test stubs credential_store; full test imports it.
 
-Phase 4: Dry-run tool split (_preview variants)
-  Prerequisite: dry_run.py + build_dry_run_response() exists (v1.1 done).
-  New: tool_schemas/preview_tools_schema.py
-  New: tool_handlers/preview_handlers.py
-  Modifies: tool_handlers/__init__.py, tool_schemas/__init__.py, tool_annotations.py
+4. resolve_ssh_credentials() extension in ssh_tools.py
+   Depends on credential_store.py (step 1).
+   Extend existing unit tests with keyring-hit and keyring-miss cases.
+
+5. Proxmox password fallback in config.py
+   Depends on credential_store.py (step 1).
+   Can be done in parallel with step 4.
+
+6. PRMT-02 fix in prompt_registry.py
+   No new dependencies. Self-contained text change.
+   Can be done at any point in the sequence.
+
+7. publish job in main.yml
+   No code dependencies. YAML-only change.
+   Requires one-time PyPI trusted publisher setup before first tag push.
 ```
 
-Phase 2 before Phase 3 because the drift resource demonstrates end-to-end resource read + notification, which is the riskiest integration point. Phase 4 last because it touches the most files and has no dependents within the milestone.
-
----
-
-## Integration Point Summary
-
-| Feature | Touch points in server.py | New files | Modified files |
-|---------|---------------------------|-----------|----------------|
-| MCP Prompts | Two new decorators after line 414 | `prompt_registry.py` | `server.py` |
-| Drift resource | `HOMELAB_RESOURCES` + dispatcher branch + notification | — | `server.py`, `resource_readers.py`, `database.py`, `tool_handlers/drift_handlers.py` |
-| Preview tools | None directly | `tool_handlers/preview_handlers.py`, `tool_schemas/preview_tools_schema.py` | `tool_handlers/__init__.py`, `tool_schemas/__init__.py`, `tool_annotations.py` |
-| PyPI + entrypoint | None directly | `__main__.py` | `pyproject.toml` |
-
----
+Steps 4, 5, 6, and 7 have no ordering dependency between them once step 1 is done.
 
 ## Confidence Assessment
 
 | Area | Level | Reason |
 |------|-------|--------|
-| `@server.list_prompts()` / `@server.get_prompt()` decorators | HIGH | Verified in installed SDK source `lowlevel/server.py` lines 219–245 |
-| `types.Prompt`, `types.PromptArgument`, `types.GetPromptResult` | HIGH | Verified in installed `mcp/types.py` |
-| Capability auto-detection for prompts | HIGH | Verified in `get_capabilities()` lines 181–210 of SDK source |
-| `session.send_prompt_list_changed()` | HIGH | Verified in `mcp/server/session.py` line 309 |
-| `session.send_resource_updated()` | HIGH | Verified in `mcp/server/session.py` line 196 |
-| Dry-run tool split pattern | HIGH | `build_dry_run_response()` + handler patterns established in v1.1 |
-| SQLite cache for drift report | MEDIUM | Requires new table + migration; no technical risk, but schema change needs care |
-| PyPI packaging mechanics | HIGH | `hatchling` build backend already configured; `uvx` install path is standard Python packaging |
-| Missing `main()` in `server.py` bug | HIGH | Confirmed: `pyproject.toml` entry point is `homelab_mcp.server:main` but no `def main` exists in `server.py` |
-
----
+| credential_store.py pattern | HIGH | `keyring` optional dep guard is a standard Python pattern; keyring>=25.0.0 already in pyproject.toml |
+| resolve_ssh_credentials() hook point | HIGH | Function body inspected directly; three-step chain verified |
+| argparse subparser extension | HIGH | Existing `main()` in server.py inspected; no conflicts with existing args |
+| PRMT-02 root cause | HIGH | Tool schema (`device_id` required) and prompt text (`hostname=`) both inspected directly |
+| PyPI OIDC publish job | MEDIUM | Pattern is standard `pypa/gh-action-pypi-publish` usage; PyPI UI setup step is external and manual |
+| Proxmox config.py fallback | MEDIUM | config.py not deeply inspected in this session; env var precedence pattern is standard |
 
 ## Sources
 
-- `mcp/server/lowlevel/server.py` (installed, `.venv`) — `list_prompts()`, `get_prompt()` decorators at lines 219–245; `get_capabilities()` auto-detection logic at lines 181–210
-- `mcp/types.py` (installed, `.venv`) — `Prompt`, `PromptArgument`, `GetPromptResult`, `PromptMessage` class definitions
-- `mcp/server/session.py` (installed, `.venv`) — `send_resource_updated()` line 196, `send_resource_list_changed()` line 289, `send_prompt_list_changed()` line 309
-- `src/homelab_mcp/server.py` — existing handler patterns, `HOMELAB_RESOURCES` dict (lines 101–114), notification block (lines 366–376)
-- `src/homelab_mcp/resource_readers.py` — existing reader pattern (deferred import to avoid circular import, error handling, `scanned_at`)
-- `src/homelab_mcp/drift_detection.py` — `scan_drift()` return structure
-- `src/homelab_mcp/dry_run.py` — `build_dry_run_response()` contract
-- `src/homelab_mcp/tool_annotations.py` — annotation patterns for `_DESTRUCTIVE_TOOLS` and `_READ_ONLY_TOOLS`
-- `src/homelab_mcp/tool_handlers/__init__.py` — `TOOL_HANDLERS` dict structure
-- `src/homelab_mcp/tool_schemas/__init__.py` — `get_all_tool_schemas()` composition pattern
-- `pyproject.toml` — current entry point (confirmed broken), build backend, version
+- `src/homelab_mcp/server.py` — `main()` argparse setup (lines 483–580), `_get_version()` (lines 109–114)
+- `src/homelab_mcp/ssh_tools.py` — `resolve_ssh_credentials()` full body (lines 35–114)
+- `src/homelab_mcp/database.py` — `DatabaseAdapter` credential CRUD methods (lines 67–109), no password field in `add_credential()` signature
+- `src/homelab_mcp/prompt_registry.py` — `_build_decommission_result()` (lines 73–87), tool calls using `hostname=`
+- `src/homelab_mcp/tool_schemas/infrastructure_tools_schema.py` — `decommission_device` schema: `required: ["device_id"]`
+- `.github/workflows/main.yml` — existing jobs, tag triggers, `release` job structure (lines 192–211)
+- `pyproject.toml` — `[project.optional-dependencies] security` includes `keyring>=25.0.0`; console script `homelab_mcp.server:main`
 
 ---
-
-*Architecture research for: Homelab MCP Server v1.2 Protocol Completeness*
-*Researched: 2026-03-12*
+*Architecture research for: homelab-mcp v1.3 — credential store + release automation*
+*Researched: 2026-03-14*

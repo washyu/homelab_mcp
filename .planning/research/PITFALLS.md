@@ -1,350 +1,401 @@
-# Domain Pitfalls
+# Pitfalls Research
 
-**Domain:** Python MCP server — v1.2 Protocol Completeness (PyPI packaging, MCP Prompts, dry-run tool split, drift MCP Resource)
-**Researched:** 2026-03-12
-**Project context:** homelab-mcp-server v1.2, existing lowlevel.Server, hatchling build backend, service_templates YAML files on disk
+**Domain:** Python CLI tool — adding OS keyring credential storage and GitHub Actions PyPI release automation to an existing project
+**Researched:** 2026-03-14
+**Project context:** homelab-mcp v1.3, existing SQLite credential store, existing `server.py:main()` flat argparse, existing `log_filter.py` redaction, existing `main.yml` CI workflow
 
-> **Note:** This file covers v1.2 Protocol Completeness pitfalls.
-> v1.1 Safety & Observability pitfalls (dry-run divergence, drift false positives, ResourceManager session wiring, MCP Resource staleness) are appended at the bottom of this file.
+> **Note:** This file covers v1.3 Credentials & Release Automation pitfalls.
+> v1.2 Protocol Completeness pitfalls (service_templates wheel bundling, version unification, MCP Prompts, dry-run split, drift Resource) are appended at the bottom of this file.
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause broken installs, silent protocol failures, or rewrites.
-
 ---
 
-### Pitfall 1: service_templates YAML files excluded from wheel
+### Pitfall 1: Keyring `NoKeyringError` Crashes the Server on Headless Linux
 
-**What goes wrong:** `service_templates/*.yaml` files live inside the Python package directory (`src/homelab_mcp/service_templates/`) but are not `.py` files. With hatchling as the build backend, non-Python files inside the package tree are included in wheels by default, but this is version-dependent and can be silently broken by an accidental `exclude` rule or a future hatchling upgrade. If the wheel ships without them, `ServiceInstaller` raises `FileNotFoundError` at runtime on any `uvx`-installed deployment.
+**What goes wrong:**
+When `keyring.get_password()` or `keyring.set_password()` is called on a headless Linux machine — no D-Bus session, no GNOME Keyring, no KWallet — keyring raises `keyring.errors.NoKeyringError: No recommended backend was available`. This is an unguarded exception that propagates to the caller. The primary deployment target for this project is a headless Proxmox host accessed via `uvx homelab-mcp`. Docker containers are equally affected: libsecret/GNOME Keyring requires `--privileged` and an explicit daemon setup that no homelab user will configure.
 
-**Why it happens:** The pyproject.toml declares `[tool.hatch.build.targets.wheel] packages = ["src/homelab_mcp"]`. This covers Python modules. YAML template inclusion relies on hatchling's implicit behaviour, which is fragile under tooling churn. The current code reads templates from `__file__`-relative paths that work in a local clone but depend on disk layout assumptions that wheels do not guarantee.
+The project already ships `keyring` as an optional extra (`[security]`). The risk is not a missing import — it is that `keyring` is installed (because the user ran `pip install homelab-mcp[security]`) but no OS backend exists. `ImportError` and `NoKeyringError` are separate failure modes and must both be handled. Older keyring versions (pre-24) raise `RuntimeError` instead of `NoKeyringError`, so catching only `NoKeyringError` is insufficient.
 
-**Consequences:** Server starts, tools register, `list_available_services` returns names, but any actual `install_service` call fails with a path error. Not caught by unit tests that mock `ServiceInstaller`. Only manifests on installed packages, not in `uv run` dev mode.
+**Why it happens:**
+Developers test on macOS (Keychain) or a graphical Linux desktop (SecretService). GitHub-hosted Ubuntu runners lack a D-Bus session. The disconnect between dev environment and target environment is total: every dev machine has a backend; no Proxmox host has one.
 
-**Prevention:**
-- Explicitly declare YAML inclusion in pyproject.toml using hatchling's `include` pattern:
-  ```toml
-  [tool.hatch.build.targets.wheel]
-  packages = ["src/homelab_mcp"]
-  # Ensure non-Python package data is included
-  artifacts = ["src/homelab_mcp/service_templates/*.yaml"]
-  ```
-- Migrate template path resolution from `__file__`-relative to `importlib.resources.files("homelab_mcp.service_templates")`, which is the correct approach for installed packages and works identically in dev and installed modes.
-- Add a build smoke test: unzip the built wheel and assert each YAML filename is present before publishing.
+**How to avoid:**
+1. Wrap every keyring call in `try/except (keyring.errors.NoKeyringError, RuntimeError, Exception)`. The broad `Exception` guard handles older keyring versions and unexpected `InitError` variants.
+2. On exception, fall back silently to the existing SQLite credential store (`database.py`) — this backend is already proven and handles the headless case correctly.
+3. Never call keyring at module import time, at server startup, or in `resolve_ssh_credentials()` where a crash prevents all SSH tool calls. Only call keyring inside explicit CLI subcommand handlers (`credentials add`/`credentials remove`).
+4. Log at `DEBUG` level (not `WARNING`) when falling back — this is expected behaviour on headless deployments, not a problem.
+5. Keep `keyring` as an optional extra. Do not promote it to a required dependency.
 
-**Detection:** `python -c "import zipfile, glob; [print(zipfile.ZipFile(w).namelist()) for w in glob.glob('dist/*.whl')]"` — scan for `.yaml` in the output.
-
-**Phase:** PyPI packaging phase.
-
----
-
-### Pitfall 2: Version mismatch between pyproject.toml and `__init__.py`
-
-**What goes wrong:** `pyproject.toml` has `version = "0.2.0"` but `src/homelab_mcp/__init__.py` hard-codes `__version__ = "0.1.0"`. These will continue to diverge with every release. Users checking `homelab_mcp.__version__` programmatically see `0.1.0`; `importlib.metadata.version("homelab-mcp-server")` returns `0.2.0`; the MCP server's `version=` argument in `server.py` hard-codes `"0.2.0"` as a third value. Three sources of truth that can never all be correct simultaneously.
-
-**Why it happens:** The `__init__.__version__` was added before the project migrated to a pyproject.toml-first workflow. Manual synchronisation is unreliable.
-
-**Consequences:** Incorrect version reported in MCP `initialize` response; misleading debug output; CI/release automation that reads `__version__` will be wrong; MCP Inspector shows wrong server version.
-
-**Prevention:** Remove `__version__` from `__init__.py` and read it dynamically from package metadata:
+Minimal guard pattern:
 ```python
-from importlib.metadata import version, PackageNotFoundError
-try:
-    __version__ = version("homelab-mcp-server")
-except PackageNotFoundError:
-    __version__ = "dev"  # running from source without install
+def _keyring_get(service: str, key: str) -> str | None:
+    try:
+        import keyring
+        return keyring.get_password(service, key)
+    except ImportError:
+        return None  # keyring[security] not installed
+    except Exception:  # NoKeyringError, RuntimeError, InitError
+        return None  # no OS backend available; caller falls back to SQLite
 ```
-This makes pyproject.toml the single source of truth. The `Server("homelab-mcp", version=...)` instantiation in `server.py` should also use this value.
 
-**Detection:** `grep -rn "__version__" src/` and compare with `grep "^version" pyproject.toml`.
+**Warning signs:**
+- `homelab-mcp credentials add hostname=192.168.1.10` raises an unhandled exception on the Proxmox host after install.
+- Unit tests pass locally (macOS) but CI fails because the GitHub runner has no D-Bus session.
+- Any call path that hits keyring causes `homelab-mcp` to crash before the MCP server loop starts.
 
-**Phase:** PyPI packaging phase.
-
----
-
-### Pitfall 3: `uvx homelab-mcp` fails because `server.py:main` does not exist
-
-**What goes wrong:** The pyproject.toml declares `homelab-mcp = "homelab_mcp.server:main"` as the console script entry point. If `server.py` does not export a `main()` function (the existing startup logic lives in `run_server.py`), `uvx homelab-mcp` fails with `AttributeError: module 'homelab_mcp.server' has no attribute 'main'`. This only surfaces when installing from PyPI — local `uv run python run_server.py` continues to work, so the bug is invisible during development.
-
-**Why it happens:** Entry point targets are validated by the build tool at install time by checking that the module is importable and the attribute exists, but this check only happens on the installing machine. If the developer uses `run_server.py` as the dev path and never calls `homelab_mcp.server.main()` directly, the gap is undetected until a user installs the package.
-
-**Consequences:** Every user who installs via `uvx` gets a crash on first run. First impression of the PyPI package is a failure.
-
-**Prevention:**
-- Add `def main() -> None:` to `server.py` that replicates the startup logic from `run_server.py`.
-- Add a test: `from homelab_mcp.server import main; assert callable(main)`.
-- After building, run `uvx --from ./dist/homelab_mcp_server-*.whl homelab-mcp --help` locally to confirm the entry point resolves before publishing to PyPI.
-
-**Detection:** `python -c "from homelab_mcp.server import main"` after `uv sync` — must succeed without error.
-
-**Phase:** PyPI packaging phase.
+**Phase to address:**
+The phase that introduces keyring calls. Must be addressed before any keyring call is added to `ssh_tools.py`, `config.py`, or any module invoked during server startup.
 
 ---
 
-### Pitfall 4: `*_preview` dry-run tools omitted from `tool_annotations.py` — silent annotation gap
+### Pitfall 2: Argparse Subparsers Break the Existing Bare Invocation
 
-**What goes wrong:** Adding 6 `*_preview` tool variants requires parallel updates to three files: the tool schema (in `tool_schemas/`), the tool handler (in `tool_handlers/`), and the annotations registry (`tool_annotations.py`). If annotations are omitted, `get_tool_annotations(name)` returns `None` for the new tools. The server emits those tools without any `readOnlyHint`, `destructiveHint`, or `idempotentHint` annotations. MCP clients that use annotations to gate operations will not recognise preview tools as safe/read-only, defeating the purpose of the split.
+**What goes wrong:**
+`server.py:main()` uses a flat `ArgumentParser` with no subcommands. Adding `credentials` as a subparser via `add_subparsers()` changes how argparse handles invocation. The critical failure: `homelab-mcp` (bare, no args) may start printing a usage error instead of launching the MCP server in stdio mode, breaking every Claude Desktop / MCP client connection that starts the server without arguments.
 
-**Why it happens:** `tool_annotations.py` is a separate registry with no compile-time enforcement. The three-file parallel update pattern has already caused annotation gaps in the codebase (the existing 50 tools are only complete because of explicit audit). Preview tools will be added during a focused sprint and annotations are the step most likely to be forgotten.
+The underlying issue is argparse's `required` behaviour for subparsers: it changed between Python versions (required in 3.3–3.8, not required in 3.9+). Python 3.12 (the project minimum) defaults `required=False` for subparsers, but the behaviour of `parse_args([])` when subparsers are defined without `set_defaults(func=...)` is to produce an `args` namespace where `args.func` does not exist — which causes an `AttributeError` in any handler that calls `args.func(args)` unconditionally.
 
-**Consequences:** Preview tools appear unannoted. Clients may prompt users for destructive-tool confirmation even for dry-run previews. MCP Inspector will show preview tools as having no safety metadata.
+Additionally, `homelab-mcp --http --port 8080` (the documented HTTP mode invocation) must continue to work. Adding subparsers does not break `--http` positionally, but if the dispatch logic changes to `args.func(args)` without checking for the no-subcommand case, HTTP mode is unreachable.
 
-**Prevention:**
-- Add an automated test that asserts every key in `get_all_tool_schemas()` has a corresponding entry in `TOOL_ANNOTATIONS`:
-  ```python
-  def test_all_tools_have_annotations():
-      from homelab_mcp.tool_schemas import get_all_tool_schemas
-      from homelab_mcp.tool_annotations import TOOL_ANNOTATIONS
-      missing = set(get_all_tool_schemas().keys()) - set(TOOL_ANNOTATIONS.keys())
-      assert missing == set(), f"Tools missing annotations: {missing}"
-  ```
-- This test will fail CI as soon as any new tool (including `*_preview` variants) is added without annotations.
+**Why it happens:**
+The developer adds subparsers, tests `homelab-mcp credentials add`, and it works. They do not re-test bare `homelab-mcp` or `homelab-mcp --http` — the MCP client integration test is not in the unit suite. The regression is invisible until a user upgrades.
 
-**Detection:** Run the test above after adding preview tool schemas.
+**How to avoid:**
+1. Call `parser.set_defaults(func=_run_server)` on the root parser so bare invocation dispatches to the existing server startup function.
+2. Set `subparsers.required = False` explicitly — do not rely on version-specific defaults.
+3. In dispatch: `getattr(args, 'func', _run_server)(args)` — fall back to server startup if no subcommand was given.
+4. Add a regression test: `parser.parse_args([])` must not raise; `args` must route to server startup. `parser.parse_args(['--http'])` must set `args.http = True`.
+5. The `credentials` subcommand handler must not call `get_resource_manager()` or require the MCP server lifespan to be running.
 
-**Phase:** Dry-run tool split phase.
+**Warning signs:**
+- `homelab-mcp` (no args) prints usage and exits instead of "MCP Server starting in stdio mode..."
+- Claude Desktop or any MCP client shows a connection error immediately after upgrade.
+- `homelab-mcp --version` works but bare `homelab-mcp` does not.
 
----
-
-### Pitfall 5: Renaming existing destructive tools breaks MCP clients that have allowlisted them
-
-**What goes wrong:** Some MCP clients maintain allowlists keyed by tool name, or users have saved workflows/automations referencing specific tool names like `delete_proxmox_vm`. If the dry-run split renames existing destructive tools to `delete_proxmox_vm_preview`, any client configuration or user automation referencing the old name breaks silently — the tool no longer appears in `tools/list` for the old name and the LLM may hallucinate or silently skip the operation.
-
-**Why it happens:** MCP has no tool versioning or aliasing mechanism. A tool name change is a breaking API change. The split feels like a rename ("the old tool becomes the preview") but clients and users experience it as deletion.
-
-**Consequences:** Existing user workflows break after upgrade. Users who have stored prompts or Claude Desktop instructions referencing tool names by name get silent failures.
-
-**Prevention:**
-- Keep all existing destructive tool names unchanged. Add `*_preview` variants as new, additional tools (additive-only, not replacement).
-- The 6 existing destructive tools (`decommission_device`, `remove_vm`, `remove_server`, `delete_proxmox_vm`, `destroy_terraform_service`, `rollback_infrastructure_changes`) retain their names, schemas, and annotations exactly as they are.
-- New `*_preview` variants are separate entries with `readOnlyHint: true` and descriptions that clarify they preview-only.
-- Document this in the CHANGELOG as "added `*_preview` variants; original tools unchanged and backward-compatible."
-
-**Detection:** Diff `tools.py` (or `tool_schemas/`) after the phase — zero existing tool names should be removed, only added.
-
-**Phase:** Dry-run tool split phase.
+**Phase to address:**
+The CLI subcommand phase (adding `credentials add/list/remove`). The regression test for bare invocation must be a quality gate before the phase is complete.
 
 ---
 
-### Pitfall 6: `homelab://drift/latest` not added to `HOMELAB_RESOURCES` — resource invisible to clients
+### Pitfall 3: PyPI OIDC Trusted Publishing Fails with `invalid-publisher` Due to Configuration Mismatch
 
-**What goes wrong:** The `HOMELAB_RESOURCES` dict in `server.py` drives `handle_list_resources()`. If `homelab://drift/latest` is handled in the `handle_read_resource()` dispatch block but omitted from `HOMELAB_RESOURCES`, the resource can be read by URI (if the client knows it) but is not discoverable. Clients that call `resources/list` to discover available resources will not see it. Documentation may say it exists but MCP Inspector and Claude Desktop will not show it.
+**What goes wrong:**
+Trusted publishing requires that the PyPI-side publisher configuration (registered at pypi.org/manage/account/publishing) exactly matches the GitHub Actions workflow. Common mismatches — all confirmed by the official PyPI troubleshooting docs:
 
-**Why it happens:** The `HOMELAB_RESOURCES` dict and the `handle_read_resource` dispatch are in the same file but are two separate data structures. Adding a dispatch case without updating the registry is a common cut-and-paste error.
+- **Workflow filename mismatch**: PyPI expects the bare filename (`publish.yml`), not the path (`.github/workflows/publish.yml`).
+- **Environment name mismatch**: The `environment:` key in the workflow job must exactly match the environment name registered on PyPI. Omitting it when PyPI expects a named environment (or vice versa) causes `invalid-publisher`.
+- **Hyphen/underscore confusion**: This project's package is `homelab-mcp` (hyphen). Registering the trusted publisher under `homelab_mcp` (underscore) produces `invalid-publisher`. PyPI normalises hyphens and underscores for package lookup but not for trusted publisher matching.
+- **Missing `id-token: write` permission**: Without this, GitHub Actions cannot issue an OIDC token. The job silently receives an empty token and PyPI rejects it.
+- **Workflow-level `read-all` overrides job-level `id-token: write`**: If the workflow has `permissions: read-all` at the top level, job-level permission grants do not expand beyond that.
 
-**Consequences:** The drift resource is not discoverable. Users must know the URI in advance, undermining the MCP discovery model.
+**Why it happens:**
+The PyPI trusted publisher UI cannot be tested without triggering the full workflow. The developer sets up the PyPI side once, pushes a tag, and only then discovers the mismatch. Fixing requires either updating the PyPI registration or the workflow, then pushing another tag — consuming another version number on TestPyPI or requiring a `post1` release on production PyPI.
 
-**Prevention:**
-- Add `homelab://drift/latest` to `HOMELAB_RESOURCES` in the same commit as the reader function.
-- Add a test asserting that every URI handled in `handle_read_resource` is registered in `HOMELAB_RESOURCES`. This is the same structural completeness check as the annotations test.
+**How to avoid:**
+1. Before adding the publish workflow: ensure the `homelab-mcp` PyPI project exists (it was published manually in v1.2) and the trusted publisher is registered there, not via a pending publisher for a new project.
+2. Use `pypa/gh-action-pypi-publish` (the official action) — it handles the OIDC token exchange and provides cleaner error messages than manual `twine` with OIDC tokens.
+3. Set `permissions: id-token: write` at the **job level** in the publish job. Do not set `permissions: read-all` at the workflow level.
+4. Publish job must be separate from the build job. Trusted publishing requires elevated permissions that the build job should not have.
+5. Validate with a TestPyPI dry run before the first production tag: set `repository-url: https://test.pypi.org/legacy/` and verify the OIDC handshake succeeds.
 
-**Detection:** Compare the URI strings in `HOMELAB_RESOURCES.keys()` with the URI patterns matched in `handle_read_resource`.
+**Warning signs:**
+- Workflow shows "Minting OIDC token..." then fails with HTTP 403 and `invalid-publisher`.
+- PyPI shows the project does not exist (pending publisher but no project yet).
+- Build artifact is in workflow artifacts but publish step failed.
 
-**Phase:** Drift MCP Resource phase.
-
----
-
-## Moderate Pitfalls
-
-### Pitfall 1: `homelab://drift/latest` serves stale data with no staleness indicator
-
-**What goes wrong:** The new drift Resource returns the most recent scan result from SQLite. If the last scan was hours ago (or never run), the Resource returns old or null data without signalling staleness. The LLM treats cached data as current state and may recommend incorrect remediation.
-
-**Why it happens:** The existing resource readers (`read_vms_resource`, `read_devices_resource`) already include `scanned_at` timestamps — but a new drift reader added without this discipline will be the odd one out.
-
-**Consequences:** LLM-driven drift remediation acts on stale data. A VM fixed an hour ago still appears as drifted.
-
-**Prevention:**
-- Always include `scanned_at` (ISO 8601 UTC) in the drift Resource payload, matching the pattern in `resource_readers.py`.
-- Add a `staleness_warning` field when the scan age exceeds a threshold (e.g., 30 minutes): `"staleness_warning": "Drift data is 47 minutes old; run scan_infrastructure_drift to refresh."`
-- Document that the Resource is a point-in-time snapshot, not a live stream.
-
-**Phase:** Drift MCP Resource phase.
+**Phase to address:**
+The CI/CD release automation phase. TestPyPI validation is a required quality gate before `v1.3.0` is tagged on production PyPI.
 
 ---
 
-### Pitfall 2: `homelab://drift/latest` crashes when no scan has ever run
+### Pitfall 4: CI Double-Publish — Workflow Triggers on Both Tag Push and Branch Push
 
-**What goes wrong:** If `scan_infrastructure_drift` has never been called, the `drift_baselines` table has no scan result to return. A `read_resource` for `homelab://drift/latest` must return a well-formed response — not raise an unhandled exception, not return an empty body, and not return malformed JSON.
+**What goes wrong:**
+The existing `main.yml` triggers on `push: branches: [main, develop]` AND `push: tags: ['v*']`. The current `release` job already guards with `if: startsWith(github.ref, 'refs/tags/')`. If the new publish job is added to the same workflow file, it is subject to the same trigger matrix. The danger:
 
-**Why it happens:** The existing resource readers all handle empty-state gracefully (`{"vms": [], ...}`). A drift reader added without the same empty-state discipline will be the first resource to crash on first access.
+- If the publish condition is accidentally written as `if: github.event_name == 'push'` (without the tag check), every merge to `main` triggers a publish attempt.
+- Even with correct tag filtering, a single tag push triggers both the branch push handler (which runs tests) and the tag push handler (which publishes). This is correct, but if the workflow is split incorrectly, one run may attempt to publish before tests complete.
+- `skip_existing: true` on production PyPI masks errors — a silently skipped publish looks like a successful one.
 
-**Consequences:** `McpError` or unhandled exception on the user's first read of the drift resource; the client may display an unhelpful error or crash.
+**Why it happens:**
+Publish conditions are cargo-culted from build conditions. The `on: push: tags` trigger is less common than branch triggers. The existing `main.yml` has a working pattern for the GitHub Release job — the publish job must follow the same `if:` guard, or better, live in a separate workflow file.
 
-**Prevention:**
-- Mirror the existing pattern: return a structured no-data response:
-  ```json
-  {"drift_report": null, "scanned_at": null, "status": "no_scan_run",
-   "message": "Run scan_infrastructure_drift to generate a drift report."}
-  ```
-- Add a test for the no-scan-yet case that asserts the response is well-formed and `status == "no_scan_run"`.
+**How to avoid:**
+1. Put the publish job in a **separate workflow file** (`publish.yml`) triggered only by `on: push: tags: ['v*']`. This is the recommended approach from the Python Packaging User Guide.
+2. Add `needs: [build]` so publish only runs after tests pass.
+3. Never use `skip_existing: true` on production PyPI. Use it only on TestPyPI.
+4. Add a redundant `if: startsWith(github.ref, 'refs/tags/v')` guard even in the tag-only workflow, as an explicit safety net.
 
-**Phase:** Drift MCP Resource phase.
+**Warning signs:**
+- The publish job appears in the workflow run list for a non-tag push (a `main` branch merge).
+- PyPI shows "File already exists" after a successful first upload — means a second publish attempt was made.
+- `dist/` artifact contains a version that does not match the git tag (version/tag mismatch; see below).
 
----
-
-### Pitfall 3: MCP Prompts ignored by non-Claude clients
-
-**What goes wrong:** As of the MCP 2025-11-25 specification, `prompts/list` and `prompts/get` are first-class operations, but client support is inconsistent. Claude Desktop supports prompts; many other MCP-compatible clients (Cursor, Continue, custom HTTP clients) do not call `prompts/list` at all and do not declare `prompts` in their `initialize` capabilities. If homelab workflow prompts are designed as the primary user-facing interface, they will be invisible to a large fraction of users.
-
-**Why it happens:** The MCP ecosystem built momentum around tools. Prompts are newer and clients treat them as optional capability.
-
-**Consequences:** Prompts work in Claude Desktop testing but are invisible to other clients. The feature ships but is narrowly useful.
-
-**Prevention:**
-- Design prompts as convenience shortcuts layered on top of tools, not as required paths. Every operation achievable via a prompt must also be achievable by direct tool calls.
-- Test prompts against MCP Inspector (which supports the full spec) and document which clients support them.
-- Do not gate critical functionality behind `prompts/get`.
-
-**Phase:** MCP Prompts phase.
+**Phase to address:**
+The CI/CD release automation phase. The separate workflow file structure must be established before pushing the first `v1.3.0` tag.
 
 ---
 
-### Pitfall 4: Prompt argument injection via unvalidated user-supplied strings
+### Pitfall 5: Credential Leak Through Exception Messages in New Logging Paths
 
-**What goes wrong:** MCP Prompts accept user-supplied argument values (e.g., `hostname`, `service_name`, `vmid`) and interpolate them into rendered message templates. If these values are embedded into shell command strings or path components in the rendered prompt, an adversarial or malformed value can steer the LLM toward unintended tool calls.
+**What goes wrong:**
+`log_filter.py` provides `CredentialFilter` and `sanitize_error()`. These cover patterns like `password=`, `token=`, `PVEAPIToken=`, and `Authorization:` headers. The new credential store and auto-inject path introduces new failure modes that the existing patterns may not cover:
 
-**Why it happens:** Prompts are text templates. The rendered message is passed to the LLM as context. The LLM may then call tools based on that context. This is the same attack surface as indirect prompt injection, but the input is user-supplied prompt arguments rather than external data.
+- `asyncssh` connection errors with auto-injected credentials sometimes include the username and hostname in the error message, but not the password. However, if the caller logs `f"SSH error for {creds.hostname}: {e}"` and `creds.password` is somehow embedded in `e` (e.g., via a repr), the existing filters do not catch a bare password string without a recognizable prefix.
+- Proxmox token values stored in the credential store are UUID-format strings (e.g., `abc123...`). If logged without the `PVEAPIToken=` prefix, they pass through `_SENSITIVE_PATTERNS` unredacted.
+- `keyring.errors.PasswordDeleteError` and `keyring.errors.PasswordSetError` include the service name and key in their messages — not the secret value — but careful review is needed to confirm this in all keyring versions.
 
-**Consequences:** For a homelab server, the blast radius is the user's own infrastructure — data loss, VM deletion, SSH credential exposure. Low external threat, high internal trust risk.
+**Why it happens:**
+The existing `_SENSITIVE_PATTERNS` are prefix-anchored. A secret value appearing without a keyword prefix in an exception chain bypasses all patterns. New code paths that store and retrieve credentials create new places where secrets could appear in exceptions.
 
-**Prevention:**
-- Validate all prompt arguments using the same validators in `validation.py` that tool inputs use: hostname format, IP range, alphanumeric-only service names, vmid numeric range.
-- Do not interpolate raw argument values into rendered shell command strings within prompts.
-- Keep prompt templates as structured guidance (`"To deploy {service_name}, use the install_service tool"`) rather than raw command strings.
+**How to avoid:**
+1. Never log credential values — not the password string, not the Proxmox token value. Log only `hostname`, `username`, and `credential_id` (the SQLite integer).
+2. Every `except` block in `ssh_tools.py`, `proxmox_api.py`, and the new credential module must use `sanitize_error(e)` (already in `log_filter.py`), never `str(e)`.
+3. When auto-injected credentials fail SSH connection, the error logged must include only `hostname` and a note that stored credentials were tried — never the credential value.
+4. Write a unit test: mock an SSH connection failure where `SSHCredentials.password = "secret123"`; assert that `caplog.text` does not contain `"secret123"` after the failure is logged.
 
-**Phase:** MCP Prompts phase.
+**Warning signs:**
+- Any `logger.debug(f"... {e}")` in `ssh_tools.py` or `proxmox_api.py` where `e` is an asyncssh or aiohttp exception that could contain connection details.
+- New logging calls in the credential module that log the full `arguments` dict from a tool handler (which may contain `password=` as a tool input).
 
----
-
-### Pitfall 5: MCP Prompts handler crashes on missing required arguments
-
-**What goes wrong:** The MCP spec allows prompt arguments to declare `required: true`. The SDK's `prompts/get` handler receives argument values but does not enforce presence of required arguments — it passes whatever the client sends to the handler. If the handler assumes required arguments are present and does not guard against their absence, it raises `KeyError` or `AttributeError` when a client omits them.
-
-**Why it happens:** The SDK treats argument validation as the server's responsibility, not its own (same as tools, where input schema validation is also not enforced). This is consistent behaviour but can surprise developers expecting the SDK to enforce required fields.
-
-**Consequences:** Prompt handlers crash with unstructured internal errors when clients call `prompts/get` without required arguments.
-
-**Prevention:**
-- Validate argument presence at the start of each prompt handler. Check for missing required keys explicitly and raise `McpError` with a descriptive message rather than letting a `KeyError` propagate.
-- Add tests for each prompt that call `prompts/get` with missing required arguments and assert the error response is well-formed.
-
-**Phase:** MCP Prompts phase.
+**Phase to address:**
+Credential auto-inject implementation phase. Every new logging call in modules that touch credentials must be reviewed.
 
 ---
 
-### Pitfall 6: PyPI package name / import name / command name three-way split confuses users
+### Pitfall 6: Auto-Inject Silently Overrides Explicitly Passed Credentials
 
-**What goes wrong:** The PyPI package is `homelab-mcp-server` (install with `pip install homelab-mcp-server`), the Python import is `homelab_mcp` (no "server"), and the entry point command is `homelab-mcp`. Users who see the PyPI name may try `import homelab_mcp_server` and get `ImportError`. This is a documentation and discoverability problem, not a functional bug.
+**What goes wrong:**
+`resolve_ssh_credentials()` already implements a priority order: explicit credentials win over stored credentials. However, the implementation checks `if password or key_path` — if neither is passed but `username="root"` is explicit, the function falls through to the database lookup and may inject a stored credential for a different user on the same hostname. The tool caller specified `username="root"` but got a different user's SSH key.
 
-**Why it happens:** Python packaging conventions allow and even encourage divergent names, but this creates a three-way split that users must learn explicitly.
+The v1.3 milestone also adds Proxmox API credentials to the store. The spec says "env vars take precedence." If the implementation checks env vars only at startup and stores the resolved value, a user who rotates their env var without restarting the server gets the stale stored value injected silently.
 
-**Consequences:** First-time users hit import errors or can't find the command. Documentation confusion leads to GitHub issues.
+**Why it happens:**
+Priority order is documented but not enforced by tests. The MCP tool response says "connected successfully" — the caller cannot tell whether env vars, stored credentials, or the default key was used.
 
-**Prevention:**
-- Make the three-name split explicit in the README installation section with a code block showing each form.
-- Evaluate whether the PyPI package can be renamed to `homelab-mcp` (matching the command name) at publication time, since it is currently unpublished and the name is still available.
+**How to avoid:**
+1. When stored credentials are auto-injected, include `"credential_source": "stored (id=N, hostname=...)"` in the tool response (as an informational field, not the primary text).
+2. Env vars for Proxmox must be checked at call time, not at startup. If `PROXMOX_TOKEN` is set, never consult the credential store for that host, regardless of what is stored.
+3. `resolve_ssh_credentials()` must check explicit `username` separately from `password`/`key_path`: an explicit username with no explicit credential should still win over a stored credential for a different username on the same host.
+4. TDD: write tests specifying the priority order as assertions before implementing.
 
-**Phase:** PyPI packaging phase.
+**Warning signs:**
+- A tool call with `username="root"` connects as a different user (stored credential has `username="mcp_admin"`).
+- A Proxmox tool call works without env vars set, and the user has no memory of storing credentials.
+- After rotating `PROXMOX_TOKEN` env var, tools continue to use the old token (stale stored credential injected).
 
----
-
-### Pitfall 7: `read_resource` exceptions surface as successful JSON rather than McpError
-
-**What goes wrong:** The MCP Python SDK has a documented inconsistency (SDK issue #396): exceptions raised inside `@app.call_tool` handlers are not correctly translated to JSON-RPC error responses — they are returned as plain-text successful responses. While `@app.read_resource` exceptions are documented to propagate as `McpError`, an unhandled non-`McpError` exception in a resource reader may behave differently depending on SDK version.
-
-**Why it happens:** The existing `handle_read_resource` in `server.py` already wraps all non-`McpError` exceptions and returns structured JSON payloads — this is the correct pattern. But a new drift reader that raises a bare exception (e.g., a raw `KeyError`) rather than catching it will bypass this protection if the outer handler's except clause only catches specific types.
-
-**Consequences:** Clients receive a 200-equivalent response with error data embedded in the JSON body rather than a proper JSON-RPC error. Some clients will not recognise this as an error state and will use the malformed payload.
-
-**Prevention:**
-- All new reader functions (`read_drift_resource`) must follow the pattern established in `resource_readers.py`: wrap all exceptions in try/except, return structured dicts with `error` or `status` fields, never raise bare exceptions from a reader function.
-- The outer `handle_read_resource` dispatch should have a catch-all `except Exception` that wraps unexpected errors as `McpError`, consistent with the existing `RESOURCE_NOT_FOUND` pattern.
-
-**Phase:** Drift MCP Resource phase.
+**Phase to address:**
+Credential auto-inject implementation phase. Priority rules must be specified as test cases (TDD wave-0) before implementation.
 
 ---
 
-## Minor Pitfalls
+### Pitfall 7: Version in `pyproject.toml` Does Not Match Git Tag at Publish Time
 
-### Pitfall 1: `uvx homelab-mcp` installs a different version than local dev
+**What goes wrong:**
+The publish workflow builds a wheel from the current commit and uploads it to PyPI. If `pyproject.toml` still says `version = "1.2.0"` when the `v1.3.0` tag is pushed (because the developer forgot to bump the version before tagging), PyPI receives a `1.2.0` wheel from a `v1.3.0` tag push. PyPI will reject the upload if `1.2.0` already exists. If somehow it does not reject (e.g., on TestPyPI with a post-release suffix), users `pip install homelab-mcp==1.3.0` but the package metadata says `1.3.0` while the installed code reports `1.2.0` via `importlib.metadata`.
 
-**What goes wrong:** `uvx` runs tools from PyPI in isolated ephemeral environments. Users with a local clone at v1.1 who also install via `uvx homelab-mcp@latest` may have two server versions running under different Claude Desktop profiles without realising it. Configuration and tool schemas may differ between versions.
+**Why it happens:**
+The project uses a static version in `pyproject.toml` (confirmed by codebase inspection). Tag and version bump are separate manual steps. The developer pushes the tag before bumping the version, or bumps the version on `main` after tagging.
 
-**Prevention:** Document in README that `uvx` always fetches from PyPI. Instruct users who need a specific version to use `uvx homelab-mcp@1.2.0`.
+**How to avoid:**
+1. Add a CI check in the publish workflow that verifies the `pyproject.toml` version matches the tag before building: `python -c "from importlib.metadata import version; v = version('homelab-mcp'); tag = '${{ github.ref_name }}'.lstrip('v'); assert v == tag, f'Version {v} != tag {tag}'"`.
+2. Document the release process: bump version in `pyproject.toml`, commit, tag, push — in that order.
+3. Consider using `hatch-vcs` or `setuptools-scm` to derive version from the git tag automatically, eliminating the manual step entirely. This project already uses hatchling, so `hatch-vcs` is a natural fit.
 
-**Phase:** PyPI packaging phase.
+**Warning signs:**
+- Publish workflow completes but the uploaded version on PyPI differs from the tag name.
+- `importlib.metadata.version("homelab-mcp")` returns a different value than `git describe --tags`.
 
----
-
-### Pitfall 2: Tool count in README/docs not updated after adding `*_preview` variants
-
-**What goes wrong:** The README and PROJECT.md currently reference "50 tools." Adding 6 `*_preview` tools without updating documentation creates documentation drift.
-
-**Prevention:** Automate the tool count in CI: `python -c "from homelab_mcp.tool_schemas import get_all_tool_schemas; print(len(get_all_tool_schemas()))"`. Use this number in release notes. Never hard-code the count in prose.
-
-**Phase:** Dry-run tool split phase.
-
----
-
-### Pitfall 3: `notifications/resources/list_changed` emitted outside request context panics
-
-**What goes wrong:** The SDK's `send_resource_list_changed()` must be called from within an active MCP request context. The existing `MUTATING_TOOLS` pattern in `call_tool` handler gates notification emission correctly. If drift or a background task emits notifications outside a request context, the SDK raises `RuntimeError`.
-
-**Prevention:** Only emit resource notifications from within tool handler post-call paths (the existing pattern). Do not emit from background tasks, lifespan hooks, or module-level code.
-
-**Phase:** Drift MCP Resource phase.
+**Phase to address:**
+CI/CD release automation phase. The version-tag check must be a CI step that gates the publish job.
 
 ---
 
-### Pitfall 4: `*_preview` tool response format inconsistent with `build_dry_run_response()`
+## Technical Debt Patterns
 
-**What goes wrong:** The existing `build_dry_run_response()` in `dry_run.py` returns a flat dict. The existing `_convert_result` fallback in the tool dispatcher handles this. New `*_preview` tools added without using `build_dry_run_response()` will produce ad-hoc response shapes that are inconsistent with each other and with the structured dry-run contract.
-
-**Prevention:** All 6 `*_preview` handlers must call `build_dry_run_response()` and return its output unchanged. Do not add ad-hoc `mode: dry_run` dicts inline in handlers.
-
-**Phase:** Dry-run tool split phase.
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Store Proxmox token in SQLite in plaintext (no keyring encryption) | Works on headless, simpler implementation | Token readable by any process with `~/.mcp/sitemap.db` access | Acceptable as v1.3 baseline; document the risk; add keyring encryption in v1.4 |
+| Single `main.yml` for tests + publish | One fewer file to maintain | Accidental publish on non-tag push; harder to audit permissions | Never — separate workflow files for publish |
+| Skip TestPyPI validation and publish directly to production | Faster first publish | Cannot retract bad release; version consumed on failure | Never for first use of a new workflow |
+| Bare `except Exception` on all keyring calls | Ensures headless fallback | Swallows unexpected errors (disk full, permission denied) | Acceptable; log at `WARNING` level so unexpected failures are visible |
+| Interactive password prompt in `credentials add` | Matches user expectation | Hangs in non-interactive shells (CI, scripts, MCP client subprocess) | Never as default; always offer `--password` flag as alternative |
 
 ---
 
-## Phase-Specific Warnings
+## Integration Gotchas
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|---|---|---|
-| PyPI packaging | YAML service templates missing from wheel | Explicit hatchling include rule + wheel smoke test |
-| PyPI packaging | `__version__` / pyproject.toml version divergence | Single source via `importlib.metadata.version()` |
-| PyPI packaging | Missing `server.py:main` entry point | Add `main()` function; test and smoke-test pre-publish |
-| PyPI packaging | Package name / import name / command name confusion | Explicit three-name table in README |
-| Dry-run tool split | `*_preview` tools missing from `tool_annotations.py` | Annotation coverage test asserting full parity |
-| Dry-run tool split | Renaming existing tools breaks client allowlists | Additive-only: add `*_preview` names, keep originals |
-| Dry-run tool split | Ad-hoc response shapes bypassing `build_dry_run_response()` | Enforce single response builder in all preview handlers |
-| Dry-run tool split | Tool count docs not updated | Automate count from schema registry |
-| MCP Prompts | Clients that don't support prompts silently ignore them | Prompts as convenience layer; tools remain primary path |
-| MCP Prompts | Missing required arguments crash handler | Validate arguments at handler entry; raise `McpError` |
-| MCP Prompts | Prompt injection via unvalidated argument strings | Use `validation.py` validators on all argument values |
-| Drift Resource | No-scan-yet state raises exception | Empty-state handling: return `status: no_scan_run` |
-| Drift Resource | Stale data served without staleness indicator | Include `scanned_at` + staleness warning in payload |
-| Drift Resource | URI omitted from `HOMELAB_RESOURCES` dict | Add to registry atomically with reader function |
-| Drift Resource | Exception in reader surfaces as successful JSON | Follow `resource_readers.py` try/except pattern exactly |
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| keyring on headless Linux | Calling `keyring.set_password()` without catching `NoKeyringError` | Wrap all keyring calls; fall back to SQLite on any exception |
+| PyPI OIDC trusted publishing | `id-token: write` at workflow level when `read-all` is also set | Set `id-token: write` per-job only; never use `read-all` on the publish workflow |
+| PyPI project name | Registering trusted publisher as `homelab_mcp` (underscore) | Use `homelab-mcp` (hyphen) — must match `pyproject.toml` name exactly |
+| `pypa/gh-action-pypi-publish` | Build and publish in the same job | Separate jobs: `build` (no elevated permissions) → `publish` (`id-token: write`) |
+| asyncssh exception messages | `logger.debug(f"error: {e}")` in new credential paths | Always use `sanitize_error(e)` from `log_filter.py` |
+| Proxmox credential precedence | Storing token via `credentials add` then forgetting env var takes precedence | Check env var at call time; document and test precedence order explicitly |
+| argparse `add_subparsers()` | Not testing bare `homelab-mcp` invocation after adding subparsers | Regression test: `parse_args([])` routes to server startup without error |
+
+---
+
+## Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Synchronous keyring call inside async SSH handler | Event loop blocked during OS keychain unlock (100–500ms) | Run `keyring.get_password()` via `asyncio.to_thread()` if called from async context | Every SSH tool call that resolves credentials via keyring |
+| SQLite credential lookup on every SSH connection attempt | Database open/close overhead per call | Cache resolved credentials in `ResourceManager` for the server lifespan | Noticeable at >10 concurrent SSH tool calls |
+
+---
+
+## Security Mistakes
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Proxmox token stored in SQLite without encryption | Token readable by any local process | Use keyring for token value when backend available; warn at `WARNING` level when falling back to plaintext SQLite |
+| SSH private key passphrase stored alongside key path | Passphrase on disk defeats key protection | Store only the key path; never accept or store passphrases |
+| Credential value appearing in MCP tool error response | AI client logs MCP responses; credential leaks to conversation history | All error responses in `ssh_tools.py` and `proxmox_api.py` must use `sanitize_error(e)` |
+| `credentials add` accepting password as positional CLI arg | Password appears in shell history and `ps aux` | Always use `--password` flag (not positional); or prompt interactively with `getpass` |
+| Publish job has `contents: write` AND `id-token: write` | Overly broad permissions increase workflow blast radius | Publish job needs only `id-token: write`; GitHub Release creation uses a separate job with `contents: write` |
+
+---
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| `NoKeyringError` shown as a user-visible error message | User thinks installation is broken; server is actually functional | Log at `DEBUG`; on success return `"credential stored in SQLite (keyring not available on this system)"` |
+| `credentials list` shows `key_path` values without checking whether the file still exists | User trusts listed credentials are usable; stale paths cause confusing SSH failures | Show `[key file not found]` warning when `key_path` is set but the file is missing |
+| `--version` flag added as subparser argument instead of root parser argument | `homelab-mcp --version` works; `homelab-mcp credentials --version` behaves differently | Add `--version` to the root parser before `add_subparsers()` is called |
+| Auto-inject provides no feedback to the tool caller | User cannot tell which credential source was used; debugging stale credentials is hard | Include `"credential_source"` in tool response metadata when auto-inject fires |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+- [ ] **Keyring headless fallback:** `homelab-mcp credentials add hostname=192.168.1.10` completes without error on a machine where `DBUS_SESSION_BUS_ADDRESS` is unset — verify by running `env -u DBUS_SESSION_BUS_ADDRESS homelab-mcp credentials add ...`.
+- [ ] **Bare invocation not broken:** `echo '{"jsonrpc":"2.0","method":"initialize","params":{},"id":1}' | homelab-mcp` responds without a usage error — regression test for stdio MCP mode.
+- [ ] **Trusted publisher registered before first tag:** PyPI project `homelab-mcp` has the GitHub Actions publisher configured at pypi.org before pushing `v1.3.0` — this cannot be done retroactively without a fallback token.
+- [ ] **Tag-only publish:** `git push origin main` does NOT trigger the publish workflow job — verify by checking Actions run list after a non-tag push.
+- [ ] **Credential not in logs:** After a failed SSH connection with auto-injected stored credentials, `grep -i "password\|secret\|token" <log>` finds no credential values.
+- [ ] **Env var precedence:** With `PROXMOX_TOKEN` set and a stored credential for the same host, the env var wins — verified by a unit test with both present.
+- [ ] **Version matches tag:** `pyproject.toml version = "1.3.0"` before the `v1.3.0` tag is pushed — CI verifies this before the publish job runs.
+- [ ] **TestPyPI dry run passes:** The publish workflow succeeds against `https://test.pypi.org/legacy/` before any production publish attempt.
+
+---
+
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Server crashes on headless due to `NoKeyringError` | HIGH — requires hotfix release | Add `except Exception` guard to all keyring calls; release `v1.3.1` |
+| Bare invocation broken by subparsers | HIGH — all MCP clients stop working | Revert subparser dispatch change; release patch; add regression test |
+| PyPI `invalid-publisher` on first tag push | LOW — no artifact leaked | Fix publisher config on PyPI or fix workflow filename/environment; push new tag |
+| Double publish (version already exists on PyPI) | LOW — second upload fails, first was correct | No action needed if first upload was correct |
+| Credential value leaked in logs | HIGH — security advisory required | Scrub logs; add `sanitize_error()` call in the affected path; release patch |
+| Wrong version published (pyproject.toml / tag mismatch) | HIGH — version is permanently on PyPI | Yank the release on PyPI (`pip index versions homelab-mcp`, then `twine` yank); publish corrected version as patch |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Keyring `NoKeyringError` crashes server | Credential store implementation | Test: `credentials add` with no D-Bus session raises no exception |
+| Argparse subparsers break bare invocation | CLI subcommand phase | Regression test: `parse_args([])` routes to server startup |
+| PyPI OIDC `invalid-publisher` | CI/CD automation phase | TestPyPI dry run before tagging `v1.3.0` |
+| Double publish on non-tag push | CI/CD automation phase | Verify: push to `main` does not trigger publish job |
+| Credential leak in exception messages | Credential auto-inject phase | Unit test: `caplog.text` contains no credential value on SSH failure |
+| Auto-inject silent override | Credential auto-inject phase | TDD: priority order tests before implementation |
+| Proxmox env var precedence violated | Credential auto-inject phase | Unit test: env var set + stored credential present → env var wins |
+| Version / tag mismatch at publish time | CI/CD automation phase | CI step: assert `pyproject.toml` version equals tag name before build |
 
 ---
 
 ## Sources
 
-- [MCP Prompts specification (2025-06-18)](https://modelcontextprotocol.io/specification/2025-06-18/server/prompts) — HIGH confidence
-- [MCP SDK issue #396: Inconsistent exception handling in call_tool vs list_resources](https://github.com/modelcontextprotocol/python-sdk/issues/396) — HIGH confidence (confirmed SDK bug, first-party issue tracker)
-- [SEP-986: MCP tool naming format standardisation](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986) — MEDIUM confidence
-- [The Silent Breakage: MCP tool versioning strategy](https://minherz.medium.com/the-silent-breakage-a-versioning-strategy-for-production-ready-mcp-tools-fbb998e3f71f) — MEDIUM confidence
-- [MCP tool annotations (readOnlyHint, destructiveHint)](https://blog.marcnuri.com/mcp-tool-annotations-introduction) — HIGH confidence
-- [uv building and publishing packages](https://docs.astral.sh/uv/guides/package/) — HIGH confidence (official docs)
-- [Dynamic versioning with uv projects](https://slhck.info/software/2025/10/01/dynamic-versioning-uv-projects.html) — MEDIUM confidence
-- [MCP prompt injection (Simon Willison, 2025)](https://simonwillison.net/2025/Apr/9/mcp-prompt-injection/) — MEDIUM confidence
-- [MCP client capability gap (PulseMCP)](https://www.pulsemcp.com/posts/mcp-client-capabilities-gap) — MEDIUM confidence
-- [MCP 2025-11-25 specification overview](https://workos.com/blog/mcp-2025-11-25-spec-update) — MEDIUM confidence
-- [MCP notifications/resources discussion](https://github.com/orgs/modelcontextprotocol/discussions/1192) — MEDIUM confidence
-- Codebase inspection: `server.py`, `resource_readers.py`, `dry_run.py`, `tool_annotations.py`, `pyproject.toml`, `__init__.py`, `service_templates/` — HIGH confidence (first-party)
+- [keyring 25.7.0 documentation](https://keyring.readthedocs.io/) — backend unavailability, exception types (HIGH confidence)
+- [WSL2+Debian NoKeyringError — jaraco/keyring issue #566](https://github.com/jaraco/keyring/issues/566) — confirmed `NoKeyringError` in headless Linux (HIGH confidence)
+- [NoKeyringError in pypa/hatch — issue #671](https://github.com/pypa/hatch/issues/671) — real project hit by same issue (HIGH confidence)
+- [PyPI Trusted Publishers: Troubleshooting](https://docs.pypi.org/trusted-publishers/troubleshooting/) — `invalid-publisher`, permission errors (HIGH confidence, official docs)
+- [PyPI Trusted Publisher Management and Pitfalls — dreamnetworking.nl, 2025](https://dreamnetworking.nl/blog/2025/01/07/pypi-trusted-publisher-management-and-pitfalls/) — hyphen/underscore mismatch, environment name mismatch (MEDIUM confidence)
+- [pypa/gh-action-pypi-publish](https://github.com/pypa/gh-action-pypi-publish) — build/publish job separation (HIGH confidence, official action)
+- [Publishing with GitHub Actions — Python Packaging User Guide](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/) — tag-only trigger, separate workflow file (HIGH confidence)
+- [GitHub Actions: avoid double runs — Adam Johnson, 2025](https://adamj.eu/tech/2025/05/14/github-actions-avoid-simple-on/) — double-trigger prevention (MEDIUM confidence)
+- [argparse documentation — Python 3.12](https://docs.python.org/3/library/argparse.html) — `add_subparsers()` required behaviour (HIGH confidence)
+- [argparse required subparsers change — CPython issue #77290](https://github.com/python/cpython/issues/77290) — version-specific default history (HIGH confidence)
+- Project codebase: `src/homelab_mcp/log_filter.py`, `src/homelab_mcp/ssh_tools.py`, `src/homelab_mcp/server.py`, `src/homelab_mcp/config.py`, `pyproject.toml`, `.github/workflows/main.yml` (HIGH confidence, first-party)
+
+---
+
+---
+
+## Appendix: v1.2 Protocol Completeness Pitfalls
+
+> Preserved from prior milestone research. These pitfalls are addressed in v1.2 and should be verified complete before v1.3 phases begin.
+
+**Domain:** Python MCP server — PyPI packaging, MCP Prompts, dry-run tool split, drift MCP Resource
+**Researched:** 2026-03-12
+
+### Critical: `service_templates` YAML files excluded from wheel
+
+`service_templates/*.yaml` must be bundled via `importlib.resources`, not `__file__`-relative paths. Explicitly declare YAML inclusion in pyproject.toml. Add a wheel smoke test before publish.
+
+**Phase:** PyPI packaging — completed in v1.2.
+
+---
+
+### Critical: Version mismatch between `pyproject.toml` and `__init__.py`
+
+Remove `__version__` from `__init__.py`; use `importlib.metadata.version("homelab-mcp")` as the single source of truth.
+
+**Phase:** PyPI packaging — completed in v1.2.
+
+---
+
+### Critical: `*_preview` dry-run tools missing from `tool_annotations.py`
+
+Annotation coverage test: assert every key in `get_all_tool_schemas()` has a corresponding entry in `TOOL_ANNOTATIONS`. Prevents silent annotation gaps.
+
+**Phase:** Dry-run tool split — completed in v1.2.
+
+---
+
+### Critical: Renaming existing destructive tools breaks MCP clients
+
+Keep all existing destructive tool names unchanged. Add `*_preview` variants as additive new tools only.
+
+**Phase:** Dry-run tool split — completed in v1.2.
+
+---
+
+### Critical: `homelab://drift/latest` URI omitted from `HOMELAB_RESOURCES` dict
+
+Resource is readable by URI but not discoverable via `resources/list`. Add to registry atomically with the reader function.
+
+**Phase:** Drift MCP Resource — completed in v1.2.
+
+---
+
+### Moderate: Drift Resource serving stale data without staleness indicator
+
+Always include `scanned_at` ISO 8601 UTC in payload; add `staleness_warning` when data age exceeds threshold.
+
+**Phase:** Drift MCP Resource — completed in v1.2.
+
+---
+
+### Moderate: Drift Resource crashes when no scan has ever run
+
+Return structured empty-state response: `{"drift_report": null, "status": "no_scan_run"}`. Never raise on first access.
+
+**Phase:** Drift MCP Resource — completed in v1.2.
+
+---
+
+*v1.2 pitfalls section condensed. Full detail in git history of this file.*
 
 ---
 
@@ -352,62 +403,15 @@ This makes pyproject.toml the single source of truth. The `Server("homelab-mcp",
 
 ## Appendix: v1.1 Safety & Observability Pitfalls
 
-> Preserved from prior milestone research. These pitfalls are addressed in v1.1 and should be verified complete before v1.2 phases begin.
+> Preserved from prior milestone research. These pitfalls are addressed in v1.1.
 
-**Domain:** Adding dry-run mode, drift detection, and MCP Resources to an existing Python MCP server
 **Researched:** 2026-03-11
 
-### Critical: Dry-Run Preview That Cannot Execute the Real Path
-
-The dry-run implementation must be structured as a parameter to the existing handler (shared read/validate/plan path, gated write step), not as a separate simulation function. Separate simulation functions drift from the real path after refactors.
-
-**Phase:** Dry-run implementation — completed in v1.1.
-
----
-
-### Critical: Dry-Run Performs Real Side Effects
-
-Dry-run must not mutate SQLite, SSH connections must not trigger host-side operations, and Proxmox API calls during dry-run should be read-only state queries only.
-
-**Phase:** Dry-run implementation — completed in v1.1.
-
----
-
-### Critical: Drift Detection That Mistakes Transient State for Drift
-
-Point-in-time drift scans will flag rebooting VMs and restarting services. Reports must include `scan_timestamp` and a transient-state disclaimer. State drift (VM stopped) should be "suspected drift," not "confirmed drift." Config drift (CPU/memory changed) is higher confidence.
-
-**Phase:** Drift detection implementation — completed in v1.1.
-
----
-
-### Critical: MCP Resources Returning Stale Data Without Signaling It
-
-Every resource payload must include `scanned_at`. `notifications/resources/updated` must be sent after relevant tool mutations. Do not advertise `subscribe: true` unless notifications are actually wired.
-
-**Phase:** MCP Resources implementation — completed in v1.1.
-
----
-
-### Critical: ResourceManager.proxmox_session Not Wired Into Handlers
-
-`ProxmoxAPIClient` was creating its own `aiohttp.ClientSession` per call, bypassing the shared session in `ResourceManager`. Fix was to pass `get_resource_manager().proxmox_session` at each Proxmox handler call site.
-
-**Phase:** Tech debt cleanup — completed in v1.1.
-
----
-
-### Critical: Drift Baseline That Does Not Track Expected Changes
-
-After every successful mutation tool call, the stored baseline must be updated to reflect the new intended state. Baselines that store only the initial state will flag every MCP-driven change as drift.
-
-**Phase:** Drift detection implementation — completed in v1.1.
-
----
+Addressed: dry-run handler that cannot execute the real path; dry-run performing real side effects; drift detection flagging transient state as drift; MCP Resources returning stale data without `scanned_at`; `ResourceManager.proxmox_session` not wired into handlers; drift baseline not updated after mutation tool calls.
 
 *v1.1 pitfalls section condensed. Full detail in git history of this file.*
 
 ---
 
-*Pitfalls research for: v1.2 Protocol Completeness — PyPI packaging, MCP Prompts, dry-run tool split, drift MCP Resource*
-*Researched: 2026-03-12*
+*Pitfalls research for: homelab-mcp v1.3 — keyring credential store + GitHub Actions PyPI release automation*
+*Researched: 2026-03-14*
