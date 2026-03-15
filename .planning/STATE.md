@@ -4,7 +4,7 @@ milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
 stopped_at: Completed 19-02-PLAN.md — Keyring auto-inject implementation in ssh_tools.py and proxmox_api.py
-last_updated: "2026-03-15T03:24:06.617Z"
+last_updated: "2026-03-15T03:27:01.604Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
