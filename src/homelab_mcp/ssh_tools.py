@@ -177,8 +177,8 @@ async def ensure_mcp_ssh_key() -> str:
 @retry_on_failure(max_retries=2, delay_seconds=2.0)
 async def setup_remote_mcp_admin(
     hostname: str,
-    username: str,
-    password: str,
+    username: str | None = None,
+    password: str | None = None,
     force_update_key: bool = True,
     port: int = 22,
 ) -> str:
@@ -190,13 +190,21 @@ async def setup_remote_mcp_admin(
     # Read public key
     public_key = pub_key_path.read_text().strip()
 
+    creds = resolve_ssh_credentials(
+        hostname=hostname,
+        username=username,
+        password=password,
+        port=port,
+    )
+
     try:
         # Connect with admin credentials
         async with await ssh_connect(
-            hostname=hostname,
-            username=username,
-            port=port,
-            password=password,
+            hostname=creds.hostname,
+            username=creds.username,
+            port=creds.port,
+            password=creds.password,
+            key_path=creds.key_path,
         ) as conn:
             setup_results = {}
 
@@ -689,15 +697,29 @@ async def ssh_execute_command(
     )
 
 
-async def update_mcp_admin_groups(hostname: str, username: str, password: str, port: int = 22) -> str:
+async def update_mcp_admin_groups(
+    hostname: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+) -> str:
     """Update mcp_admin group memberships to include service management groups."""
+    creds = resolve_ssh_credentials(
+        hostname=hostname,
+        username=username,
+        password=password,
+        key_path=key_path,
+        port=port,
+    )
     try:
         # Connect via SSH with admin credentials
         async with await ssh_connect(
-            hostname=hostname,
-            username=username,
-            port=port,
-            password=password,
+            hostname=creds.hostname,
+            username=creds.username,
+            port=creds.port,
+            password=creds.password,
+            key_path=creds.key_path,
         ) as conn:
             results: dict[str, Any] = {}
 
