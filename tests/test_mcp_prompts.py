@@ -51,6 +51,12 @@ def test_decommission_workflow_prompt() -> None:
     combined_text = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text")).lower()
     assert "decommission_device_preview" in combined_text
     assert "confirm" in combined_text
+    assert "get_network_sitemap" in combined_text, (
+        "CLI-02: prompt must instruct AI to call get_network_sitemap to resolve hostname to device_id"
+    )
+    assert "device_id" in combined_text, (
+        "CLI-02: prompt must use device_id (integer) not hostname — decommission_device schema requires device_id"
+    )
 
 
 def test_deploy_service_workflow_prompt() -> None:
