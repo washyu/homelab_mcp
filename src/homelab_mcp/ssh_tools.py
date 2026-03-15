@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import asyncssh
 
+from .credential_store import get_credential, list_credentials
 from .database import get_database_adapter
 from .error_handling import retry_on_failure, ssh_connection_wrapper
 from .log_filter import sanitize_error
@@ -64,6 +65,22 @@ def resolve_ssh_credentials(
             key_path=key_path,
             password=password,
         )
+
+    # Tier 2: Keyring lookup (INJECT-01) — only runs when no explicit password/key_path
+    registry_entries = list_credentials(credential_type="ssh")
+    matched = [e for e in registry_entries if e["hostname"] == hostname]
+    if matched:
+        stored_username = matched[0]["username"]
+        resolved_username = username or stored_username
+        keyring_password = get_credential(hostname, stored_username, credential_type="ssh")
+        if keyring_password:
+            logger.debug("Auto-injected keyring credential for %s", hostname)
+            return SSHCredentials(
+                hostname=hostname,
+                username=resolved_username,
+                port=port,
+                password=keyring_password,
+            )
 
     # Try to find stored credentials
     try:
