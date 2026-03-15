@@ -35,7 +35,7 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 - [x] **SETUP-03**: `setup_mcp_admin` schema has only `hostname` in `required` array (password and username optional)
 - [x] **GROUPS-01**: `update_mcp_admin_groups` resolves credentials from keyring when no password argument is passed
 - [x] **GROUPS-02**: `update_mcp_admin_groups` schema has only `hostname` in `required` array (password and username optional)
-- [ ] **AUDIT-01**: No tool schema in the project has `password` in its `required` array (regression guard)
+- [x] **AUDIT-01**: No tool schema in the project has `password` in its `required` array (regression guard)
 
 ## Future Requirements
 
