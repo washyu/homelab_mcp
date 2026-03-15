@@ -15,6 +15,7 @@ def test_store_credential_success(mocker):
 def test_store_credential_headless_no_keyring_error(mocker):
     """store_credential returns False (not raises) when NoKeyringError occurs."""
     import keyring.errors
+
     from homelab_mcp.credential_store import store_credential
 
     mocker.patch("keyring.set_password", side_effect=keyring.errors.NoKeyringError())
@@ -43,6 +44,7 @@ def test_get_credential_success(mocker):
 def test_get_credential_headless_no_keyring_error(mocker):
     """get_credential returns None (not raises) when NoKeyringError occurs."""
     import keyring.errors
+
     from homelab_mcp.credential_store import get_credential
 
     mocker.patch("keyring.get_password", side_effect=keyring.errors.NoKeyringError())
@@ -62,6 +64,7 @@ def test_get_credential_headless_runtime_error(mocker):
 def test_delete_credential_not_found(mocker):
     """delete_credential returns False (not raises) when PasswordDeleteError occurs."""
     import keyring.errors
+
     from homelab_mcp.credential_store import delete_credential
 
     mocker.patch("keyring.delete_password", side_effect=keyring.errors.PasswordDeleteError())
