@@ -173,4 +173,4 @@ Plans:
 | 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 24. Keyring-based Password Handling | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 25. Sudo Password Piping | 1/1 | Complete   | 2026-03-15 | - |
+| 25. Sudo Password Piping | 1/1 | Complete    | 2026-03-15 | - |
