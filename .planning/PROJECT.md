@@ -61,7 +61,14 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ### Active
 
-<!-- Populated during next milestone requirements definition -->
+## Current Milestone: v1.4 Real-World Reliability
+
+**Goal:** Fix bugs and workflow issues discovered during real Mac testing — interactive shell, SSH credential flow, and TOFU known_hosts handling.
+
+**Target features:**
+- Fix silent interactive shell failure
+- Fix SSH workflow so agent knows to register → check keyring → guide user to `credentials add`
+- Fix SSH timeouts caused by TOFU known_hosts not including newly registered hosts
 
 ### Out of Scope
 
@@ -126,4 +133,4 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | `decommission_device_workflow` uses get_network_sitemap for device_id | Fixes PRMT-02: tool schema requires device_id, not hostname | ✓ Good — 5-step workflow; AI no longer hits schema validation errors |
 
 ---
-*Last updated: 2026-03-15 after v1.3 milestone*
+*Last updated: 2026-03-13 after v1.4 milestone start*

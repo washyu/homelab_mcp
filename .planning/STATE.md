@@ -1,36 +1,36 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Credentials & Release Automation
-status: "✅ SHIPPED — milestone complete"
-stopped_at: "v1.3 milestone archived — planning next milestone"
-last_updated: "2026-03-15"
-last_activity: 2026-03-15 — v1.3 milestone complete
+milestone: v1.4
+milestone_name: Real-World Reliability
+status: "Defining requirements"
+stopped_at: ""
+last_updated: "2026-03-13"
+last_activity: 2026-03-13 — Milestone v1.4 started
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-15)
+See: .planning/PROJECT.md (updated 2026-03-13)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Planning next milestone
+**Current focus:** v1.4 Real-World Reliability — fixing bugs found during Mac testing
 
 ## Current Position
 
-Phase: — (milestone complete)
+Phase: Not started (defining requirements)
 Plan: —
-Status: ✅ v1.3 shipped — all 4 phases, 9 plans complete
-Last activity: 2026-03-15 - Completed quick task 6: update README and setup docs to reflect v1.3
+Status: Defining requirements
+Last activity: 2026-03-13 — Milestone v1.4 started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
