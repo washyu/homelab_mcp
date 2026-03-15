@@ -30,11 +30,11 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 
 ### Keyring-based Password Handling
 
-- [ ] **SETUP-01**: `setup_mcp_admin` resolves credentials from keyring when no password argument is passed
-- [ ] **SETUP-02**: `setup_mcp_admin` accepts explicit password for backward compatibility (positional args still work)
-- [ ] **SETUP-03**: `setup_mcp_admin` schema has only `hostname` in `required` array (password and username optional)
-- [ ] **GROUPS-01**: `update_mcp_admin_groups` resolves credentials from keyring when no password argument is passed
-- [ ] **GROUPS-02**: `update_mcp_admin_groups` schema has only `hostname` in `required` array (password and username optional)
+- [x] **SETUP-01**: `setup_mcp_admin` resolves credentials from keyring when no password argument is passed
+- [x] **SETUP-02**: `setup_mcp_admin` accepts explicit password for backward compatibility (positional args still work)
+- [x] **SETUP-03**: `setup_mcp_admin` schema has only `hostname` in `required` array (password and username optional)
+- [x] **GROUPS-01**: `update_mcp_admin_groups` resolves credentials from keyring when no password argument is passed
+- [x] **GROUPS-02**: `update_mcp_admin_groups` schema has only `hostname` in `required` array (password and username optional)
 - [ ] **AUDIT-01**: No tool schema in the project has `password` in its `required` array (regression guard)
 
 ## Future Requirements

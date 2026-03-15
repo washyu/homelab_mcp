@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-03-15T18:54:02.504Z"
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-03-15T19:26:03.948Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
   percent: 0
 ---
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 22-agent-guidance P01 | 5 | 2 tasks | 7 files |
 | Phase 23-workflow-completeness P01 | 8 | 2 tasks | 2 files |
 | Phase 23-workflow-completeness P02 | 1 | 2 tasks | 2 files |
+| Phase 24-keyring-password-handling P01 | 1 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,13 @@ Key constraints for v1.4 (from research):
 - [Phase 23-workflow-completeness]: connect_to_device prompt lists all 6 onboarding tools/commands in order: setup_mcp_admin, credentials add, register_server, ssh_discover, discover_and_map, verify_mcp_admin
 - [Phase 23-workflow-completeness]: Hostname interpolated into each step via f-string so prompt is actionable without further substitution
 - [Phase 23-workflow-completeness]: [Phase 23-workflow-completeness]: Desync warning placed inside if matched block after if keyring_password block — fires only on desync, never on normal keyring hit or total miss; non-blocking fallthrough to DB tier
+- [Phase 24-keyring-password-handling]: Make username/password optional in setup_remote_mcp_admin and update_mcp_admin_groups (str | None = None) to allow keyring auto-injection while preserving backward compatibility
+- [Phase 24-keyring-password-handling]: Add key_path parameter to update_mcp_admin_groups to match full SSHCredentials contract
+- [Phase 24-keyring-password-handling]: Do not add ValueError guard after resolve_ssh_credentials in setup/groups — CredentialNotFoundError propagates cleanly through ssh_connection_wrapper
+
+### Roadmap Evolution
+
+- Phase 24 added: Keyring-based password handling — fix setup_mcp_admin and audit all tools for passed-password anti-pattern
 
 ### Pending Todos
 
@@ -95,6 +103,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T18:51:11.270Z
-Stopped at: Completed 23-02-PLAN.md
+Last session: 2026-03-15T19:26:03.945Z
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None

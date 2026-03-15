@@ -125,7 +125,7 @@ Plans:
   3. `update_mcp_admin_groups` resolves credentials from keyring when called without password argument
   4. Neither tool schema has `password` in its `required` array
   5. No tool schema in the entire project has `password` in its `required` array (regression guard)
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 24-01-PLAN.md — Refactor setup_mcp_admin and update_mcp_admin_groups schemas and implementations
 - [ ] 24-02-PLAN.md — Update existing tests and add keyring resolution + audit guard tests
@@ -157,4 +157,4 @@ Plans:
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 24. Keyring-based Password Handling | v1.4 | 0/2 | Planning | - |
+| 24. Keyring-based Password Handling | 1/2 | In Progress|  | - |
