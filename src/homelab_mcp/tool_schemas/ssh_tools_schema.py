@@ -31,7 +31,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "setup_mcp_admin": {
-        "description": "SSH into a remote system and setup mcp_admin user with admin permissions and SSH key access",
+        "description": "SSH into a remote system and setup mcp_admin user with admin permissions and SSH key access. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -41,11 +41,11 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "username": {
                     "type": "string",
-                    "description": "Admin username to connect with (must have sudo access)",
+                    "description": "Admin username to connect with (must have sudo access). Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "password": {
                     "type": "string",
-                    "description": "Password for the admin user",
+                    "description": "Password for the admin user. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "force_update_key": {
                     "type": "boolean",
@@ -58,7 +58,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "default": 22,
                 },
             },
-            "required": ["hostname", "username", "password"],
+            "required": ["hostname"],
         },
     },
     "verify_mcp_admin": {
@@ -142,7 +142,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "update_mcp_admin_groups": {
-        "description": "Update mcp_admin group memberships to include groups for installed services (docker, lxd, libvirt, kvm)",
+        "description": "Update mcp_admin group memberships to include groups for installed services (docker, lxd, libvirt, kvm). If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -152,19 +152,20 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "username": {
                     "type": "string",
-                    "description": "Admin username to connect with (must have sudo access)",
+                    "description": "Admin username to connect with (must have sudo access). Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "password": {
                     "type": "string",
-                    "description": "Password for the admin user",
+                    "description": "Password for the admin user. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
+                "key_path": {"type": "string", "description": "Path to SSH private key"},
                 "port": {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
                     "default": 22,
                 },
             },
-            "required": ["hostname", "username", "password"],
+            "required": ["hostname"],
         },
     },
 }
