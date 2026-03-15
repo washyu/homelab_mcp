@@ -140,4 +140,4 @@ Plans:
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 22. Agent Guidance | 2/2 | Complete    | 2026-03-15 | - |
-| 23. Workflow Completeness | 2/2 | Complete   | 2026-03-15 | - |
+| 23. Workflow Completeness | 2/2 | Complete    | 2026-03-15 | - |
