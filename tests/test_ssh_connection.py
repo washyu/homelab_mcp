@@ -1,6 +1,7 @@
 """Tests for SSH connection helper with TOFU host key verification."""
 
 import asyncio
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,6 +20,17 @@ def mock_ssh_key() -> MagicMock:
     key = MagicMock()
     key.get_algorithm.return_value = "ssh-ed25519"
     key.export_public_key.return_value = b"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey123"
+    return key
+
+
+@pytest.fixture
+def mock_ssh_key_with_comment() -> MagicMock:
+    """Create a mock SSH key whose export includes a trailing comment field."""
+    key = MagicMock()
+    key.get_algorithm.return_value = "ssh-rsa"
+    key.export_public_key.return_value = (
+        b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQtestdata== user@host"
+    )
     return key
 
 
@@ -197,3 +209,60 @@ class TestSSHConnectKwargs:
             assert call_kwargs["password"] == "secret"
             assert call_kwargs["client_keys"] == ["/path/to/key"]
             assert "client_factory" in call_kwargs
+
+
+class TestTOFUKeyFormat:
+    """Test that known_hosts entries contain exactly 3 fields (no trailing comment)."""
+
+    def test_store_host_key_strips_comment_field(
+        self,
+        known_hosts_path: Path,
+        mock_ssh_key_with_comment: MagicMock,
+    ) -> None:
+        """_store_host_key must strip trailing comment so entry has exactly 3 fields."""
+        from homelab_mcp.ssh_connection import TOFUSSHClient
+
+        known_hosts_path.touch()
+
+        client = TOFUSSHClient(known_hosts_path)
+        client._store_host_key("192.168.1.10", 22, mock_ssh_key_with_comment)
+
+        content = known_hosts_path.read_text().strip()
+        fields = content.split()
+        # Must have exactly 3 fields: hostname algorithm base64
+        assert len(fields) == 3, f"Expected 3 fields, got {len(fields)}: {fields}"
+        # The last field must not contain '@' (i.e. no comment like 'user@host')
+        assert "@" not in fields[2], f"Comment field leaked into known_hosts: {fields[2]}"
+
+
+class TestTOFULock:
+    """Test that _tofu_lock is a threading.Lock (not asyncio.Lock)."""
+
+    def test_tofu_lock_is_threading_lock(self) -> None:
+        """_tofu_lock must be a threading.Lock instance, not asyncio.Lock."""
+        from homelab_mcp import ssh_connection
+
+        assert isinstance(
+            ssh_connection._tofu_lock, type(threading.Lock())
+        ), f"Expected threading.Lock, got {type(ssh_connection._tofu_lock)}"
+
+    def test_store_host_key_uses_lock(
+        self,
+        known_hosts_path: Path,
+        mock_ssh_key: MagicMock,
+    ) -> None:
+        """_store_host_key must acquire _tofu_lock via context manager during file write."""
+        from homelab_mcp.ssh_connection import TOFUSSHClient
+
+        known_hosts_path.touch()
+
+        mock_lock = MagicMock()
+        mock_lock.__enter__ = MagicMock(return_value=None)
+        mock_lock.__exit__ = MagicMock(return_value=False)
+
+        client = TOFUSSHClient(known_hosts_path)
+
+        with patch("homelab_mcp.ssh_connection._tofu_lock", mock_lock):
+            client._store_host_key("192.168.1.10", 22, mock_ssh_key)
+
+        mock_lock.__enter__.assert_called_once()
