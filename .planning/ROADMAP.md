@@ -82,7 +82,12 @@ Plans:
   3. `homelab-mcp credentials remove <host>` deletes the stored credential and confirms removal
   4. `homelab-mcp credentials add --type proxmox <host> <user>` stores a Proxmox credential; `remove --type proxmox` deletes it
   5. `homelab-mcp --version` prints the installed package version and exits; bare `homelab-mcp` still starts the server unchanged
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 18-01-PLAN.md — TDD Wave 0: write failing test scaffold for credential_store registry + all CLI commands
+- [ ] 18-02-PLAN.md — Extend credential_store.py with credential_type param and JSON registry (turn credential_store tests GREEN)
+- [ ] 18-03-PLAN.md — Add credentials subcommand handlers and --version flag to server.py (turn all CLI tests GREEN)
 
 ### Phase 19: Credential Auto-Inject
 **Goal**: SSH and Proxmox tools automatically use stored credentials so users don't need to pass them on every call
@@ -126,7 +131,7 @@ Plans:
 | 14. MCP Prompts | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 15. Preview Tool Split | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 16. Quality Gate | v1.2 | 1/1 | Complete | 2026-03-13 |
-| 17. Credential Store Foundation | 1/1 | Complete    | 2026-03-15 | - |
-| 18. Credentials CLI + --version | v1.3 | 0/TBD | Not started | - |
+| 17. Credential Store Foundation | v1.3 | 1/1 | Complete | 2026-03-15 |
+| 18. Credentials CLI + --version | v1.3 | 0/3 | Not started | - |
 | 19. Credential Auto-Inject | v1.3 | 0/TBD | Not started | - |
 | 20. Release Automation + PRMT-02 | v1.3 | 0/TBD | Not started | - |
