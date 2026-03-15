@@ -23,17 +23,18 @@ def test_prompts_capability_advertised() -> None:
 
 
 def test_list_prompts_returns_prompts() -> None:
-    """PRMT-01: HOMELAB_PROMPTS contains at least 3 prompts with required names.
+    """PRMT-01: HOMELAB_PROMPTS contains at least 4 prompts with required names.
 
     Will be RED until Plan 02 creates prompt_registry.py with HOMELAB_PROMPTS.
     """
     from homelab_mcp.prompt_registry import HOMELAB_PROMPTS  # type: ignore[import]
 
-    assert len(HOMELAB_PROMPTS) >= 3
+    assert len(HOMELAB_PROMPTS) >= 4
     prompt_names = [p.name for p in HOMELAB_PROMPTS.values()]
     assert "decommission_device_workflow" in prompt_names
     assert "deploy_service_workflow" in prompt_names
     assert "homelab_health_check" in prompt_names
+    assert "connect_to_device" in prompt_names
 
 
 def test_decommission_workflow_prompt() -> None:
@@ -90,6 +91,30 @@ def test_health_check_prompt_resources() -> None:
     assert "homelab://vms" in combined_text
     assert "homelab://devices" in combined_text
     assert "homelab://drift/latest" in combined_text
+
+
+def test_connect_to_device_prompt() -> None:
+    """TOFU-03: connect_to_device prompt returns full device onboarding sequence.
+
+    Will be RED until Plan 23-01 adds connect_to_device to prompt_registry.py.
+    """
+    from mcp.types import GetPromptResult  # type: ignore[import]
+
+    from homelab_mcp.prompt_registry import get_prompt_result  # type: ignore[import]
+
+    result = get_prompt_result("connect_to_device", {"hostname": "test-host"})
+    assert isinstance(result, GetPromptResult)
+    assert len(result.messages) >= 1
+    combined_text = " ".join(
+        msg.content.text for msg in result.messages if hasattr(msg.content, "text")
+    ).lower()
+    assert "setup_mcp_admin" in combined_text
+    assert "credentials add" in combined_text
+    assert "register_server" in combined_text
+    assert "ssh_discover" in combined_text
+    assert "discover_and_map" in combined_text
+    assert "verify_mcp_admin" in combined_text
+    assert "test-host" in combined_text
 
 
 def test_get_unknown_prompt_raises_mcp_error() -> None:
