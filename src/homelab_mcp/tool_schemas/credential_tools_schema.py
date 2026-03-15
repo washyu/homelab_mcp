@@ -114,6 +114,25 @@ CREDENTIAL_TOOLS: dict[str, dict[str, Any]] = {
     },
 }
 
+CREDENTIAL_TOOLS["list_keyring_credentials"] = {
+    "description": (
+        "List hosts that have credentials stored in the OS keyring registry. "
+        "Call this before ssh_discover or ssh_execute_command to check whether "
+        "a host has stored credentials. Returns hostname and username per entry."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "credential_type": {
+                "type": "string",
+                "description": "Credential type to list: 'ssh' (default) or 'proxmox'",
+                "default": "ssh",
+            }
+        },
+        "required": [],
+    },
+}
+
 CREDENTIAL_TOOLS["remove_server_preview"] = {
     "description": (
         "Preview what remove_server would affect without executing. "

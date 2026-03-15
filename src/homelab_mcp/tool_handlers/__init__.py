@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .credential_handlers import (
+    handle_list_keyring_credentials,
     handle_list_registered_servers,
     handle_register_server,
     handle_remove_server,
@@ -129,6 +130,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "update_server_credentials": handle_update_server_credentials,
     "remove_server": handle_remove_server,
     "remove_server_preview": handle_remove_server_preview,
+    "list_keyring_credentials": handle_list_keyring_credentials,
     # Drift tools
     "scan_infrastructure_drift": handle_scan_infrastructure_drift,
     # Proxmox tools
