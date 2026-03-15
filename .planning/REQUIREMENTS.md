@@ -7,12 +7,12 @@
 
 ### Credential Store
 
-- [ ] **CRED-01**: User can store SSH credentials for a host with `homelab-mcp credentials add <host> <user>` (password prompted securely, never via CLI arg)
-- [ ] **CRED-02**: User can list stored SSH credential hostnames with `homelab-mcp credentials list`
-- [ ] **CRED-03**: User can remove stored SSH credentials with `homelab-mcp credentials remove <host>`
-- [ ] **CRED-04**: User can store Proxmox credentials with `homelab-mcp credentials add --type proxmox <host> <user>` (token/password prompted securely)
-- [ ] **CRED-05**: User can list stored Proxmox credential hosts with `homelab-mcp credentials list --type proxmox`
-- [ ] **CRED-06**: User can remove stored Proxmox credentials with `homelab-mcp credentials remove --type proxmox <host>`
+- [x] **CRED-01**: User can store SSH credentials for a host with `homelab-mcp credentials add <host> <user>` (password prompted securely, never via CLI arg)
+- [x] **CRED-02**: User can list stored SSH credential hostnames with `homelab-mcp credentials list`
+- [x] **CRED-03**: User can remove stored SSH credentials with `homelab-mcp credentials remove <host>`
+- [x] **CRED-04**: User can store Proxmox credentials with `homelab-mcp credentials add --type proxmox <host> <user>` (token/password prompted securely)
+- [x] **CRED-05**: User can list stored Proxmox credential hosts with `homelab-mcp credentials list --type proxmox`
+- [x] **CRED-06**: User can remove stored Proxmox credentials with `homelab-mcp credentials remove --type proxmox <host>`
 - [x] **CRED-07**: Server warns and falls back gracefully to env-var-only mode when OS keyring is unavailable (headless Linux, no D-Bus)
 
 ### Credential Auto-Inject
@@ -29,7 +29,7 @@
 
 ### CLI Polish
 
-- [ ] **CLI-01**: `homelab-mcp --version` prints the installed package version
+- [x] **CLI-01**: `homelab-mcp --version` prints the installed package version
 - [ ] **CLI-02**: `decommission_device_workflow` prompt instructs AI to resolve hostname → device_id before calling the decommission tool (fixes PRMT-02)
 
 ## Future Requirements
@@ -62,12 +62,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CRED-01 | Phase 18 | Pending |
-| CRED-02 | Phase 18 | Pending |
-| CRED-03 | Phase 18 | Pending |
-| CRED-04 | Phase 18 | Pending |
-| CRED-05 | Phase 18 | Pending |
-| CRED-06 | Phase 18 | Pending |
+| CRED-01 | Phase 18 | Complete |
+| CRED-02 | Phase 18 | Complete |
+| CRED-03 | Phase 18 | Complete |
+| CRED-04 | Phase 18 | Complete |
+| CRED-05 | Phase 18 | Complete |
+| CRED-06 | Phase 18 | Complete |
 | CRED-07 | Phase 17 | Complete |
 | INJECT-01 | Phase 19 | Pending |
 | INJECT-02 | Phase 19 | Pending |
@@ -75,7 +75,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CICD-01 | Phase 20 | Pending |
 | CICD-02 | Phase 20 | Pending |
 | CICD-03 | Phase 20 | Pending |
-| CLI-01 | Phase 18 | Pending |
+| CLI-01 | Phase 18 | Complete |
 | CLI-02 | Phase 20 | Pending |
 
 **Coverage:**

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 17-01-PLAN.md — credential_store.py with headless-safe keyring wrapper
-last_updated: "2026-03-15T01:35:22.728Z"
+stopped_at: Completed 18-01-PLAN.md — Wave 0 RED test scaffold for credentials CLI and --version
+last_updated: "2026-03-15T01:56:32.675Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_plans: 4
+  completed_plans: 2
   percent: 80
 ---
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 80%
 | Phase 15-preview-tool-split P02 | 4 | 2 tasks | 12 files |
 | Phase 16-quality-gate P01 | 8 | 2 tasks | 4 files |
 | Phase 17-credential-store-foundation P01 | 25 | 2 tasks | 3 files |
+| Phase 18-credentials-cli-version P01 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,9 @@ Key constraints for v1.3 (from research):
 - [Phase 17-credential-store-foundation]: Lazy import keyring inside each function body — prevents D-Bus probing during server startup
 - [Phase 17-credential-store-foundation]: Assign keyring.get_password result to typed variable (str | None) to satisfy mypy warn_return_any
 - [Phase 17-credential-store-foundation]: credential_store.py imports only stdlib logging — no homelab_mcp imports (circular import prevention, mirrors prompt_registry.py constraint)
+- [Phase 18-credentials-cli-version]: Local import pattern inside test function bodies used for all new symbols — consistent with Phases 12-17 pattern
+- [Phase 18-credentials-cli-version]: test_bare_invocation_starts_server is GREEN because bare invocation behavior already exists — guards against regression
+- [Phase 18-credentials-cli-version]: Handler functions tested directly (_cmd_credentials_add/list/remove) via argparse.Namespace — avoids argparse dispatch complexity
 
 ### Pending Todos
 
@@ -122,6 +126,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T01:32:48.920Z
-Stopped at: Completed 17-01-PLAN.md — credential_store.py with headless-safe keyring wrapper
+Last session: 2026-03-15T01:56:32.671Z
+Stopped at: Completed 18-01-PLAN.md — Wave 0 RED test scaffold for credentials CLI and --version
 Resume file: None
