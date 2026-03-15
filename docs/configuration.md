@@ -176,3 +176,48 @@ To use PostgreSQL instead of SQLite:
    ```
 
 The server will create all required tables automatically on first run.
+
+## Credentials CLI
+
+The `credentials` subcommand manages stored credentials in the OS keyring. These are separate from environment variables and take precedence when the server connects to a host.
+
+```bash
+homelab-mcp credentials <subcommand> [options]
+```
+
+| Subcommand | Arguments | Description |
+|------------|-----------|-------------|
+| `add` | `<hostname> <username> [--type ssh\|proxmox]` | Prompt for password/token and store in OS keyring |
+| `list` | `[--type ssh\|proxmox]` | List hostnames with stored credentials |
+| `remove` | `<hostname> [--type ssh\|proxmox]` | Delete stored credential for a host |
+
+**--type flag:**
+
+| Value | Default | Use For |
+|-------|---------|---------|
+| `ssh` | yes | SSH password authentication |
+| `proxmox` | no | Proxmox API token or password |
+
+**Examples:**
+
+```bash
+# Add SSH credential (prompts for password)
+homelab-mcp credentials add 192.168.1.10 admin
+
+# Add Proxmox credential (prompts for API token or password)
+homelab-mcp credentials add 192.168.1.200 root@pam --type proxmox
+
+# List all SSH credentials
+homelab-mcp credentials list
+
+# List Proxmox credentials only
+homelab-mcp credentials list --type proxmox
+
+# Remove SSH credential for a host
+homelab-mcp credentials remove 192.168.1.10
+
+# Remove Proxmox credential for a host
+homelab-mcp credentials remove 192.168.1.200 --type proxmox
+```
+
+> **Headless servers:** If the OS keyring is unavailable (no D-Bus session), `credentials add` will warn that the credential was not persisted. In that case, use environment variables (`PROXMOX_PASSWORD`, `PROXMOX_API_TOKEN`) as a fallback.

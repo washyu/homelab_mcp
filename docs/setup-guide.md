@@ -14,7 +14,21 @@ Before you begin, ensure you have:
   ```
 - **A Proxmox server** or any SSH-accessible Linux host that you want to manage
 
-## 2. Clone and Install
+## 2. Install
+
+### Option A: Install from PyPI (recommended)
+
+If you have `uv` installed, run the server directly from PyPI with no clone needed:
+
+```bash
+uvx homelab-mcp
+```
+
+`uvx` downloads and caches the package on first run. Subsequent runs start immediately.
+
+For MCP client configuration with uvx, see section 5.
+
+### Option B: Clone and run from source
 
 ```bash
 git clone https://github.com/washyu/homelab_mcp.git
@@ -110,7 +124,22 @@ Add the server to your Claude Desktop configuration file.
 | Linux   | `~/.config/Claude/claude_desktop_config.json`                        |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json`                        |
 
-Add the following to the `mcpServers` section (replace `/path/to/homelab_mcp` with your actual clone path):
+Add the following to the `mcpServers` section.
+
+**Using PyPI (uvx) — recommended:**
+
+```json
+{
+  "mcpServers": {
+    "homelab": {
+      "command": "uvx",
+      "args": ["homelab-mcp"]
+    }
+  }
+}
+```
+
+**Using source clone** (replace `/path/to/homelab_mcp` with your actual clone path):
 
 ```json
 {
@@ -130,7 +159,22 @@ Restart Claude Desktop after saving the file.
 
 ### Claude Code
 
-Create a `.mcp.json` file in your project root:
+Create a `.mcp.json` file in your project root.
+
+**Using PyPI (uvx) — recommended:**
+
+```json
+{
+  "mcpServers": {
+    "homelab": {
+      "command": "uvx",
+      "args": ["homelab-mcp"]
+    }
+  }
+}
+```
+
+**Using source clone** (replace `/path/to/homelab_mcp` with your actual clone path):
 
 ```json
 {
