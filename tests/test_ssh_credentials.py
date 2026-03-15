@@ -8,6 +8,7 @@ import pytest
 
 from src.homelab_mcp.database import SQLiteAdapter
 from src.homelab_mcp.ssh_tools import (
+    CredentialNotFoundError,
     SSHCredentials,
     list_registered_servers,
     register_server,
@@ -256,6 +257,75 @@ class TestResolveSSHCredentials:
 
         assert creds.username == "mcp_admin"
         assert creds.key_path is not None
+
+
+class TestCredentialNotFoundError:
+    """Test that CredentialNotFoundError is raised when all credential tiers miss."""
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    @patch("src.homelab_mcp.ssh_tools.get_database_adapter")
+    @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
+    def test_raises_when_no_credentials_exist(self, mock_key_path, mock_get_db, mock_list_creds):
+        """When no keyring, no DB, and no mcp_admin key, raises CredentialNotFoundError."""
+        # No keyring entries
+        mock_list_creds.return_value = []
+
+        # No DB credential
+        mock_adapter = MagicMock()
+        mock_adapter.get_credential_by_hostname.return_value = None
+        mock_get_db.return_value = mock_adapter
+
+        # No mcp_admin key file
+        mock_path = MagicMock()
+        mock_path.exists.return_value = False
+        mock_key_path.return_value = mock_path
+
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials("unknown-host")
+
+        error_msg = str(exc_info.value)
+        assert "credentials add" in error_msg
+        assert "register_server" in error_msg
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    @patch("src.homelab_mcp.ssh_tools.get_database_adapter")
+    @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
+    def test_no_raise_when_mcp_admin_key_exists(self, mock_key_path, mock_get_db, mock_list_creds):
+        """When mcp_admin key exists, returns SSHCredentials without raising."""
+        # No keyring entries
+        mock_list_creds.return_value = []
+
+        # No DB credential
+        mock_adapter = MagicMock()
+        mock_adapter.get_credential_by_hostname.return_value = None
+        mock_get_db.return_value = mock_adapter
+
+        # mcp_admin key file EXISTS
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_key_path.return_value = mock_path
+
+        creds = resolve_ssh_credentials("host")
+        assert isinstance(creds, SSHCredentials)
+        assert creds.key_path is not None
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    @patch("src.homelab_mcp.ssh_tools.get_credential")
+    @patch("src.homelab_mcp.ssh_tools.get_database_adapter")
+    def test_no_raise_when_keyring_has_matching_entry(self, mock_get_db, mock_get_cred, mock_list_creds):
+        """When keyring has a matching entry with password, returns SSHCredentials."""
+        # Keyring has this host
+        mock_list_creds.return_value = [{"hostname": "host", "username": "alice", "credential_type": "ssh"}]
+        mock_get_cred.return_value = "s3cr3t"
+
+        # DB not reached (keyring matched first)
+        mock_adapter = MagicMock()
+        mock_get_db.return_value = mock_adapter
+
+        creds = resolve_ssh_credentials("host")
+        assert isinstance(creds, SSHCredentials)
+        assert creds.password == "s3cr3t"
+        assert creds.username == "alice"
 
 
 class TestRegisterServer:
