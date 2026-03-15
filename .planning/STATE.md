@@ -144,6 +144,7 @@ None.
 |---|-------------|------|--------|-----------|
 | 5 | we are missing the new cli arguments for the keystore in the command line help output | 2026-03-15 | 88e972f | [5-we-are-missing-the-new-cli-arguments-for](./quick/5-we-are-missing-the-new-cli-arguments-for/) |
 | 6 | update README and setup docs to reflect v1.3 (PyPI/uvx, credentials CLI, Python 3.12+) | 2026-03-15 | 1357903 | [6-update-readme-and-setup-docs-to-reflect-](./quick/6-update-readme-and-setup-docs-to-reflect-/) |
+| 7 | fix ssh tool schemas so the model knows about keyring auto-inject | 2026-03-15 | d261600 | [7-fix-ssh-tool-schemas-so-the-model-knows-](./quick/7-fix-ssh-tool-schemas-so-the-model-knows-/) |
 
 ### Blockers/Concerns
 
@@ -153,5 +154,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-15T07:15:00Z
-Stopped at: Completed quick task 6: update README and setup docs to reflect v1.3
+Stopped at: Completed quick task 7: fix ssh tool schemas for keyring auto-inject
 Resume file: None
