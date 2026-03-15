@@ -412,8 +412,8 @@ async def ssh_discover_system(
     # Connect via SSH
     if not creds.key_path and not creds.password:
         raise ValueError(
-            f"No credentials available for {hostname}. "
-            "Register the server first with register_server or provide password/key_path."
+            f"No credentials found for {hostname}. "
+            "Store them with `credentials add` or pass password/key_path explicitly."
         )
 
     async with await ssh_connect(
@@ -635,8 +635,7 @@ async def ssh_execute_command(
                 resolved_key = mcp_key_path
         else:
             raise ValueError(
-                f"No credentials available for {hostname}. "
-                "Register the server first with register_server or provide password."
+                f"No credentials found for {hostname}. Store them with `credentials add` or pass password explicitly."
             )
 
     async with await ssh_connect(
