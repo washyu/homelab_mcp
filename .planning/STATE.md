@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-15T18:29:38.196Z"
+stopped_at: Completed 23-02-PLAN.md
+last_updated: "2026-03-15T18:51:11.273Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
   percent: 0
 ---
 
@@ -54,6 +54,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 21-core-ssh-reliability P02 | 7 | 2 tasks | 4 files |
 | Phase 22-agent-guidance P02 | 6 | 2 tasks | 8 files |
 | Phase 22-agent-guidance P01 | 5 | 2 tasks | 7 files |
+| Phase 23-workflow-completeness P01 | 8 | 2 tasks | 2 files |
+| Phase 23-workflow-completeness P02 | 1 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -78,6 +80,9 @@ Key constraints for v1.4 (from research):
 - [Phase 22-agent-guidance]: list_keyring_credentials reads credential_store.list_credentials (existing function) and is annotated read-only
 - [Phase 22-agent-guidance]: CredentialNotFoundError extends RuntimeError — propagates cleanly through ssh_connection_wrapper except Exception catch
 - [Phase 22-agent-guidance]: list_keyring_credentials marked read-only in tool_annotations.py — queries keyring state, no side effects
+- [Phase 23-workflow-completeness]: connect_to_device prompt lists all 6 onboarding tools/commands in order: setup_mcp_admin, credentials add, register_server, ssh_discover, discover_and_map, verify_mcp_admin
+- [Phase 23-workflow-completeness]: Hostname interpolated into each step via f-string so prompt is actionable without further substitution
+- [Phase 23-workflow-completeness]: [Phase 23-workflow-completeness]: Desync warning placed inside if matched block after if keyring_password block — fires only on desync, never on normal keyring hit or total miss; non-blocking fallthrough to DB tier
 
 ### Pending Todos
 
@@ -90,6 +95,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T18:26:17.629Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-03-15T18:51:11.270Z
+Stopped at: Completed 23-02-PLAN.md
 Resume file: None

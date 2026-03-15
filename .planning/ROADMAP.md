@@ -68,7 +68,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 - [x] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming (completed 2026-03-15)
 - [x] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable (completed 2026-03-15)
-- [ ] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning
+- [x] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning (completed 2026-03-15)
 
 ## Phase Details
 
@@ -109,7 +109,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Agent can invoke the `connect_to_device` prompt and receive a step-by-step onboarding sequence covering setup, registration, credentials, discovery, and verification
   2. When a hostname exists in the credential registry but the keyring returns no password, a warning appears in server logs identifying the desync condition
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 23-01-PLAN.md — Add connect_to_device onboarding prompt
 - [ ] 23-02-PLAN.md — Add credential desync warning log
@@ -140,4 +140,4 @@ Plans:
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 22. Agent Guidance | 2/2 | Complete    | 2026-03-15 | - |
-| 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |
+| 23. Workflow Completeness | 2/2 | Complete   | 2026-03-15 | - |
