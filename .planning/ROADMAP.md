@@ -6,6 +6,7 @@
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
+- 🚧 **v1.4 Real-World Reliability** — Phases 21-23 (in progress)
 
 ## Phases
 
@@ -61,6 +62,49 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
+### 🚧 v1.4 Real-World Reliability (In Progress)
+
+**Milestone Goal:** Fix bugs and workflow issues discovered during real Mac testing — interactive shell, SSH credential flow, and TOFU known_hosts handling.
+
+- [ ] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming
+- [ ] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable
+- [ ] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning
+
+## Phase Details
+
+### Phase 21: Core SSH Reliability
+**Goal**: SSH connections work correctly for keyring-registered hosts and interactive shell output reaches the browser
+**Depends on**: Phase 20
+**Requirements**: TOFU-01, TOFU-02, SHELL-01, SHELL-02, SHELL-03
+**Success Criteria** (what must be TRUE):
+  1. `ssh_discover` succeeds on a host registered only via `credentials add` (no prior `register_server`) without timeout
+  2. Interactive shell streams PTY output to the browser in real time — characters appear as typed, not buffered until EOF
+  3. Browser tab receives an explicit disconnection message when the shell session ends instead of hanging silently
+  4. Shell prompt renders at correct width — lines do not wrap or truncate at column 24
+  5. `known_hosts` file entries have exactly three fields (hostname, algorithm, base64) with no trailing comment
+**Plans**: TBD
+
+### Phase 22: Agent Guidance
+**Goal**: The agent can diagnose credential failures and knows which tools and commands to recommend to the user
+**Depends on**: Phase 21
+**Requirements**: CRED-01, CRED-02, CRED-03, SHELL-04, SHELL-05
+**Success Criteria** (what must be TRUE):
+  1. When SSH authentication fails because no credentials exist, the error message names the exact CLI command (`homelab-mcp credentials add`) and tool (`register_server`) needed to fix it
+  2. Agent can call `list_keyring_credentials` to see which hosts have stored credentials without asking the user
+  3. `ssh_discover` and `ssh_execute_command` tool descriptions tell the agent where to look when credentials are missing
+  4. `start_interactive_shell` in stdio mode returns an actionable error explaining the browser-only constraint rather than a dead URL
+  5. `start_interactive_shell` schema description states the browser-only requirement so the agent does not report success in non-HTTP deployments
+**Plans**: TBD
+
+### Phase 23: Workflow Completeness
+**Goal**: The agent has a pre-built onboarding recipe for new devices and detects credential store inconsistencies before they cause silent failures
+**Depends on**: Phase 22
+**Requirements**: TOFU-03, TOFU-04
+**Success Criteria** (what must be TRUE):
+  1. Agent can invoke the `connect_to_device` prompt and receive a step-by-step onboarding sequence covering setup, registration, credentials, discovery, and verification
+  2. When a hostname exists in the credential registry but the keyring returns no password, a warning appears in server logs identifying the desync condition
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -85,3 +129,6 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
+| 21. Core SSH Reliability | v1.4 | 0/TBD | Not started | - |
+| 22. Agent Guidance | v1.4 | 0/TBD | Not started | - |
+| 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |

@@ -50,24 +50,24 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHELL-01 | — | Pending |
-| SHELL-02 | — | Pending |
-| SHELL-03 | — | Pending |
-| SHELL-04 | — | Pending |
-| SHELL-05 | — | Pending |
-| CRED-01 | — | Pending |
-| CRED-02 | — | Pending |
-| CRED-03 | — | Pending |
-| TOFU-01 | — | Pending |
-| TOFU-02 | — | Pending |
-| TOFU-03 | — | Pending |
-| TOFU-04 | — | Pending |
+| SHELL-01 | Phase 21 | Pending |
+| SHELL-02 | Phase 21 | Pending |
+| SHELL-03 | Phase 21 | Pending |
+| SHELL-04 | Phase 22 | Pending |
+| SHELL-05 | Phase 22 | Pending |
+| CRED-01 | Phase 22 | Pending |
+| CRED-02 | Phase 22 | Pending |
+| CRED-03 | Phase 22 | Pending |
+| TOFU-01 | Phase 21 | Pending |
+| TOFU-02 | Phase 21 | Pending |
+| TOFU-03 | Phase 23 | Pending |
+| TOFU-04 | Phase 23 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12 ⚠️
+- Mapped to phases: 12
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after initial definition*
+*Last updated: 2026-03-13 after roadmap creation*
