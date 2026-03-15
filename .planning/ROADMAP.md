@@ -113,7 +113,12 @@ Plans:
   2. The publish job does not run if the test-and-quality job fails on that same commit
   3. The publish job does not run on non-tag pushes (feature branches, main commits)
   4. An AI following the `decommission_device_workflow` prompt calls `list_devices` to resolve hostname to `device_id` before calling `decommission_device` — no schema validation error occurs
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 20-01-PLAN.md — TDD Wave 0: add failing assertions for CLI-02 (get_network_sitemap + device_id in decommission prompt)
+- [ ] 20-02-PLAN.md — Add publish-to-pypi job to main.yml (OIDC, tag-gated) + bump version to 1.3.0
+- [ ] 20-03-PLAN.md — Fix _build_decommission_result() to turn CLI-02 tests GREEN
 
 ## Progress
 
