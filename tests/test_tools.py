@@ -14,7 +14,7 @@ def test_get_available_tools():
 
     assert (
         len(tools) == 57
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift tools, preview tools, and list_keyring_credentials
+    )  # All tools: SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift, preview, list_keyring_credentials
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
     assert "verify_mcp_admin" in tools
@@ -690,3 +690,53 @@ def test_vm_tool_schemas():
         "platform",
         "vm_name",
     ]
+
+
+def test_list_keyring_credentials_in_registry():
+    """Test that list_keyring_credentials exists in the tool registry."""
+    tools = get_available_tools()
+    assert "list_keyring_credentials" in tools
+    tool = tools["list_keyring_credentials"]
+    assert "description" in tool
+    assert "inputSchema" in tool
+    assert "credential_type" in tool["inputSchema"]["properties"]
+    assert tool["inputSchema"]["required"] == []
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.credential_handlers.list_credentials")
+async def test_handle_list_keyring_credentials_returns_entries(mock_list_creds):
+    """list_keyring_credentials handler returns JSON with status=success and credentials array."""
+    mock_list_creds.return_value = [
+        {"hostname": "host1", "username": "alice", "credential_type": "ssh"},
+        {"hostname": "host2", "username": "bob", "credential_type": "ssh"},
+    ]
+
+    from src.homelab_mcp.tool_handlers.credential_handlers import handle_list_keyring_credentials
+
+    result = await handle_list_keyring_credentials({})
+    assert "content" in result
+    assert len(result["content"]) == 1
+    data = json.loads(result["content"][0]["text"])
+    assert data["status"] == "success"
+    assert data["count"] == 2
+    assert data["credentials"] == [
+        {"hostname": "host1", "username": "alice"},
+        {"hostname": "host2", "username": "bob"},
+    ]
+    assert data["credential_type"] == "ssh"
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.credential_handlers.list_credentials")
+async def test_handle_list_keyring_credentials_passes_credential_type(mock_list_creds):
+    """list_keyring_credentials handler passes credential_type argument through."""
+    mock_list_creds.return_value = []
+
+    from src.homelab_mcp.tool_handlers.credential_handlers import handle_list_keyring_credentials
+
+    result = await handle_list_keyring_credentials({"credential_type": "proxmox"})
+    mock_list_creds.assert_called_once_with(credential_type="proxmox")
+    data = json.loads(result["content"][0]["text"])
+    assert data["credential_type"] == "proxmox"
+    assert data["count"] == 0
