@@ -587,6 +587,7 @@ dependencies = [
     { name = "asyncssh" },
     { name = "httpx" },
     { name = "jsonschema" },
+    { name = "keyring" },
     { name = "mcp", extra = ["cli"] },
     { name = "pyyaml" },
     { name = "rich" },
@@ -609,7 +610,6 @@ monitoring = [
 ]
 security = [
     { name = "cryptography" },
-    { name = "keyring" },
 ]
 
 [package.dev-dependencies]
@@ -639,7 +639,7 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'security'", specifier = ">=42.0.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema", specifier = ">=4.24.0" },
-    { name = "keyring", marker = "extra == 'security'", specifier = ">=25.0.0" },
+    { name = "keyring", specifier = ">=25.6.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.9.1" },
     { name = "ollama", marker = "extra == 'ai'", specifier = ">=0.4.4" },
     { name = "pandas", marker = "extra == 'monitoring'", specifier = ">=2.2.3" },
