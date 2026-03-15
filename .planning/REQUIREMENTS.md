@@ -28,6 +28,15 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 - [x] **TOFU-03**: `connect_to_device` MCP prompt sequences full device onboarding workflow
 - [x] **TOFU-04**: Warning logged when registry entry exists but keyring returns None (desync detection)
 
+### Keyring-based Password Handling
+
+- [ ] **SETUP-01**: `setup_mcp_admin` resolves credentials from keyring when no password argument is passed
+- [ ] **SETUP-02**: `setup_mcp_admin` accepts explicit password for backward compatibility (positional args still work)
+- [ ] **SETUP-03**: `setup_mcp_admin` schema has only `hostname` in `required` array (password and username optional)
+- [ ] **GROUPS-01**: `update_mcp_admin_groups` resolves credentials from keyring when no password argument is passed
+- [ ] **GROUPS-02**: `update_mcp_admin_groups` schema has only `hostname` in `required` array (password and username optional)
+- [ ] **AUDIT-01**: No tool schema in the project has `password` in its `required` array (regression guard)
+
 ## Future Requirements
 
 ### Deferred from v1.4
@@ -62,12 +71,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TOFU-02 | Phase 21 | Complete |
 | TOFU-03 | Phase 23 | Complete |
 | TOFU-04 | Phase 23 | Complete |
+| SETUP-01 | Phase 24 | Planned |
+| SETUP-02 | Phase 24 | Planned |
+| SETUP-03 | Phase 24 | Planned |
+| GROUPS-01 | Phase 24 | Planned |
+| GROUPS-02 | Phase 24 | Planned |
+| AUDIT-01 | Phase 24 | Planned |
 
 **Coverage:**
-- v1.4 requirements: 12 total
-- Mapped to phases: 12
-- Unmapped: 0 ✓
+- v1.4 requirements: 18 total
+- Mapped to phases: 18
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-13 after roadmap creation*
+*Last updated: 2026-03-15 after Phase 24 planning*

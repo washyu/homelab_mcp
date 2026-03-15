@@ -6,7 +6,7 @@
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
-- 🚧 **v1.4 Real-World Reliability** — Phases 21-23 (in progress)
+- 🚧 **v1.4 Real-World Reliability** — Phases 21-24 (in progress)
 
 ## Phases
 
@@ -69,6 +69,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming (completed 2026-03-15)
 - [x] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable (completed 2026-03-15)
 - [x] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning (completed 2026-03-15)
+- [ ] **Phase 24: Keyring-based Password Handling** — Fix setup_mcp_admin and update_mcp_admin_groups to use keyring auto-inject
 
 ## Phase Details
 
@@ -114,6 +115,21 @@ Plans:
 - [ ] 23-01-PLAN.md — Add connect_to_device onboarding prompt
 - [ ] 23-02-PLAN.md — Add credential desync warning log
 
+### Phase 24: Keyring-based Password Handling
+**Goal**: setup_mcp_admin and update_mcp_admin_groups resolve credentials from keyring instead of requiring explicit password arguments
+**Depends on**: Phase 23
+**Requirements**: SETUP-01, SETUP-02, SETUP-03, GROUPS-01, GROUPS-02, AUDIT-01
+**Success Criteria** (what must be TRUE):
+  1. `setup_mcp_admin` resolves credentials from keyring when called without password argument
+  2. `setup_mcp_admin` still accepts explicit password for backward compatibility
+  3. `update_mcp_admin_groups` resolves credentials from keyring when called without password argument
+  4. Neither tool schema has `password` in its `required` array
+  5. No tool schema in the entire project has `password` in its `required` array (regression guard)
+**Plans:** 2 plans
+Plans:
+- [ ] 24-01-PLAN.md — Refactor setup_mcp_admin and update_mcp_admin_groups schemas and implementations
+- [ ] 24-02-PLAN.md — Update existing tests and add keyring resolution + audit guard tests
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -139,5 +155,6 @@ Plans:
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 22. Agent Guidance | 2/2 | Complete    | 2026-03-15 | - |
-| 23. Workflow Completeness | 2/2 | Complete    | 2026-03-15 | - |
+| 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
+| 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
+| 24. Keyring-based Password Handling | v1.4 | 0/2 | Planning | - |
