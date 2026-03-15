@@ -8,6 +8,7 @@ import pytest
 
 from src.homelab_mcp.ssh_tools import (
     SSHCredentials,
+    _sudo_run,
     ensure_mcp_ssh_key,
     setup_remote_mcp_admin,
     ssh_discover_system,
@@ -860,3 +861,198 @@ def test_no_password_in_log_after_ssh_keyring_inject(mocker, caplog):
     with caplog.at_level(logging.DEBUG):
         resolve_ssh_credentials("192.168.1.10")
     assert "super-secret-pw" not in caplog.text
+
+
+# --- Sudo password piping tests ---
+
+
+@pytest.mark.asyncio
+async def test_sudo_run_with_password_uses_sudo_s():
+    """_sudo_run with password calls conn.run with 'sudo -S' and input=password\\n."""
+    mock_conn = AsyncMock()
+    mock_result = MagicMock(exit_status=0, stdout="", stderr="")
+    mock_conn.run.return_value = mock_result
+
+    result = await _sudo_run(mock_conn, "whoami", password="secret123", check=False)
+
+    mock_conn.run.assert_called_once_with("sudo -S whoami", input="secret123\n", check=False)
+    assert result is mock_result
+
+
+@pytest.mark.asyncio
+async def test_sudo_run_without_password_uses_plain_sudo():
+    """_sudo_run without password calls conn.run with plain 'sudo' (no -S, no input)."""
+    mock_conn = AsyncMock()
+    mock_result = MagicMock(exit_status=0, stdout="", stderr="")
+    mock_conn.run.return_value = mock_result
+
+    result = await _sudo_run(mock_conn, "whoami", password=None, check=False)
+
+    mock_conn.run.assert_called_once_with("sudo whoami", check=False)
+    assert result is mock_result
+
+
+@pytest.mark.asyncio
+async def test_sudo_run_wrong_password_raises():
+    """_sudo_run raises RuntimeError with 'sudo authentication failed' on wrong password."""
+    mock_conn = AsyncMock()
+    mock_conn.run.return_value = MagicMock(exit_status=1, stdout="", stderr="Sorry, try again")
+
+    with pytest.raises(RuntimeError, match="sudo authentication failed"):
+        await _sudo_run(mock_conn, "whoami", password="wrong", check=False)
+
+
+@pytest.mark.asyncio
+async def test_sudo_run_not_in_sudoers_raises():
+    """_sudo_run raises RuntimeError with 'not in the sudoers file' when user lacks sudo."""
+    mock_conn = AsyncMock()
+    mock_conn.run.return_value = MagicMock(
+        exit_status=1, stdout="", stderr="shaun is not in the sudoers file"
+    )
+
+    with pytest.raises(RuntimeError, match="not in the sudoers file"):
+        await _sudo_run(mock_conn, "whoami", password="pass", check=False)
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools._sudo_run", new_callable=AsyncMock)
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_mcp_admin_pipes_password_via_sudo_run(
+    mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run
+):
+    """setup_remote_mcp_admin calls _sudo_run with the resolved password."""
+    mock_resolve.return_value = SSHCredentials(
+        hostname="test-host",
+        username="admin",
+        port=22,
+        password="admin-pass",
+    )
+    mock_ensure_key.return_value = "/tmp/test_key"
+
+    # Mock public key file
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix=".pub", delete=False, mode="w") as f:
+        f.write("ssh-rsa AAAA test@host")
+        pub_path = f.name
+    key_path = pub_path[:-4]  # strip .pub
+
+    mock_ensure_key.return_value = key_path
+
+    # _sudo_run returns success for all calls
+    mock_sudo_run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+
+    # conn.run handles non-sudo calls (e.g., id mcp_admin)
+    mock_conn = AsyncMock()
+    mock_conn.run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    try:
+        result = await setup_remote_mcp_admin("test-host", force_update_key=False)
+        result_data = json.loads(result)
+        assert result_data["status"] == "success"
+        # Verify _sudo_run was called at least once with the resolved password
+        assert mock_sudo_run.call_count >= 1
+        for call in mock_sudo_run.call_args_list:
+            assert call.kwargs.get("password") == "admin-pass" or call.args[2] == "admin-pass" if len(call.args) > 2 else True
+        # Verify no raw sudo calls went directly via conn.run
+        for call in mock_conn.run.call_args_list:
+            cmd = call.args[0] if call.args else call.kwargs.get("command", "")
+            assert not cmd.startswith("sudo "), f"Unexpected direct sudo call: {cmd}"
+    finally:
+        os.unlink(pub_path)
+        if os.path.exists(key_path):
+            os.unlink(key_path)
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools._sudo_run", new_callable=AsyncMock)
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_mcp_admin_no_password_falls_back(
+    mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run
+):
+    """setup_remote_mcp_admin passes password=None to _sudo_run when credentials have no password."""
+    mock_resolve.return_value = SSHCredentials(
+        hostname="test-host",
+        username="admin",
+        port=22,
+        password=None,
+    )
+
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix=".pub", delete=False, mode="w") as f:
+        f.write("ssh-rsa AAAA test@host")
+        pub_path = f.name
+    key_path = pub_path[:-4]
+
+    mock_ensure_key.return_value = key_path
+    mock_sudo_run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+
+    mock_conn = AsyncMock()
+    mock_conn.run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    try:
+        result = await setup_remote_mcp_admin("test-host", force_update_key=False)
+        result_data = json.loads(result)
+        assert result_data["status"] == "success"
+        # Verify _sudo_run was called with password=None
+        assert mock_sudo_run.call_count >= 1
+        for call in mock_sudo_run.call_args_list:
+            assert call.kwargs.get("password") is None
+    finally:
+        os.unlink(pub_path)
+        if os.path.exists(key_path):
+            os.unlink(key_path)
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_ssh_execute_command_sudo_no_echo_leak(mock_connect, mock_resolve):
+    """ssh_execute_command uses conn.run(input=...) for sudo, no shell echo of password."""
+    from src.homelab_mcp.ssh_tools import ssh_execute_command
+
+    mock_resolve.return_value = SSHCredentials(
+        hostname="test-host",
+        username="admin",
+        port=22,
+        password="secret",
+    )
+
+    mock_conn = AsyncMock()
+    mock_conn.run.return_value = MagicMock(exit_status=0, stdout="root", stderr="")
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    result = await ssh_execute_command("test-host", "whoami", sudo=True)
+    result_data = json.loads(result)
+    assert result_data["status"] == "success"
+
+    # Assert conn.run was called with sudo -S and input= containing the password
+    assert mock_conn.run.call_count >= 1
+    found_sudo_s = False
+    for call in mock_conn.run.call_args_list:
+        cmd = call.args[0] if call.args else call.kwargs.get("command", "")
+        inp = call.kwargs.get("input", "") or ""
+        if "sudo -S" in cmd:
+            found_sudo_s = True
+            assert "secret\n" == inp, f"Expected input='secret\\n', got {inp!r}"
+            # Verify no echo pattern in command
+            assert "echo" not in cmd, f"Password leaked via echo in command: {cmd}"
+            assert "secret" not in cmd, f"Password leaked in command string: {cmd}"
+    assert found_sudo_s, "Expected conn.run to be called with 'sudo -S' command"
