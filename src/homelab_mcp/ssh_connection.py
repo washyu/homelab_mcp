@@ -8,8 +8,8 @@ Implements Trust-On-First-Use (TOFU) for SSH host keys:
 All SSH connections in the codebase should use ssh_connect() from this module.
 """
 
-import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 KNOWN_HOSTS_PATH = Path.home() / ".homelab_mcp" / "known_hosts"
 
 # Module-level lock to prevent race conditions on concurrent TOFU
-_tofu_lock = asyncio.Lock()
+_tofu_lock = threading.Lock()
 
 
 class TOFUSSHClient(asyncssh.SSHClient):
@@ -123,16 +123,18 @@ class TOFUSSHClient(asyncssh.SSHClient):
         host_label = self._format_host_label(host, port)
 
         # Extract key data from the public key export
-        key_data = key.export_public_key().decode("utf-8").strip()
-        # key_data is in format: "algorithm base64data"
-        # We want: "host_label algorithm base64data"
+        key_export = key.export_public_key().decode("utf-8").strip()
+        # Strip trailing comment field — known_hosts requires exactly "algorithm base64"
+        parts = key_export.split()
+        key_data = " ".join(parts[:2])
         entry = f"{host_label} {key_data}\n"
 
-        try:
-            with open(self._known_hosts_path, "a") as f:
-                f.write(entry)
-        except OSError:
-            logger.error("Failed to write to known_hosts file: %s", self._known_hosts_path)
+        with _tofu_lock:
+            try:
+                with open(self._known_hosts_path, "a") as f:
+                    f.write(entry)
+            except OSError:
+                logger.error("Failed to write to known_hosts file: %s", self._known_hosts_path)
 
     @staticmethod
     def _format_host_label(host: str, port: int) -> str:
