@@ -109,7 +109,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Agent can invoke the `connect_to_device` prompt and receive a step-by-step onboarding sequence covering setup, registration, credentials, discovery, and verification
   2. When a hostname exists in the credential registry but the keyring returns no password, a warning appears in server logs identifying the desync condition
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 23-01-PLAN.md — Add connect_to_device onboarding prompt
+- [ ] 23-02-PLAN.md — Add credential desync warning log
 
 ## Progress
 
