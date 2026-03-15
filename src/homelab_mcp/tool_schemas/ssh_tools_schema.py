@@ -4,18 +4,18 @@ from typing import Any
 
 SSH_TOOLS: dict[str, dict[str, Any]] = {
     "ssh_discover": {
-        "description": "SSH into a system and gather hardware/system information",
+        "description": "SSH into a system and gather hardware/system information. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
                     "type": "string",
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "description": "SSH username. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)",
+                    "description": "SSH password. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "key_path": {
                     "type": "string",
@@ -27,7 +27,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "default": 22,
                 },
             },
-            "required": ["hostname", "username"],
+            "required": ["hostname"],
         },
     },
     "setup_mcp_admin": {
@@ -80,18 +80,18 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "ssh_execute_command": {
-        "description": "Execute a command on a remote system via SSH",
+        "description": "Execute a command on a remote system via SSH. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
                     "type": "string",
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "description": "SSH username. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)",
+                    "description": "SSH password. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "command": {
                     "type": "string",
@@ -108,7 +108,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "default": 22,
                 },
             },
-            "required": ["hostname", "username", "command"],
+            "required": ["hostname", "command"],
         },
     },
     "start_interactive_shell": {
