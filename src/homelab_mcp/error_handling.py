@@ -46,7 +46,13 @@ def timeout_wrapper(timeout_seconds: float = 30.0, default_response: dict[str, A
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 # Apply timeout to the function execution
-                result = await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
+                # Check if arguments dict contains a timeout override (for tool calls)
+                effective_timeout = timeout_seconds
+                for arg in args:
+                    if isinstance(arg, dict) and "timeout" in arg:
+                        effective_timeout = max(float(arg["timeout"]) + 5.0, timeout_seconds)
+                        break
+                result = await asyncio.wait_for(func(*args, **kwargs), timeout=effective_timeout)
                 return result
             except TimeoutError:
                 error_msg = f"Operation '{func.__name__}' timed out after {timeout_seconds} seconds"
@@ -231,8 +237,10 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
     def decorator(func: F) -> F:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> str:
+            # Allow callers to override the decorator's default timeout
+            effective_timeout = kwargs.pop("timeout", None) or timeout_seconds
             try:
-                result = await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
+                result = await asyncio.wait_for(func(*args, **kwargs), timeout=effective_timeout)
                 # Return successful result as-is (should be JSON string)
                 return str(result)
             except TimeoutError:
@@ -241,7 +249,7 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                     {
                         "status": "error",
                         "connection_ip": hostname,
-                        "error": f"SSH connection timeout after {timeout_seconds} seconds",
+                        "error": f"SSH connection timeout after {effective_timeout} seconds",
                         "error_type": "ssh_timeout",
                         "suggestions": [
                             "Check if the target device is reachable",

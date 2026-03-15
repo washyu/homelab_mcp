@@ -57,6 +57,11 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "description": "SSH port (default: 22)",
                     "default": 22,
                 },
+                "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds for the SSH operation. Setup can take 30-60s on slow hosts (default: 30)",
+                    "default": 30,
+                },
             },
             "required": ["hostname"],
         },
@@ -106,6 +111,11 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
                     "default": 22,
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds for the SSH operation. Increase for slow hosts or compound commands (default: 20)",
+                    "default": 20,
                 },
             },
             "required": ["hostname", "command"],
