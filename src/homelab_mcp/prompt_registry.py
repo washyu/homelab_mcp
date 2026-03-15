@@ -71,16 +71,21 @@ def _make_user_message(text: str) -> types.PromptMessage:
 
 
 def _build_decommission_result(args: dict[str, str]) -> types.GetPromptResult:
-    """Build the decommission_device_workflow prompt result (PRMT-02)."""
+    """Build the decommission_device_workflow prompt result (PRMT-02, CLI-02)."""
     hostname = args.get("hostname", "<hostname>")
     text = f"""Follow these steps to safely decommission {hostname}:
 
-1. Call decommission_device_preview with hostname="{hostname}" to preview the operation.
-2. Present the preview result to the user and ask for explicit confirmation before proceeding.
-3. Only if the user confirms: call decommission_device with hostname="{hostname}".
-4. Report the result to the user.
+1. Call get_network_sitemap to retrieve all tracked devices. Find the entry \
+where hostname matches "{hostname}" and note its device_id (integer).
+2. Call decommission_device_preview with device_id=<device_id from step 1> to \
+preview the operation.
+3. Present the preview result to the user and ask for explicit confirmation \
+before proceeding.
+4. Only if the user confirms: call decommission_device with \
+device_id=<device_id from step 1>.
+5. Report the result to the user.
 
-Do not proceed to step 3 without explicit user confirmation."""
+Do not proceed to step 4 without explicit user confirmation."""
     return types.GetPromptResult(
         description="Safe device decommission workflow",
         messages=[_make_user_message(text)],
