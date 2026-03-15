@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import pathlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pytest
+    import pytest_mock
+
 
 def test_store_credential_success(mocker):
     """store_credential returns True when keyring.set_password succeeds."""
@@ -113,3 +120,80 @@ def test_keyring_in_core_dependencies():
     core_deps = data.get("project", {}).get("dependencies", [])
     has_keyring_in_core = any("keyring" in dep for dep in core_deps)
     assert has_keyring_in_core, f"keyring not found in [project.dependencies]. Core deps: {core_deps}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 18 — Wave 0 RED tests: registry functions + credential_type parameter
+# ---------------------------------------------------------------------------
+
+
+def test_register_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """register_credential + list_credentials returns the registered entry."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("host1", "user1", credential_type="ssh")
+    entries = list_credentials(credential_type="ssh")
+    assert entries == [{"hostname": "host1", "username": "user1", "credential_type": "ssh"}]
+
+
+def test_unregister_removes_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """unregister_credential removes the entry; subsequent list_credentials returns []."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import (  # noqa: PLC0415
+        list_credentials,
+        register_credential,
+        unregister_credential,
+    )
+
+    register_credential("host1", "user1", credential_type="ssh")
+    unregister_credential("host1", credential_type="ssh")
+    entries = list_credentials(credential_type="ssh")
+    assert entries == []
+
+
+def test_list_credentials_no_file(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """list_credentials returns [] when registry file does not exist."""
+    missing_path = tmp_path / "nonexistent_registry.json"
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", missing_path)
+    from homelab_mcp.credential_store import list_credentials  # noqa: PLC0415
+
+    entries = list_credentials("ssh")
+    assert entries == []
+
+
+def test_store_proxmox_uses_proxmox_service_name(mocker: pytest_mock.MockerFixture) -> None:
+    """store_credential with credential_type='proxmox' calls keyring with 'homelab-mcp-proxmox'."""
+    mock_set = mocker.patch("keyring.set_password", return_value=None)
+    from homelab_mcp.credential_store import store_credential  # noqa: PLC0415
+
+    store_credential("host", "user", "pw", credential_type="proxmox")
+    mock_set.assert_called_once()
+    call_args = mock_set.call_args
+    assert call_args[0][0] == "homelab-mcp-proxmox", (
+        f"Expected service name 'homelab-mcp-proxmox', got '{call_args[0][0]}'"
+    )
+
+
+def test_register_upsert(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Registering the same (hostname, username, type) twice results in exactly one entry."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("host1", "user1", credential_type="ssh")
+    register_credential("host1", "user1", credential_type="ssh")
+    entries = list_credentials(credential_type="ssh")
+    assert len(entries) == 1
+
+
+def test_list_filters_by_type(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """list_credentials('ssh') returns only ssh entries, not proxmox ones."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("ssh-host", "ssh-user", credential_type="ssh")
+    register_credential("px-host", "px-user", credential_type="proxmox")
+    ssh_entries = list_credentials(credential_type="ssh")
+    assert ssh_entries == [{"hostname": "ssh-host", "username": "ssh-user", "credential_type": "ssh"}]
+    proxmox_entries = list_credentials(credential_type="proxmox")
+    assert proxmox_entries == [{"hostname": "px-host", "username": "px-user", "credential_type": "proxmox"}]
