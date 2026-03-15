@@ -6,6 +6,7 @@ Uses lowlevel.Server with lifespan, list_tools, and call_tool decorators.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -21,6 +22,13 @@ from mcp.shared.exceptions import McpError
 from pydantic import AnyUrl
 
 from .config import MCPConfig, get_config
+from .credential_store import (
+    delete_credential,
+    list_credentials,
+    register_credential,
+    store_credential,
+    unregister_credential,
+)
 from .log_filter import CredentialFilter, sanitize_error
 from .progress import (
     LOG_LEVEL_ORDER,
@@ -480,12 +488,93 @@ def _convert_result(
     return converted
 
 
+def _cmd_credentials_add(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp credentials add <hostname> <username> [--type ssh|proxmox]`."""
+    import getpass  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    credential_type: str = args.credential_type
+    prompt = "Token/Password: " if credential_type == "proxmox" else "Password: "
+    password = getpass.getpass(prompt)
+
+    ok = store_credential(args.hostname, args.username, password, credential_type=credential_type)
+    if ok:
+        register_credential(args.hostname, args.username, credential_type=credential_type)
+        print(f"Stored {credential_type} credential for {args.username}@{args.hostname}")
+    else:
+        print(
+            f"Warning: OS keyring unavailable — credential not persisted for {args.hostname}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def _cmd_credentials_list(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp credentials list [--type ssh|proxmox]`."""
+    credential_type: str = args.credential_type
+    entries = list_credentials(credential_type=credential_type)
+    if not entries:
+        print(f"No stored {credential_type} credentials.")
+        return
+    print(f"Stored {credential_type} credentials:")
+    for entry in entries:
+        print(f"  {entry['username']}@{entry['hostname']}")
+
+
+def _cmd_credentials_remove(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp credentials remove <hostname> [--type ssh|proxmox]`."""
+    import sys  # noqa: PLC0415
+
+    credential_type: str = args.credential_type
+    entries = [e for e in list_credentials(credential_type=credential_type) if e["hostname"] == args.hostname]
+    if not entries:
+        print(
+            f"No {credential_type} credential found for {args.hostname}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    for entry in entries:
+        delete_credential(entry["hostname"], entry["username"], credential_type=credential_type)
+    unregister_credential(args.hostname, credential_type=credential_type)
+    print(f"Removed {credential_type} credential for {args.hostname}")
+
+
+def _run_stdio_wrapper(args: argparse.Namespace) -> None:
+    """Dispatch to stdio or HTTP server. Called when no credentials subcommand is given."""
+    import asyncio  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    if getattr(args, "http", False):
+        import uvicorn  # noqa: PLC0415
+
+        from homelab_mcp.http_app import create_http_app  # noqa: PLC0415
+
+        protocol = "HTTPS" if getattr(args, "ssl_cert", None) else "HTTP"
+        print(
+            f"MCP Server starting in {protocol} mode on "
+            f"{getattr(args, 'host', '127.0.0.1')}:{getattr(args, 'port', 8080)}",
+            file=sys.stderr,
+        )
+        app = create_http_app()
+        config = uvicorn.Config(
+            app=app,
+            host=getattr(args, "host", "127.0.0.1"),
+            port=getattr(args, "port", 8080),
+            log_level="info",
+            ssl_certfile=getattr(args, "ssl_cert", None),
+            ssl_keyfile=getattr(args, "ssl_key", None),
+        )
+        uvi_server = uvicorn.Server(config)
+        asyncio.run(uvi_server.serve())
+    else:
+        print("MCP Server starting in stdio mode...", file=sys.stderr)
+        asyncio.run(_run_stdio())
+
+
 def main() -> None:
     """Console script entry point for `uvx homelab-mcp` and `python -m homelab_mcp`."""
-    import argparse
-    import asyncio
-    import os
-    import sys
+    import os  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(
         description="Homelab MCP Server - AI-powered homelab infrastructure management",
@@ -495,6 +584,11 @@ Examples:
   uvx homelab-mcp                        # stdio mode (Claude Desktop)
   uvx homelab-mcp --http --port 8080     # HTTP mode (OpenWebUI)
 """,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_get_version()}",
     )
     parser.add_argument(
         "--http",
@@ -538,29 +632,35 @@ Examples:
         default=os.getenv("MCP_SSL_KEY"),
         help="Path to SSL private key file",
     )
+
+    # Ensure bare `homelab-mcp` still starts the server (set_defaults pattern)
+    parser.set_defaults(func=_run_stdio_wrapper)
+
+    # credentials subcommand group
+    sub = parser.add_subparsers(dest="command")
+    cred_p = sub.add_parser("credentials", help="Manage stored credentials")
+    cred_sub = cred_p.add_subparsers(dest="cred_action")
+
+    # credentials add <hostname> <username> [--type ssh|proxmox]
+    add_p = cred_sub.add_parser("add", help="Store a credential")
+    add_p.add_argument("hostname")
+    add_p.add_argument("username")
+    add_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
+    add_p.set_defaults(func=_cmd_credentials_add)
+
+    # credentials list [--type ssh|proxmox]
+    list_p = cred_sub.add_parser("list", help="List stored credential hostnames")
+    list_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
+    list_p.set_defaults(func=_cmd_credentials_list)
+
+    # credentials remove <hostname> [--type ssh|proxmox]
+    remove_p = cred_sub.add_parser("remove", help="Remove a stored credential")
+    remove_p.add_argument("hostname")
+    remove_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
+    remove_p.set_defaults(func=_cmd_credentials_remove)
+
     args = parser.parse_args()
-
-    if args.http:
-        import uvicorn  # noqa: PLC0415
-
-        from homelab_mcp.http_app import create_http_app  # noqa: PLC0415
-
-        protocol = "HTTPS" if args.ssl_cert else "HTTP"
-        print(f"MCP Server starting in {protocol} mode on {args.host}:{args.port}", file=sys.stderr)
-        app = create_http_app()
-        config = uvicorn.Config(
-            app=app,
-            host=args.host,
-            port=args.port,
-            log_level="info",
-            ssl_certfile=args.ssl_cert,
-            ssl_keyfile=args.ssl_key,
-        )
-        uvi_server = uvicorn.Server(config)
-        asyncio.run(uvi_server.serve())
-    else:
-        print("MCP Server starting in stdio mode...", file=sys.stderr)
-        asyncio.run(_run_stdio())
+    getattr(args, "func", _run_stdio_wrapper)(args)
 
 
 async def _run_stdio() -> None:
