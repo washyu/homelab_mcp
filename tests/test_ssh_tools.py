@@ -719,3 +719,47 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     # Verify success
     assert result_data["status"] == "success"
     assert result_data["mcp_admin_setup"]["ssh_key"] == "SSH key already exists"
+
+
+# --- Wave 0 RED tests: INJECT-01, INJECT-02, log safety ---
+
+
+def test_resolve_ssh_credentials_keyring_inject(mocker):
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials
+
+    mocker.patch(
+        "homelab_mcp.ssh_tools.list_credentials",
+        return_value=[{"hostname": "192.168.1.10", "username": "root", "credential_type": "ssh"}],
+    )
+    mocker.patch("homelab_mcp.ssh_tools.get_credential", return_value="secret")
+    creds = resolve_ssh_credentials("192.168.1.10")
+    assert creds.password == "secret"
+    assert creds.username == "root"
+
+
+def test_resolve_ssh_credentials_explicit_overrides_keyring(mocker):
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials
+
+    mocker.patch(
+        "homelab_mcp.ssh_tools.list_credentials",
+        return_value=[{"hostname": "192.168.1.10", "username": "root", "credential_type": "ssh"}],
+    )
+    mocker.patch("homelab_mcp.ssh_tools.get_credential", return_value="keyring-secret")
+    creds = resolve_ssh_credentials("192.168.1.10", username="admin", password="explicit")
+    assert creds.password == "explicit"
+    assert creds.username == "admin"
+
+
+def test_no_password_in_log_after_ssh_keyring_inject(mocker, caplog):
+    import logging
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials
+
+    mocker.patch(
+        "homelab_mcp.ssh_tools.list_credentials",
+        return_value=[{"hostname": "192.168.1.10", "username": "root", "credential_type": "ssh"}],
+    )
+    mocker.patch("homelab_mcp.ssh_tools.get_credential", return_value="super-secret-pw")
+    with caplog.at_level(logging.DEBUG):
+        resolve_ssh_credentials("192.168.1.10")
+    assert "super-secret-pw" not in caplog.text

@@ -1680,3 +1680,23 @@ class TestHandlerSessionThreading:
         assert call_kwargs.kwargs.get("session") is mock_session, (
             f"Expected session={mock_session!r} in manage_proxmox_vm call, got {call_kwargs}"
         )
+
+
+# --- Wave 0 RED test: INJECT-03 ---
+
+
+def test_get_proxmox_client_keyring_fallback(mocker, monkeypatch):
+    monkeypatch.delenv("PROXMOX_HOST", raising=False)
+    monkeypatch.delenv("PROXMOX_API_TOKEN", raising=False)
+    monkeypatch.delenv("PROXMOX_USER", raising=False)
+    monkeypatch.delenv("PROXMOX_PASSWORD", raising=False)
+    mocker.patch(
+        "homelab_mcp.proxmox_api.list_credentials",
+        return_value=[{"hostname": "proxmox.local", "username": "root@pam", "credential_type": "proxmox"}],
+    )
+    mocker.patch("homelab_mcp.proxmox_api.get_credential", return_value="root@pam!mytoken=abc123")
+    from homelab_mcp.proxmox_api import get_proxmox_client
+
+    client = get_proxmox_client()
+    assert client.host == "proxmox.local"
+    assert client.api_token == "root@pam!mytoken=abc123"
