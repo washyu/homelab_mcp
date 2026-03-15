@@ -98,7 +98,11 @@ Plans:
   2. An SSH tool call with explicit `username`/`password` arguments uses those values even when a keyring credential exists for the same hostname
   3. When `PROXMOX_HOST` and `PROXMOX_TOKEN` env vars are absent, the server connects to Proxmox using credentials from the keyring instead of failing
   4. Log output after auto-inject never contains the injected password value
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — TDD Wave 0: write failing tests for SSH keyring inject (INJECT-01, INJECT-02) and Proxmox fallback (INJECT-03)
+- [ ] 19-02-PLAN.md — Implement keyring inject tier in resolve_ssh_credentials() and keyring fallback in get_proxmox_client() (turn all tests GREEN)
 
 ### Phase 20: Release Automation + PRMT-02
 **Goal**: PyPI releases are fully automated on git tag push, and the decommission workflow prompt no longer causes AI schema validation errors
@@ -132,6 +136,6 @@ Plans:
 | 15. Preview Tool Split | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 16. Quality Gate | v1.2 | 1/1 | Complete | 2026-03-13 |
 | 17. Credential Store Foundation | v1.3 | 1/1 | Complete | 2026-03-15 |
-| 18. Credentials CLI + --version | 3/3 | Complete    | 2026-03-15 | - |
-| 19. Credential Auto-Inject | v1.3 | 0/TBD | Not started | - |
+| 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
+| 19. Credential Auto-Inject | v1.3 | 0/2 | Not started | - |
 | 20. Release Automation + PRMT-02 | v1.3 | 0/TBD | Not started | - |
