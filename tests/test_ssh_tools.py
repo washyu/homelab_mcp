@@ -7,9 +7,11 @@ import asyncssh
 import pytest
 
 from src.homelab_mcp.ssh_tools import (
+    SSHCredentials,
     ensure_mcp_ssh_key,
     setup_remote_mcp_admin,
     ssh_discover_system,
+    update_mcp_admin_groups,
     verify_mcp_admin_access,
 )
 
@@ -287,11 +289,13 @@ async def test_ensure_mcp_ssh_key_uses_existing(mock_get_path):
 
 
 @pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensure_key):
+async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensure_key, mock_resolve):
     """Test successful remote mcp_admin setup."""
+    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -379,11 +383,13 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
 
 
 @pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key):
+async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key, mock_resolve):
     """Test remote mcp_admin setup when user already exists."""
+    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -585,11 +591,13 @@ async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path)
 
 
 @pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, mock_ensure_key):
+async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, mock_ensure_key, mock_resolve):
     """Test remote mcp_admin setup with force key update."""
+    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -664,11 +672,13 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
 
 
 @pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, mock_ensure_key):
+async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, mock_ensure_key, mock_resolve):
     """Test remote mcp_admin setup without forcing key update."""
+    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -719,6 +729,93 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     # Verify success
     assert result_data["status"] == "success"
     assert result_data["mcp_admin_setup"]["ssh_key"] == "SSH key already exists"
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_remote_mcp_admin_uses_keyring(mock_connect, mock_path, mock_ensure_key, mock_resolve):
+    """Test setup_mcp_admin resolves credentials from keyring when no password passed."""
+    mock_resolve.return_value = SSHCredentials(
+        hostname="test-host",
+        username="admin",
+        port=22,
+        password="resolved-from-keyring",
+    )
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = "ssh-rsa AAAAB3... mcp_admin@host"
+    mock_path.return_value = mock_pub_key
+
+    mock_conn = AsyncMock()
+    # Minimal mock: user exists, key exists, no force update — 5 commands
+    user_check = MagicMock(exit_status=0)
+    sudo_group = MagicMock(exit_status=0)
+    key_check = MagicMock(exit_status=0)  # key already exists
+    sudoers_setup = MagicMock(exit_status=0)
+    test_conn = MagicMock(exit_status=0)
+    mock_conn.run.side_effect = [user_check, sudo_group, key_check, sudoers_setup, test_conn]
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    result = await setup_remote_mcp_admin("test-host", force_update_key=False)  # NO password
+    result_data = json.loads(result)
+
+    assert result_data["status"] == "success"
+    mock_resolve.assert_called_once_with(
+        hostname="test-host",
+        username=None,
+        password=None,
+        port=22,
+    )
+    # Verify ssh_connect used resolved credentials
+    mock_connect.assert_called_once()
+    call_kwargs = mock_connect.call_args
+    assert call_kwargs.kwargs.get("password") == "resolved-from-keyring" or call_kwargs[1].get("password") == "resolved-from-keyring"
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_update_mcp_admin_groups_uses_keyring(mock_connect, mock_resolve):
+    """Test update_mcp_admin_groups resolves credentials from keyring."""
+    mock_resolve.return_value = SSHCredentials(
+        hostname="test-host",
+        username="admin",
+        port=22,
+        password="resolved-from-keyring",
+    )
+
+    mock_conn = AsyncMock()
+    user_check = MagicMock(exit_status=0)
+    groups_result = MagicMock(exit_status=0, stdout="mcp_admin : mcp_admin sudo")
+    # 4 service checks (docker, lxd, libvirt, kvm) all not found
+    service_checks = [MagicMock(exit_status=1) for _ in range(4)]
+    # Final groups query after updates
+    updated_groups_result = MagicMock(exit_status=0, stdout="mcp_admin : mcp_admin sudo")
+    mock_conn.run.side_effect = [user_check, groups_result] + service_checks + [updated_groups_result]
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    result = await update_mcp_admin_groups("test-host")  # NO password
+    result_data = json.loads(result)
+
+    assert result_data["status"] == "success"
+    mock_resolve.assert_called_once_with(
+        hostname="test-host",
+        username=None,
+        password=None,
+        key_path=None,
+        port=22,
+    )
 
 
 # --- Wave 0 RED tests: INJECT-01, INJECT-02, log safety ---
