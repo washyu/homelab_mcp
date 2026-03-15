@@ -5,7 +5,7 @@
 - ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-03-11)
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
-- 📋 **v1.3 Credentials & Release Automation** — Phases 17-20 (planned)
+- ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
 
 ## Phases
 
@@ -49,76 +49,17 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 
 </details>
 
-### 📋 v1.3 Credentials & Release Automation (Phases 17-20)
+<details>
+<summary>✅ v1.3 Credentials & Release Automation (Phases 17-20) — SHIPPED 2026-03-15</summary>
 
-- [x] **Phase 17: Credential Store Foundation** - Build `credential_store.py` module with full headless fallback (completed 2026-03-15)
-- [x] **Phase 18: Credentials CLI + --version** - Add `credentials add/list/remove` subcommands and `--version` flag (completed 2026-03-15)
-- [x] **Phase 19: Credential Auto-Inject** - Wire keyring into SSH and Proxmox credential resolution paths (completed 2026-03-15)
-- [x] **Phase 20: Release Automation + PRMT-02** - Automate PyPI publish via OIDC and fix decommission prompt bug (completed 2026-03-15)
+- [x] Phase 17: Credential Store Foundation (1/1 plan) — completed 2026-03-15
+- [x] Phase 18: Credentials CLI + --version (3/3 plans) — completed 2026-03-15
+- [x] Phase 19: Credential Auto-Inject (2/2 plans) — completed 2026-03-15
+- [x] Phase 20: Release Automation + PRMT-02 (3/3 plans) — completed 2026-03-15
 
-## Phase Details
+Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
-### Phase 17: Credential Store Foundation
-**Goal**: Users have a secure, headless-safe credential storage module that the rest of v1.3 can build on
-**Depends on**: Nothing (first phase of v1.3)
-**Requirements**: CRED-07
-**Success Criteria** (what must be TRUE):
-  1. `credential_store.py` can store, retrieve, and delete credentials on a desktop system with OS keyring available
-  2. On a headless Linux host with no D-Bus session, every `credential_store` function call returns a safe fallback value — no exception escapes to the caller
-  3. The server starts normally on a headless host — no warning about keyring appears at startup, only at the first credential lookup attempt
-  4. `keyring>=25.6.0` is listed in `[project.dependencies]` in `pyproject.toml` (promoted from optional)
-**Plans**: 1 plan
-
-Plans:
-- [ ] 17-01-PLAN.md — TDD: credential_store.py with headless-safe keyring wrapper + pyproject.toml promotion
-
-### Phase 18: Credentials CLI + --version
-**Goal**: Users can manage stored SSH and Proxmox credentials from the command line, and can verify their installed version
-**Depends on**: Phase 17
-**Requirements**: CRED-01, CRED-02, CRED-03, CRED-04, CRED-05, CRED-06, CLI-01
-**Success Criteria** (what must be TRUE):
-  1. `homelab-mcp credentials add <host> <user>` prompts for password securely and stores the SSH credential without echoing it
-  2. `homelab-mcp credentials list` prints stored SSH credential hostnames; `--type proxmox` shows Proxmox hosts; passwords never appear in either output
-  3. `homelab-mcp credentials remove <host>` deletes the stored credential and confirms removal
-  4. `homelab-mcp credentials add --type proxmox <host> <user>` stores a Proxmox credential; `remove --type proxmox` deletes it
-  5. `homelab-mcp --version` prints the installed package version and exits; bare `homelab-mcp` still starts the server unchanged
-**Plans**: 3 plans
-
-Plans:
-- [ ] 18-01-PLAN.md — TDD Wave 0: write failing test scaffold for credential_store registry + all CLI commands
-- [ ] 18-02-PLAN.md — Extend credential_store.py with credential_type param and JSON registry (turn credential_store tests GREEN)
-- [ ] 18-03-PLAN.md — Add credentials subcommand handlers and --version flag to server.py (turn all CLI tests GREEN)
-
-### Phase 19: Credential Auto-Inject
-**Goal**: SSH and Proxmox tools automatically use stored credentials so users don't need to pass them on every call
-**Depends on**: Phase 17
-**Requirements**: INJECT-01, INJECT-02, INJECT-03
-**Success Criteria** (what must be TRUE):
-  1. An SSH tool call with no `username`/`password` arguments succeeds when a matching credential exists in the keyring for that hostname
-  2. An SSH tool call with explicit `username`/`password` arguments uses those values even when a keyring credential exists for the same hostname
-  3. When `PROXMOX_HOST` and `PROXMOX_TOKEN` env vars are absent, the server connects to Proxmox using credentials from the keyring instead of failing
-  4. Log output after auto-inject never contains the injected password value
-**Plans**: 2 plans
-
-Plans:
-- [ ] 19-01-PLAN.md — TDD Wave 0: write failing tests for SSH keyring inject (INJECT-01, INJECT-02) and Proxmox fallback (INJECT-03)
-- [ ] 19-02-PLAN.md — Implement keyring inject tier in resolve_ssh_credentials() and keyring fallback in get_proxmox_client() (turn all tests GREEN)
-
-### Phase 20: Release Automation + PRMT-02
-**Goal**: PyPI releases are fully automated on git tag push, and the decommission workflow prompt no longer causes AI schema validation errors
-**Depends on**: Nothing (independent of credential work; benefits from shipping last to use complete v1.3 build)
-**Requirements**: CICD-01, CICD-02, CICD-03, CLI-02
-**Success Criteria** (what must be TRUE):
-  1. Pushing `git tag v1.3.0` to main triggers a publish job in GitHub Actions that uploads the built wheel to PyPI without any API token stored in GitHub secrets
-  2. The publish job does not run if the test-and-quality job fails on that same commit
-  3. The publish job does not run on non-tag pushes (feature branches, main commits)
-  4. An AI following the `decommission_device_workflow` prompt calls `list_devices` to resolve hostname to `device_id` before calling `decommission_device` — no schema validation error occurs
-**Plans**: 3 plans
-
-Plans:
-- [ ] 20-01-PLAN.md — TDD Wave 0: add failing assertions for CLI-02 (get_network_sitemap + device_id in decommission prompt)
-- [ ] 20-02-PLAN.md — Add publish-to-pypi job to main.yml (OIDC, tag-gated) + bump version to 1.3.0
-- [ ] 20-03-PLAN.md — Fix _build_decommission_result() to turn CLI-02 tests GREEN
+</details>
 
 ## Progress
 
@@ -142,5 +83,5 @@ Plans:
 | 16. Quality Gate | v1.2 | 1/1 | Complete | 2026-03-13 |
 | 17. Credential Store Foundation | v1.3 | 1/1 | Complete | 2026-03-15 |
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 19. Credential Auto-Inject | 2/2 | Complete    | 2026-03-15 | - |
-| 20. Release Automation + PRMT-02 | 3/3 | Complete    | 2026-03-15 | - |
+| 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
+| 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |

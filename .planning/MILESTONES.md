@@ -1,5 +1,21 @@
 # Milestones
 
+## v1.3 Credentials & Release Automation (Shipped: 2026-03-15)
+
+**Phases completed:** 4 phases, 9 plans
+**Timeline:** 1 day (Mar 14-15, 2026)
+**Stats:** 41 files changed, +5,433 / -86 lines | 15,229 LOC src
+
+**Key accomplishments:**
+1. Built headless-safe `credential_store.py` with OS keyring + JSON hostname registry — every function catches `NoKeyringError`/`RuntimeError` with safe fallback; no D-Bus probing at server startup
+2. Added `homelab-mcp credentials add/list/remove` CLI subcommands for SSH and Proxmox credentials with secure password prompting (no echo); `--type proxmox` flag for Proxmox-specific storage
+3. Added `homelab-mcp --version` flag printing installed package version via `importlib.metadata`; bare `homelab-mcp` unchanged
+4. Wired credential auto-inject into `resolve_ssh_credentials()` (Tier 2 keyring fallback) and `get_proxmox_client()` — stored credentials used automatically when no explicit args passed; log-safe (password never appears in output)
+5. Automated PyPI releases via GitHub Actions OIDC trusted publishing — `git tag v1.3.0` push triggers publish job; no stored secrets; gated on test-and-quality passing first
+6. Fixed PRMT-02: `decommission_device_workflow` prompt now instructs AI to call `get_network_sitemap` to resolve hostname→`device_id` before calling `decommission_device` — eliminates schema validation errors
+
+---
+
 ## v1.2 Protocol Completeness (Shipped: 2026-03-13)
 
 **Phases completed:** 5 phases, 10 plans

@@ -2,33 +2,33 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
-status: Roadmap ready — begin with Phase 17
-stopped_at: "Completed 20-03-PLAN.md — PRMT-02 fix: decommission_device_workflow uses device_id via get_network_sitemap"
-last_updated: "2026-03-15T04:08:37.812Z"
-last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
+status: "✅ SHIPPED — milestone complete"
+stopped_at: "v1.3 milestone archived — planning next milestone"
+last_updated: "2026-03-15"
+last_activity: 2026-03-15 — v1.3 milestone complete
 progress:
   total_phases: 4
   completed_phases: 4
   total_plans: 9
   completed_plans: 9
-  percent: 80
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-14)
+See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** v1.3 — Credentials & Release Automation (Phase 17 next)
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 17 — Credential Store Foundation (not started)
+Phase: — (milestone complete)
 Plan: —
-Status: Roadmap ready — begin with Phase 17
-Last activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
+Status: ✅ v1.3 shipped — all 4 phases, 9 plans complete
+Last activity: 2026-03-15 — v1.3 milestone archived
 
 Progress: [████████░░] 80%
 
@@ -140,8 +140,8 @@ None.
 
 ### Blockers/Concerns
 
-- PyPI OIDC trusted publisher setup (Phase 20) requires one-time manual step at pypi.org/manage/project/homelab-mcp/settings/publishing/ before the first production tag push
-- PRMT-02 parameter mismatch carried from v1.2 — resolved in Phase 20
+- PyPI OIDC trusted publisher must be manually registered at pypi.org/manage/project/homelab-mcp/settings/publishing/ before the first `git tag v*` push triggers the publish job
+- Human-only verifiable items: `homelab-mcp --version` in installed env, TTY echo suppression for `credentials add` — cannot be automated in headless CI
 
 ## Session Continuity
 

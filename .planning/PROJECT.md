@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, and three workflow prompt templates. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
+A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, three workflow prompt templates, and a secure credential store with OS keyring integration. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
 
 ## Core Value
 
@@ -52,22 +52,16 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ MCP Prompts capability — `prompts/list` and `prompts/get` with 3 workflow templates — v1.2
 - ✓ 6 `*_preview` tool variants with `readOnlyHint=True` for confirmation-free dry runs — v1.2
 - ✓ Schema/annotation parity enforced by CI (56/56 tools) — v1.2
-
-## Current Milestone: v1.3 Credentials & Release Automation
-
-**Goal:** Give users a secure local credential store for SSH and Proxmox access, and automate PyPI releases via CI/CD so publishing is a one-command tag push.
-
-**Target features:**
-- Automated PyPI publish in GitHub Actions on `git tag v*` push
-- `homelab-mcp --version` CLI flag
-- `homelab-mcp credentials add/list/remove` CLI subcommand backed by OS keyring
-- Auto-inject stored credentials into SSH tools when hostname matches
-- Proxmox API credentials storable via CLI as alternative to env vars (env vars take precedence)
-- Fix PRMT-02: `decommission_device_workflow` prompt uses `hostname=` but tool requires `device_id=`
+- ✓ `credential_store.py` with headless-safe OS keyring integration — v1.3
+- ✓ `homelab-mcp credentials add/list/remove` CLI subcommands (SSH and Proxmox types) — v1.3
+- ✓ `homelab-mcp --version` flag — v1.3
+- ✓ Credential auto-inject into SSH tools and Proxmox client — v1.3
+- ✓ Automated PyPI publish via GitHub Actions OIDC trusted publishing on `git tag v*` — v1.3
+- ✓ `decommission_device_workflow` prompt resolves hostname→`device_id` before calling decommission — v1.3
 
 ### Active
 
-<!-- Populated during v1.3 requirements definition -->
+<!-- Populated during next milestone requirements definition -->
 
 ### Out of Scope
 
@@ -78,7 +72,6 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - Kubernetes management — fundamentally different from Proxmox VMs/LXC
 - Real-time monitoring/alerting — not Prometheus; expose point-in-time queries
 - Offline mode — real-time is core value
-- CI auto-publish to PyPI — manual first publish for v1.2; automate in v1.3+ once release process is proven
 - Per-device drift resources (`homelab://drift/device/{id}`) — requires per-device scans; single report sufficient
 - Dynamic prompts (runtime-generated) — complexity without value for single-operator homelab
 - FastMCP migration — would lose subscribe/unsubscribe, send_resource_list_changed, and ASGI middleware control
@@ -86,19 +79,19 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ## Context
 
-- Shipped v1.2 with ~14,944 LOC Python (src/) | 72 files changed from v1.1 baseline
-- Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, SQLite
+- Shipped v1.3 with ~15,229 LOC Python (src/) | 41 files changed from v1.2 baseline
+- Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite
 - 56 tools: 50 original + 6 `*_preview` variants, organized into 7 categories
-- Available on PyPI as `homelab-mcp` 1.2.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
+- Available on PyPI as `homelab-mcp` 1.3.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
 - MCP protocol surface complete: Tools + Resources + Prompts + Notifications
-- New modules added in v1.2: `prompt_registry.py`
-- Key v1.2 patterns: Wave-0 TDD scaffolding (local imports in test bodies), deferred circular import, frozenset dispatch
+- New modules added in v1.3: `credential_store.py`
+- Key v1.3 patterns: Lazy keyring import (function-body, not module-level), `set_defaults` argparse dispatch, module-level imports for monkeypatch compatibility, JSON hostname registry alongside OS keyring
 
 ## Constraints
 
 - **Tech stack**: Python 3.12+, uv, asyncssh, mcp[cli] — established, not changing
-- **Distribution**: PyPI (`uvx homelab-mcp`) as of v1.2
-- **Target platform**: Linux primary (Proxmox hosts are Linux)
+- **Distribution**: PyPI (`uvx homelab-mcp`) as of v1.2; OIDC auto-publish as of v1.3
+- **Target platform**: Linux primary (Proxmox hosts are Linux); headless-safe credential store
 - **MCP compatibility**: Must work with any MCP-compatible client, not just Claude
 - **Security**: SSH TOFU, Proxmox SSL, input validation, credential redaction all enforced
 
@@ -122,9 +115,15 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | homelab-mcp package name (vs homelab-mcp-server) | Shorter, cleaner; enables `uvx homelab-mcp` directly | ✓ Good — confirmed correct at publish time |
 | importlib.metadata for version unification | Single source of truth in pyproject.toml, no version drift | ✓ Good — all 4 version-reporting sites unified |
 | importlib.resources for service_templates | Required for PyPI wheel bundling — __file__ paths fail when installed | ✓ Good — 10 YAML files confirmed in wheel |
-| Wave-0 TDD pattern (RED tests before implementation) | Contract-first development, forces API decisions before coding | ✓ Good — established in v1.1, scaled cleanly to 3 phases in v1.2 |
+| Wave-0 TDD pattern (RED tests before implementation) | Contract-first development, forces API decisions before coding | ✓ Good — established in v1.1, scaled cleanly to 3 phases in v1.2, used in all 4 v1.3 phases |
 | Preview handlers as thin delegation wrappers | dry_run=True injection is transparent; all dry-run logic stays in parent | ✓ Good — 3-line handlers, zero duplication |
-| decommission_device_workflow prompt uses hostname= argument | Prompt accepts hostname for human-readable input | ⚠️ Revisit — tool schema requires device_id=; AI following prompt will encounter validation error |
+| Lazy keyring import inside each function body | Prevents D-Bus probing during server startup on headless Linux | ✓ Good — server starts cleanly; keyring errors surfaced only at first lookup |
+| JSON hostname registry alongside OS keyring | `list_credentials` needs enumerable host list; keyring has no enumerate API | ✓ Good — clean separation: keyring stores secrets, registry stores hostnames |
+| `_SERVICE_NAMES` dict for credential namespacing | ssh/proxmox credentials in same keyring service need distinct service names | ✓ Good — clean namespace isolation; `_SERVICE_NAME` kept for backward compat |
+| Module-level imports in ssh_tools/proxmox_api for monkeypatching | Function-body imports can't be patched by pytest-mock at test time | ✓ Good — module-level import in production modules; lazy pattern still used in credential_store itself |
+| `set_defaults(func=_run_server)` argparse dispatch | Prevents bare `homelab-mcp` regression when subparsers added | ✓ Good — clean dispatch, bare invocation regression-tested |
+| OIDC trusted publishing for PyPI | No stored secrets in GitHub; verified at publish time | ✓ Good — requires one-time manual trusted publisher registration at pypi.org before first tag push |
+| `decommission_device_workflow` uses get_network_sitemap for device_id | Fixes PRMT-02: tool schema requires device_id, not hostname | ✓ Good — 5-step workflow; AI no longer hits schema validation errors |
 
 ---
-*Last updated: 2026-03-14 after v1.3 milestone start*
+*Last updated: 2026-03-15 after v1.3 milestone*

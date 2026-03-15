@@ -133,6 +133,51 @@
 
 ---
 
+## Milestone: v1.3 — Credentials & Release Automation
+
+**Shipped:** 2026-03-15
+**Phases:** 4 | **Plans:** 9
+
+### What Was Built
+- Headless-safe `credential_store.py` with OS keyring + JSON hostname registry; lazy function-body import pattern prevents D-Bus probing at startup
+- `homelab-mcp credentials add/list/remove` CLI subcommands with secure password prompting; `--type proxmox` for Proxmox credentials
+- `homelab-mcp --version` flag via `importlib.metadata`; `set_defaults` argparse dispatch preserved bare invocation behavior
+- Credential auto-inject: Tier 2 keyring lookup in `resolve_ssh_credentials()` and keyring fallback in `get_proxmox_client()`; log-safe (password never appears in output)
+- GitHub Actions OIDC trusted publishing — tag-gated, no stored secrets, gated on test-and-quality passing; version bumped to 1.3.0
+- Fixed PRMT-02: 5-step decommission workflow resolves hostname→`device_id` via `get_network_sitemap` before calling `decommission_device`
+
+### What Worked
+- Wave-0 TDD pattern continued to scale — 4 of 9 plans were RED scaffold plans, all turned GREEN cleanly in subsequent plans
+- Headless-safety design (lazy keyring import, catch-all error wrapping, startup-silent pattern) worked first time — no headless regressions
+- `credential_store.py` with zero homelab_mcp imports (mirrors `prompt_registry.py` constraint) kept circular imports clean from day one
+- Module-level imports in `ssh_tools.py`/`proxmox_api.py` for monkeypatch compatibility was a pragmatic tradeoff — test isolation preserved while lazy-import benefits kept in `credential_store.py` itself
+- PRMT-02 fix was clean — integration checker had already identified the exact problem in v1.2 audit; fix required only prompt text change in `_build_decommission_result()`
+
+### What Was Inefficient
+- `gsd-tools milestone complete` CLI still leaves ROADMAP.md and REQUIREMENTS.md in place; the AI step to delete and rewrite ROADMAP.md remains fully manual — consistent with v1.2 observation
+- Phase 18 plan execution required two small corrections to mypy annotation approach (`no-any-return` vs `return-value`); a sharper pre-plan type annotation review would have caught this
+- Human-only verifiable items (TTY echo suppression, `homelab-mcp --version` in installed env) remain as tech debt — cannot be automated in headless CI
+
+### Patterns Established
+- Lazy keyring import inside each function body (not module level) — prevents D-Bus probing at server startup
+- JSON hostname registry as enumerable sidecar to OS keyring — keyring stores secrets, registry stores the host list
+- `_SERVICE_NAMES: dict[str, str]` for credential type namespacing with backward-compat `_SERVICE_NAME` string
+- Module-level credential imports in consumer modules (`ssh_tools`, `proxmox_api`) for pytest-mock compatibility
+- `parser.set_defaults(func=_run_server)` + `getattr(args, 'func', _run_server)(args)` dispatch for safe subparser addition
+- OIDC trusted publishing: `permissions: id-token: write` at job level + `pypa/gh-action-pypi-publish@release/v1`; no `PYPI_TOKEN` secret needed
+
+### Key Lessons
+1. Circular import prevention patterns compound well — once established (`prompt_registry.py` has no homelab_mcp imports; `credential_store.py` mirrors the same constraint), new modules naturally follow the pattern
+2. Monkeypatch compatibility and lazy imports are in tension — the resolution (lazy in the store, module-level in consumers) is the right split: credentials module stays safe, test harness stays capable
+3. OIDC trusted publishing requires one-time manual setup at pypi.org before the first `git tag v*` push — document this in README before v1.4 or it will surprise future contributors
+4. Prompt correctness (argument name matching tool schema) should be regression-tested with a dedicated integration assertion — the PRMT-02 bug survived v1.2 unit tests and was only caught by the integration checker
+
+### Cost Observations
+- Timeline: 1 day (2026-03-14 → 2026-03-15) — same pace as v1.2
+- Notable: 15/15 audit score; zero gap closure phases needed; single-day execution of 4 phases × 9 plans
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -142,6 +187,7 @@
 | v1.0 | 5 | 15 | Initial milestone — established verification loop, gap closure, and documentation patterns |
 | v1.1 | 6 | 16 | Tech-debt-first ordering; Wave-0 TDD scaffolding; audit confirmed 0 gaps needed |
 | v1.2 | 5 | 10 | PyPI distribution; full MCP protocol surface; integration checker found cross-phase param mismatch |
+| v1.3 | 4 | 9 | Credential store + CLI; OIDC auto-publish; PRMT-02 fix; monkeypatch/lazy-import tension resolved |
 
 ### Cumulative Quality
 
@@ -150,6 +196,7 @@
 | v1.0 | 479 | 19/19 requirements satisfied, 5/5 E2E flows verified |
 | v1.1 | ~500+ | 22/22 requirements satisfied, 6/6 E2E flows, 0 gap closure phases |
 | v1.2 | 603 | 20/20 requirements satisfied (18 full, 2 partial), 1 integration semantic mismatch in tech debt |
+| v1.3 | ~620+ | 15/15 requirements satisfied, 4/4 E2E flows, 0 gap closure phases; PRMT-02 tech debt resolved |
 
 ### Top Lessons (Verified Across Milestones)
 
