@@ -1,6 +1,7 @@
 """Tests for SSH credentials storage and resolution functionality."""
 
 import json
+import logging
 import sqlite3
 from unittest.mock import MagicMock, patch
 
@@ -326,6 +327,36 @@ class TestCredentialNotFoundError:
         assert isinstance(creds, SSHCredentials)
         assert creds.password == "s3cr3t"
         assert creds.username == "alice"
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    @patch("src.homelab_mcp.ssh_tools.get_credential")
+    @patch("src.homelab_mcp.ssh_tools.get_database_adapter")
+    @patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
+    def test_desync_warning_logged(self, mock_key_path, mock_get_db, mock_get_cred, mock_list_creds, caplog):
+        """When registry has entry but keyring returns None, a WARNING containing 'desync' is logged."""
+        # Registry has an entry for desync-host
+        mock_list_creds.return_value = [{"hostname": "desync-host", "username": "alice", "credential_type": "ssh"}]
+        # Keyring returns None — this is the desync condition
+        mock_get_cred.return_value = None
+
+        # DB tier also returns None
+        mock_adapter = MagicMock()
+        mock_adapter.get_credential_by_hostname.return_value = None
+        mock_get_db.return_value = mock_adapter
+
+        # No mcp_admin key file
+        mock_path = MagicMock()
+        mock_path.exists.return_value = False
+        mock_key_path.return_value = mock_path
+
+        with caplog.at_level(logging.WARNING, logger="homelab_mcp.ssh_tools"):
+            with pytest.raises(CredentialNotFoundError):
+                resolve_ssh_credentials("desync-host")
+
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING and "desync" in r.message.lower()]
+        assert len(warning_records) >= 1, "Expected a WARNING log containing 'desync'"
+        assert "desync-host" in warning_records[0].message
+        assert "alice" in warning_records[0].message
 
 
 class TestRegisterServer:
