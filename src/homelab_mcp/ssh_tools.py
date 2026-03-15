@@ -87,6 +87,11 @@ def resolve_ssh_credentials(
                 port=port,
                 password=keyring_password,
             )
+        logger.warning(
+            "Credential desync for %s (user: %s): registry entry exists but keyring "
+            "returned None — re-run 'homelab-mcp credentials add %s %s' to restore",
+            hostname, stored_username, hostname, stored_username,
+        )
 
     # Try to find stored credentials
     try:
