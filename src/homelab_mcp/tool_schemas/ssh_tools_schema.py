@@ -59,8 +59,8 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "timeout": {
                     "type": "number",
-                    "description": "Timeout in seconds for the SSH operation. Setup can take 30-60s on slow hosts (default: 30)",
-                    "default": 30,
+                    "description": "Timeout in seconds for the SSH operation. Setup can take 30-60s on slow hosts (default: 90)",
+                    "default": 90,
                 },
             },
             "required": ["hostname"],

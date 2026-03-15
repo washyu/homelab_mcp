@@ -20,7 +20,7 @@ def get_available_tools() -> dict[str, dict[str, Any]]:
     return get_all_tool_schemas()
 
 
-@timeout_wrapper(timeout_seconds=45.0)
+@timeout_wrapper(timeout_seconds=120.0)
 async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Execute a tool by name with the given arguments, with timeout protection.
 

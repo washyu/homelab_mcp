@@ -215,8 +215,8 @@ async def _sudo_run(
         return await conn.run(f"sudo {command}", check=check)
 
 
-@ssh_connection_wrapper(timeout_seconds=30.0)
 @retry_on_failure(max_retries=2, delay_seconds=2.0)
+@ssh_connection_wrapper(timeout_seconds=90.0)
 async def setup_remote_mcp_admin(
     hostname: str,
     username: str | None = None,
@@ -463,8 +463,8 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
     )
 
 
-@ssh_connection_wrapper(timeout_seconds=30.0)
 @retry_on_failure(max_retries=1, delay_seconds=1.0)
+@ssh_connection_wrapper(timeout_seconds=30.0)
 async def ssh_discover_system(
     hostname: str,
     username: str | None = None,
