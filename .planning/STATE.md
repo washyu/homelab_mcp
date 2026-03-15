@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 18-03-PLAN.md — CLI handlers and --version flag
-last_updated: "2026-03-15T02:07:16.813Z"
+stopped_at: Completed 19-01-PLAN.md — Wave 0 RED tests for credential auto-inject
+last_updated: "2026-03-15T03:18:38.247Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
   percent: 80
 ---
 
@@ -65,6 +65,7 @@ Progress: [████████░░] 80%
 | Phase 18-credentials-cli-version P01 | 4 | 2 tasks | 2 files |
 | Phase 18-credentials-cli-version P02 | 1 | 1 tasks | 1 files |
 | Phase 18-credentials-cli-version P03 | 2 | 2 tasks | 1 files |
+| Phase 19-credential-auto-inject P01 | 1 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Key constraints for v1.3 (from research):
 - [Phase 18-credentials-cli-version]: _SERVICE_NAME string kept alongside _SERVICE_NAMES dict for backward compatibility
 - [Phase 18-credentials-cli-version]: Module-level credential_store imports in server.py for test monkeypatching support
 - [Phase 18-credentials-cli-version]: argparse dest names (hostname/username/credential_type) match test Namespace expectations
+- [Phase 19-credential-auto-inject]: Patch targets homelab_mcp.ssh_tools.list_credentials and homelab_mcp.ssh_tools.get_credential (function-body import pattern)
+- [Phase 19-credential-auto-inject]: Wave 0 RED tests: tests fail at pytest-mock patch time (AttributeError) which registers as FAILED not ERROR — acceptable Wave 0 RED state
 
 ### Pending Todos
 
@@ -132,6 +135,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T02:04:14.024Z
-Stopped at: Completed 18-03-PLAN.md — CLI handlers and --version flag
+Last session: 2026-03-15T03:18:38.244Z
+Stopped at: Completed 19-01-PLAN.md — Wave 0 RED tests for credential auto-inject
 Resume file: None

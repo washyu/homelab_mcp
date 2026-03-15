@@ -17,9 +17,9 @@
 
 ### Credential Auto-Inject
 
-- [ ] **INJECT-01**: SSH tools automatically fill username/password from keyring when hostname matches a stored credential
-- [ ] **INJECT-02**: Explicitly passed tool arguments take precedence over stored credentials (explicit > keyring > default key)
-- [ ] **INJECT-03**: Proxmox connection falls back to keyring when PROXMOX_HOST/PROXMOX_TOKEN env vars are absent
+- [x] **INJECT-01**: SSH tools automatically fill username/password from keyring when hostname matches a stored credential
+- [x] **INJECT-02**: Explicitly passed tool arguments take precedence over stored credentials (explicit > keyring > default key)
+- [x] **INJECT-03**: Proxmox connection falls back to keyring when PROXMOX_HOST/PROXMOX_TOKEN env vars are absent
 
 ### Release Automation
 
@@ -69,9 +69,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRED-05 | Phase 18 | Complete |
 | CRED-06 | Phase 18 | Complete |
 | CRED-07 | Phase 17 | Complete |
-| INJECT-01 | Phase 19 | Pending |
-| INJECT-02 | Phase 19 | Pending |
-| INJECT-03 | Phase 19 | Pending |
+| INJECT-01 | Phase 19 | Complete |
+| INJECT-02 | Phase 19 | Complete |
+| INJECT-03 | Phase 19 | Complete |
 | CICD-01 | Phase 20 | Pending |
 | CICD-02 | Phase 20 | Pending |
 | CICD-03 | Phase 20 | Pending |
