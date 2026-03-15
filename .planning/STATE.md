@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 Phase: — (milestone complete)
 Plan: —
 Status: ✅ v1.3 shipped — all 4 phases, 9 plans complete
-Last activity: 2026-03-15 — v1.3 milestone archived
+Last activity: 2026-03-15 - Completed quick task 5: we are missing the new cli arguments for the keystore in the command line help output
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -137,6 +137,12 @@ Key constraints for v1.3 (from research):
 ### Pending Todos
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 5 | we are missing the new cli arguments for the keystore in the command line help output | 2026-03-15 | 88e972f | [5-we-are-missing-the-new-cli-arguments-for](./quick/5-we-are-missing-the-new-cli-arguments-for/) |
 
 ### Blockers/Concerns
 
