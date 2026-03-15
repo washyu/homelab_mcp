@@ -1,7 +1,7 @@
 # Homelab MCP Server
 
 [![CI](https://github.com/washyu/homelab_mcp/actions/workflows/main.yml/badge.svg)](https://github.com/washyu/homelab_mcp/actions/workflows/main.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **AI-Powered Homelab Infrastructure Management via the Model Context Protocol**
@@ -21,10 +21,10 @@ A Python MCP server that enables AI assistants to manage, deploy, and monitor ho
 ## Quick Start
 
 ```bash
-# Install uv (ultra-fast Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install from PyPI (recommended — no clone needed)
+uvx homelab-mcp
 
-# Clone and run
+# Or clone and run from source
 git clone https://github.com/washyu/homelab_mcp.git
 cd homelab_mcp
 uv sync && uv run python run_server.py
@@ -50,7 +50,45 @@ For the full walkthrough (environment variables, MCP client configuration, first
 
 The server communicates over stdio using the MCP protocol. Connect it to any MCP-compatible client (Claude Desktop, etc.) and interact through natural language.
 
+## Credential Management
+
+Store SSH and Proxmox credentials once so the server auto-injects them on every connection:
+
+```bash
+# Store an SSH credential
+homelab-mcp credentials add 192.168.1.10 admin
+
+# Store a Proxmox API credential
+homelab-mcp credentials add 192.168.1.200 root@pam --type proxmox
+
+# List stored credentials
+homelab-mcp credentials list
+homelab-mcp credentials list --type proxmox
+
+# Remove a credential
+homelab-mcp credentials remove 192.168.1.10
+```
+
+Credentials are stored in the OS keyring (libsecret on Linux, Keychain on macOS). When the OS keyring is unavailable (headless servers), credentials fall back to environment variables.
+
+See [Credentials CLI reference](docs/configuration.md#credentials-cli) for full documentation.
+
 ## MCP Client Configuration
+
+**From PyPI (uvx) — recommended:**
+
+```json
+{
+  "mcpServers": {
+    "homelab": {
+      "command": "uvx",
+      "args": ["homelab-mcp"]
+    }
+  }
+}
+```
+
+**From source clone:**
 
 ```json
 {
@@ -85,7 +123,7 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deployment details.
 ```
 src/homelab_mcp/
   server.py              # MCP server with JSON-RPC protocol
-  tool_schemas/          # Tool definitions (7 schema files)
+  tool_schemas/          # Tool definitions (8 schema files)
   tool_annotations.py    # MCP annotation hints per tool
   ssh_tools.py           # SSH discovery and hardware detection
   service_installer.py   # Service installation framework
@@ -93,6 +131,11 @@ src/homelab_mcp/
   vm_operations.py       # VM/container operations
   sitemap.py             # Network topology mapping
   database.py            # SQLite device tracking
+  error_handling.py      # Centralized error handling
+  credential_store.py    # OS keyring credential storage
+  log_filter.py          # Credential redaction for log output
+  prompt_registry.py     # MCP prompts registry
+  resource_readers.py    # MCP resource read handlers
   service_templates/     # YAML service definitions
 tests/                   # Unit and integration tests
 docs/                    # Full documentation
