@@ -6,7 +6,7 @@
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
-- 🚧 **v1.4 Real-World Reliability** — Phases 21-24 (in progress)
+- 🚧 **v1.4 Real-World Reliability** — Phases 21-25 (in progress)
 
 ## Phases
 
@@ -70,6 +70,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable (completed 2026-03-15)
 - [x] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning (completed 2026-03-15)
 - [x] **Phase 24: Keyring-based Password Handling** — Fix setup_mcp_admin and update_mcp_admin_groups to use keyring auto-inject (completed 2026-03-15)
+- [ ] **Phase 25: Sudo Password Piping** — Fix sudo timeout by piping password via stdin for setup_mcp_admin and update_mcp_admin_groups
 
 ## Phase Details
 
@@ -130,6 +131,20 @@ Plans:
 - [ ] 24-01-PLAN.md — Refactor setup_mcp_admin and update_mcp_admin_groups schemas and implementations
 - [ ] 24-02-PLAN.md — Update existing tests and add keyring resolution + audit guard tests
 
+### Phase 25: Sudo Password Piping
+**Goal:** All sudo calls in setup_mcp_admin and update_mcp_admin_groups pipe password via stdin using sudo -S, fixing the chicken-and-egg timeout when the connecting user lacks NOPASSWD
+**Depends on:** Phase 24
+**Requirements**: SUDO-01, SUDO-02, SUDO-03, SUDO-04, SUDO-05
+**Success Criteria** (what must be TRUE):
+  1. `setup_mcp_admin` succeeds when connecting user has password-based sudo (no NOPASSWD configured)
+  2. `update_mcp_admin_groups` succeeds when connecting user has password-based sudo
+  3. `ssh_execute_command` with sudo=true does not leak password to shell command string
+  4. All three functions fall back to plain sudo when no password is available
+  5. Wrong password and not-in-sudoers produce distinct, actionable error messages
+**Plans:** 1 plan
+Plans:
+- [ ] 25-01-PLAN.md — Create _sudo_run helper and apply to all sudo calls in setup/groups/execute functions
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -157,4 +172,5 @@ Plans:
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 24. Keyring-based Password Handling | 2/2 | Complete    | 2026-03-15 | - |
+| 24. Keyring-based Password Handling | v1.4 | 2/2 | Complete | 2026-03-15 |
+| 25. Sudo Password Piping | v1.4 | 0/1 | Planning | - |

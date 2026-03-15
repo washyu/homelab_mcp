@@ -37,6 +37,14 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 - [x] **GROUPS-02**: `update_mcp_admin_groups` schema has only `hostname` in `required` array (password and username optional)
 - [x] **AUDIT-01**: No tool schema in the project has `password` in its `required` array (regression guard)
 
+### Sudo Password Piping
+
+- [ ] **SUDO-01**: `_sudo_run` helper function pipes password via `conn.run(input=...)` when `creds.password` is available, falls back to plain `sudo` when no password
+- [ ] **SUDO-02**: All `sudo` calls in `setup_remote_mcp_admin` use `_sudo_run` instead of raw `conn.run("sudo ...")`
+- [ ] **SUDO-03**: All `sudo` calls in `update_mcp_admin_groups` use `_sudo_run` instead of raw `conn.run("sudo ...")`
+- [ ] **SUDO-04**: Sudo failure produces actionable error distinguishing "wrong password" from "timeout" from "not in sudoers"
+- [ ] **SUDO-05**: `ssh_execute_command` sudo path uses `conn.run(input=...)` instead of `echo password | sudo -S` shell injection
+
 ## Future Requirements
 
 ### Deferred from v1.4
@@ -71,18 +79,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TOFU-02 | Phase 21 | Complete |
 | TOFU-03 | Phase 23 | Complete |
 | TOFU-04 | Phase 23 | Complete |
-| SETUP-01 | Phase 24 | Planned |
-| SETUP-02 | Phase 24 | Planned |
-| SETUP-03 | Phase 24 | Planned |
-| GROUPS-01 | Phase 24 | Planned |
-| GROUPS-02 | Phase 24 | Planned |
-| AUDIT-01 | Phase 24 | Planned |
+| SETUP-01 | Phase 24 | Complete |
+| SETUP-02 | Phase 24 | Complete |
+| SETUP-03 | Phase 24 | Complete |
+| GROUPS-01 | Phase 24 | Complete |
+| GROUPS-02 | Phase 24 | Complete |
+| AUDIT-01 | Phase 24 | Complete |
+| SUDO-01 | Phase 25 | Planned |
+| SUDO-02 | Phase 25 | Planned |
+| SUDO-03 | Phase 25 | Planned |
+| SUDO-04 | Phase 25 | Planned |
+| SUDO-05 | Phase 25 | Planned |
 
 **Coverage:**
-- v1.4 requirements: 18 total
-- Mapped to phases: 18
+- v1.4 requirements: 23 total
+- Mapped to phases: 23
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-13*
-*Last updated: 2026-03-15 after Phase 24 planning*
+*Last updated: 2026-03-15 after Phase 25 planning*
