@@ -45,6 +45,28 @@ async def handle_start_interactive_shell(arguments: dict[str, Any]) -> dict[str,
     if "port" in arguments:
         validate_port(arguments.get("port", 22))
 
+    # SHELL-04: Guard against stdio mode — interactive shell requires HTTP server mode
+    if os.getenv("MCP_HTTP_ENABLED", "false").lower() != "true":
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "status": "error",
+                            "error": (
+                                "start_interactive_shell only works in HTTP server mode. "
+                                "Restart the server with: uvx homelab-mcp --http --port 8080\n"
+                                "Then open the returned shell URL in your browser."
+                            ),
+                            "error_type": "stdio_mode_unsupported",
+                        },
+                        indent=2,
+                    ),
+                }
+            ]
+        }
+
     # Get initial command if provided
     initial_command = arguments.get("initial_command")
 

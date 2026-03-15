@@ -112,7 +112,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "start_interactive_shell": {
-        "description": "Start an interactive web-based shell session on a remote system. Opens a browser-based terminal with full TTY support for running interactive commands and scripts. Perfect for Proxmox community scripts or any interactive command-line tools.",
+        "description": "Start an interactive web-based shell session on a remote system. Opens a browser-based terminal with full TTY support for running interactive commands and scripts. Perfect for Proxmox community scripts or any interactive command-line tools. Requires HTTP server mode (--http flag). In stdio mode, this tool returns an error with setup instructions.",
         "inputSchema": {
             "type": "object",
             "properties": {
