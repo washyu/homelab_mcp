@@ -30,7 +30,7 @@
 ### CLI Polish
 
 - [x] **CLI-01**: `homelab-mcp --version` prints the installed package version
-- [ ] **CLI-02**: `decommission_device_workflow` prompt instructs AI to resolve hostname → device_id before calling the decommission tool (fixes PRMT-02)
+- [x] **CLI-02**: `decommission_device_workflow` prompt instructs AI to resolve hostname → device_id before calling the decommission tool (fixes PRMT-02)
 
 ## Future Requirements
 
@@ -76,7 +76,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CICD-02 | Phase 20 | Pending |
 | CICD-03 | Phase 20 | Pending |
 | CLI-01 | Phase 18 | Complete |
-| CLI-02 | Phase 20 | Pending |
+| CLI-02 | Phase 20 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 15 total

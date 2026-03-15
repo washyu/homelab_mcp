@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 19-02-PLAN.md — Keyring auto-inject implementation in ssh_tools.py and proxmox_api.py
-last_updated: "2026-03-15T03:27:01.604Z"
+stopped_at: Completed 20-01-PLAN.md — Wave 0 RED assertions for CLI-02 device_id resolution in decommission prompt
+last_updated: "2026-03-15T03:56:43.395Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
   percent: 80
 ---
 
@@ -67,6 +67,7 @@ Progress: [████████░░] 80%
 | Phase 18-credentials-cli-version P03 | 2 | 2 tasks | 1 files |
 | Phase 19-credential-auto-inject P01 | 1 | 1 tasks | 2 files |
 | Phase 19-credential-auto-inject P02 | 4 | 2 tasks | 2 files |
+| Phase 20-release-automation-prmt-02 P01 | 5 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,7 @@ Key constraints for v1.3 (from research):
 - [Phase 19-credential-auto-inject]: Wave 0 RED tests: tests fail at pytest-mock patch time (AttributeError) which registers as FAILED not ERROR — acceptable Wave 0 RED state
 - [Phase 19-credential-auto-inject]: Module-level import of get_credential/list_credentials in ssh_tools.py and proxmox_api.py (not lazy function-body) — required for mocker.patch compatibility at test patch time
 - [Phase 19-credential-auto-inject]: Proxmox validation gates moved after keyring fallback block — allows keyring to supply host when PROXMOX_HOST env var absent
+- [Phase 20-release-automation-prmt-02]: Wave 0 RED assertions committed before GREEN implementation: get_network_sitemap + device_id assertions in test_decommission_workflow_prompt (CLI-02 contract)
 
 ### Pending Todos
 
@@ -138,6 +140,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T03:24:06.614Z
-Stopped at: Completed 19-02-PLAN.md — Keyring auto-inject implementation in ssh_tools.py and proxmox_api.py
+Last session: 2026-03-15T03:56:43.392Z
+Stopped at: Completed 20-01-PLAN.md — Wave 0 RED assertions for CLI-02 device_id resolution in decommission prompt
 Resume file: None
