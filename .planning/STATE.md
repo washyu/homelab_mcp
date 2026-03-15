@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 19-01-PLAN.md — Wave 0 RED tests for credential auto-inject
-last_updated: "2026-03-15T03:18:38.247Z"
+stopped_at: Completed 19-02-PLAN.md — Keyring auto-inject implementation in ssh_tools.py and proxmox_api.py
+last_updated: "2026-03-15T03:24:06.617Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
   percent: 80
 ---
 
@@ -66,6 +66,7 @@ Progress: [████████░░] 80%
 | Phase 18-credentials-cli-version P02 | 1 | 1 tasks | 1 files |
 | Phase 18-credentials-cli-version P03 | 2 | 2 tasks | 1 files |
 | Phase 19-credential-auto-inject P01 | 1 | 1 tasks | 2 files |
+| Phase 19-credential-auto-inject P02 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ Key constraints for v1.3 (from research):
 - [Phase 18-credentials-cli-version]: argparse dest names (hostname/username/credential_type) match test Namespace expectations
 - [Phase 19-credential-auto-inject]: Patch targets homelab_mcp.ssh_tools.list_credentials and homelab_mcp.ssh_tools.get_credential (function-body import pattern)
 - [Phase 19-credential-auto-inject]: Wave 0 RED tests: tests fail at pytest-mock patch time (AttributeError) which registers as FAILED not ERROR — acceptable Wave 0 RED state
+- [Phase 19-credential-auto-inject]: Module-level import of get_credential/list_credentials in ssh_tools.py and proxmox_api.py (not lazy function-body) — required for mocker.patch compatibility at test patch time
+- [Phase 19-credential-auto-inject]: Proxmox validation gates moved after keyring fallback block — allows keyring to supply host when PROXMOX_HOST env var absent
 
 ### Pending Todos
 
@@ -135,6 +138,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T03:18:38.244Z
-Stopped at: Completed 19-01-PLAN.md — Wave 0 RED tests for credential auto-inject
+Last session: 2026-03-15T03:24:06.614Z
+Stopped at: Completed 19-02-PLAN.md — Keyring auto-inject implementation in ssh_tools.py and proxmox_api.py
 Resume file: None
