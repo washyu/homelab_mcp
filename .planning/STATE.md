@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 20-02-PLAN.md — publish-to-pypi job with OIDC, v1.3.0 version bump
-last_updated: "2026-03-15T04:02:43.380Z"
+stopped_at: "Completed 20-03-PLAN.md — PRMT-02 fix: decommission_device_workflow uses device_id via get_network_sitemap"
+last_updated: "2026-03-15T04:06:21.407Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 80
 ---
 
@@ -69,6 +69,7 @@ Progress: [████████░░] 80%
 | Phase 19-credential-auto-inject P02 | 4 | 2 tasks | 2 files |
 | Phase 20-release-automation-prmt-02 P01 | 5 | 1 tasks | 1 files |
 | Phase 20-release-automation-prmt-02 P02 | 5 | 2 tasks | 2 files |
+| Phase 20-release-automation-prmt-02 P03 | 2 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,7 @@ Key constraints for v1.3 (from research):
 - [Phase 20-release-automation-prmt-02]: Wave 0 RED assertions committed before GREEN implementation: get_network_sitemap + device_id assertions in test_decommission_workflow_prompt (CLI-02 contract)
 - [Phase 20-release-automation-prmt-02]: GitHub repo is 'homelab_mcp' (underscore) — use this name when registering PyPI trusted publisher
 - [Phase 20-release-automation-prmt-02]: publish-to-pypi uses OIDC (id-token: write at job level, no stored secrets) with pypa/gh-action-pypi-publish@release/v1
+- [Phase 20-release-automation-prmt-02]: 5-step decommission workflow uses get_network_sitemap to resolve hostname->device_id before calling decommission_device (CLI-02 fix)
 
 ### Pending Todos
 
@@ -143,6 +145,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T04:02:43.377Z
-Stopped at: Completed 20-02-PLAN.md — publish-to-pypi job with OIDC, v1.3.0 version bump
+Last session: 2026-03-15T04:06:21.405Z
+Stopped at: Completed 20-03-PLAN.md — PRMT-02 fix: decommission_device_workflow uses device_id via get_network_sitemap
 Resume file: None

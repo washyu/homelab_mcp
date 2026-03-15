@@ -54,7 +54,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 - [x] **Phase 17: Credential Store Foundation** - Build `credential_store.py` module with full headless fallback (completed 2026-03-15)
 - [x] **Phase 18: Credentials CLI + --version** - Add `credentials add/list/remove` subcommands and `--version` flag (completed 2026-03-15)
 - [x] **Phase 19: Credential Auto-Inject** - Wire keyring into SSH and Proxmox credential resolution paths (completed 2026-03-15)
-- [ ] **Phase 20: Release Automation + PRMT-02** - Automate PyPI publish via OIDC and fix decommission prompt bug
+- [x] **Phase 20: Release Automation + PRMT-02** - Automate PyPI publish via OIDC and fix decommission prompt bug (completed 2026-03-15)
 
 ## Phase Details
 
@@ -143,4 +143,4 @@ Plans:
 | 17. Credential Store Foundation | v1.3 | 1/1 | Complete | 2026-03-15 |
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | 2/2 | Complete    | 2026-03-15 | - |
-| 20. Release Automation + PRMT-02 | 2/3 | In Progress|  | - |
+| 20. Release Automation + PRMT-02 | 3/3 | Complete   | 2026-03-15 | - |
