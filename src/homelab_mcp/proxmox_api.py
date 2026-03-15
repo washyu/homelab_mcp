@@ -11,6 +11,7 @@ from typing import Any
 
 import aiohttp
 
+from .credential_store import get_credential, list_credentials
 from .log_filter import sanitize_error
 
 logger = logging.getLogger(__name__)
@@ -212,8 +213,6 @@ def get_proxmox_client(
     """
     # Get from environment if not provided
     host = host or os.getenv("PROXMOX_HOST")
-    if not host:
-        raise ValueError("Proxmox host must be provided or set in PROXMOX_HOST env var")
 
     if verify_ssl is None:
         verify_ssl = os.getenv("PROXMOX_VERIFY_SSL", "true").lower() != "false"
@@ -221,6 +220,27 @@ def get_proxmox_client(
     username = username or os.getenv("PROXMOX_USER")
     password = password or os.getenv("PROXMOX_PASSWORD")
     api_token = api_token or os.getenv("PROXMOX_API_TOKEN")
+
+    # Keyring fallback (INJECT-03): only when env vars are insufficient
+    # Single-homelab assumption: if PROXMOX_HOST is absent, take first registry entry.
+    # If PROXMOX_HOST is set but auth is missing, match by host (or skip if no match).
+    if not host or (not api_token and not (username and password)):
+        registry_entries = list_credentials(credential_type="proxmox")
+        if registry_entries:
+            entry = registry_entries[0]
+            keyring_host = entry["hostname"]
+            keyring_username = entry["username"]
+            # Only use this entry if: no host set, OR the env host matches the entry host
+            if not host or host == keyring_host:
+                keyring_secret = get_credential(keyring_host, keyring_username, credential_type="proxmox")
+                if keyring_secret:
+                    host = host or keyring_host
+                    api_token = api_token or keyring_secret
+                    logger.debug("Auto-injected Proxmox keyring credential for %s", host)
+
+    # Validation gates
+    if not host:
+        raise ValueError("Proxmox host must be provided or set in PROXMOX_HOST env var")
 
     # Must have either API token or username+password
     if not api_token and not (username and password):
