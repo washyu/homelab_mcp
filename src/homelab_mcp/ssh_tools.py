@@ -90,7 +90,10 @@ def resolve_ssh_credentials(
         logger.warning(
             "Credential desync for %s (user: %s): registry entry exists but keyring "
             "returned None — re-run 'homelab-mcp credentials add %s %s' to restore",
-            hostname, stored_username, hostname, stored_username,
+            hostname,
+            stored_username,
+            hostname,
+            stored_username,
         )
 
     # Try to find stored credentials
@@ -173,6 +176,45 @@ async def ensure_mcp_ssh_key() -> str:
     return str(key_path)
 
 
+async def _sudo_run(
+    conn: asyncssh.SSHClientConnection,
+    command: str,
+    password: str | None = None,
+    check: bool = False,
+) -> asyncssh.SSHCompletedProcess:
+    """Run a command with sudo, piping password via stdin to avoid shell echo leaks.
+
+    Args:
+        conn: Active asyncssh connection.
+        command: Command to run under sudo (do NOT include 'sudo' prefix).
+        password: Password to pipe via stdin with 'sudo -S'. If None, uses plain 'sudo'
+                  (requires NOPASSWD in sudoers).
+        check: If True, raise on non-zero exit status.
+
+    Returns:
+        SSHCompletedProcess result.
+
+    Raises:
+        RuntimeError: On wrong-password or not-in-sudoers failures when password provided.
+    """
+    if password is not None:
+        result = await conn.run(f"sudo -S {command}", input=password + "\n", check=False)
+        if result.exit_status != 0:
+            stderr_text = result.stderr.decode() if isinstance(result.stderr, bytes) else str(result.stderr)
+            if "incorrect password" in stderr_text or "Sorry, try again" in stderr_text:
+                raise RuntimeError(
+                    "sudo authentication failed: wrong password for current user. "
+                    "Verify the password stored in keyring for this host."
+                )
+            if "not in the sudoers file" in stderr_text:
+                raise RuntimeError(
+                    "sudo authorization denied: current user is not in the sudoers file on the remote host."
+                )
+        return result
+    else:
+        return await conn.run(f"sudo {command}", check=check)
+
+
 @ssh_connection_wrapper(timeout_seconds=30.0)
 @retry_on_failure(max_retries=2, delay_seconds=2.0)
 async def setup_remote_mcp_admin(
@@ -214,10 +256,12 @@ async def setup_remote_mcp_admin(
 
             if not user_exists:
                 # Clean up any leftover home directory before creating user
-                await conn.run("sudo rm -rf /home/mcp_admin", check=False)
+                await _sudo_run(conn, "rm -rf /home/mcp_admin", password=creds.password, check=False)
 
                 # Create mcp_admin user
-                create_user = await conn.run("sudo useradd -m -s /bin/bash -G sudo mcp_admin", check=False)
+                create_user = await _sudo_run(
+                    conn, "useradd -m -s /bin/bash -G sudo mcp_admin", password=creds.password, check=False
+                )
                 if create_user.exit_status != 0:
                     stderr_text = (
                         create_user.stderr.decode()
@@ -228,12 +272,14 @@ async def setup_remote_mcp_admin(
                 else:
                     setup_results["user_creation"] = "Success: mcp_admin user created"
                     # Ensure proper ownership of home directory
-                    await conn.run("sudo chown -R mcp_admin:mcp_admin /home/mcp_admin", check=False)
+                    await _sudo_run(
+                        conn, "chown -R mcp_admin:mcp_admin /home/mcp_admin", password=creds.password, check=False
+                    )
             else:
                 setup_results["user_creation"] = "User already exists"
 
             # Ensure mcp_admin is in sudo group
-            sudo_group = await conn.run("sudo usermod -a -G sudo mcp_admin", check=False)
+            sudo_group = await _sudo_run(conn, "usermod -a -G sudo mcp_admin", password=creds.password, check=False)
             if sudo_group.exit_status == 0:
                 setup_results["sudo_access"] = "Success: Added to sudo group"
             else:
@@ -243,8 +289,10 @@ async def setup_remote_mcp_admin(
                 setup_results["sudo_access"] = f"Failed: {stderr_text}"
 
             # Check if our key is already in authorized_keys
-            key_check = await conn.run(
-                f'sudo grep -F "{public_key}" /home/mcp_admin/.ssh/authorized_keys 2>/dev/null',
+            key_check = await _sudo_run(
+                conn,
+                f'grep -F "{public_key}" /home/mcp_admin/.ssh/authorized_keys 2>/dev/null',
+                password=creds.password,
                 check=False,
             )
 
@@ -255,14 +303,16 @@ async def setup_remote_mcp_admin(
             else:
                 # Setup SSH directory (more robust approach)
                 # First ensure the home directory exists and has proper ownership
-                await conn.run("sudo mkdir -p /home/mcp_admin", check=False)
-                await conn.run("sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
+                await _sudo_run(conn, "mkdir -p /home/mcp_admin", password=creds.password, check=False)
+                await _sudo_run(conn, "chown mcp_admin:mcp_admin /home/mcp_admin", password=creds.password, check=False)
 
                 # Create .ssh directory as root, then change ownership
-                mkdir_cmd = await conn.run(
-                    "sudo mkdir -p /home/mcp_admin/.ssh && "
-                    "sudo chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
-                    "sudo chmod 700 /home/mcp_admin/.ssh",
+                mkdir_cmd = await _sudo_run(
+                    conn,
+                    "bash -c 'mkdir -p /home/mcp_admin/.ssh && "
+                    "chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
+                    "chmod 700 /home/mcp_admin/.ssh'",
+                    password=creds.password,
                     check=False,
                 )
 
@@ -274,17 +324,20 @@ async def setup_remote_mcp_admin(
                 else:
                     if force_update_key and key_exists:
                         # Remove old MCP keys (those with mcp_admin@ comment)
-                        await conn.run(
-                            'sudo grep -v "mcp_admin@" /home/mcp_admin/.ssh/authorized_keys | '
-                            "sudo -u mcp_admin tee /home/mcp_admin/.ssh/authorized_keys.tmp && "
-                            "sudo -u mcp_admin mv /home/mcp_admin/.ssh/authorized_keys.tmp /home/mcp_admin/.ssh/authorized_keys",
+                        await _sudo_run(
+                            conn,
+                            "sed -i '/mcp_admin@/d' /home/mcp_admin/.ssh/authorized_keys",
+                            password=creds.password,
                             check=False,
                         )
 
-                    # Add new key
-                    add_key = await conn.run(
-                        f'echo "{public_key}" | sudo -u mcp_admin tee -a /home/mcp_admin/.ssh/authorized_keys && '
-                        "sudo -u mcp_admin chmod 600 /home/mcp_admin/.ssh/authorized_keys",
+                    # Add new key (bash -c avoids pipe/tee sudo complexity)
+                    add_key = await _sudo_run(
+                        conn,
+                        f'bash -c \'echo "{public_key}" >> /home/mcp_admin/.ssh/authorized_keys && '
+                        "chmod 600 /home/mcp_admin/.ssh/authorized_keys && "
+                        "chown mcp_admin:mcp_admin /home/mcp_admin/.ssh/authorized_keys'",
+                        password=creds.password,
                         check=False,
                     )
 
@@ -300,8 +353,10 @@ async def setup_remote_mcp_admin(
                         setup_results["ssh_key"] = f"Failed: {stderr_text}"
 
             # Enable passwordless sudo for mcp_admin
-            sudoers_setup = await conn.run(
-                'echo "mcp_admin ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/mcp_admin',
+            sudoers_setup = await _sudo_run(
+                conn,
+                "bash -c 'echo \"mcp_admin ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/mcp_admin'",
+                password=creds.password,
                 check=False,
             )
 
@@ -316,7 +371,7 @@ async def setup_remote_mcp_admin(
                 setup_results["passwordless_sudo"] = f"Failed: {stderr_text}"
 
             # Test SSH key authentication
-            test_conn = await conn.run("sudo -u mcp_admin whoami", check=False)
+            test_conn = await _sudo_run(conn, "-u mcp_admin whoami", password=creds.password, check=False)
             if test_conn.exit_status == 0:
                 setup_results["test_access"] = "Success: mcp_admin access verified"
             else:
@@ -663,19 +718,18 @@ async def ssh_execute_command(
         password=creds.password,
         key_path=resolved_key,
     ) as conn:
-        # Prepare the command with sudo if requested
+        # Prepare the command with sudo if requested and execute
         if sudo:
             if creds.username == "mcp_admin":
                 # mcp_admin has passwordless sudo
-                full_command = f"sudo {command}"
+                result = await conn.run(f"sudo {command}", check=False)
+            elif creds.password:
+                # Pipe password via stdin to avoid shell echo leaks (no ps output leak)
+                result = await conn.run(f"sudo -S {command}", input=creds.password + "\n", check=False)
             else:
-                # Other users might need password for sudo
-                full_command = f"echo '{creds.password}' | sudo -S {command}" if creds.password else f"sudo {command}"
+                result = await conn.run(f"sudo {command}", check=False)
         else:
-            full_command = command
-
-        # Execute the command
-        result = await conn.run(full_command, check=False)
+            result = await conn.run(command, check=False)
 
         output = []
         if result.stdout:
@@ -786,7 +840,9 @@ async def update_mcp_admin_groups(
                     continue
 
                 # Add user to group
-                add_group = await conn.run(f"sudo usermod -a -G {group} mcp_admin", check=False)
+                add_group = await _sudo_run(
+                    conn, f"usermod -a -G {group} mcp_admin", password=creds.password, check=False
+                )
                 if add_group.exit_status == 0:
                     added_groups.append(group)
                 else:
@@ -814,7 +870,7 @@ async def update_mcp_admin_groups(
 
             # Test Docker access if docker group was added
             if "docker" in updated_groups:
-                docker_test = await conn.run("sudo -u mcp_admin docker ps", check=False)
+                docker_test = await _sudo_run(conn, "-u mcp_admin docker ps", password=creds.password, check=False)
                 if docker_test.exit_status == 0:
                     results["docker_access"] = "Success: mcp_admin can access Docker"
                 else:
