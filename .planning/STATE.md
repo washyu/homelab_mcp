@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
-status: roadmap_ready
-stopped_at: null
-last_updated: "2026-03-14T00:00:00.000Z"
+status: Roadmap ready — begin with Phase 17
+stopped_at: Completed 17-01-PLAN.md — credential_store.py with headless-safe keyring wrapper
+last_updated: "2026-03-15T01:32:48.922Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 80
 ---
 
 # Project State
@@ -61,6 +61,7 @@ Progress: [████████░░] 80%
 | Phase 15-preview-tool-split P01 | 2 | 2 tasks | 2 files |
 | Phase 15-preview-tool-split P02 | 4 | 2 tasks | 12 files |
 | Phase 16-quality-gate P01 | 8 | 2 tasks | 4 files |
+| Phase 17-credential-store-foundation P01 | 25 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ Key constraints for v1.3 (from research):
 - `parser.set_defaults(func=_run_server)` + `getattr(args, 'func', _run_server)(args)` dispatch pattern — prevents bare `homelab-mcp` regression
 - `sanitize_error(e)` from `log_filter.py` in every except block touching credential values — prevents credential leak in logs
 - PyPI OIDC trusted publisher must be manually registered at pypi.org before pushing any v* tag
+- [Phase 17-credential-store-foundation]: Lazy import keyring inside each function body — prevents D-Bus probing during server startup
+- [Phase 17-credential-store-foundation]: Assign keyring.get_password result to typed variable (str | None) to satisfy mypy warn_return_any
+- [Phase 17-credential-store-foundation]: credential_store.py imports only stdlib logging — no homelab_mcp imports (circular import prevention, mirrors prompt_registry.py constraint)
 
 ### Pending Todos
 
@@ -118,6 +122,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-14T00:00:00.000Z
-Stopped at: v1.3 roadmap created — ready to begin Phase 17
+Last session: 2026-03-15T01:32:48.920Z
+Stopped at: Completed 17-01-PLAN.md — credential_store.py with headless-safe keyring wrapper
 Resume file: None

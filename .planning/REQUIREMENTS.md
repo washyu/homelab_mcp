@@ -13,7 +13,7 @@
 - [ ] **CRED-04**: User can store Proxmox credentials with `homelab-mcp credentials add --type proxmox <host> <user>` (token/password prompted securely)
 - [ ] **CRED-05**: User can list stored Proxmox credential hosts with `homelab-mcp credentials list --type proxmox`
 - [ ] **CRED-06**: User can remove stored Proxmox credentials with `homelab-mcp credentials remove --type proxmox <host>`
-- [ ] **CRED-07**: Server warns and falls back gracefully to env-var-only mode when OS keyring is unavailable (headless Linux, no D-Bus)
+- [x] **CRED-07**: Server warns and falls back gracefully to env-var-only mode when OS keyring is unavailable (headless Linux, no D-Bus)
 
 ### Credential Auto-Inject
 
@@ -68,7 +68,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRED-04 | Phase 18 | Pending |
 | CRED-05 | Phase 18 | Pending |
 | CRED-06 | Phase 18 | Pending |
-| CRED-07 | Phase 17 | Pending |
+| CRED-07 | Phase 17 | Complete |
 | INJECT-01 | Phase 19 | Pending |
 | INJECT-02 | Phase 19 | Pending |
 | INJECT-03 | Phase 19 | Pending |
