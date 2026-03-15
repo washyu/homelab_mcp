@@ -69,7 +69,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming (completed 2026-03-15)
 - [x] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable (completed 2026-03-15)
 - [x] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning (completed 2026-03-15)
-- [ ] **Phase 24: Keyring-based Password Handling** — Fix setup_mcp_admin and update_mcp_admin_groups to use keyring auto-inject
+- [x] **Phase 24: Keyring-based Password Handling** — Fix setup_mcp_admin and update_mcp_admin_groups to use keyring auto-inject (completed 2026-03-15)
 
 ## Phase Details
 
@@ -125,7 +125,7 @@ Plans:
   3. `update_mcp_admin_groups` resolves credentials from keyring when called without password argument
   4. Neither tool schema has `password` in its `required` array
   5. No tool schema in the entire project has `password` in its `required` array (regression guard)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 24-01-PLAN.md — Refactor setup_mcp_admin and update_mcp_admin_groups schemas and implementations
 - [ ] 24-02-PLAN.md — Update existing tests and add keyring resolution + audit guard tests
@@ -157,4 +157,4 @@ Plans:
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 24. Keyring-based Password Handling | 1/2 | In Progress|  | - |
+| 24. Keyring-based Password Handling | 2/2 | Complete   | 2026-03-15 | - |

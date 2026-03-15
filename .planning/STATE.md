@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-03-15T19:26:03.948Z"
+stopped_at: Completed 24-02-PLAN.md
+last_updated: "2026-03-15T19:32:06.273Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 23-workflow-completeness P01 | 8 | 2 tasks | 2 files |
 | Phase 23-workflow-completeness P02 | 1 | 2 tasks | 2 files |
 | Phase 24-keyring-password-handling P01 | 1 | 2 tasks | 2 files |
+| Phase 24-keyring-password-handling P02 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Key constraints for v1.4 (from research):
 - [Phase 24-keyring-password-handling]: Make username/password optional in setup_remote_mcp_admin and update_mcp_admin_groups (str | None = None) to allow keyring auto-injection while preserving backward compatibility
 - [Phase 24-keyring-password-handling]: Add key_path parameter to update_mcp_admin_groups to match full SSHCredentials contract
 - [Phase 24-keyring-password-handling]: Do not add ValueError guard after resolve_ssh_credentials in setup/groups — CredentialNotFoundError propagates cleanly through ssh_connection_wrapper
+- [Phase 24-keyring-password-handling]: Mock resolve_ssh_credentials in all setup_mcp_admin tests to prevent real keyring/DB access in unit tests
+- [Phase 24-keyring-password-handling]: test_no_tool_has_password_required as schema audit guard across all 57 tools — update allowlist if a future tool legitimately needs required password
 
 ### Roadmap Evolution
 
@@ -103,6 +106,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T19:26:03.945Z
-Stopped at: Completed 24-01-PLAN.md
+Last session: 2026-03-15T19:32:06.271Z
+Stopped at: Completed 24-02-PLAN.md
 Resume file: None
