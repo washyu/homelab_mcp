@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 20-01-PLAN.md — Wave 0 RED assertions for CLI-02 device_id resolution in decommission prompt
-last_updated: "2026-03-15T03:56:43.395Z"
+stopped_at: Completed 20-02-PLAN.md — publish-to-pypi job with OIDC, v1.3.0 version bump
+last_updated: "2026-03-15T04:02:43.380Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 80
 ---
 
@@ -68,6 +68,7 @@ Progress: [████████░░] 80%
 | Phase 19-credential-auto-inject P01 | 1 | 1 tasks | 2 files |
 | Phase 19-credential-auto-inject P02 | 4 | 2 tasks | 2 files |
 | Phase 20-release-automation-prmt-02 P01 | 5 | 1 tasks | 1 files |
+| Phase 20-release-automation-prmt-02 P02 | 5 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,8 @@ Key constraints for v1.3 (from research):
 - [Phase 19-credential-auto-inject]: Module-level import of get_credential/list_credentials in ssh_tools.py and proxmox_api.py (not lazy function-body) — required for mocker.patch compatibility at test patch time
 - [Phase 19-credential-auto-inject]: Proxmox validation gates moved after keyring fallback block — allows keyring to supply host when PROXMOX_HOST env var absent
 - [Phase 20-release-automation-prmt-02]: Wave 0 RED assertions committed before GREEN implementation: get_network_sitemap + device_id assertions in test_decommission_workflow_prompt (CLI-02 contract)
+- [Phase 20-release-automation-prmt-02]: GitHub repo is 'homelab_mcp' (underscore) — use this name when registering PyPI trusted publisher
+- [Phase 20-release-automation-prmt-02]: publish-to-pypi uses OIDC (id-token: write at job level, no stored secrets) with pypa/gh-action-pypi-publish@release/v1
 
 ### Pending Todos
 
@@ -140,6 +143,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T03:56:43.392Z
-Stopped at: Completed 20-01-PLAN.md — Wave 0 RED assertions for CLI-02 device_id resolution in decommission prompt
+Last session: 2026-03-15T04:02:43.377Z
+Stopped at: Completed 20-02-PLAN.md — publish-to-pypi job with OIDC, v1.3.0 version bump
 Resume file: None

@@ -23,9 +23,9 @@
 
 ### Release Automation
 
-- [ ] **CICD-01**: PyPI publish triggered automatically when a `v*` git tag is pushed to main
-- [ ] **CICD-02**: Publish uses OIDC trusted publishing — no API tokens stored in GitHub secrets
-- [ ] **CICD-03**: Publish job only runs after the test-and-quality job passes
+- [x] **CICD-01**: PyPI publish triggered automatically when a `v*` git tag is pushed to main
+- [x] **CICD-02**: Publish uses OIDC trusted publishing — no API tokens stored in GitHub secrets
+- [x] **CICD-03**: Publish job only runs after the test-and-quality job passes
 
 ### CLI Polish
 
@@ -72,9 +72,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INJECT-01 | Phase 19 | Complete |
 | INJECT-02 | Phase 19 | Complete |
 | INJECT-03 | Phase 19 | Complete |
-| CICD-01 | Phase 20 | Pending |
-| CICD-02 | Phase 20 | Pending |
-| CICD-03 | Phase 20 | Pending |
+| CICD-01 | Phase 20 | Complete |
+| CICD-02 | Phase 20 | Complete |
+| CICD-03 | Phase 20 | Complete |
 | CLI-01 | Phase 18 | Complete |
 | CLI-02 | Phase 20 | Complete |
 
