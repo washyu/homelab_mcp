@@ -82,7 +82,10 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. Browser tab receives an explicit disconnection message when the shell session ends instead of hanging silently
   4. Shell prompt renders at correct width — lines do not wrap or truncate at column 24
   5. `known_hosts` file entries have exactly three fields (hostname, algorithm, base64) with no trailing comment
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 21-01-PLAN.md — Fix TOFU known_hosts key format and replace dead asyncio.Lock with threading.Lock
+- [ ] 21-02-PLAN.md — Fix interactive shell term_size, non-blocking PTY reads, and EOF notification
 
 ### Phase 22: Agent Guidance
 **Goal**: The agent can diagnose credential failures and knows which tools and commands to recommend to the user
@@ -129,6 +132,6 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 21. Core SSH Reliability | v1.4 | 0/TBD | Not started | - |
+| 21. Core SSH Reliability | v1.4 | 0/2 | Not started | - |
 | 22. Agent Guidance | v1.4 | 0/TBD | Not started | - |
 | 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |
