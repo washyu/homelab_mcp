@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
-status: "Ready to plan"
-stopped_at: ""
-last_updated: "2026-03-13"
+status: planning
+stopped_at: Completed 21-core-ssh-reliability 21-01-PLAN.md
+last_updated: "2026-03-15T17:54:36.462Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 21-core-ssh-reliability P01 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ Key constraints for v1.4 (from research):
 - `start_interactive_shell` stdio detection: check `MCP_HTTP_PORT` env var or server-level flag before returning URL
 - Wave-0 TDD pattern: RED tests committed before implementation (established in v1.1, used in all v1.2/v1.3 phases)
 - Module-level imports in `ssh_tools.py` required for monkeypatching — do not switch to function-body imports
+- [Phase 21-core-ssh-reliability]: Use threading.Lock not asyncio.Lock — validate_host_public_key is a synchronous callback, asyncio.Lock is dead code there
+- [Phase 21-core-ssh-reliability]: Strip known_hosts comment by splitting export_public_key output and joining only parts[:2] — known_hosts format requires exactly algorithm + base64
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13
-Stopped at: Roadmap created for v1.4 (phases 21-23), ready to plan Phase 21
+Last session: 2026-03-15T17:54:36.460Z
+Stopped at: Completed 21-core-ssh-reliability 21-01-PLAN.md
 Resume file: None
