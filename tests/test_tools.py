@@ -13,8 +13,8 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 56
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift tools, and preview tools
+        len(tools) == 57
+    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift tools, preview tools, and list_keyring_credentials
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" in tools
     assert "verify_mcp_admin" in tools
@@ -604,6 +604,24 @@ def test_start_interactive_shell_schema_mentions_http(
     desc = tools["start_interactive_shell"]["description"]
     assert "--http" in desc or "HTTP server mode" in desc, (
         f"start_interactive_shell description must mention --http or HTTP server mode; got: {desc!r}"
+    )
+
+
+def test_ssh_discover_description_contains_credential_recovery() -> None:
+    """ssh_discover description must mention list_keyring_credentials for recovery (CRED-03)."""
+    tools = get_available_tools()
+    desc = tools["ssh_discover"]["description"]
+    assert "list_keyring_credentials" in desc, (
+        f"ssh_discover description must mention list_keyring_credentials; got: {desc!r}"
+    )
+
+
+def test_ssh_execute_command_description_contains_credential_recovery() -> None:
+    """ssh_execute_command description must mention list_keyring_credentials for recovery (CRED-03)."""
+    tools = get_available_tools()
+    desc = tools["ssh_execute_command"]["description"]
+    assert "list_keyring_credentials" in desc, (
+        f"ssh_execute_command description must mention list_keyring_credentials; got: {desc!r}"
     )
 
 
