@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-03-15T19:35:05.478Z"
+stopped_at: Completed 25-01-PLAN.md
+last_updated: "2026-03-15T23:09:08.902Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 9
+  completed_plans: 9
   percent: 0
 ---
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 23-workflow-completeness P02 | 1 | 2 tasks | 2 files |
 | Phase 24-keyring-password-handling P01 | 1 | 2 tasks | 2 files |
 | Phase 24-keyring-password-handling P02 | 4 | 2 tasks | 2 files |
+| Phase 25 P01 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -90,10 +91,14 @@ Key constraints for v1.4 (from research):
 - [Phase 24-keyring-password-handling]: Do not add ValueError guard after resolve_ssh_credentials in setup/groups — CredentialNotFoundError propagates cleanly through ssh_connection_wrapper
 - [Phase 24-keyring-password-handling]: Mock resolve_ssh_credentials in all setup_mcp_admin tests to prevent real keyring/DB access in unit tests
 - [Phase 24-keyring-password-handling]: test_no_tool_has_password_required as schema audit guard across all 57 tools — update allowlist if a future tool legitimately needs required password
+- [Phase 25]: _sudo_run uses conn.run(input=password+'\n') with sudo -S to pipe password via stdin, preventing shell echo leak
+- [Phase 25]: ssh_execute_command keeps direct conn.run(input=...) instead of _sudo_run to preserve JSON error responses
+- [Phase 25]: Piped-tee commands restructured to bash -c approach so sudo wraps entire operation without pipe complexity
 
 ### Roadmap Evolution
 
 - Phase 24 added: Keyring-based password handling — fix setup_mcp_admin and audit all tools for passed-password anti-pattern
+- Phase 25 added: Sudo password piping — fix setup_mcp_admin sudo timeout when connecting user lacks NOPASSWD
 
 ### Pending Todos
 
@@ -106,6 +111,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T19:32:06.271Z
-Stopped at: Completed 24-02-PLAN.md
+Last session: 2026-03-15T23:09:08.899Z
+Stopped at: Completed 25-01-PLAN.md
 Resume file: None

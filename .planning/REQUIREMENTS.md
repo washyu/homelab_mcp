@@ -39,11 +39,11 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 
 ### Sudo Password Piping
 
-- [ ] **SUDO-01**: `_sudo_run` helper function pipes password via `conn.run(input=...)` when `creds.password` is available, falls back to plain `sudo` when no password
-- [ ] **SUDO-02**: All `sudo` calls in `setup_remote_mcp_admin` use `_sudo_run` instead of raw `conn.run("sudo ...")`
-- [ ] **SUDO-03**: All `sudo` calls in `update_mcp_admin_groups` use `_sudo_run` instead of raw `conn.run("sudo ...")`
-- [ ] **SUDO-04**: Sudo failure produces actionable error distinguishing "wrong password" from "timeout" from "not in sudoers"
-- [ ] **SUDO-05**: `ssh_execute_command` sudo path uses `conn.run(input=...)` instead of `echo password | sudo -S` shell injection
+- [x] **SUDO-01**: `_sudo_run` helper function pipes password via `conn.run(input=...)` when `creds.password` is available, falls back to plain `sudo` when no password
+- [x] **SUDO-02**: All `sudo` calls in `setup_remote_mcp_admin` use `_sudo_run` instead of raw `conn.run("sudo ...")`
+- [x] **SUDO-03**: All `sudo` calls in `update_mcp_admin_groups` use `_sudo_run` instead of raw `conn.run("sudo ...")`
+- [x] **SUDO-04**: Sudo failure produces actionable error distinguishing "wrong password" from "timeout" from "not in sudoers"
+- [x] **SUDO-05**: `ssh_execute_command` sudo path uses `conn.run(input=...)` instead of `echo password | sudo -S` shell injection
 
 ## Future Requirements
 

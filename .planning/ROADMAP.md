@@ -70,7 +70,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable (completed 2026-03-15)
 - [x] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning (completed 2026-03-15)
 - [x] **Phase 24: Keyring-based Password Handling** — Fix setup_mcp_admin and update_mcp_admin_groups to use keyring auto-inject (completed 2026-03-15)
-- [ ] **Phase 25: Sudo Password Piping** — Fix sudo timeout by piping password via stdin for setup_mcp_admin and update_mcp_admin_groups
+- [x] **Phase 25: Sudo Password Piping** — Fix sudo timeout by piping password via stdin for setup_mcp_admin and update_mcp_admin_groups (completed 2026-03-15)
 
 ## Phase Details
 
@@ -141,7 +141,7 @@ Plans:
   3. `ssh_execute_command` with sudo=true does not leak password to shell command string
   4. All three functions fall back to plain sudo when no password is available
   5. Wrong password and not-in-sudoers produce distinct, actionable error messages
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 Plans:
 - [ ] 25-01-PLAN.md — Create _sudo_run helper and apply to all sudo calls in setup/groups/execute functions
 
@@ -173,4 +173,4 @@ Plans:
 | 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 24. Keyring-based Password Handling | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 25. Sudo Password Piping | v1.4 | 0/1 | Planning | - |
+| 25. Sudo Password Piping | 1/1 | Complete   | 2026-03-15 | - |
