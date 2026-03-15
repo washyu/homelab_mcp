@@ -132,6 +132,6 @@ Plans:
 | 15. Preview Tool Split | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 16. Quality Gate | v1.2 | 1/1 | Complete | 2026-03-13 |
 | 17. Credential Store Foundation | v1.3 | 1/1 | Complete | 2026-03-15 |
-| 18. Credentials CLI + --version | 3/3 | Complete   | 2026-03-15 | - |
+| 18. Credentials CLI + --version | 3/3 | Complete    | 2026-03-15 | - |
 | 19. Credential Auto-Inject | v1.3 | 0/TBD | Not started | - |
 | 20. Release Automation + PRMT-02 | v1.3 | 0/TBD | Not started | - |
