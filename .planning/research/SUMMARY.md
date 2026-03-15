@@ -1,178 +1,181 @@
 # Project Research Summary
 
-**Project:** Homelab MCP Server — v1.3 Credentials & Release Automation
-**Domain:** Python CLI tool — OS keyring credential management + CI/CD release automation
-**Researched:** 2026-03-14
+**Project:** Homelab MCP Server — v1.4 Real-World Reliability
+**Domain:** Python MCP server bug-fix milestone — interactive shell, SSH credential flow, TOFU host-key trust
+**Researched:** 2026-03-13
 **Confidence:** HIGH
 
 ## Executive Summary
 
-v1.3 is a tightly scoped, low-risk milestone with one net-new runtime dependency and no architectural changes. The work breaks cleanly into three independent tracks: (1) credential store — a new `credential_store.py` module wrapping `keyring>=25.6.0` with full headless fallback, wired into the existing SSH and Proxmox credential priority chains; (2) CLI extension — adding `--version` and `credentials add/list/remove` subcommands to the existing `server.py` `main()` argparse entrypoint without breaking bare invocation; (3) CI/CD automation — a `publish` job added to `main.yml` using OIDC trusted publishing. All integration points have been verified by direct codebase inspection; all patterns are well-established. The only genuinely novel element is the OIDC trusted publisher setup, which requires a one-time manual step in the PyPI project settings before any tag is pushed.
+v1.4 is a tightly scoped bug-fix milestone addressing three issues found during real Mac testing: a silent interactive shell failure, an SSH credential flow that leaves the AI agent with no recovery path, and SSH timeouts after device registration. Research confirms all three bugs are pure code-level defects in the existing stack — no new runtime dependencies are needed. The fixes are confined to six source files and collectively affect fewer than 100 lines of code.
 
-The primary deployment target — headless Proxmox hosts — has no OS keyring backend available. This is the dominant risk in the milestone: every keyring call path must catch `keyring.errors.NoKeyringError` (and the older `RuntimeError` for pre-v24 compatibility) and fall back gracefully. The keyring feature is a convenience for desktop users; env vars remain the fully supported credential path for headless servers. The existing SQLite `ssh_credentials` table handles key-based SSH auth and is unchanged — keyring slots in at priority 2 for password-based auth, keeping all existing behaviour intact.
+The recommended approach is to fix the bugs in two dependency-ordered phases and accompany each code fix with schema description improvements so the agent has proactive guidance before errors occur. The interactive shell bug has two root causes: a PTY `term_size` argument is inverted (24 cols x 80 rows instead of 80 cols x 24 rows) causing display corruption, and the WebSocket output loop silently exits on EOF without notifying the browser. The credential flow bug is an opaque `PermissionDenied` that gives the agent no recovery steps. The TOFU timeout is most likely caused by a corrupted `known_hosts` entry — `export_public_key()` may include a comment field, producing a four-field line where asyncssh expects exactly three — combined with a credential hostname/IP label mismatch where `credentials add` stores a label that does not match the label used during discovery.
 
-The bug fix for PRMT-02 (`_build_decommission_result()` generating `hostname=` instead of `device_id=` in tool call instructions) is independent of all other work and can be delivered in any phase. All seven work items in this milestone are P1 — there is no filler — but the build order is dictated by a single dependency: `credential_store.py` must exist before the CLI subcommands, SSH auto-inject, or Proxmox config fallback can be wired up.
-
----
+The primary risk in this milestone is regression: 635 tests are currently passing and several rely on the silent `mcp_admin` fallthrough behavior in `resolve_ssh_credentials()`. Any change to that fallthrough must be preceded by a test audit. A secondary risk is the dead `asyncio.Lock` in `TOFUSSHClient` — if touched without recognizing it must become a `threading.Lock`, it will deadlock the server on first SSH connection to a new host.
 
 ## Key Findings
 
 ### Recommended Stack
 
-v1.3 introduces one net-new runtime dependency: `keyring>=25.6.0` promoted from `[project.optional-dependencies] security` to `[project.dependencies]`. Version 25.6.0 specifically is required because it removes spurious no-backend warning logs, making the `NoKeyringError` fallback detection clean. All other runtime dependencies (asyncssh, aiohttp, starlette, uvicorn, rich, pydantic) are unchanged. The PyPI publish automation requires no new dependencies — `uv build` and `pypa/gh-action-pypi-publish@release/v1` are workflow-only additions. See `.planning/research/STACK.md` for full rationale and code patterns.
+No stack changes for v1.4. All three bugs are call-site or error-handling issues within the existing dependencies. asyncssh 2.21.0, mcp 1.9.4, starlette 0.47.1, and websockets 16.0 are all confirmed correct at their locked versions. The bugs are in how the code calls these libraries, not in the libraries themselves.
 
-**Core technologies:**
-- `keyring>=25.6.0`: OS keyring abstraction (GNOME Secret Service, macOS Keychain, Windows Credential Manager) — already in project optional deps; promotes to core because `credentials add` must work unconditionally for all install paths
-- `argparse` (stdlib, Python 3.12): credentials subcommands and `--version` flag — no new dependency; two-level subparser pattern is idiomatic; verified against existing `main()` structure
-- `pypa/gh-action-pypi-publish@release/v1`: PyPI OIDC trusted publishing in GitHub Actions — official PyPA action, keyless auth, `release/v1` rolling branch tracks security fixes automatically
+**Core technologies (unchanged):**
+- asyncssh 2.21.0: SSH connections, PTY sessions, TOFU host-key storage — `term_size` order and `validate_host_public_key` behavior verified by direct source inspection at `.venv/lib/python3.12/site-packages/asyncssh/`
+- starlette + websockets: WebSocket I/O relay for browser-based shell — correct approach; bug is in the `stdout.read()` call inside the relay loop which blocks until EOF rather than returning available bytes
+- keyring + `credential_registry.json`: Two-tier credential storage (OS keyring for passwords, SQLite for key-auth) — architecture is sound; bug is missing actionable errors when all tiers miss
 
 ### Expected Features
 
-All v1.3 features are P1. Research confirms this is a complete and correctly scoped feature set with no ambiguity about what ships. See `.planning/research/FEATURES.md` for full prioritization matrix and dependency graph.
+**Must fix (table stakes — blocks real-world use):**
+- Interactive shell returns actionable output — today `start_interactive_shell` returns a URL that is unreachable in stdio mode and displays nothing even when reachable due to the blocking `read()` call
+- SSH credential error tells the agent the exact recovery workflow — "Permission denied" without naming `credentials add` or `register_server` leaves the agent looping with no path forward
+- `list_keyring_credentials` tool (new) — the agent has no way to inspect keyring state; analogous to `list_registered_servers` for the DB path; wraps the existing `credential_store.list_credentials("ssh")`
+- TOFU works on first SSH connection for keyring-registered hosts — the core timeout bug for the `credentials add` then `ssh_discover` sequence
 
-**Must have (table stakes):**
-- `credentials add/list/remove` CLI subcommands — fundamental CRUD; every credential-managing tool ships this
-- Auto-inject SSH credentials via keyring at priority 2 in `resolve_ssh_credentials()` — the core payoff of storing credentials; all 56 SSH tools benefit automatically through the single call site
-- `homelab-mcp --version` flag — every CLI tool has this; users verify what's running
-- Automated PyPI publish on `git tag v*` — `uvx homelab-mcp` users expect new versions without manual CI steps
-- Graceful `NoKeyringError` handling in all code paths — headless homelab servers lack GUI keyring; must not crash or silently fail
-- PRMT-02 bug fix in `_build_decommission_result()` — AI following the decommission workflow prompt hits a schema validation error on every invocation (`hostname=` vs `device_id=` mismatch)
+**Should add (high value, low cost):**
+- SSH tool schema descriptions: one sentence naming the credential recovery path in each `ssh_discover` and `ssh_execute_command` description
+- `register_server` description: mention that it stores the SSH host key (TOFU awareness)
+- `start_interactive_shell` description: explicit "browser-only" language so the agent does not report false success
 
-**Should have (differentiators):**
-- Proxmox credentials storable via `credentials add --type proxmox` — alternative to `.env` file; useful for multi-host setups
-- Per-type service namespace (`homelab-mcp-ssh` vs `homelab-mcp-proxmox`) — isolated in OS keyring UI; no cross-type contamination
-- Password never visible in `credentials list` output — matches `gh auth status` / `git credential` UX convention
-
-**Defer to v1.x or v2+:**
-- `credentials verify <host>` — test SSH connectivity with stored creds
-- `credentials list --type proxmox` — separate listing by credential type
-- `credentials export --format env` — dump stored creds as `.env` for migration/backup
-- Credential import from existing `.env` files
+**Defer to v1.x:**
+- `trust_host_key` dedicated tool — only needed if transparent TOFU fix proves insufficient
+- `ssh_credential_setup` prompt — full workflow walkthrough; valuable but not blocking
+- `credentials verify <host>` CLI command — diagnostic tool; nice-to-have
 
 ### Architecture Approach
 
-The architecture is additive: one new module (`credential_store.py`), four modified modules (`server.py`, `ssh_tools.py`, `config.py`, `prompt_registry.py`), and one modified CI file (`main.yml`). The new `credential_store.py` is intentionally isolated — it imports only `keyring` (optional, guarded) with no homelab_mcp imports, eliminating circular import risk. All keyring access is centralised there; other modules call `credential_store.get_credential(key)` without knowledge of keyring internals. The CLI extension uses the existing `homelab-mcp` console script entrypoint — `credentials` is a subparser that dispatches and exits before any server startup logic runs. See `.planning/research/ARCHITECTURE.md` for component map and data flow diagrams.
+All three bugs are isolated to narrow slices of the existing architecture. The build order has one hard dependency: the TOFU fix should precede credential error handling work because integration tests that verify `CredentialNotFoundError` behavior require a working SSH connection path. The shell streaming fix is fully independent and can be developed in parallel. Schema description updates are string-only changes with no code dependencies.
 
-**Major components:**
-1. `credential_store.py` (NEW) — keyring get/set/delete; `KEYRING_AVAILABLE` guard at module level; service name constants `homelab-mcp-ssh` / `homelab-mcp-proxmox`; all keyring exceptions caught and handled
-2. `server.py main()` (MODIFY) — add `--version` action and `credentials` subparser; local import of `credential_store` inside the credentials branch; `sys.exit(0)` before server starts
-3. `ssh_tools.resolve_ssh_credentials()` (MODIFY) — insert keyring lookup as priority 2 (after explicit args, before SQLite DB, before default mcp_admin key)
-4. `config.py MCPConfig` (MODIFY) — add keyring fallback for Proxmox password after env var check; env vars always win
-5. `prompt_registry.py _build_decommission_result()` (MODIFY) — PRMT-02 fix: replace `hostname=` tool call instruction with `list_devices` → `device_id` lookup step
-6. `main.yml publish job` (NEW) — OIDC trusted publishing via `pypa/gh-action-pypi-publish@release/v1`; gated on `v*` tags and `test-and-quality` passing; runs in parallel with existing `release` job
+**Files changed:**
+
+1. `shell_session.py` — fix `term_size=(24, 80)` to `term_size=(80, 24)` (cols x rows, verified at asyncssh `channel.py:1176`)
+2. `http_app.py` — `read_output()` inner coroutine: replace blocking `stdout.read(4096)` with `asyncio.wait_for(..., timeout=0.05)` to enable streaming; add EOF notification to browser
+3. `ssh_connection.py` — `TOFUSSHClient._store_host_key()`: strip comment field from `export_public_key()` output so `known_hosts` entries have exactly three fields; replace dead `asyncio.Lock` with `threading.Lock`
+4. `ssh_tools.py` — `resolve_ssh_credentials()`: raise `CredentialNotFoundError` at bare-miss fallthrough instead of returning a no-auth `SSHCredentials`
+5. `tool_schemas/ssh_tools_schema.py` — add credential workflow hints to `ssh_discover` and `ssh_execute_command` descriptions
+6. `prompt_registry.py` — add `connect_to_device` prompt (~25 lines, purely additive)
+
+**No-change modules:** `server.py`, `database.py`, `sitemap.py`, `credential_store.py`, `vm_operations.py`, `proxmox_api.py`, `service_installer.py`, `infrastructure_crud.py`
 
 ### Critical Pitfalls
 
-Full analysis in `.planning/research/PITFALLS.md`. Top five by severity and probability for v1.3:
+1. **Dead `asyncio.Lock` in `TOFUSSHClient` will deadlock if naively activated** — `_tofu_lock = asyncio.Lock()` is declared but never acquired. `validate_host_public_key` is a synchronous callback; `await lock.acquire()` is unreachable from sync context. Any attempt to add locking via `asyncio.run()` or `loop.run_until_complete()` deadlocks the server (Python 3.10+: `RuntimeError: This event loop is already running`). Fix: replace with `threading.Lock` and use `with _tofu_lock:` inside `_store_host_key`.
 
-1. **Keyring `NoKeyringError` crashes the server on headless Linux** — The primary deployment target (Proxmox host) has no D-Bus session; `keyring.get_password()` raises `NoKeyringError`. Wrap every keyring call in `try/except (keyring.errors.NoKeyringError, RuntimeError, Exception)`. Never call keyring at module import time or during server startup. Log at `DEBUG` level — this is expected behaviour, not an error.
+2. **Changing `resolve_ssh_credentials` will break tests relying on `mcp_admin` fallthrough** — 635 currently-passing tests include some that depend on the silent fallthrough to the `mcp_admin` key. Making this path raise `CredentialNotFoundError` is correct new behavior but will appear as regressions. Must audit with `git grep "resolve_ssh_credentials\|get_credential_by_hostname\|mcp_admin" tests/` before implementation.
 
-2. **Argparse subparsers break the existing bare `homelab-mcp` invocation** — Adding `add_subparsers()` changes how argparse handles no-arg invocations. Use `parser.set_defaults(func=_run_server)` and `getattr(args, 'func', _run_server)(args)` for dispatch. Add an explicit regression test: `parse_args([])` must route to server startup; `parse_args(['--http'])` must set `args.http = True`.
+3. **Module-level singleton in `shell_session.py` breaks test isolation if async tasks are added** — `session_manager = ShellSessionManager()` is created at import time. Any `asyncio.create_task()` call in `__init__` or at module level will leak tasks into test event loops, causing `RuntimeWarning: Task was destroyed` across all 635 tests. The existing `start_cleanup_task()` pattern (explicit lifespan call only) is correct — do not change it.
 
-3. **PyPI OIDC trusted publishing fails with `invalid-publisher`** — Configuration mismatches (workflow filename, environment name, hyphen vs underscore in package name, missing `id-token: write` at job level) cause silent 403 failures. Validate with a TestPyPI dry run before the first production tag push. The PyPI trusted publisher must be registered manually at `pypi.org/manage/project/homelab-mcp/settings/publishing/` before pushing `v1.3.0`.
+4. **`start_interactive_shell` in stdio mode returns a dead URL** — The tool succeeds and returns a URL even when the HTTP server is not running (default Claude Desktop mode is stdio). Fix: detect HTTP mode (`MCP_HTTP_PORT` env var or a server-level flag) and return an actionable error, not a URL.
 
-4. **Version/tag mismatch at publish time** — `pyproject.toml version = "1.2.0"` when pushing `git tag v1.3.0` causes PyPI to reject the upload or publish a permanently mismatched release. Add a CI step asserting the `pyproject.toml` version equals the tag name before the build runs.
-
-5. **Credential leak through exception messages in new logging paths** — `log_filter.py`'s `_SENSITIVE_PATTERNS` are prefix-anchored; bare secret values in exception messages bypass all filters. Every `except` block in new credential-touching code must use `sanitize_error(e)` from `log_filter.py`, never `str(e)`. Require a test that asserts `caplog.text` contains no credential value after a failed SSH connection with auto-injected creds.
-
----
+5. **`known_hosts` key export may include comment field, causing TOFU to re-trigger and then reject the connection** — `key.export_public_key().decode()` may return `"ssh-rsa AAAA...== user@host"` (four fields). asyncssh `known_hosts` expects exactly `"hostname algorithm base64"` (three fields). A four-field entry causes asyncssh to treat the key as not found, re-triggering TOFU on the same host, which then hits the MITM rejection path and refuses the connection. Fix: `" ".join(key_export.split()[:2])` to keep only algorithm and base64.
 
 ## Implications for Roadmap
 
-The build order is dictated by one hard dependency: `credential_store.py` must exist before CLI subcommands, SSH auto-inject, or Proxmox config fallback. Everything else is parallelisable once that module is in place. PRMT-02 and CI/CD automation are fully independent of the credential work.
+Based on the dependency chain established in ARCHITECTURE.md, a three-phase structure is recommended:
 
-### Phase 1: Credential Store Foundation
+### Phase 1: Core SSH Reliability (TOFU + Shell Streaming)
 
-**Rationale:** `credential_store.py` is the blocking dependency for three other work items. Building it first with full test coverage (both `KEYRING_AVAILABLE=True` and `KEYRING_AVAILABLE=False` branches) de-risks the entire milestone. The headless fallback pattern established here must be correct before any consuming code is written.
-**Delivers:** `credential_store.py` with `get_credential`, `set_credential`, `delete_credential`; `KEYRING_AVAILABLE` guard; `homelab-mcp-ssh` / `homelab-mcp-proxmox` service name constants; `NoKeyringError` / `RuntimeError` / `ImportError` all handled; `keyring>=25.6.0` promoted to core in `pyproject.toml`
-**Addresses:** Prerequisite for `credentials` CLI subcommands, SSH auto-inject, and Proxmox config fallback
-**Avoids:** Pitfall 1 (keyring crashes on headless); Pitfall 5 (credential leak in exception messages)
+**Rationale:** TOFU fix unblocks integration tests for all subsequent work. Shell streaming fix is independent and has no downstream dependencies. These two fixes are the "make it work at all" layer.
 
-### Phase 2: CLI Extension
+**Delivers:**
+- `ssh_connect()` TOFU correctly populates `known_hosts` for all registration paths including keyring-only (`credentials add`) hosts
+- Interactive shell streams PTY output to the browser in real time (non-blocking `asyncio.wait_for` read loop)
+- Browser receives explicit EOF/error notifications instead of hanging silently on a blank terminal
+- Correct terminal dimensions (80x24) so shell prompts render correctly
 
-**Rationale:** With `credential_store.py` available, the `credentials` subparser and `--version` flag can be added to `server.py main()`. This is the primary user-visible surface of the credential feature and must not break the existing bare invocation.
-**Delivers:** `homelab-mcp credentials add/list/remove` subcommands; `homelab-mcp --version` flag; `getpass.getpass()` for interactive password prompts; `sys.exit(0)` before server starts in credentials path
-**Uses:** `argparse` stdlib subparsers; `credential_store.py`; `importlib.metadata.version()` (already imported in `server.py`)
-**Avoids:** Pitfall 2 (bare invocation regression) — regression test for `parse_args([])` is a required quality gate
+**Addresses features:** TOFU fix for keyring path (P1), interactive shell streaming fix (P1)
 
-### Phase 3: Credential Auto-Inject
+**Files:** `ssh_connection.py` (`_store_host_key` format + `threading.Lock`), `http_app.py` (`read_output` loop + EOF notification), `shell_session.py` (`term_size` inversion fix)
 
-**Rationale:** Wires the stored credentials into live tool call paths (`resolve_ssh_credentials()` and `MCPConfig`). This phase modifies existing production code and must be TDD-first — priority order tests before implementation. The `sanitize_error()` discipline must be enforced in every new logging path.
-**Delivers:** Keyring at priority 2 in `resolve_ssh_credentials()` (after explicit args, before SQLite DB); Proxmox password keyring fallback after env var check in `MCPConfig`; `credential_source` informational field in tool responses when auto-inject fires; env var precedence verified by test
-**Avoids:** Pitfall 5 (credential leak in logs); Pitfall 6 (silent override of explicit credentials); stale Proxmox token from env var rotation
+**Must avoid:** Deadlock from `asyncio.Lock` (must become `threading.Lock`); any `asyncio.create_task()` at module level in `shell_session.py`; `asyncio.run()` inside a synchronous callback
 
-### Phase 4: PRMT-02 Bug Fix
+### Phase 2: Agent Guidance (Credential Errors + Schema Hints)
 
-**Rationale:** Fully independent of all other work. Pure text change in `_build_decommission_result()` — no schema changes, no new imports. Can be pulled into any earlier phase slot if needed, but placing it here keeps phases clean.
-**Delivers:** Decommission workflow prompt generates `list_devices` lookup step before `decommission_device` call; `device_id=<found_id>` replaces `hostname=` in generated tool call instructions; eliminates AI schema validation error on every decommission workflow
-**Avoids:** AI generating invalid tool calls on every invocation of the decommission workflow
+**Rationale:** Depends on Phase 1 TOFU being stable so integration tests pass. These changes make the system recoverable — the agent can diagnose and guide the user through setup failures rather than looping on opaque errors.
 
-### Phase 5: CI/CD Release Automation
+**Delivers:**
+- `CredentialNotFoundError` with actionable message naming the exact CLI command and tool sequence for both auth paths
+- Differentiated errors: "no credentials configured" vs "credentials configured but rejected"
+- `list_keyring_credentials` tool (new) for agent-side credential state inspection
+- `start_interactive_shell` returns HTTP-mode detection error in stdio mode instead of a dead URL
+- Schema descriptions updated for `ssh_discover`, `ssh_execute_command`, `register_server`, and `start_interactive_shell`
 
-**Rationale:** Independent of all code changes. Placing it last allows TestPyPI validation to use the fully assembled v1.3 codebase. The one-time PyPI trusted publisher registration must be completed manually before this phase's quality gate.
-**Delivers:** `publish` job in `main.yml` using `pypa/gh-action-pypi-publish@release/v1`; OIDC trusted publishing with `id-token: write` at job level; version/tag assertion CI step; `publish` and `release` jobs run in parallel on `v*` tags
-**Uses:** `uv build`; `pypa/gh-action-pypi-publish@release/v1`; `pypi` GitHub environment for protection rules
-**Avoids:** Pitfall 3 (OIDC `invalid-publisher`); Pitfall 4 (double publish on non-tag push); Pitfall 7 (version/tag mismatch at publish time)
+**Addresses features:** SSH credential actionable error (P1), `list_keyring_credentials` tool (P1), schema credential guidance sentence (P1), browser-only shell description (differentiator)
+
+**Files:** `ssh_tools.py` (`resolve_ssh_credentials` raise path + new exception class), `tool_handlers/ssh_handlers.py` (catch `CredentialNotFoundError`, HTTP-mode check), `tool_schemas/ssh_tools_schema.py` (description strings), `tool_schemas/credential_tools_schema.py` (new `list_keyring_credentials` entry), `tool_handlers/credential_handlers.py` (new handler)
+
+**Must avoid:** Changing `resolve_ssh_credentials` before auditing tests that rely on `mcp_admin` fallthrough; breaking the DB Tier-3 fallback used by pre-v1.3 devices
+
+### Phase 3: Workflow Completeness (Prompt + Polish)
+
+**Rationale:** Purely additive. No existing code is modified. The `connect_to_device` prompt gives the agent a pre-built recipe for device onboarding, preventing the most common confusion where the agent calls `ssh_discover` with no credentials, gets an error, and has no path forward.
+
+**Delivers:**
+- `connect_to_device` prompt in `prompt_registry.py` sequencing the full setup flow: `setup_mcp_admin` -> `register_server` -> `credentials add` -> `ssh_discover` -> verify
+- Warning log in `resolve_ssh_credentials` Tier-2 path when registry entry exists but keyring returns `None` (registry/keyring desync)
+- Optional: `trust_host_key` tool if Phase 1 TOFU transparent fix proves insufficient for any edge cases
+
+**Addresses features:** `ssh_credential_setup` prompt (deferred in FEATURES.md but low cost), keyring desync warning (PITFALLS minor pitfall 11)
+
+**Files:** `prompt_registry.py` only (plus optionally `tool_schemas/` and `tool_handlers/` for `trust_host_key` if needed)
 
 ### Phase Ordering Rationale
 
-- Phase 1 must precede Phases 2 and 3 — both consume `credential_store.py` and cannot be built without it
-- Phases 2 and 3 can be developed in parallel once Phase 1 is merged
-- Phase 4 has zero dependencies and can be pulled into any slot if there is a scheduling reason to do so
-- Phase 5 has zero code dependencies but benefits from being last so the TestPyPI dry run uses the complete v1.3 build
+- Phase 1 TOFU fix must precede Phase 2 credential error work because integration tests that exercise `CredentialNotFoundError` require a working SSH connection to validate the full path
+- Phase 1 shell streaming fix is independent of both TOFU and credential work and can be developed as a parallel sub-task
+- Phase 2 schema description updates are string-only changes with no code dependencies — they can be written at any time but are grouped with the error-handling work they document
+- Phase 3 is purely additive and has zero blocking dependencies; it benefits from being written after Phase 2 has confirmed the correct credential workflow sequence
 
 ### Research Flags
 
-All phases use standard, well-documented patterns. No phase requires `/gsd:research-phase`.
+Phases that warrant investigation before or during implementation:
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (Credential Store):** `keyring` API is stable, documented, and already in the project; optional dep guard is a standard Python pattern; HIGH confidence throughout
-- **Phase 2 (CLI Extension):** argparse stdlib, two-level subparsers, `--version` action — all verified against existing `main()` structure; zero new patterns
-- **Phase 4 (PRMT-02 Fix):** Root cause confirmed by direct schema + prompt inspection; fix is text-only in a single function
+- **Phase 1 (TOFU key format):** The `export_public_key()` comment-stripping hypothesis is MEDIUM confidence. Needs a test that creates a real `SSHKey`, calls `export_public_key()`, and inspects the output format to confirm the comment is actually present before committing to the fix approach. Plan: write the verification test first; the fix (`" ".join(parts[:2])`) is safe regardless.
+- **Phase 1 (TOFU timeout root cause):** Two root causes are identified — key format corruption and credential hostname/IP label mismatch. The actual timeout on Mac may be either or both. The fix addresses both; verify which manifests via integration test before marking done.
 
-Phases warranting attention during execution (not more research, but implementation care):
-- **Phase 3 (Auto-Inject):** TDD-first is mandatory — the 5-priority SSH credential chain is complex, the silent-override pitfall is easy to miss, and `sanitize_error()` discipline must be enforced in every new exception handler
-- **Phase 5 (CI/CD):** The PyPI one-time manual setup step is external; TestPyPI dry run is a required quality gate before any production tag is pushed; version/tag alignment must be verified
+Phases with well-established patterns (skip deeper research):
 
----
+- **Phase 1 (shell streaming):** `asyncio.wait_for()` with `TimeoutError` catch is a standard non-blocking StreamReader pattern. Verified against asyncssh `stream.py` `read()` EOF behavior.
+- **Phase 2 (`CredentialNotFoundError`):** Standard Python exception pattern; handler catch pattern already established in codebase. No research needed.
+- **Phase 2 (`list_keyring_credentials` tool):** `credential_store.list_credentials("ssh")` already exists; needs only schema entry + handler wiring following the same pattern as `list_registered_servers`.
+- **Phase 3 (prompt):** `prompt_registry.py` builder pattern is established by existing prompts. No research needed.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | `keyring` 25.7.0 docs verified; `pypa/gh-action-pypi-publish` official action; argparse stdlib; `pyproject.toml` and `server.py` inspected directly; one net-new runtime dep with no uncertainty |
-| Features | HIGH | All features verified against codebase; credential priority chain matches existing `resolve_ssh_credentials()` structure confirmed by source inspection; PRMT-02 root cause confirmed by schema + prompt text inspection |
-| Architecture | HIGH | All integration points verified by direct source inspection; build order confirmed by dependency analysis; module boundary rationale consistent with existing codebase patterns |
-| Pitfalls | HIGH | Headless keyring failure confirmed by official docs and multiple real-world issue reports; argparse subparser behaviour verified against Python 3.12 docs; OIDC mismatch patterns from official PyPI troubleshooting docs |
+| Stack | HIGH | All three bugs verified by direct asyncssh source inspection; no new deps confirmed by reading `uv.lock` |
+| Features | HIGH | Root causes confirmed by codebase inspection; feature set is purely reactive to confirmed bugs with clear fix strategies |
+| Architecture | HIGH | All integration points verified by direct source read; build order derived from actual import dependencies; touch-point line counts verified |
+| Pitfalls | HIGH | Critical pitfalls verified against Python stdlib behavior (`asyncio.Lock` / `threading.Lock`) and direct codebase patterns; TOFU format hypothesis is MEDIUM pending live verification |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Proxmox `config.py` fallback insertion point:** ARCHITECTURE.md notes `config.py` was not deeply inspected in this research session. The env var precedence pattern is standard, but the exact insertion point for the keyring fallback should be verified against the actual constructor before writing tests.
-- **TestPyPI trusted publisher setup:** The first end-to-end OIDC publish cannot be validated before the PyPI trusted publisher is manually registered. Document the manual setup step explicitly in the Phase 5 plan; the TestPyPI dry run must be the first action taken in that phase.
-- **`keyring` behaviour on WSL2:** Confirmed headless failure from issue reports but not from a WSL2-specific test run. The `except Exception` guard handles this case regardless, so risk is low.
-
----
+- **TOFU key export format (MEDIUM):** The `export_public_key()` comment-stripping hypothesis needs a live verification test before Phase 1 implementation is finalized. The fix strategy is safe regardless, but confirming the comment field is actually present avoids over-engineering.
+- **Credential hostname/IP mismatch as TOFU timeout cause:** Identified as the most likely cause of reported timeouts by STACK.md analysis, but cannot be reproduced without a physical test device. The fix (improve error messages + document that `credentials add --hostname` must use the same label as used during discovery) is safe to ship without physical reproduction.
+- **`mcp_admin` test fallthrough audit (pre-implementation checklist):** Must run `git grep "mcp_admin" tests/` before Phase 2 implementation. Not a research gap — a required pre-work step.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [keyring 25.7.0 documentation](https://keyring.readthedocs.io/en/latest/) — API methods, `NoKeyringError`, `PYTHON_KEYRING_BACKEND`, backend list by platform
-- [keyring changelog](https://keyring.readthedocs.io/en/latest/history.html) — v25.6.0 warning removal confirmed; `NoKeyringError` present since v23.x
-- [PyPI Trusted Publishers documentation](https://docs.pypi.org/trusted-publishers/using-a-publisher/) — OIDC flow, required fields, one-time setup procedure
-- [PyPI Trusted Publishers: Troubleshooting](https://docs.pypi.org/trusted-publishers/troubleshooting/) — `invalid-publisher` causes enumerated
-- [pypa/gh-action-pypi-publish GitHub](https://github.com/pypa/gh-action-pypi-publish) — workflow YAML, `release/v1` recommendation, `id-token: write` requirement, PEP 740 attestations
-- [Python Packaging User Guide — publishing with CI/CD](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/) — canonical reference workflow
-- [Python stdlib argparse docs (3.12)](https://docs.python.org/3/library/argparse.html) — `add_subparsers`, `dest`, `set_defaults`, `action="version"`
-- Project codebase (first-party, direct inspection): `src/homelab_mcp/server.py`, `src/homelab_mcp/ssh_tools.py`, `src/homelab_mcp/config.py`, `src/homelab_mcp/database.py`, `src/homelab_mcp/prompt_registry.py`, `src/homelab_mcp/tool_schemas/infrastructure_tools_schema.py`, `pyproject.toml`, `.github/workflows/main.yml`
+
+- asyncssh 2.21.0 source, `.venv/lib/python3.12/site-packages/asyncssh/` — `connection.py` lines 1334-1344, 3473-3491, 4355-4388, 8128 (host key validation flow, `known_hosts` behavior, `create_session` defaults); `channel.py` lines 1170-1184 (`term_size` argument order); `process.py` lines 1456-1480 (`change_terminal_size` order); `client.py` lines 124-162 (`validate_host_public_key` contract); `stream.py` line 575 (SSHReader `read()` EOF behavior)
+- `src/homelab_mcp/ssh_connection.py` — TOFUSSHClient full implementation, `_tofu_lock` dead code, `_store_host_key` key export and write path
+- `src/homelab_mcp/ssh_tools.py` — `resolve_ssh_credentials()` four-tier priority chain, bare-miss fallthrough path (lines 36-131)
+- `src/homelab_mcp/shell_session.py` — `create_process` call with inverted `term_size=(24, 80)` at line 109
+- `src/homelab_mcp/http_app.py` — WebSocket `read_output` blocking loop, lines 189-202
+- `src/homelab_mcp/credential_store.py` — `store_credential`, `register_credential`; confirms no `ssh_connect` call in the `credentials add` path
+- `src/homelab_mcp/tool_schemas/ssh_tools_schema.py` — current description strings for `start_interactive_shell`, `ssh_discover`, `ssh_execute_command`
+- `src/homelab_mcp/tool_handlers/ssh_handlers.py` — `handle_ssh_discover`, `handle_start_interactive_shell` response construction
+- `uv.lock` — asyncssh 2.21.0, mcp 1.9.4, starlette 0.47.1, websockets 16.0 confirmed at locked versions
 
 ### Secondary (MEDIUM confidence)
-- [NoKeyringError in headless Linux — jaraco/keyring issue #566](https://github.com/jaraco/keyring/issues/566) — real-world confirmation of headless failure mode
-- [NoKeyringError in pypa/hatch — issue #671](https://github.com/pypa/hatch/issues/671) — second real-world confirmation from a different Python project
-- [PyPI Trusted Publisher pitfalls — dreamnetworking.nl, 2025](https://dreamnetworking.nl/blog/2025/01/07/pypi-trusted-publisher-management-and-pitfalls/) — hyphen/underscore mismatch, environment name mismatch cases
-- [GitHub Actions avoid double runs — Adam Johnson, 2025](https://adamj.eu/tech/2025/05/14/github-actions-avoid-simple-on/) — double-trigger prevention patterns
+
+- asyncssh documentation patterns — `known_hosts` + `client_factory` dual-validation behavior; `validate_host_public_key` synchronous-only constraint (corroborated by source inspection)
+- Python `threading.Lock` documentation — safe to acquire from synchronous callbacks called within asyncio coroutines (standard library, HIGH confidence on the pattern itself)
 
 ---
-*Research completed: 2026-03-14*
+*Research completed: 2026-03-13*
 *Ready for roadmap: yes*
