@@ -597,6 +597,16 @@ async def test_execute_get_vm_logs(mock_get_logs):
     mock_get_logs.assert_called_once_with(device_id=1, platform="docker", vm_name="test-container", lines=100)
 
 
+def test_start_interactive_shell_schema_mentions_http(
+) -> None:
+    """start_interactive_shell description must mention HTTP server mode or --http (SHELL-05)."""
+    tools = get_available_tools()
+    desc = tools["start_interactive_shell"]["description"]
+    assert "--http" in desc or "HTTP server mode" in desc, (
+        f"start_interactive_shell description must mention --http or HTTP server mode; got: {desc!r}"
+    )
+
+
 def test_vm_tool_schemas():
     """Test that all VM tools have proper schemas."""
     tools = get_available_tools()
