@@ -4,7 +4,7 @@ milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
 stopped_at: Completed 17-01-PLAN.md — credential_store.py with headless-safe keyring wrapper
-last_updated: "2026-03-15T01:32:48.922Z"
+last_updated: "2026-03-15T01:35:22.728Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4

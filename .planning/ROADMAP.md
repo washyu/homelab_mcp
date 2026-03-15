@@ -126,7 +126,7 @@ Plans:
 | 14. MCP Prompts | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 15. Preview Tool Split | v1.2 | 2/2 | Complete | 2026-03-13 |
 | 16. Quality Gate | v1.2 | 1/1 | Complete | 2026-03-13 |
-| 17. Credential Store Foundation | 1/1 | Complete   | 2026-03-15 | - |
+| 17. Credential Store Foundation | 1/1 | Complete    | 2026-03-15 | - |
 | 18. Credentials CLI + --version | v1.3 | 0/TBD | Not started | - |
 | 19. Credential Auto-Inject | v1.3 | 0/TBD | Not started | - |
 | 20. Release Automation + PRMT-02 | v1.3 | 0/TBD | Not started | - |
