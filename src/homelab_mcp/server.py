@@ -583,6 +583,14 @@ def main() -> None:
 Examples:
   uvx homelab-mcp                        # stdio mode (Claude Desktop)
   uvx homelab-mcp --http --port 8080     # HTTP mode (OpenWebUI)
+
+Credential management (OS keyring):
+  uvx homelab-mcp credentials add <hostname> <username>           # store SSH credential
+  uvx homelab-mcp credentials add <hostname> <username> --type proxmox  # store Proxmox credential
+  uvx homelab-mcp credentials list                                # list stored SSH credentials
+  uvx homelab-mcp credentials list --type proxmox                 # list stored Proxmox credentials
+  uvx homelab-mcp credentials remove <hostname>                   # remove SSH credential
+  uvx homelab-mcp credentials remove <hostname> --type proxmox    # remove Proxmox credential
 """,
     )
     parser.add_argument(
