@@ -66,7 +66,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 **Milestone Goal:** Fix bugs and workflow issues discovered during real Mac testing — interactive shell, SSH credential flow, and TOFU known_hosts handling.
 
-- [ ] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming
+- [x] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming (completed 2026-03-15)
 - [ ] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable
 - [ ] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning
 
@@ -82,7 +82,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. Browser tab receives an explicit disconnection message when the shell session ends instead of hanging silently
   4. Shell prompt renders at correct width — lines do not wrap or truncate at column 24
   5. `known_hosts` file entries have exactly three fields (hostname, algorithm, base64) with no trailing comment
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 21-01-PLAN.md — Fix TOFU known_hosts key format and replace dead asyncio.Lock with threading.Lock
 - [ ] 21-02-PLAN.md — Fix interactive shell term_size, non-blocking PTY reads, and EOF notification
@@ -132,6 +132,6 @@ Plans:
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 21. Core SSH Reliability | 1/2 | In Progress|  | - |
+| 21. Core SSH Reliability | 2/2 | Complete   | 2026-03-15 | - |
 | 22. Agent Guidance | v1.4 | 0/TBD | Not started | - |
 | 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |

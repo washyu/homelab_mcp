@@ -9,9 +9,9 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 
 ### Interactive Shell
 
-- [ ] **SHELL-01**: Interactive shell streams PTY output to browser in real time (non-blocking read loop)
-- [ ] **SHELL-02**: Interactive shell uses correct terminal dimensions (80 cols x 24 rows)
-- [ ] **SHELL-03**: Browser receives explicit EOF/error notification instead of hanging silently
+- [x] **SHELL-01**: Interactive shell streams PTY output to browser in real time (non-blocking read loop)
+- [x] **SHELL-02**: Interactive shell uses correct terminal dimensions (80 cols x 24 rows)
+- [x] **SHELL-03**: Browser receives explicit EOF/error notification instead of hanging silently
 - [ ] **SHELL-04**: `start_interactive_shell` returns actionable error in stdio mode instead of dead URL
 - [ ] **SHELL-05**: `start_interactive_shell` schema description states browser-only requirement
 
@@ -50,9 +50,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHELL-01 | Phase 21 | Pending |
-| SHELL-02 | Phase 21 | Pending |
-| SHELL-03 | Phase 21 | Pending |
+| SHELL-01 | Phase 21 | Complete |
+| SHELL-02 | Phase 21 | Complete |
+| SHELL-03 | Phase 21 | Complete |
 | SHELL-04 | Phase 22 | Pending |
 | SHELL-05 | Phase 22 | Pending |
 | CRED-01 | Phase 22 | Pending |

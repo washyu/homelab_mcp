@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 21-core-ssh-reliability 21-01-PLAN.md
-last_updated: "2026-03-15T17:54:36.462Z"
+stopped_at: Completed 21-02-PLAN.md
+last_updated: "2026-03-15T17:57:34.628Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 21-core-ssh-reliability P01 | 4 | 2 tasks | 2 files |
+| Phase 21-core-ssh-reliability P02 | 7 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,9 @@ Key constraints for v1.4 (from research):
 - Module-level imports in `ssh_tools.py` required for monkeypatching — do not switch to function-body imports
 - [Phase 21-core-ssh-reliability]: Use threading.Lock not asyncio.Lock — validate_host_public_key is a synchronous callback, asyncio.Lock is dead code there
 - [Phase 21-core-ssh-reliability]: Strip known_hosts comment by splitting export_public_key output and joining only parts[:2] — known_hosts format requires exactly algorithm + base64
+- [Phase 21-02]: asyncio.wait_for(timeout=0.05) for non-blocking PTY reads — TimeoutError logged at DEBUG level to satisfy no-silent-exception project rule
+- [Phase 21-02]: term_size=(80, 24) — cols first, rows second — matches asyncssh create_process convention
+- [Phase 21-02]: EOF test exercises read_output logic directly to avoid WebSocketDisconnect task-cancellation race condition
 
 ### Pending Todos
 
@@ -80,6 +84,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T17:54:36.460Z
-Stopped at: Completed 21-core-ssh-reliability 21-01-PLAN.md
+Last session: 2026-03-15T17:57:34.626Z
+Stopped at: Completed 21-02-PLAN.md
 Resume file: None
