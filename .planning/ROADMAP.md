@@ -62,7 +62,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
-### 🚧 v1.4 Real-World Reliability (In Progress)
+### v1.4 Real-World Reliability (In Progress)
 
 **Milestone Goal:** Fix bugs and workflow issues discovered during real Mac testing — interactive shell, SSH credential flow, and TOFU known_hosts handling.
 
@@ -97,7 +97,10 @@ Plans:
   3. `ssh_discover` and `ssh_execute_command` tool descriptions tell the agent where to look when credentials are missing
   4. `start_interactive_shell` in stdio mode returns an actionable error explaining the browser-only constraint rather than a dead URL
   5. `start_interactive_shell` schema description states the browser-only requirement so the agent does not report success in non-HTTP deployments
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 22-01-PLAN.md — Raise actionable CredentialNotFoundError and add list_keyring_credentials tool
+- [ ] 22-02-PLAN.md — Add credential recovery guidance to SSH tool descriptions and stdio guard
 
 ### Phase 23: Workflow Completeness
 **Goal**: The agent has a pre-built onboarding recipe for new devices and detects credential store inconsistencies before they cause silent failures
@@ -132,6 +135,6 @@ Plans:
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 21. Core SSH Reliability | 2/2 | Complete    | 2026-03-15 | - |
-| 22. Agent Guidance | v1.4 | 0/TBD | Not started | - |
+| 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
+| 22. Agent Guidance | v1.4 | 0/2 | Not started | - |
 | 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |
