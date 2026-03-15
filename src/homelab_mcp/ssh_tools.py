@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
 
 
+class CredentialNotFoundError(RuntimeError):
+    """Raised when no credentials are found for a hostname in any tier."""
+
+    pass
+
+
 @dataclass
 class SSHCredentials:
     """Resolved SSH credentials for connection."""
@@ -123,11 +129,10 @@ def resolve_ssh_credentials(
                 key_path=str(mcp_key),
             )
 
-    # Return minimal credentials - will need password or explicit key
-    return SSHCredentials(
-        hostname=hostname,
-        username=resolved_username,
-        port=port,
+    raise CredentialNotFoundError(
+        f"No credentials found for {hostname}. "
+        "Run `homelab-mcp credentials add <hostname> <username>` in your terminal, "
+        "or call the `register_server` MCP tool to store credentials."
     )
 
 
