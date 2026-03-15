@@ -262,3 +262,19 @@ def test_credentials_remove_proxmox(
     _cmd_credentials_remove(args)
     captured = capsys.readouterr()
     assert "Removed proxmox credential for px1" in captured.out
+
+
+def test_help_output_includes_credentials(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """--help output must mention credentials subcommand so users can discover it."""
+    import sys  # noqa: PLC0415
+
+    from homelab_mcp.server import main  # noqa: PLC0415
+
+    monkeypatch.setattr(sys, "argv", ["homelab-mcp", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 0
+    combined = capsys.readouterr().out + capsys.readouterr().err
+    assert "credentials" in combined, "Expected 'credentials' in --help output"
