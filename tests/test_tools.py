@@ -740,3 +740,38 @@ async def test_handle_list_keyring_credentials_passes_credential_type(mock_list_
     data = json.loads(result["content"][0]["text"])
     assert data["credential_type"] == "proxmox"
     assert data["count"] == 0
+
+
+def test_setup_mcp_admin_schema_password_not_required():
+    """Regression: setup_mcp_admin must not require password (keyring auto-inject)."""
+    tools = get_available_tools()
+    schema = tools["setup_mcp_admin"]["inputSchema"]
+    assert "password" not in schema["required"], "password must not be required — keyring auto-injects"
+    assert "username" not in schema["required"], "username must not be required — keyring auto-injects"
+    assert "hostname" in schema["required"]
+
+
+def test_update_mcp_admin_groups_schema_password_not_required():
+    """Regression: update_mcp_admin_groups must not require password (keyring auto-inject)."""
+    tools = get_available_tools()
+    schema = tools["update_mcp_admin_groups"]["inputSchema"]
+    assert "password" not in schema["required"], "password must not be required — keyring auto-injects"
+    assert "username" not in schema["required"], "username must not be required — keyring auto-injects"
+    assert "hostname" in schema["required"]
+
+
+def test_no_tool_has_password_required():
+    """Audit guard: no tool schema should have 'password' in its required array.
+
+    SSH tools use keyring auto-inject. Proxmox LXC 'password' is for container root, not SSH auth,
+    but it is also optional. If a future tool legitimately needs a required password field,
+    update this test with an explicit allowlist.
+    """
+    tools = get_available_tools()
+    for tool_name, tool_def in tools.items():
+        schema = tool_def.get("inputSchema", {})
+        required = schema.get("required", [])
+        assert "password" not in required, (
+            f"Tool '{tool_name}' has 'password' in required — "
+            f"use resolve_ssh_credentials() for SSH auth or make it optional"
+        )
