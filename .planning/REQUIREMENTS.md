@@ -17,8 +17,8 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 
 ### SSH Credential Flow
 
-- [ ] **CRED-01**: `resolve_ssh_credentials` raises actionable error naming `credentials add` and `register_server` when all tiers miss
-- [ ] **CRED-02**: Agent can inspect keyring credential state via `list_keyring_credentials` MCP tool
+- [x] **CRED-01**: `resolve_ssh_credentials` raises actionable error naming `credentials add` and `register_server` when all tiers miss
+- [x] **CRED-02**: Agent can inspect keyring credential state via `list_keyring_credentials` MCP tool
 - [x] **CRED-03**: `ssh_discover` and `ssh_execute_command` schema descriptions include credential recovery guidance
 
 ### TOFU Known Hosts
@@ -55,8 +55,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SHELL-03 | Phase 21 | Complete |
 | SHELL-04 | Phase 22 | Complete |
 | SHELL-05 | Phase 22 | Complete |
-| CRED-01 | Phase 22 | Pending |
-| CRED-02 | Phase 22 | Pending |
+| CRED-01 | Phase 22 | Complete |
+| CRED-02 | Phase 22 | Complete |
 | CRED-03 | Phase 22 | Complete |
 | TOFU-01 | Phase 21 | Complete |
 | TOFU-02 | Phase 21 | Complete |
