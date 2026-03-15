@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 18-02-PLAN.md — Extend credential_store with credential_type param and JSON registry
-last_updated: "2026-03-15T01:59:40.069Z"
+stopped_at: Completed 18-03-PLAN.md — CLI handlers and --version flag
+last_updated: "2026-03-15T02:04:14.027Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 80
 ---
 
@@ -64,6 +64,7 @@ Progress: [████████░░] 80%
 | Phase 17-credential-store-foundation P01 | 25 | 2 tasks | 3 files |
 | Phase 18-credentials-cli-version P01 | 4 | 2 tasks | 2 files |
 | Phase 18-credentials-cli-version P02 | 1 | 1 tasks | 1 files |
+| Phase 18-credentials-cli-version P03 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ Key constraints for v1.3 (from research):
 - [Phase 18-credentials-cli-version]: Handler functions tested directly (_cmd_credentials_add/list/remove) via argparse.Namespace — avoids argparse dispatch complexity
 - [Phase 18-credentials-cli-version]: type: ignore[return-value] in plan was wrong mypy code — corrected to no-any-return for json.loads Any return
 - [Phase 18-credentials-cli-version]: _SERVICE_NAME string kept alongside _SERVICE_NAMES dict for backward compatibility
+- [Phase 18-credentials-cli-version]: Module-level credential_store imports in server.py for test monkeypatching support
+- [Phase 18-credentials-cli-version]: argparse dest names (hostname/username/credential_type) match test Namespace expectations
 
 ### Pending Todos
 
@@ -129,6 +132,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T01:59:40.067Z
-Stopped at: Completed 18-02-PLAN.md — Extend credential_store with credential_type param and JSON registry
+Last session: 2026-03-15T02:04:14.024Z
+Stopped at: Completed 18-03-PLAN.md — CLI handlers and --version flag
 Resume file: None
