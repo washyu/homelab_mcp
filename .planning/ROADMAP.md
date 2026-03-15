@@ -143,4 +143,4 @@ Plans:
 | 17. Credential Store Foundation | v1.3 | 1/1 | Complete | 2026-03-15 |
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | 2/2 | Complete    | 2026-03-15 | - |
-| 20. Release Automation + PRMT-02 | 3/3 | Complete   | 2026-03-15 | - |
+| 20. Release Automation + PRMT-02 | 3/3 | Complete    | 2026-03-15 | - |
