@@ -49,6 +49,17 @@ HOMELAB_PROMPTS: dict[str, types.Prompt] = {
         description="Read all infrastructure resources and summarize homelab state",
         arguments=[],
     ),
+    "connect_to_device": types.Prompt(
+        name="connect_to_device",
+        description="Step-by-step onboarding workflow for connecting a new device to the homelab",
+        arguments=[
+            types.PromptArgument(
+                name="hostname",
+                description="Hostname or IP address of the new device to onboard",
+                required=True,
+            )
+        ],
+    ),
 }
 
 
@@ -111,6 +122,31 @@ If pre-flight checks pass:
     )
 
 
+def _build_connect_to_device_result(args: dict[str, str]) -> types.GetPromptResult:
+    """Build the connect_to_device prompt result (TOFU-03)."""
+    hostname = args.get("hostname", "<hostname>")
+    text = f"""Follow these steps to onboard {hostname} into your homelab:
+
+1. Call setup_mcp_admin with host="{hostname}" to create the mcp_admin user and \
+SSH key on the device.
+2. Run the CLI command: homelab-mcp credentials add {hostname} mcp_admin — \
+this stores the SSH credential in your OS keyring.
+3. Call register_server with hostname="{hostname}" and username="mcp_admin" to \
+add the device to the server database.
+4. Call ssh_discover with host="{hostname}" to collect hardware and system info \
+and record it in the database.
+5. Call discover_and_map with host="{hostname}" to add the device to the network \
+sitemap.
+6. Call verify_mcp_admin with host="{hostname}" to confirm that mcp_admin can \
+connect successfully.
+
+If any step fails, fix the issue before proceeding to the next step."""
+    return types.GetPromptResult(
+        description="Full device onboarding workflow",
+        messages=[_make_user_message(text)],
+    )
+
+
 def _build_health_check_result(args: dict[str, str]) -> types.GetPromptResult:
     """Build the homelab_health_check prompt result (PRMT-04)."""
     text = """Read the following MCP resources and summarize homelab infrastructure state:
@@ -153,6 +189,8 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
         return _build_deploy_service_result(args)
     elif name == "homelab_health_check":
         return _build_health_check_result(args)
+    elif name == "connect_to_device":
+        return _build_connect_to_device_result(args)
     else:
         raise McpError(
             types.ErrorData(
