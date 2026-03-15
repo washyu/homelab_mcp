@@ -132,6 +132,6 @@ Plans:
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 21. Core SSH Reliability | 2/2 | Complete   | 2026-03-15 | - |
+| 21. Core SSH Reliability | 2/2 | Complete    | 2026-03-15 | - |
 | 22. Agent Guidance | v1.4 | 0/TBD | Not started | - |
 | 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |
