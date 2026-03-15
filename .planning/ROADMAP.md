@@ -67,7 +67,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 **Milestone Goal:** Fix bugs and workflow issues discovered during real Mac testing — interactive shell, SSH credential flow, and TOFU known_hosts handling.
 
 - [x] **Phase 21: Core SSH Reliability** — Fix TOFU known_hosts corruption and interactive shell streaming (completed 2026-03-15)
-- [ ] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable
+- [x] **Phase 22: Agent Guidance** — Make credential failures recoverable and shell mode detection actionable (completed 2026-03-15)
 - [ ] **Phase 23: Workflow Completeness** — Add device onboarding prompt and keyring desync warning
 
 ## Phase Details
@@ -97,7 +97,7 @@ Plans:
   3. `ssh_discover` and `ssh_execute_command` tool descriptions tell the agent where to look when credentials are missing
   4. `start_interactive_shell` in stdio mode returns an actionable error explaining the browser-only constraint rather than a dead URL
   5. `start_interactive_shell` schema description states the browser-only requirement so the agent does not report success in non-HTTP deployments
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 22-01-PLAN.md — Raise actionable CredentialNotFoundError and add list_keyring_credentials tool
 - [ ] 22-02-PLAN.md — Add credential recovery guidance to SSH tool descriptions and stdio guard
@@ -136,5 +136,5 @@ Plans:
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 21. Core SSH Reliability | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 22. Agent Guidance | v1.4 | 0/2 | Not started | - |
+| 22. Agent Guidance | 2/2 | Complete   | 2026-03-15 | - |
 | 23. Workflow Completeness | v1.4 | 0/TBD | Not started | - |

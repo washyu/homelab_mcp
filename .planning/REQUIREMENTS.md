@@ -12,14 +12,14 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 - [x] **SHELL-01**: Interactive shell streams PTY output to browser in real time (non-blocking read loop)
 - [x] **SHELL-02**: Interactive shell uses correct terminal dimensions (80 cols x 24 rows)
 - [x] **SHELL-03**: Browser receives explicit EOF/error notification instead of hanging silently
-- [ ] **SHELL-04**: `start_interactive_shell` returns actionable error in stdio mode instead of dead URL
-- [ ] **SHELL-05**: `start_interactive_shell` schema description states browser-only requirement
+- [x] **SHELL-04**: `start_interactive_shell` returns actionable error in stdio mode instead of dead URL
+- [x] **SHELL-05**: `start_interactive_shell` schema description states browser-only requirement
 
 ### SSH Credential Flow
 
 - [ ] **CRED-01**: `resolve_ssh_credentials` raises actionable error naming `credentials add` and `register_server` when all tiers miss
 - [ ] **CRED-02**: Agent can inspect keyring credential state via `list_keyring_credentials` MCP tool
-- [ ] **CRED-03**: `ssh_discover` and `ssh_execute_command` schema descriptions include credential recovery guidance
+- [x] **CRED-03**: `ssh_discover` and `ssh_execute_command` schema descriptions include credential recovery guidance
 
 ### TOFU Known Hosts
 
@@ -53,11 +53,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SHELL-01 | Phase 21 | Complete |
 | SHELL-02 | Phase 21 | Complete |
 | SHELL-03 | Phase 21 | Complete |
-| SHELL-04 | Phase 22 | Pending |
-| SHELL-05 | Phase 22 | Pending |
+| SHELL-04 | Phase 22 | Complete |
+| SHELL-05 | Phase 22 | Complete |
 | CRED-01 | Phase 22 | Pending |
 | CRED-02 | Phase 22 | Pending |
-| CRED-03 | Phase 22 | Pending |
+| CRED-03 | Phase 22 | Complete |
 | TOFU-01 | Phase 21 | Complete |
 | TOFU-02 | Phase 21 | Complete |
 | TOFU-03 | Phase 23 | Pending |

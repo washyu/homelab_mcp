@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-03-15T18:00:59.829Z"
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-03-15T18:26:17.631Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
   percent: 0
 ---
 
@@ -52,6 +52,8 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 21-core-ssh-reliability P01 | 4 | 2 tasks | 2 files |
 | Phase 21-core-ssh-reliability P02 | 7 | 2 tasks | 4 files |
+| Phase 22-agent-guidance P02 | 6 | 2 tasks | 8 files |
+| Phase 22-agent-guidance P01 | 5 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -72,6 +74,10 @@ Key constraints for v1.4 (from research):
 - [Phase 21-02]: asyncio.wait_for(timeout=0.05) for non-blocking PTY reads — TimeoutError logged at DEBUG level to satisfy no-silent-exception project rule
 - [Phase 21-02]: term_size=(80, 24) — cols first, rows second — matches asyncssh create_process convention
 - [Phase 21-02]: EOF test exercises read_output logic directly to avoid WebSocketDisconnect task-cancellation race condition
+- [Phase 22-agent-guidance]: SHELL-04: Check MCP_HTTP_ENABLED env var as canonical stdio guard — matches server.py usage
+- [Phase 22-agent-guidance]: list_keyring_credentials reads credential_store.list_credentials (existing function) and is annotated read-only
+- [Phase 22-agent-guidance]: CredentialNotFoundError extends RuntimeError — propagates cleanly through ssh_connection_wrapper except Exception catch
+- [Phase 22-agent-guidance]: list_keyring_credentials marked read-only in tool_annotations.py — queries keyring state, no side effects
 
 ### Pending Todos
 
@@ -84,6 +90,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T17:57:34.626Z
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-03-15T18:26:17.629Z
+Stopped at: Completed 22-01-PLAN.md
 Resume file: None
