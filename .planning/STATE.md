@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Credentials & Release Automation
 status: Roadmap ready — begin with Phase 17
-stopped_at: Completed 18-01-PLAN.md — Wave 0 RED test scaffold for credentials CLI and --version
-last_updated: "2026-03-15T01:56:32.675Z"
+stopped_at: Completed 18-02-PLAN.md — Extend credential_store with credential_type param and JSON registry
+last_updated: "2026-03-15T01:59:40.069Z"
 last_activity: 2026-03-14 — v1.3 roadmap created (Phases 17-20)
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 80
 ---
 
@@ -63,6 +63,7 @@ Progress: [████████░░] 80%
 | Phase 16-quality-gate P01 | 8 | 2 tasks | 4 files |
 | Phase 17-credential-store-foundation P01 | 25 | 2 tasks | 3 files |
 | Phase 18-credentials-cli-version P01 | 4 | 2 tasks | 2 files |
+| Phase 18-credentials-cli-version P02 | 1 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,8 @@ Key constraints for v1.3 (from research):
 - [Phase 18-credentials-cli-version]: Local import pattern inside test function bodies used for all new symbols — consistent with Phases 12-17 pattern
 - [Phase 18-credentials-cli-version]: test_bare_invocation_starts_server is GREEN because bare invocation behavior already exists — guards against regression
 - [Phase 18-credentials-cli-version]: Handler functions tested directly (_cmd_credentials_add/list/remove) via argparse.Namespace — avoids argparse dispatch complexity
+- [Phase 18-credentials-cli-version]: type: ignore[return-value] in plan was wrong mypy code — corrected to no-any-return for json.loads Any return
+- [Phase 18-credentials-cli-version]: _SERVICE_NAME string kept alongside _SERVICE_NAMES dict for backward compatibility
 
 ### Pending Todos
 
@@ -126,6 +129,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T01:56:32.671Z
-Stopped at: Completed 18-01-PLAN.md — Wave 0 RED test scaffold for credentials CLI and --version
+Last session: 2026-03-15T01:59:40.067Z
+Stopped at: Completed 18-02-PLAN.md — Extend credential_store with credential_type param and JSON registry
 Resume file: None
