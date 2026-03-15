@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 Phase: — (milestone complete)
 Plan: —
 Status: ✅ v1.3 shipped — all 4 phases, 9 plans complete
-Last activity: 2026-03-15 - Completed quick task 5: we are missing the new cli arguments for the keystore in the command line help output
+Last activity: 2026-03-15 - Completed quick task 6: update README and setup docs to reflect v1.3
 
 Progress: [██████████] 100%
 
@@ -143,6 +143,7 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 5 | we are missing the new cli arguments for the keystore in the command line help output | 2026-03-15 | 88e972f | [5-we-are-missing-the-new-cli-arguments-for](./quick/5-we-are-missing-the-new-cli-arguments-for/) |
+| 6 | update README and setup docs to reflect v1.3 (PyPI/uvx, credentials CLI, Python 3.12+) | 2026-03-15 | 1357903 | [6-update-readme-and-setup-docs-to-reflect-](./quick/6-update-readme-and-setup-docs-to-reflect-/) |
 
 ### Blockers/Concerns
 
@@ -151,6 +152,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T04:06:21.405Z
-Stopped at: Completed 20-03-PLAN.md — PRMT-02 fix: decommission_device_workflow uses device_id via get_network_sitemap
+Last session: 2026-03-15T07:15:00Z
+Stopped at: Completed quick task 6: update README and setup docs to reflect v1.3
 Resume file: None
