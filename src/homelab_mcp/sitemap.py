@@ -330,7 +330,7 @@ async def discover_and_store(
 
     return json.dumps(
         {
-            "status": "success",
+            "status": device.status,
             "device_id": device_id,
             "hostname": device.hostname,
             "discovery_status": device.status,

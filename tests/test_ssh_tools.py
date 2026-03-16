@@ -380,7 +380,7 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     assert result_data["mcp_admin_setup"]["sudo_access"] == "Success: Added to sudo group"
     assert result_data["mcp_admin_setup"]["ssh_key"] == "Success: SSH key installed"
     assert result_data["mcp_admin_setup"]["passwordless_sudo"] == "Success: Passwordless sudo enabled"
-    assert result_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin access verified"
+    assert result_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin SSH key auth verified"
 
 
 @pytest.mark.asyncio
@@ -774,10 +774,13 @@ async def test_setup_remote_mcp_admin_uses_keyring(mock_connect, mock_path, mock
         password=None,
         port=22,
     )
-    # Verify ssh_connect used resolved credentials
-    mock_connect.assert_called_once()
-    call_kwargs = mock_connect.call_args
-    assert call_kwargs.kwargs.get("password") == "resolved-from-keyring" or call_kwargs[1].get("password") == "resolved-from-keyring"
+    # Verify first ssh_connect used resolved credentials (second is key auth verification)
+    assert mock_connect.call_count == 2
+    first_call = mock_connect.call_args_list[0]
+    assert first_call.kwargs.get("password") == "resolved-from-keyring" or first_call[1].get("password") == "resolved-from-keyring"
+    # Second call is the key auth verification
+    second_call = mock_connect.call_args_list[1]
+    assert second_call.kwargs.get("username") == "mcp_admin" or second_call[1].get("username") == "mcp_admin"
 
 
 @pytest.mark.asyncio

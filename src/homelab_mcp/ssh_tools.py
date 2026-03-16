@@ -72,29 +72,49 @@ def resolve_ssh_credentials(
             password=password,
         )
 
+    # Tier 1.5: If caller asked for mcp_admin, prefer the mcp_admin SSH key
+    if username == "mcp_admin":
+        mcp_key = get_mcp_ssh_key_path()
+        if mcp_key.exists():
+            return SSHCredentials(
+                hostname=hostname,
+                username="mcp_admin",
+                port=port,
+                key_path=str(mcp_key),
+            )
+
     # Tier 2: Keyring lookup (INJECT-01) — only runs when no explicit password/key_path
     registry_entries = list_credentials(credential_type="ssh")
     matched = [e for e in registry_entries if e["hostname"] == hostname]
     if matched:
         stored_username = matched[0]["username"]
-        resolved_username = username or stored_username
-        keyring_password = get_credential(hostname, stored_username, credential_type="ssh")
-        if keyring_password:
-            logger.debug("Auto-injected keyring credential for %s", hostname)
-            return SSHCredentials(
-                hostname=hostname,
-                username=resolved_username,
-                port=port,
-                password=keyring_password,
+        # Only inject keyring password if username matches or caller didn't specify one
+        if username is None or username == stored_username:
+            resolved_username = username or stored_username
+            keyring_password = get_credential(hostname, stored_username, credential_type="ssh")
+            if keyring_password:
+                logger.debug("Auto-injected keyring credential for %s", hostname)
+                return SSHCredentials(
+                    hostname=hostname,
+                    username=resolved_username,
+                    port=port,
+                    password=keyring_password,
+                )
+            logger.warning(
+                "Credential desync for %s (user: %s): registry entry exists but keyring "
+                "returned None — re-run 'homelab-mcp credentials add %s %s' to restore",
+                hostname,
+                stored_username,
+                hostname,
+                stored_username,
             )
-        logger.warning(
-            "Credential desync for %s (user: %s): registry entry exists but keyring "
-            "returned None — re-run 'homelab-mcp credentials add %s %s' to restore",
-            hostname,
-            stored_username,
-            hostname,
-            stored_username,
-        )
+        else:
+            logger.debug(
+                "Keyring has credentials for %s@%s but caller asked for %s — skipping",
+                stored_username,
+                hostname,
+                username,
+            )
 
     # Try to find stored credentials
     try:
@@ -370,15 +390,21 @@ async def setup_remote_mcp_admin(
                 )
                 setup_results["passwordless_sudo"] = f"Failed: {stderr_text}"
 
-            # Test SSH key authentication
-            test_conn = await _sudo_run(conn, "-u mcp_admin whoami", password=creds.password, check=False)
-            if test_conn.exit_status == 0:
-                setup_results["test_access"] = "Success: mcp_admin access verified"
-            else:
-                stderr_text = (
-                    test_conn.stderr.decode() if isinstance(test_conn.stderr, bytes) else str(test_conn.stderr)
-                )
-                setup_results["test_access"] = f"Failed: {stderr_text}"
+            # Test actual SSH key authentication (connect as mcp_admin with the key)
+            try:
+                async with await ssh_connect(
+                    hostname=hostname,
+                    username="mcp_admin",
+                    port=creds.port,
+                    key_path=key_path,
+                ) as test_conn:
+                    test_result = await test_conn.run("whoami", check=False)
+                    if test_result.exit_status == 0:
+                        setup_results["test_access"] = "Success: mcp_admin SSH key auth verified"
+                    else:
+                        setup_results["test_access"] = "Failed: connected but whoami failed"
+            except Exception as e:
+                setup_results["test_access"] = f"Failed: SSH key auth failed — {sanitize_error(e)}"
 
         return json.dumps(
             {
