@@ -67,7 +67,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "verify_mcp_admin": {
-        "description": "Verify SSH key access to mcp_admin account on a remote system",
+        "description": "Verify SSH key access to mcp_admin account on a remote system. Checks sshd_config for PubkeyAuthentication and tests actual key auth.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -79,6 +79,11 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "integer",
                     "description": "SSH port (default: 22)",
                     "default": 22,
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Timeout in seconds (default: 30)",
+                    "default": 30,
                 },
             },
             "required": ["hostname"],

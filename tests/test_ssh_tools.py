@@ -342,8 +342,12 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
 
-    test_conn = MagicMock()
-    test_conn.exit_status = 0
+    sshd_check = MagicMock()  # grep PubkeyAuthentication — not found (default = enabled)
+    sshd_check.exit_status = 1
+    sshd_check.stdout = ""
+
+    test_whoami = MagicMock()
+    test_whoami.exit_status = 0
 
     mock_conn.run.side_effect = [
         user_check,
@@ -357,7 +361,8 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
         mkdir_cmd,
         add_key,
         sudoers_setup,
-        test_conn,
+        sshd_check,
+        test_whoami,
     ]
 
     # ssh_connect is async, returns a connection usable as async context manager

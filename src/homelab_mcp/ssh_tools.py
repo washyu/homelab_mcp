@@ -390,21 +390,49 @@ async def setup_remote_mcp_admin(
                 )
                 setup_results["passwordless_sudo"] = f"Failed: {stderr_text}"
 
+            # Check sshd_config for PubkeyAuthentication
+            sshd_check = await _sudo_run(
+                conn,
+                "grep -i '^PubkeyAuthentication' /etc/ssh/sshd_config",
+                password=creds.password,
+                check=False,
+            )
+            pubkey_auth_enabled = True
+            if sshd_check.exit_status == 0 and sshd_check.stdout:
+                sshd_line = (
+                    (sshd_check.stdout.decode() if isinstance(sshd_check.stdout, bytes) else str(sshd_check.stdout))
+                    .strip()
+                    .lower()
+                )
+                if "no" in sshd_line:
+                    pubkey_auth_enabled = False
+                    setup_results["sshd_config"] = (
+                        "Warning: PubkeyAuthentication is disabled in /etc/ssh/sshd_config. "
+                        "SSH key auth will not work until you run: "
+                        "sudo sed -i 's/^PubkeyAuthentication no/PubkeyAuthentication yes/' "
+                        "/etc/ssh/sshd_config && sudo systemctl reload ssh"
+                    )
+
             # Test actual SSH key authentication (connect as mcp_admin with the key)
-            try:
-                async with await ssh_connect(
-                    hostname=hostname,
-                    username="mcp_admin",
-                    port=creds.port,
-                    key_path=key_path,
-                ) as test_conn:
-                    test_result = await test_conn.run("whoami", check=False)
-                    if test_result.exit_status == 0:
-                        setup_results["test_access"] = "Success: mcp_admin SSH key auth verified"
-                    else:
-                        setup_results["test_access"] = "Failed: connected but whoami failed"
-            except Exception as e:
-                setup_results["test_access"] = f"Failed: SSH key auth failed — {sanitize_error(e)}"
+            if not pubkey_auth_enabled:
+                setup_results["test_access"] = (
+                    "Skipped: PubkeyAuthentication is disabled — enable it first (see sshd_config warning)"
+                )
+            else:
+                try:
+                    async with await ssh_connect(
+                        hostname=hostname,
+                        username="mcp_admin",
+                        port=creds.port,
+                        key_path=key_path,
+                    ) as test_conn:
+                        test_result = await test_conn.run("whoami", check=False)
+                        if test_result.exit_status == 0:
+                            setup_results["test_access"] = "Success: mcp_admin SSH key auth verified"
+                        else:
+                            setup_results["test_access"] = "Failed: connected but whoami failed"
+                except Exception as e:
+                    setup_results["test_access"] = f"Failed: SSH key auth failed — {sanitize_error(e)}"
 
         return json.dumps(
             {
@@ -421,7 +449,7 @@ async def setup_remote_mcp_admin(
         return json.dumps({"status": "error", "hostname": hostname, "error": sanitize_error(e)}, indent=2)
 
 
-@ssh_connection_wrapper(timeout_seconds=15.0)
+@ssh_connection_wrapper(timeout_seconds=30.0)
 async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
     """Verify SSH key access to mcp_admin account on remote system."""
     key_path = get_mcp_ssh_key_path()
@@ -431,10 +459,49 @@ async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
             {
                 "status": "error",
                 "hostname": hostname,
-                "error": "MCP SSH key not found. Run ensure_mcp_ssh_key() first.",
+                "error": "MCP SSH key not found. Run setup_mcp_admin first.",
             },
             indent=2,
         )
+
+    # First, check sshd_config for PubkeyAuthentication using stored credentials
+    # (we need a non-mcp_admin connection to check this before key auth)
+    try:
+        creds = resolve_ssh_credentials(hostname=hostname, port=port)
+        if creds.password:
+            async with await ssh_connect(
+                hostname=hostname,
+                username=creds.username,
+                port=port,
+                password=creds.password,
+                key_path=creds.key_path,
+            ) as check_conn:
+                sshd_check = await check_conn.run(
+                    "grep -i '^PubkeyAuthentication' /etc/ssh/sshd_config 2>/dev/null",
+                    check=False,
+                )
+                if sshd_check.exit_status == 0 and sshd_check.stdout:
+                    sshd_line = (
+                        (sshd_check.stdout.decode() if isinstance(sshd_check.stdout, bytes) else str(sshd_check.stdout))
+                        .strip()
+                        .lower()
+                    )
+                    if "no" in sshd_line:
+                        return json.dumps(
+                            {
+                                "status": "error",
+                                "hostname": hostname,
+                                "error": "PubkeyAuthentication is disabled in /etc/ssh/sshd_config",
+                                "fix": (
+                                    "Run on the remote host: "
+                                    "sudo sed -i 's/^PubkeyAuthentication no/PubkeyAuthentication yes/' "
+                                    "/etc/ssh/sshd_config && sudo systemctl reload ssh"
+                                ),
+                            },
+                            indent=2,
+                        )
+    except (CredentialNotFoundError, Exception) as e:
+        logger.debug("Could not pre-check sshd_config for %s: %s", hostname, e)
 
     # Test SSH connection with key
     async with await ssh_connect(
