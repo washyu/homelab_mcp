@@ -174,3 +174,23 @@ Plans:
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 24. Keyring-based Password Handling | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 25. Sudo Password Piping | 1/1 | Complete    | 2026-03-15 | - |
+
+### Phase 26: Sync tool schema file to match current tool parameters
+
+**Goal:** Remove phantom `port` property from 9 service tool schemas where the underlying ServiceInstaller methods do not accept it, fixing TypeError at runtime
+**Requirements**: TBD
+**Depends on:** Phase 25
+**Plans:** 1 plan
+
+Plans:
+- [ ] 26-01-PLAN.md — Remove phantom port from service schemas and verify full alignment
+
+### Phase 27: Update tests to make sure we are testing all parameters of the tools
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 26
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 27 to break down)
