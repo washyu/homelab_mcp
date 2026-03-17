@@ -178,6 +178,11 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                     "description": "RAM in MB",
                     "default": 512,
                 },
+                "swap": {
+                    "type": "integer",
+                    "description": "Swap size in MB",
+                    "default": 512,
+                },
                 "cores": {
                     "type": "integer",
                     "description": "Number of CPU cores",
@@ -191,6 +196,15 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                 "password": {
                     "type": "string",
                     "description": "Root password",
+                },
+                "ssh_public_keys": {
+                    "type": "string",
+                    "description": "SSH public keys to add to the container (one per line)",
+                },
+                "unprivileged": {
+                    "type": "boolean",
+                    "description": "Create as unprivileged container (default: true, recommended for security)",
+                    "default": True,
                 },
                 "start": {
                     "type": "boolean",
@@ -242,9 +256,28 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                     "description": "Storage for disks",
                     "default": "local-lvm",
                 },
+                "sockets": {
+                    "type": "integer",
+                    "description": "Number of CPU sockets",
+                    "default": 1,
+                },
                 "iso": {
                     "type": "string",
                     "description": "ISO image to attach (e.g., 'local:iso/debian-12.iso')",
+                },
+                "cdrom": {
+                    "type": "string",
+                    "description": "CD-ROM device (e.g., 'local:iso/debian-12.iso'). Alternative to iso — use one or the other.",
+                },
+                "net0": {
+                    "type": "string",
+                    "description": "Network device configuration (default: 'virtio,bridge=vmbr0')",
+                    "default": "virtio,bridge=vmbr0",
+                },
+                "ostype": {
+                    "type": "string",
+                    "description": "OS type for optimization (default: 'l26' for Linux 2.6+)",
+                    "default": "l26",
                 },
                 "start": {
                     "type": "boolean",
