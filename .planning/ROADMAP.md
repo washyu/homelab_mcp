@@ -180,7 +180,7 @@ Plans:
 **Goal:** Remove phantom `port` property from 9 service tool schemas where the underlying ServiceInstaller methods do not accept it, fixing TypeError at runtime
 **Requirements**: TBD
 **Depends on:** Phase 25
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 26-01-PLAN.md — Remove phantom port from service schemas and verify full alignment

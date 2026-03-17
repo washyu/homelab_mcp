@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-03-15T23:11:51.147Z"
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-03-17T07:25:25.169Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 7
+  completed_phases: 6
+  total_plans: 10
+  completed_plans: 10
   percent: 0
 ---
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 24-keyring-password-handling P01 | 1 | 2 tasks | 2 files |
 | Phase 24-keyring-password-handling P02 | 4 | 2 tasks | 2 files |
 | Phase 25 P01 | 3 | 2 tasks | 2 files |
+| Phase 26-sync-tool-schema-file-to-match-current-tool-parameters P01 | 3 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -94,11 +95,14 @@ Key constraints for v1.4 (from research):
 - [Phase 25]: _sudo_run uses conn.run(input=password+'\n') with sudo -S to pipe password via stdin, preventing shell echo leak
 - [Phase 25]: ssh_execute_command keeps direct conn.run(input=...) instead of _sudo_run to preserve JSON error responses
 - [Phase 25]: Piped-tee commands restructured to bash -c approach so sudo wraps entire operation without pipe complexity
+- [Phase 26]: Remove port from service tool schemas entirely — ServiceInstaller has no port parameter and handlers pass **arguments directly causing TypeError at runtime
 
 ### Roadmap Evolution
 
 - Phase 24 added: Keyring-based password handling — fix setup_mcp_admin and audit all tools for passed-password anti-pattern
 - Phase 25 added: Sudo password piping — fix setup_mcp_admin sudo timeout when connecting user lacks NOPASSWD
+- Phase 26 added: Sync tool schema file to match current tool parameters
+- Phase 27 added: Update tests to make sure we are testing all parameters of the tools
 
 ### Pending Todos
 
@@ -111,6 +115,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T23:09:08.899Z
-Stopped at: Completed 25-01-PLAN.md
+Last session: 2026-03-17T07:25:25.167Z
+Stopped at: Completed 26-01-PLAN.md
 Resume file: None
