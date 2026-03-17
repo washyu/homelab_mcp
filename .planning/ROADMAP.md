@@ -177,13 +177,15 @@ Plans:
 
 ### Phase 26: Sync tool schema file to match current tool parameters
 
-**Goal:** Remove phantom `port` property from 9 service tool schemas where the underlying ServiceInstaller methods do not accept it, fixing TypeError at runtime
+**Goal:** Sync ALL tool schemas to match actual function parameters — fix every mismatch between inputSchema declarations and implementing function signatures
 **Requirements**: TBD
 **Depends on:** Phase 25
-**Plans:** 1/1 plans complete
+**Plans:** 3 plans
 
 Plans:
-- [ ] 26-01-PLAN.md — Remove phantom port from service schemas and verify full alignment
+- [x] 26-01-PLAN.md — Remove phantom port from service schemas and verify full alignment
+- [ ] 26-02-PLAN.md — Fix SSH tool timeout mismatches and make discover_and_map username optional
+- [ ] 26-03-PLAN.md — Expose hidden create_proxmox_vm and create_proxmox_lxc parameters
 
 ### Phase 27: Update tests to make sure we are testing all parameters of the tools
 
