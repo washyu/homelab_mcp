@@ -312,7 +312,7 @@ class NetworkSiteMap:
 async def discover_and_store(
     sitemap: NetworkSiteMap,
     hostname: str,
-    username: str,
+    username: str = "mcp_admin",
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
@@ -354,7 +354,7 @@ async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[st
             result = await discover_and_store(
                 sitemap,
                 target["hostname"],
-                target["username"],
+                target.get("username", "mcp_admin"),
                 target.get("password"),
                 target.get("key_path"),
                 target.get("port", 22),

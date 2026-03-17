@@ -292,7 +292,8 @@ def test_sitemap_tool_schemas():
     assert "inputSchema" in discover_tool
     assert "hostname" in discover_tool["inputSchema"]["properties"]
     assert "username" in discover_tool["inputSchema"]["properties"]
-    assert discover_tool["inputSchema"]["required"] == ["hostname", "username"]
+    assert discover_tool["inputSchema"]["required"] == ["hostname"]
+    assert discover_tool["inputSchema"]["properties"]["username"].get("default") == "mcp_admin"
 
     # Test bulk_discover_and_map schema
     bulk_tool = tools["bulk_discover_and_map"]
@@ -597,8 +598,7 @@ async def test_execute_get_vm_logs(mock_get_logs):
     mock_get_logs.assert_called_once_with(device_id=1, platform="docker", vm_name="test-container", lines=100)
 
 
-def test_start_interactive_shell_schema_mentions_http(
-) -> None:
+def test_start_interactive_shell_schema_mentions_http() -> None:
     """start_interactive_shell description must mention HTTP server mode or --http (SHELL-05)."""
     tools = get_available_tools()
     desc = tools["start_interactive_shell"]["description"]
