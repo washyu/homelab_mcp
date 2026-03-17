@@ -243,6 +243,7 @@ async def setup_remote_mcp_admin(
     password: str | None = None,
     force_update_key: bool = True,
     port: int = 22,
+    timeout: int | float = 90,
 ) -> str:
     """SSH into a remote system and setup mcp_admin user with SSH key access."""
     # First ensure we have a key
@@ -450,7 +451,7 @@ async def setup_remote_mcp_admin(
 
 
 @ssh_connection_wrapper(timeout_seconds=30.0)
-async def verify_mcp_admin_access(hostname: str, port: int = 22) -> str:
+async def verify_mcp_admin_access(hostname: str, port: int = 22, timeout: int | float = 30) -> str:
     """Verify SSH key access to mcp_admin account on remote system."""
     key_path = get_mcp_ssh_key_path()
 
@@ -762,14 +763,21 @@ async def ssh_discover_system(
             if block_devices:
                 system_info["block_devices"] = block_devices
 
+            return json.dumps(
+                {
+                    "status": "success",
+                    "hostname": actual_hostname,
+                    "connection_ip": hostname,
+                    "data": system_info,
+                },
+                indent=2,
+            )
+        else:
+            return json.dumps(
+                {"status": "error", "hostname": hostname, "error": "Unable to parse device info."}, indent=2
+            )
     return json.dumps(
-        {
-            "status": "success",
-            "hostname": actual_hostname,
-            "connection_ip": hostname,
-            "data": system_info,
-        },
-        indent=2,
+        {"status": "error", "hostname": hostname, "error": "SSH connection closed unexpectedly."}, indent=2
     )
 
 
@@ -781,7 +789,6 @@ async def ssh_execute_command(
     password: str | None = None,
     sudo: bool = False,
     port: int = 22,
-    **kwargs: Any,
 ) -> str:
     """Execute a command on a remote system via SSH."""
     # Resolve credentials using priority order
