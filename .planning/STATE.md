@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-03-19T20:17:02.416Z"
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-03-19T20:20:41.242Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 26-sync-tool-schema-file-to-match-current-tool-parameters P03 | 10 | 2 tasks | 2 files |
 | Phase 26-sync-tool-schema-file-to-match-current-tool-parameters P02 | 25 | 2 tasks | 6 files |
 | Phase 27-update-tests-to-make-sure-we-are-testing-all-parameters-of-the-tools P01 | 7 | 2 tasks | 1 files |
+| Phase 27-update-tests-to-make-sure-we-are-testing-all-parameters-of-the-tools P02 | 3 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ Key constraints for v1.4 (from research):
 - [Phase 26-sync-tool-schema-file-to-match-current-tool-parameters]: Add timeout to setup_remote_mcp_admin and verify_mcp_admin_access signatures as documentation — decorator intercepts via kwargs.pop before inner function is called
 - [Phase 26-sync-tool-schema-file-to-match-current-tool-parameters]: discover_and_store username defaults to mcp_admin — consistent with all peer SSH tools from Phase 23-24; bulk_discover_and_store uses target.get('username', 'mcp_admin')
 - [Phase 27]: Patch update_baseline_after_mutation at src.homelab_mcp.drift_detection.update_baseline_after_mutation (local import inside handler, not module attribute)
+- [Phase 27-update-tests]: Use 'verify_mcp_admin' (not 'verify_mcp_admin_access') as tool key in schema dict
+- [Phase 27-update-tests]: Schema regression guard: import SERVICE_TOOLS directly to guard against phantom port re-introduction
 
 ### Roadmap Evolution
 
@@ -122,6 +125,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T20:17:02.413Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-03-19T20:20:41.239Z
+Stopped at: Completed 27-02-PLAN.md
 Resume file: None
