@@ -1661,6 +1661,76 @@ class TestHandlerSessionThreading:
         )
 
     @pytest.mark.asyncio
+    async def test_handle_create_proxmox_vm_passes_explicit_params(self):
+        """handle_create_proxmox_vm passes explicit sockets/cdrom/net0/ostype to create_proxmox_vm."""
+        import src.homelab_mcp.tool_handlers.proxmox_handlers as _ph_mod
+        from src.homelab_mcp.tool_handlers.proxmox_handlers import handle_create_proxmox_vm
+
+        mock_rm = MagicMock()
+        mock_session = MagicMock()
+        mock_rm.proxmox_session = mock_session
+        mock_rm.db_adapter = MagicMock()
+        mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 100, "message": "created"})
+        mock_baseline = AsyncMock()
+
+        with (
+            patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
+            patch.object(_ph_mod, "create_proxmox_vm", mock_fn),
+            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
+        ):
+            await handle_create_proxmox_vm(
+                {
+                    "node": "pve",
+                    "vmid": 100,
+                    "name": "test-vm",
+                    "sockets": 2,
+                    "cdrom": "local:iso/debian.iso",
+                    "net0": "virtio,bridge=vmbr1",
+                    "ostype": "win10",
+                }
+            )
+
+        mock_fn.assert_called_once()
+        call_kwargs = mock_fn.call_args.kwargs
+        assert call_kwargs.get("sockets") == 2, f"Expected sockets=2, got {call_kwargs.get('sockets')}"
+        assert call_kwargs.get("cdrom") == "local:iso/debian.iso", (
+            f"Expected cdrom='local:iso/debian.iso', got {call_kwargs.get('cdrom')}"
+        )
+        assert call_kwargs.get("net0") == "virtio,bridge=vmbr1", (
+            f"Expected net0='virtio,bridge=vmbr1', got {call_kwargs.get('net0')}"
+        )
+        assert call_kwargs.get("ostype") == "win10", f"Expected ostype='win10', got {call_kwargs.get('ostype')}"
+
+    @pytest.mark.asyncio
+    async def test_handle_create_proxmox_vm_uses_defaults(self):
+        """handle_create_proxmox_vm uses correct defaults when optional params omitted."""
+        import src.homelab_mcp.tool_handlers.proxmox_handlers as _ph_mod
+        from src.homelab_mcp.tool_handlers.proxmox_handlers import handle_create_proxmox_vm
+
+        mock_rm = MagicMock()
+        mock_session = MagicMock()
+        mock_rm.proxmox_session = mock_session
+        mock_rm.db_adapter = MagicMock()
+        mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 100, "message": "created"})
+        mock_baseline = AsyncMock()
+
+        with (
+            patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
+            patch.object(_ph_mod, "create_proxmox_vm", mock_fn),
+            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
+        ):
+            await handle_create_proxmox_vm({"node": "pve", "vmid": 100, "name": "test-vm"})
+
+        mock_fn.assert_called_once()
+        call_kwargs = mock_fn.call_args.kwargs
+        assert call_kwargs.get("sockets") == 1, f"Expected sockets=1, got {call_kwargs.get('sockets')}"
+        assert call_kwargs.get("cdrom") is None, f"Expected cdrom=None, got {call_kwargs.get('cdrom')}"
+        assert call_kwargs.get("net0") == "virtio,bridge=vmbr0", (
+            f"Expected net0='virtio,bridge=vmbr0', got {call_kwargs.get('net0')}"
+        )
+        assert call_kwargs.get("ostype") == "l26", f"Expected ostype='l26', got {call_kwargs.get('ostype')}"
+
+    @pytest.mark.asyncio
     @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_delete_proxmox_vm_threads_session_to_manage(self, mock_manage_vm, mock_get_client):
