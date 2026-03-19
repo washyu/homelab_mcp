@@ -775,3 +775,59 @@ def test_no_tool_has_password_required():
             f"Tool '{tool_name}' has 'password' in required — "
             f"use resolve_ssh_credentials() for SSH auth or make it optional"
         )
+
+
+def test_create_proxmox_vm_schema_phase26_parameters():
+    """create_proxmox_vm schema exposes sockets, cdrom, net0, ostype (Phase 26-03)."""
+    tools = get_available_tools()
+    schema = tools["create_proxmox_vm"]["inputSchema"]["properties"]
+    assert "sockets" in schema
+    assert schema["sockets"]["default"] == 1
+    assert "cdrom" in schema
+    # cdrom has no default (None in handler, not in schema)
+    assert "net0" in schema
+    assert schema["net0"]["default"] == "virtio,bridge=vmbr0"
+    assert "ostype" in schema
+    assert schema["ostype"]["default"] == "l26"
+
+
+def test_create_proxmox_lxc_schema_phase26_parameters():
+    """create_proxmox_lxc schema exposes swap, ssh_public_keys, unprivileged (Phase 26-03)."""
+    tools = get_available_tools()
+    schema = tools["create_proxmox_lxc"]["inputSchema"]["properties"]
+    assert "swap" in schema
+    assert schema["swap"]["default"] == 512
+    assert "ssh_public_keys" in schema
+    # ssh_public_keys has no default (None in handler, not in schema)
+    assert "unprivileged" in schema
+    assert schema["unprivileged"]["default"] is True
+
+
+def test_setup_mcp_admin_schema_has_timeout():
+    """setup_mcp_admin schema exposes timeout with default 90 (Phase 26-02)."""
+    tools = get_available_tools()
+    schema = tools["setup_mcp_admin"]["inputSchema"]["properties"]
+    assert "timeout" in schema, "setup_mcp_admin missing timeout property"
+    assert schema["timeout"]["default"] == 90
+
+
+def test_verify_mcp_admin_schema_has_timeout():
+    """verify_mcp_admin schema exposes timeout with default 30 (Phase 26-02)."""
+    tools = get_available_tools()
+    schema = tools["verify_mcp_admin"]["inputSchema"]["properties"]
+    assert "timeout" in schema, "verify_mcp_admin missing timeout property"
+    assert schema["timeout"]["default"] == 30
+
+
+def test_ssh_execute_command_schema_no_timeout():
+    """ssh_execute_command must NOT have timeout in schema (Phase 26-02 regression guard)."""
+    tools = get_available_tools()
+    schema = tools["ssh_execute_command"]["inputSchema"]["properties"]
+    assert "timeout" not in schema, "ssh_execute_command should not expose timeout parameter"
+
+
+def test_update_mcp_admin_groups_schema_has_key_path():
+    """update_mcp_admin_groups schema exposes key_path (Phase 26-02)."""
+    tools = get_available_tools()
+    schema = tools["update_mcp_admin_groups"]["inputSchema"]["properties"]
+    assert "key_path" in schema, "update_mcp_admin_groups missing key_path property"
