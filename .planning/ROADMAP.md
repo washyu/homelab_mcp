@@ -192,7 +192,7 @@ Plans:
 **Goal:** Add regression tests for all Phase 26 schema and handler wiring changes -- schema presence tests, handler parameter pass-through tests, and structural audit guards
 **Requirements**: TEST-PXV-01, TEST-PXV-02, TEST-PXL-01, TEST-PXL-02, TEST-SCH-01, TEST-SCH-02, TEST-SCH-03, TEST-SCH-04, TEST-SCH-05, TEST-AUDIT-01
 **Depends on:** Phase 26
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 27-01-PLAN.md — Add Proxmox handler wiring tests for Phase 26-03 parameters
