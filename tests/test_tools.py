@@ -831,3 +831,42 @@ def test_update_mcp_admin_groups_schema_has_key_path():
     tools = get_available_tools()
     schema = tools["update_mcp_admin_groups"]["inputSchema"]["properties"]
     assert "key_path" in schema, "update_mcp_admin_groups missing key_path property"
+
+
+def test_no_service_tool_has_port_property():
+    """No service tool schema has port property (Phase 26-01 regression guard).
+
+    Phase 26-01 removed phantom port parameters from all service tools.
+    ServiceInstaller has no port parameter; including port in schema causes
+    TypeError at runtime when handlers pass **arguments directly.
+    """
+    from src.homelab_mcp.tool_schemas.service_tools_schema import SERVICE_TOOLS
+
+    for tool_name, tool_def in SERVICE_TOOLS.items():
+        props = tool_def.get("inputSchema", {}).get("properties", {})
+        assert "port" not in props, (
+            f"Service tool '{tool_name}' has phantom 'port' property — "
+            f"ServiceInstaller has no port parameter (Phase 26-01)"
+        )
+
+
+def test_all_tool_schema_properties_are_valid_dicts():
+    """Every property in every tool schema is a dict with type or description.
+
+    Lightweight structural audit to catch malformed schema entries across
+    all tools. Does not validate specific property values.
+    """
+    tools = get_available_tools()
+    for tool_name, tool_def in tools.items():
+        props = tool_def.get("inputSchema", {}).get("properties", {})
+        for prop_name, prop_def in props.items():
+            assert isinstance(prop_def, dict), (
+                f"Tool '{tool_name}' property '{prop_name}' is not a dict: {type(prop_def)}"
+            )
+            has_type = "type" in prop_def
+            has_desc = "description" in prop_def
+            has_oneof = "oneOf" in prop_def
+            has_anyof = "anyOf" in prop_def
+            assert has_type or has_desc or has_oneof or has_anyof, (
+                f"Tool '{tool_name}' property '{prop_name}' missing type/description/oneOf/anyOf"
+            )
