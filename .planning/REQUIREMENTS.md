@@ -46,21 +46,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | — | Pending |
-| SEC-02 | — | Pending |
-| SSH-01 | — | Pending |
-| SSH-02 | — | Pending |
-| SSH-03 | — | Pending |
-| ERR-01 | — | Pending |
-| ERR-02 | — | Pending |
-| QUAL-01 | — | Pending |
-| QUAL-02 | — | Pending |
+| SEC-01 | Phase 30 | Pending |
+| SEC-02 | Phase 30 | Pending |
+| SSH-01 | Phase 31 | Pending |
+| SSH-02 | Phase 31 | Pending |
+| SSH-03 | Phase 31 | Pending |
+| ERR-01 | Phase 32 | Pending |
+| ERR-02 | Phase 32 | Pending |
+| QUAL-01 | Phase 32 | Pending |
+| QUAL-02 | Phase 32 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 ⚠️
+- Mapped to phases: 9
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after initial definition*
+*Last updated: 2026-03-20 after roadmap creation*

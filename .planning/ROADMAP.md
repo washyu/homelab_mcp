@@ -7,6 +7,7 @@
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
 - ✅ **v1.4 Real-World Reliability** — Phases 21-29 (shipped 2026-03-20)
+- 🚧 **v1.5 Security & Correctness Hardening** — Phases 30-32 (in progress)
 
 ## Phases
 
@@ -79,6 +80,48 @@ Full details: `.planning/milestones/v1.4-ROADMAP.md`
 
 </details>
 
+### 🚧 v1.5 Security & Correctness Hardening (In Progress)
+
+**Milestone Goal:** Close all security and correctness issues identified in the v1.4 PR review — no new features, just making the existing tools provably safe and correct.
+
+- [ ] **Phase 30: Security Fixes** — Eliminate shell injection and close TOFU race condition
+- [ ] **Phase 31: SSH Reliability** — Fix keyring disambiguation, timeout propagation, and credential resolution in verify_mcp_admin_access
+- [ ] **Phase 32: Error Handling, Schema & Tests** — Wrap credential errors, close dead WebSocket sessions, enforce schema exclusivity, fix test coverage gap
+
+## Phase Details
+
+### Phase 30: Security Fixes
+**Goal**: Known attack surfaces in the SSH setup path are provably closed — public key content never reaches a shell string, and TOFU cannot write conflicting keys under concurrent load
+**Depends on**: Phase 29
+**Requirements**: SEC-01, SEC-02
+**Success Criteria** (what must be TRUE):
+  1. Calling `setup_mcp_admin` or `add_to_sudoers` with a public key containing shell metacharacters (spaces, backticks, `$()`) does not execute arbitrary commands on the remote host — the key is delivered via tmpfile or heredoc, never interpolated
+  2. Two concurrent first-connections to the same host cannot each pass the existence check and write different keys — the second write is blocked until the first completes, so `known_hosts` ends with exactly one entry per host after any race
+  3. Tests exercise both the injection-safe path and the lock serialization behavior — no manual verification required
+**Plans**: TBD
+
+### Phase 31: SSH Reliability
+**Goal**: The SSH connection layer makes the right decision every time — correct credentials, correct timeout, correct user — with no silent fallback to a wrong value
+**Depends on**: Phase 30
+**Requirements**: SSH-01, SSH-02, SSH-03
+**Success Criteria** (what must be TRUE):
+  1. Calling an SSH tool against a host that has multiple stored usernames and no explicit `username` argument raises a disambiguation error naming the conflicting entries — the call never silently proceeds with the wrong user
+  2. A connection that exceeds the caller-supplied `timeout` fails during the handshake, not after — the timeout argument reaches `ssh_connect()` directly rather than being intercepted only by the outer `asyncio.wait_for`
+  3. `verify_mcp_admin_access()` uses the port and credentials returned by `resolve_ssh_credentials()` — a host stored with a non-standard port is verified on that port, not port 22
+  4. Tests cover all three behaviors with mocked SSH and keyring layers
+**Plans**: TBD
+
+### Phase 32: Error Handling, Schema & Tests
+**Goal**: Credential errors surface as JSON payloads, dead WebSocket sessions are cleaned up automatically, the Proxmox schema rejects invalid combinations, and the EOF regression test covers production code
+**Depends on**: Phase 31
+**Requirements**: ERR-01, ERR-02, QUAL-01, QUAL-02
+**Success Criteria** (what must be TRUE):
+  1. Calling any SSH tool when `resolve_ssh_credentials()` raises `CredentialNotFoundError` returns a JSON error payload — no unhandled exception propagates to the MCP caller
+  2. When the PTY reader hits EOF or an error, the WebSocket is closed and the paired read/write tasks are cancelled — a client can observe the connection close rather than hanging indefinitely
+  3. Submitting a Proxmox VM creation request that includes both `iso` and `cdrom` is rejected at schema validation — the API never receives a mutually exclusive combination
+  4. The `test_http_app.py` EOF regression test invokes `handle_shell_websocket` from `http_app.py` — removing the production function causes the test to fail, confirming it exercises real code
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -112,3 +155,6 @@ Full details: `.planning/milestones/v1.4-ROADMAP.md`
 | 27. Update Tests for Tool Parameters | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 28. Fix Prompt Parameter Names | v1.4 | 1/1 | Complete | 2026-03-19 |
 | 29. Fix deploy_service_workflow Phantom Tool | v1.4 | 1/1 | Complete | 2026-03-20 |
+| 30. Security Fixes | v1.5 | 0/TBD | Not started | - |
+| 31. SSH Reliability | v1.5 | 0/TBD | Not started | - |
+| 32. Error Handling, Schema & Tests | v1.5 | 0/TBD | Not started | - |
