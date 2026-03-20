@@ -6,7 +6,7 @@
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
-- 🚧 **v1.4 Real-World Reliability** — Phases 21-25 (in progress)
+- 🚧 **v1.4 Real-World Reliability** — Phases 21-29 (in progress)
 
 ## Phases
 
@@ -173,7 +173,11 @@ Plans:
 | 22. Agent Guidance | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 23. Workflow Completeness | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 24. Keyring-based Password Handling | v1.4 | 2/2 | Complete | 2026-03-15 |
-| 25. Sudo Password Piping | 1/1 | Complete    | 2026-03-15 | - |
+| 25. Sudo Password Piping | v1.4 | 1/1 | Complete | 2026-03-15 |
+| 26. Sync Tool Schema | v1.4 | 3/3 | Complete | 2026-03-15 |
+| 27. Update Tests | v1.4 | 2/2 | Complete | 2026-03-15 |
+| 28. Fix Prompt Parameter Names | v1.4 | 1/1 | Complete | 2026-03-19 |
+| 29. Fix deploy_service_workflow Phantom Tool | v1.4 | 0/1 | Pending | — |
 
 ### Phase 26: Sync tool schema file to match current tool parameters
 
@@ -207,3 +211,12 @@ Plans:
 
 Plans:
 - [ ] 28-01-PLAN.md — Fix host= → hostname= in both prompts and add parameter name regression test
+
+### Phase 29: Fix deploy_service_workflow Phantom Tool
+**Goal:** Replace the phantom `list_installed_services` tool reference in the `deploy_service_workflow` prompt with a valid registered tool, restoring the E2E deploy workflow
+**Requirements:** (none — integration/flow gap closure, not mapped to a v1.4 requirement)
+**Gap Closure:** Closes integration gap and flow gap from v1.4 audit — `deploy_service_workflow` broken at step 2 due to phantom `list_installed_services` tool reference
+**Depends on:** Phase 28
+
+Plans:
+- [ ] 29-01-PLAN.md — Replace phantom list_installed_services in prompt_registry.py and add regression test
