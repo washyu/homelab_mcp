@@ -203,7 +203,7 @@ Plans:
 **Requirements**: TOFU-03
 **Gap Closure:** Closes gaps from v1.4 audit — TOFU-03 partial, connect_to_device E2E flow broken
 **Depends on:** Phase 27
-**Plans:** 0/1 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 28-01-PLAN.md — Fix host= → hostname= in both prompts and add parameter name regression test

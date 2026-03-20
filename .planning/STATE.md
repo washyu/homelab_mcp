@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 27-02-PLAN.md
-last_updated: "2026-03-19T20:23:55.593Z"
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-03-20T01:37:23.035Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 15
+  completed_plans: 15
   percent: 0
 ---
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 26-sync-tool-schema-file-to-match-current-tool-parameters P02 | 25 | 2 tasks | 6 files |
 | Phase 27-update-tests-to-make-sure-we-are-testing-all-parameters-of-the-tools P01 | 7 | 2 tasks | 1 files |
 | Phase 27-update-tests-to-make-sure-we-are-testing-all-parameters-of-the-tools P02 | 3 | 2 tasks | 1 files |
+| Phase 28-fix-prompt-parameter-names P01 | 2 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,8 @@ Key constraints for v1.4 (from research):
 - [Phase 27]: Patch update_baseline_after_mutation at src.homelab_mcp.drift_detection.update_baseline_after_mutation (local import inside handler, not module attribute)
 - [Phase 27-update-tests]: Use 'verify_mcp_admin' (not 'verify_mcp_admin_access') as tool key in schema dict
 - [Phase 27-update-tests]: Schema regression guard: import SERVICE_TOOLS directly to guard against phantom port re-introduction
+- [Phase 28-fix-prompt-parameter-names]: Assert 'host=' not in combined text (negative check) rather than per-tool positive checks — catches any future host= regression anywhere in the prompt body
+- [Phase 28-fix-prompt-parameter-names]: register_server hostname= was already correct from Phase 23 — final hostname= count is 8, not 7 as estimated in plan acceptance criteria
 
 ### Roadmap Evolution
 
@@ -125,6 +128,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-19T20:20:41.239Z
-Stopped at: Completed 27-02-PLAN.md
+Last session: 2026-03-20T01:37:23.032Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None

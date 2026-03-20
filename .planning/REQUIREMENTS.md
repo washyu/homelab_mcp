@@ -25,7 +25,7 @@ Requirements for v1.4 Real-World Reliability. Each maps to roadmap phases.
 
 - [x] **TOFU-01**: `known_hosts` entries written with correct format (algorithm + base64 only, no comment field)
 - [x] **TOFU-02**: `_tofu_lock` replaced with `threading.Lock` (dead `asyncio.Lock` removed)
-- [ ] **TOFU-03**: `connect_to_device` MCP prompt sequences full device onboarding workflow
+- [x] **TOFU-03**: `connect_to_device` MCP prompt sequences full device onboarding workflow
 - [x] **TOFU-04**: Warning logged when registry entry exists but keyring returns None (desync detection)
 
 ### Keyring-based Password Handling
@@ -77,7 +77,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRED-03 | Phase 22 | Complete |
 | TOFU-01 | Phase 21 | Complete |
 | TOFU-02 | Phase 21 | Complete |
-| TOFU-03 | Phase 28 | Pending |
+| TOFU-03 | Phase 28 | Complete |
 | TOFU-04 | Phase 23 | Complete |
 | SETUP-01 | Phase 24 | Complete |
 | SETUP-02 | Phase 24 | Complete |
