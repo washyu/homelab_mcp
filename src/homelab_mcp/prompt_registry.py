@@ -111,7 +111,7 @@ def _build_deploy_service_result(args: dict[str, str]) -> types.GetPromptResult:
 
 Pre-flight checks:
 1. Call ssh_discover with hostname="{target_host}" to verify SSH connectivity.
-2. Call list_installed_services with hostname="{target_host}" to check for conflicts with {service_name}.
+2. Call get_service_status with service_name="{service_name}" and hostname="{target_host}" to check whether {service_name} is already installed.
 
 If pre-flight checks pass:
 3. Call install_service with service_name="{service_name}" and hostname="{target_host}".
