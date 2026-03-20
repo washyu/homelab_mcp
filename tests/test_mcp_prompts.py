@@ -105,9 +105,7 @@ def test_connect_to_device_prompt() -> None:
     result = get_prompt_result("connect_to_device", {"hostname": "test-host"})
     assert isinstance(result, GetPromptResult)
     assert len(result.messages) >= 1
-    combined_text = " ".join(
-        msg.content.text for msg in result.messages if hasattr(msg.content, "text")
-    ).lower()
+    combined_text = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text")).lower()
     assert "setup_mcp_admin" in combined_text
     assert "credentials add" in combined_text
     assert "register_server" in combined_text
@@ -129,3 +127,30 @@ def test_get_unknown_prompt_raises_mcp_error() -> None:
     with pytest.raises(McpError) as exc_info:
         get_prompt_result("nonexistent_prompt", {})
     assert exc_info.value.error.code == -32002
+
+
+def test_connect_to_device_prompt_parameter_names() -> None:
+    """TOFU-03: connect_to_device prompt uses hostname= not host= for all tool calls."""
+    from homelab_mcp.prompt_registry import get_prompt_result
+
+    result = get_prompt_result("connect_to_device", {"hostname": "myhost"})
+    combined = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text"))
+    # All tools in this prompt use hostname=, never host=
+    assert "host=" not in combined, f"Prompt must use hostname= not host= for tool parameters. Found: {combined}"
+    # Each tool step must use hostname= with the interpolated value
+    for tool in ("setup_mcp_admin", "ssh_discover", "discover_and_map", "verify_mcp_admin"):
+        assert f"{tool}" in combined, f"Missing tool reference: {tool}"
+    assert 'hostname="myhost"' in combined, "hostname= must appear with interpolated value"
+
+
+def test_deploy_service_workflow_prompt_parameter_names() -> None:
+    """TOFU-03: deploy_service_workflow prompt uses hostname= not host= for all tool calls."""
+    from homelab_mcp.prompt_registry import get_prompt_result
+
+    result = get_prompt_result(
+        "deploy_service_workflow",
+        {"service_name": "nginx", "target_host": "myhost"},
+    )
+    combined = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text"))
+    assert "host=" not in combined, f"Prompt must use hostname= not host= for tool parameters. Found: {combined}"
+    assert "hostname=" in combined, "hostname= must appear in deploy workflow prompt"
