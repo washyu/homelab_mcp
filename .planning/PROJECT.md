@@ -70,6 +70,17 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ### Active
 
+<!-- v1.5 Security & Correctness Hardening -->
+- [ ] Shell command injection in `setup_mcp_admin`/`add_to_sudoers` eliminated — public key content never interpolated into remote shell strings
+- [ ] TOFU race condition closed — existence check and append both protected under `_tofu_lock`
+- [ ] Keyring auto-injection disambiguates multiple usernames per hostname — no silent wrong-user logins
+- [ ] SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
+- [ ] `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
+- [ ] `resolve_ssh_credentials()` wrapped in error handler — raises return JSON error payloads, not raw exceptions
+- [ ] WebSocket PTY reader closes websocket on EOF/error — no dead sessions left open
+- [ ] Proxmox schema enforces `iso`/`cdrom` exclusivity via `oneOf`
+- [ ] `test_http_app.py` EOF test drives production `handle_shell_websocket` instead of a local copy
+
 ### Out of Scope
 
 - Mobile/web UI — MCP clients provide the interface
@@ -137,5 +148,20 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | `asyncio.wait_for(..., timeout=0.05)` for PTY reads | Blocking `stdout.read(4096)` would not return until 4096 bytes or EOF — browser saw nothing | ✓ Good — real-time streaming with tunable timeout |
 | Gap-closure phases (26-29) added mid-milestone via audit | Audit revealed schema/prompt bugs not in original scope; extending milestone cleaner than deferring | ✓ Good — 4 extra phases closed all audit gaps before v1.5 planning |
 
+## Current Milestone: v1.5 Security & Correctness Hardening
+
+**Goal:** Close all security and correctness issues identified in the v1.4 PR review — no new features, just making the existing tools provably safe and correct.
+
+**Target fixes:**
+- Critical shell injection via public key interpolation in remote commands
+- TOFU race condition allowing concurrent writes with different keys
+- Keyring auto-injection silently picking wrong username on ambiguous hosts
+- SSH timeout not reaching `ssh_connect()` handshake
+- `verify_mcp_admin_access()` ignoring resolved port/credentials
+- `resolve_ssh_credentials()` raising instead of returning JSON errors
+- Dead WebSocket sessions after PTY reader EOF
+- Proxmox schema permitting mutually exclusive `iso`/`cdrom` simultaneously
+- Test exercising local `read_output()` copy instead of production code
+
 ---
-*Last updated: 2026-03-20 after v1.4 milestone*
+*Last updated: 2026-03-20 after v1.5 milestone start*

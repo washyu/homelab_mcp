@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: Real-World Reliability
+milestone: v1.5
+milestone_name: Security & Correctness Hardening
 status: planning
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-03-20T19:54:49.436Z"
-last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
+stopped_at: —
+last_updated: "2026-03-20T00:00:00.000Z"
+last_activity: 2026-03-20 — Milestone v1.5 started
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 16
-  completed_plans: 16
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 0
 ---
 
@@ -21,13 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Planning next milestone (v1.4 complete, archived 2026-03-20)
+**Current focus:** Defining requirements for v1.5
 
 ## Current Position
 
-Milestone v1.4 complete. All 9 phases, 16 plans done.
-Status: Between milestones — ready for `/gsd:new-milestone`
-Last activity: 2026-03-20 — v1.4 milestone archived
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-20 — Milestone v1.5 started
 
 Progress: [████████████████████] 100%
 
