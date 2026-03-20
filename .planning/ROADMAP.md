@@ -197,3 +197,13 @@ Plans:
 Plans:
 - [ ] 27-01-PLAN.md — Add Proxmox handler wiring tests for Phase 26-03 parameters
 - [ ] 27-02-PLAN.md — Add schema presence tests, service port regression guard, and structural audit
+
+### Phase 28: Fix Prompt Parameter Names
+**Goal:** Fix `host=` → `hostname=` parameter name mismatch in `connect_to_device` and `deploy_service_workflow` prompts so agents can successfully execute all tool call steps
+**Requirements**: TOFU-03
+**Gap Closure:** Closes gaps from v1.4 audit — TOFU-03 partial, connect_to_device E2E flow broken
+**Depends on:** Phase 27
+**Plans:** 0/1 plans complete
+
+Plans:
+- [ ] 28-01-PLAN.md — Fix host= → hostname= in both prompts and add parameter name regression test
