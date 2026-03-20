@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-03-20T01:40:06.564Z"
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-03-20T02:19:46.883Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 15
-  completed_plans: 15
+  total_phases: 9
+  completed_phases: 9
+  total_plans: 16
+  completed_plans: 16
   percent: 0
 ---
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 27-update-tests-to-make-sure-we-are-testing-all-parameters-of-the-tools P01 | 7 | 2 tasks | 1 files |
 | Phase 27-update-tests-to-make-sure-we-are-testing-all-parameters-of-the-tools P02 | 3 | 2 tasks | 1 files |
 | Phase 28-fix-prompt-parameter-names P01 | 2 | 2 tasks | 2 files |
+| Phase 29-fix-deploy-service-workflow-phantom-tool P01 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,8 @@ Key constraints for v1.4 (from research):
 - [Phase 27-update-tests]: Schema regression guard: import SERVICE_TOOLS directly to guard against phantom port re-introduction
 - [Phase 28-fix-prompt-parameter-names]: Assert 'host=' not in combined text (negative check) rather than per-tool positive checks — catches any future host= regression anywhere in the prompt body
 - [Phase 28-fix-prompt-parameter-names]: register_server hostname= was already correct from Phase 23 — final hostname= count is 8, not 7 as estimated in plan acceptance criteria
+- [Phase 29-fix-deploy-service-workflow-phantom-tool]: Replace list_installed_services with get_service_status in deploy_service_workflow step 2 — get_service_status is registered with service_name and hostname params; list_installed_services never existed in the tool registry
+- [Phase 29-fix-deploy-service-workflow-phantom-tool]: Add test_deploy_service_workflow_no_phantom_tool negative assertion regression test to permanently block phantom tool re-introduction via CI
 
 ### Roadmap Evolution
 
@@ -128,6 +131,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-20T01:37:23.032Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-03-20T02:19:46.880Z
+Stopped at: Completed 29-01-PLAN.md
 Resume file: None

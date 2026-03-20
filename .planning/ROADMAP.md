@@ -177,7 +177,7 @@ Plans:
 | 26. Sync Tool Schema | v1.4 | 3/3 | Complete | 2026-03-15 |
 | 27. Update Tests | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 28. Fix Prompt Parameter Names | v1.4 | 1/1 | Complete | 2026-03-19 |
-| 29. Fix deploy_service_workflow Phantom Tool | v1.4 | 0/1 | Pending | — |
+| 29. Fix deploy_service_workflow Phantom Tool | 1/1 | Complete   | 2026-03-20 | — |
 
 ### Phase 26: Sync tool schema file to match current tool parameters
 
