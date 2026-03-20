@@ -222,9 +222,7 @@ class TestWebSocketReadOutput:
                         await mock_websocket.send_text(text)
                     else:
                         # EOF — process exited
-                        await mock_websocket.send_text(
-                            "\r\n\x1b[31m[Connection closed]\x1b[0m\r\n"
-                        )
+                        await mock_websocket.send_text("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n")
                         break
                 except TimeoutError:
                     pass
@@ -267,9 +265,7 @@ class TestWebSocketReadOutput:
                 ):
                     sleep_calls.append(ast.unparse(node))
 
-        assert not sleep_calls, (
-            f"asyncio.sleep should be removed from read_output; found: {sleep_calls}"
-        )
+        assert not sleep_calls, f"asyncio.sleep should be removed from read_output; found: {sleep_calls}"
 
     def test_read_output_uses_wait_for(self) -> None:
         """The read_output function body must use asyncio.wait_for for non-blocking reads."""
@@ -294,6 +290,4 @@ class TestWebSocketReadOutput:
                 ):
                     wait_for_calls.append(ast.unparse(node))
 
-        assert wait_for_calls, (
-            "read_output must use asyncio.wait_for for non-blocking stdout reads; none found"
-        )
+        assert wait_for_calls, "read_output must use asyncio.wait_for for non-blocking stdout reads; none found"

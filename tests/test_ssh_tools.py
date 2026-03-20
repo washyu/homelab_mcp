@@ -782,7 +782,10 @@ async def test_setup_remote_mcp_admin_uses_keyring(mock_connect, mock_path, mock
     # Verify first ssh_connect used resolved credentials (second is key auth verification)
     assert mock_connect.call_count == 2
     first_call = mock_connect.call_args_list[0]
-    assert first_call.kwargs.get("password") == "resolved-from-keyring" or first_call[1].get("password") == "resolved-from-keyring"
+    assert (
+        first_call.kwargs.get("password") == "resolved-from-keyring"
+        or first_call[1].get("password") == "resolved-from-keyring"
+    )
     # Second call is the key auth verification
     second_call = mock_connect.call_args_list[1]
     assert second_call.kwargs.get("username") == "mcp_admin" or second_call[1].get("username") == "mcp_admin"
@@ -914,9 +917,7 @@ async def test_sudo_run_wrong_password_raises():
 async def test_sudo_run_not_in_sudoers_raises():
     """_sudo_run raises RuntimeError with 'not in the sudoers file' when user lacks sudo."""
     mock_conn = AsyncMock()
-    mock_conn.run.return_value = MagicMock(
-        exit_status=1, stdout="", stderr="shaun is not in the sudoers file"
-    )
+    mock_conn.run.return_value = MagicMock(exit_status=1, stdout="", stderr="shaun is not in the sudoers file")
 
     with pytest.raises(RuntimeError, match="not in the sudoers file"):
         await _sudo_run(mock_conn, "whoami", password="pass", check=False)
@@ -927,9 +928,7 @@ async def test_sudo_run_not_in_sudoers_raises():
 @patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_mcp_admin_pipes_password_via_sudo_run(
-    mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run
-):
+async def test_setup_mcp_admin_pipes_password_via_sudo_run(mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run):
     """setup_remote_mcp_admin calls _sudo_run with the resolved password."""
     mock_resolve.return_value = SSHCredentials(
         hostname="test-host",
@@ -940,7 +939,9 @@ async def test_setup_mcp_admin_pipes_password_via_sudo_run(
     mock_ensure_key.return_value = "/tmp/test_key"
 
     # Mock public key file
-    import tempfile, os
+    import os
+    import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".pub", delete=False, mode="w") as f:
         f.write("ssh-rsa AAAA test@host")
         pub_path = f.name
@@ -967,7 +968,11 @@ async def test_setup_mcp_admin_pipes_password_via_sudo_run(
         # Verify _sudo_run was called at least once with the resolved password
         assert mock_sudo_run.call_count >= 1
         for call in mock_sudo_run.call_args_list:
-            assert call.kwargs.get("password") == "admin-pass" or call.args[2] == "admin-pass" if len(call.args) > 2 else True
+            assert (
+                call.kwargs.get("password") == "admin-pass" or call.args[2] == "admin-pass"
+                if len(call.args) > 2
+                else True
+            )
         # Verify no raw sudo calls went directly via conn.run
         for call in mock_conn.run.call_args_list:
             cmd = call.args[0] if call.args else call.kwargs.get("command", "")
@@ -983,9 +988,7 @@ async def test_setup_mcp_admin_pipes_password_via_sudo_run(
 @patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_mcp_admin_no_password_falls_back(
-    mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run
-):
+async def test_setup_mcp_admin_no_password_falls_back(mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run):
     """setup_remote_mcp_admin passes password=None to _sudo_run when credentials have no password."""
     mock_resolve.return_value = SSHCredentials(
         hostname="test-host",
@@ -994,7 +997,9 @@ async def test_setup_mcp_admin_no_password_falls_back(
         password=None,
     )
 
-    import tempfile, os
+    import os
+    import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".pub", delete=False, mode="w") as f:
         f.write("ssh-rsa AAAA test@host")
         pub_path = f.name

@@ -579,7 +579,7 @@ wheels = [
 
 [[package]]
 name = "homelab-mcp"
-version = "1.2.0"
+version = "1.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },

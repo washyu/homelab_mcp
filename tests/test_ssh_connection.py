@@ -28,9 +28,7 @@ def mock_ssh_key_with_comment() -> MagicMock:
     """Create a mock SSH key whose export includes a trailing comment field."""
     key = MagicMock()
     key.get_algorithm.return_value = "ssh-rsa"
-    key.export_public_key.return_value = (
-        b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQtestdata== user@host"
-    )
+    key.export_public_key.return_value = b"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQtestdata== user@host"
     return key
 
 
@@ -242,9 +240,9 @@ class TestTOFULock:
         """_tofu_lock must be a threading.Lock instance, not asyncio.Lock."""
         from homelab_mcp import ssh_connection
 
-        assert isinstance(
-            ssh_connection._tofu_lock, type(threading.Lock())
-        ), f"Expected threading.Lock, got {type(ssh_connection._tofu_lock)}"
+        assert isinstance(ssh_connection._tofu_lock, type(threading.Lock())), (
+            f"Expected threading.Lock, got {type(ssh_connection._tofu_lock)}"
+        )
 
     def test_store_host_key_uses_lock(
         self,

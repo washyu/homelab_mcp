@@ -198,9 +198,7 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
                             await websocket.send_text(text)
                         else:
                             # EOF — process exited
-                            await websocket.send_text(
-                                "\r\n\x1b[31m[Connection closed]\x1b[0m\r\n"
-                            )
+                            await websocket.send_text("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n")
                             break
                     else:
                         break
@@ -209,9 +207,7 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
                 except Exception as e:
                     logger.error(f"Error reading output: {e}")
                     try:
-                        await websocket.send_text(
-                            f"\r\n\x1b[31m[Read error: {e}]\x1b[0m\r\n"
-                        )
+                        await websocket.send_text(f"\r\n\x1b[31m[Read error: {e}]\x1b[0m\r\n")
                     except Exception as send_err:
                         logger.debug(f"Could not send error to websocket: {send_err}")
                     break
