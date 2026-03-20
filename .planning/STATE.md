@@ -4,7 +4,7 @@ milestone: v1.4
 milestone_name: Real-World Reliability
 status: planning
 stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-03-20T02:21:58.021Z"
+last_updated: "2026-03-20T19:54:49.436Z"
 last_activity: 2026-03-13 — Roadmap created, phases 21-23 defined
 progress:
   total_phases: 9
@@ -18,19 +18,18 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-13)
+See: .planning/PROJECT.md (updated 2026-03-20)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** v1.4 Real-World Reliability — Phase 21: Core SSH Reliability
+**Current focus:** Planning next milestone (v1.4 complete, archived 2026-03-20)
 
 ## Current Position
 
-Phase: 21 of 23 (Core SSH Reliability)
-Plan: — of — in current phase
-Status: Ready to plan
-Last activity: 2026-03-13 — Roadmap created, phases 21-23 defined
+Milestone v1.4 complete. All 9 phases, 16 plans done.
+Status: Between milestones — ready for `/gsd:new-milestone`
+Last activity: 2026-03-20 — v1.4 milestone archived
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████████████████] 100%
 
 ## Performance Metrics
 

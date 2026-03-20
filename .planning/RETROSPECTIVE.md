@@ -178,6 +178,52 @@
 
 ---
 
+## Milestone: v1.4 — Real-World Reliability
+
+**Shipped:** 2026-03-20
+**Phases:** 9 | **Plans:** 16
+
+### What Was Built
+- SSH TOFU bug fixes: known_hosts comment field leak stripped; dead `asyncio.Lock` replaced with `threading.Lock`
+- PTY interactive shell fixed: inverted dimensions (24×80 → 80×24), blocking read replaced with `asyncio.wait_for`, explicit `[Connection closed]` EOF notification
+- `connect_to_device` onboarding prompt with keyring desync warning log
+- Keyring auto-resolve for `setup_mcp_admin` and `update_mcp_admin_groups` — no explicit password required at call site
+- `_sudo_run` helper with `sudo -S` stdin piping — eliminates shell injection and bootstrap timeout for password-based sudo
+- Full tool schema sync: 7+ mismatches fixed (phantom `port`, SSH timeout, Proxmox hidden params)
+- Prompt correctness fixes: `host=` → `hostname=`, phantom `list_installed_services` → `get_service_status`; regression guards added
+
+### What Worked
+- Milestone audit mid-way caught real E2E gaps that the original 5-phase scope would have missed — gap closure phases (26-29) extended the milestone but shipped a correct product
+- Wave-0 TDD pattern continued to hold — RED assertions written before all fixes, GREEN confirmed implementation correctness
+- `_sudo_run` abstraction was a clean extraction — all three call sites (setup, groups, ssh_execute_command) adopted it uniformly
+- Regression guards (pytest assertions for `host=` absence, phantom tool absence) prevent exact-same bugs re-occurring silently; CI now owns that contract
+- Schema sync + handler wiring tests together (Phases 26-27) treated as a paired phase — schema and behavior verified in lockstep
+
+### What Was Inefficient
+- Phases 26-29 were not in the original roadmap — they were discovered via audit after Phases 21-25 shipped. The 5 original phases fixed all real-world bugs but left tool schemas, prompt parameter names, and phantom prompt tools as accumulated drift. A pre-planning schema/prompt integrity check would have caught these before phase planning.
+- SUMMARY.md `one_liner` frontmatter field remained empty across all phases — `gsd-tools summary-extract` cannot extract accomplishments without it; the CLI auto-populated empty accomplishments in MILESTONES.md. Requires manual correction at milestone close.
+- Phase 25 SUMMARY.md accomplishments section was empty — the summary file was committed without filling in the key bullets. Pattern: summary file structure created but content not fully populated.
+
+### Patterns Established
+- `_sudo_run(conn, cmd, password, error_prefix)` helper — single point for all `sudo -S` stdin piping; centralizes error classification
+- `asyncio.wait_for(stdout.read(1), timeout=0.05)` non-blocking PTY read pattern — tunable, replaces blocking `read(4096)`
+- `threading.Lock()` for synchronous TOFU callback — `asyncio.Lock` cannot be acquired from sync callbacks in asyncssh
+- Paired schema+test phases: fix schema in phase N, add handler wiring and regression guard tests in phase N+1
+- Regression guard pattern: `assert "bad_token" not in prompt_text` at test suite level blocks future drift via CI
+
+### Key Lessons
+1. Milestone audit is valuable mid-scope, not just post-completion — the v1.4 audit found gaps that would have left deploy and onboarding workflows broken; treating audit gaps as first-class phases is the right response
+2. Prompt parameter correctness is a system property, not a unit property — prompt text uses parameter names that tool schemas must match; add cross-reference tests as part of any new prompt's test scaffold
+3. Schema drift accumulates silently — 7+ mismatches between inputSchema and function signatures existed across 4 modules with zero failures because MCP silently ignores undeclared params. A periodic schema integrity check should be part of quality gate or CI.
+4. SUMMARY.md completeness matters for downstream tooling — `gsd-tools summary-extract` and milestone CLI depend on structured frontmatter; empty `one_liner` fields are a recurring friction point at milestone close
+5. Paired fix+test phases are more reliable than fix phases alone — Phase 26 (schema fix) without Phase 27 (regression tests) would leave the fixes undocumented and easy to accidentally revert
+
+### Cost Observations
+- Timeline: 5 days (2026-03-15 → 2026-03-19) — longest v1.x milestone due to 4 audit gap closure phases
+- Notable: 9 phases (5 planned + 4 gap closure); all 23 requirements met; all 4 prompts now have correct parameter names and no phantom tool references
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -188,6 +234,7 @@
 | v1.1 | 6 | 16 | Tech-debt-first ordering; Wave-0 TDD scaffolding; audit confirmed 0 gaps needed |
 | v1.2 | 5 | 10 | PyPI distribution; full MCP protocol surface; integration checker found cross-phase param mismatch |
 | v1.3 | 4 | 9 | Credential store + CLI; OIDC auto-publish; PRMT-02 fix; monkeypatch/lazy-import tension resolved |
+| v1.4 | 9 | 16 | Real-world reliability: TOFU fix, PTY fix, sudo piping, schema sync, prompt correctness; 4 audit gap phases |
 
 ### Cumulative Quality
 
@@ -197,6 +244,7 @@
 | v1.1 | ~500+ | 22/22 requirements satisfied, 6/6 E2E flows, 0 gap closure phases |
 | v1.2 | 603 | 20/20 requirements satisfied (18 full, 2 partial), 1 integration semantic mismatch in tech debt |
 | v1.3 | ~620+ | 15/15 requirements satisfied, 4/4 E2E flows, 0 gap closure phases; PRMT-02 tech debt resolved |
+| v1.4 | ~650+ | 23/23 requirements satisfied; 4 audit gap phases added mid-milestone; all prompts correct |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -205,3 +253,4 @@
 3. Upgrade tooling when first encountered — deferring mypy upgrade from Phase 06 to Phase 08 added friction across 3 phases
 4. "Build infrastructure, wire it later" fails — v1.0 proxmox_session was orphaned; v1.1 fixed it by treating tech debt as Phase 1
 5. Integration-level tests required for cross-phase contracts — unit tests verify individual components; integration checker is the only thing that caught the PRMT-02 parameter mismatch across Phase 14 and Phase 15
+6. Milestone audit as mid-milestone gate is worth scheduling — v1.4 audit found schema/prompt drift that wouldn't have been caught otherwise; 4 gap phases was the right response vs deferring to v1.5

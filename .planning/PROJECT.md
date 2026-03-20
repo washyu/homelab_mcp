@@ -58,17 +58,17 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ Credential auto-inject into SSH tools and Proxmox client — v1.3
 - ✓ Automated PyPI publish via GitHub Actions OIDC trusted publishing on `git tag v*` — v1.3
 - ✓ `decommission_device_workflow` prompt resolves hostname→`device_id` before calling decommission — v1.3
+- ✓ TOFU known_hosts writes correct 3-field format (no comment leak); `asyncio.Lock` replaced with `threading.Lock` — v1.4
+- ✓ PTY interactive shell streams in real time with correct 80×24 dimensions and explicit EOF notification — v1.4
+- ✓ `connect_to_device` onboarding prompt — full 6-step device setup sequence — v1.4
+- ✓ Keyring desync detection — warning logged when registry entry exists but keyring returns None — v1.4
+- ✓ `setup_mcp_admin` and `update_mcp_admin_groups` resolve credentials from keyring (no explicit password required) — v1.4
+- ✓ All sudo calls use `_sudo_run` helper with `sudo -S` stdin piping; distinct error for wrong password vs not-in-sudoers — v1.4
+- ✓ All tool schemas synced to function signatures — phantom `port` removed, SSH timeouts fixed, 7 hidden Proxmox params exposed — v1.4
+- ✓ `host=` → `hostname=` fixed in all prompt tool calls; phantom `list_installed_services` replaced with `get_service_status` — v1.4
+- ✓ Regression guard tests for all prompt parameter names and phantom tool references — v1.4
 
 ### Active
-
-## Current Milestone: v1.4 Real-World Reliability
-
-**Goal:** Fix bugs and workflow issues discovered during real Mac testing — interactive shell, SSH credential flow, and TOFU known_hosts handling.
-
-**Target features:**
-- Fix silent interactive shell failure
-- Fix SSH workflow so agent knows to register → check keyring → guide user to `credentials add`
-- Fix SSH timeouts caused by TOFU known_hosts not including newly registered hosts
 
 ### Out of Scope
 
@@ -86,13 +86,14 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ## Context
 
-- Shipped v1.3 with ~15,229 LOC Python (src/) | 41 files changed from v1.2 baseline
+- Shipped v1.4 with ~15,554 LOC Python (src/) + ~17,569 LOC tests | 86 files changed from v1.3 baseline
 - Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite
 - 56 tools: 50 original + 6 `*_preview` variants, organized into 7 categories
-- Available on PyPI as `homelab-mcp` 1.3.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
+- Available on PyPI as `homelab-mcp` 1.4.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
 - MCP protocol surface complete: Tools + Resources + Prompts + Notifications
-- New modules added in v1.3: `credential_store.py`
-- Key v1.3 patterns: Lazy keyring import (function-body, not module-level), `set_defaults` argparse dispatch, module-level imports for monkeypatch compatibility, JSON hostname registry alongside OS keyring
+- 4 workflow prompts: `connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`
+- All prompts now use correct parameter names (`hostname=`) with regression tests guarding against regressions
+- Key v1.4 patterns: `_sudo_run` helper for all sudo calls, `asyncio.wait_for` for non-blocking PTY reads, `threading.Lock` for TOFU host key validation
 
 ## Constraints
 
@@ -131,6 +132,10 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | `set_defaults(func=_run_server)` argparse dispatch | Prevents bare `homelab-mcp` regression when subparsers added | ✓ Good — clean dispatch, bare invocation regression-tested |
 | OIDC trusted publishing for PyPI | No stored secrets in GitHub; verified at publish time | ✓ Good — requires one-time manual trusted publisher registration at pypi.org before first tag push |
 | `decommission_device_workflow` uses get_network_sitemap for device_id | Fixes PRMT-02: tool schema requires device_id, not hostname | ✓ Good — 5-step workflow; AI no longer hits schema validation errors |
+| `_sudo_run` helper with `sudo -S` stdin piping | Shell injection risk and bootstrap timeout for password-based sudo | ✓ Good — clean abstraction, covers both setup_mcp_admin and update_mcp_admin_groups; distinct error messages |
+| `threading.Lock` for TOFU `validate_host_public_key` | `asyncio.Lock` can't be acquired from sync callback context — was completely ineffective | ✓ Good — correct primitive for sync callback; existing asyncio call sites unaffected |
+| `asyncio.wait_for(..., timeout=0.05)` for PTY reads | Blocking `stdout.read(4096)` would not return until 4096 bytes or EOF — browser saw nothing | ✓ Good — real-time streaming with tunable timeout |
+| Gap-closure phases (26-29) added mid-milestone via audit | Audit revealed schema/prompt bugs not in original scope; extending milestone cleaner than deferring | ✓ Good — 4 extra phases closed all audit gaps before v1.5 planning |
 
 ---
-*Last updated: 2026-03-13 after v1.4 milestone start*
+*Last updated: 2026-03-20 after v1.4 milestone*

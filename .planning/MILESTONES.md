@@ -1,5 +1,22 @@
 # Milestones
 
+## v1.4 Real-World Reliability (Shipped: 2026-03-20)
+
+**Phases completed:** 9 phases, 16 plans
+**Timeline:** 5 days (Mar 15-19, 2026)
+**Stats:** 91 commits, 86 files changed, +11,406 / -230 lines | ~15,554 LOC src + ~17,569 LOC tests
+
+**Key accomplishments:**
+1. Fixed SSH TOFU known_hosts corruption — `export_public_key()` comment field leak stripped; dead `asyncio.Lock` replaced with `threading.Lock` so TOFU lock actually works
+2. Fixed PTY interactive shell — inverted dimensions (24×80 → 80×24), blocking read replaced with `asyncio.wait_for`, explicit `[Connection closed]` EOF notification
+3. Added `connect_to_device` onboarding prompt — 6-step sequence covering setup, registration, credentials, discovery, and verification; includes keyring desync warning log
+4. Keyring auto-resolve for admin tools — `setup_mcp_admin` and `update_mcp_admin_groups` resolve credentials from keyring; no explicit password required
+5. Sudo password piping via stdin (`sudo -S`) — eliminates shell injection and bootstrap timeout for password-based sudo users; distinct errors for wrong password vs not-in-sudoers
+6. Synced all tool schemas to function signatures — removed phantom `port` from SERVICE_TOOLS, fixed SSH timeout mismatches, made `username` optional in discover tools, exposed 7 hidden Proxmox VM/LXC parameters
+7. Fixed phantom tools in prompts — `list_installed_services` replaced with `get_service_status`; `host=` → `hostname=` fixed in both `connect_to_device` and `deploy_service_workflow` prompts; regression guards added
+
+---
+
 ## v1.3 Credentials & Release Automation (Shipped: 2026-03-15)
 
 **Phases completed:** 4 phases, 9 plans
