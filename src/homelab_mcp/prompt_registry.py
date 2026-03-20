@@ -110,11 +110,11 @@ def _build_deploy_service_result(args: dict[str, str]) -> types.GetPromptResult:
     text = f"""Follow these steps to deploy {service_name} on {target_host}:
 
 Pre-flight checks:
-1. Call ssh_discover with host="{target_host}" to verify SSH connectivity.
-2. Call list_installed_services with host="{target_host}" to check for conflicts with {service_name}.
+1. Call ssh_discover with hostname="{target_host}" to verify SSH connectivity.
+2. Call list_installed_services with hostname="{target_host}" to check for conflicts with {service_name}.
 
 If pre-flight checks pass:
-3. Call install_service with service_name="{service_name}" and host="{target_host}".
+3. Call install_service with service_name="{service_name}" and hostname="{target_host}".
 4. Report the installation result to the user."""
     return types.GetPromptResult(
         description="Service deployment with pre-flight checks",
@@ -127,17 +127,17 @@ def _build_connect_to_device_result(args: dict[str, str]) -> types.GetPromptResu
     hostname = args.get("hostname", "<hostname>")
     text = f"""Follow these steps to onboard {hostname} into your homelab:
 
-1. Call setup_mcp_admin with host="{hostname}" to create the mcp_admin user and \
+1. Call setup_mcp_admin with hostname="{hostname}" to create the mcp_admin user and \
 SSH key on the device.
 2. Run the CLI command: homelab-mcp credentials add {hostname} mcp_admin — \
 this stores the SSH credential in your OS keyring.
 3. Call register_server with hostname="{hostname}" and username="mcp_admin" to \
 add the device to the server database.
-4. Call ssh_discover with host="{hostname}" to collect hardware and system info \
+4. Call ssh_discover with hostname="{hostname}" to collect hardware and system info \
 and record it in the database.
-5. Call discover_and_map with host="{hostname}" to add the device to the network \
+5. Call discover_and_map with hostname="{hostname}" to add the device to the network \
 sitemap.
-6. Call verify_mcp_admin with host="{hostname}" to confirm that mcp_admin can \
+6. Call verify_mcp_admin with hostname="{hostname}" to confirm that mcp_admin can \
 connect successfully.
 
 If any step fails, fix the issue before proceeding to the next step."""
