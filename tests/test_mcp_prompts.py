@@ -73,9 +73,9 @@ def test_deploy_service_workflow_prompt() -> None:
     )
     assert len(result.messages) >= 1
     combined_text = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text")).lower()
-    assert any(
-        keyword in combined_text for keyword in ("pre-flight", "preflight", "ssh_discover", "list_installed_services")
-    )
+    assert "pre-flight" in combined_text or "preflight" in combined_text
+    assert "ssh_discover" in combined_text
+    assert "get_service_status" in combined_text
 
 
 def test_health_check_prompt_resources() -> None:
@@ -154,3 +154,20 @@ def test_deploy_service_workflow_prompt_parameter_names() -> None:
     combined = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text"))
     assert "host=" not in combined, f"Prompt must use hostname= not host= for tool parameters. Found: {combined}"
     assert "hostname=" in combined, "hostname= must appear in deploy workflow prompt"
+
+
+def test_deploy_service_workflow_no_phantom_tool() -> None:
+    """Phase 29: deploy_service_workflow must not reference unregistered list_installed_services."""
+    from homelab_mcp.prompt_registry import get_prompt_result
+
+    result = get_prompt_result(
+        "deploy_service_workflow",
+        {"service_name": "nginx", "target_host": "myhost"},
+    )
+    combined = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text"))
+    assert "list_installed_services" not in combined, (
+        "deploy_service_workflow must not reference phantom tool list_installed_services"
+    )
+    assert "get_service_status" in combined, (
+        "deploy_service_workflow step 2 must use registered get_service_status tool"
+    )
