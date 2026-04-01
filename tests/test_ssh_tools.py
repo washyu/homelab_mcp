@@ -763,3 +763,231 @@ def test_no_password_in_log_after_ssh_keyring_inject(mocker, caplog):
     with caplog.at_level(logging.DEBUG):
         resolve_ssh_credentials("192.168.1.10")
     assert "super-secret-pw" not in caplog.text
+
+
+# --- SEC-01: Injection-safe key delivery tests ---
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_mcp_admin_key_injection_safe(mock_connect, mock_path, mock_ensure_key):
+    """Public key with shell metacharacters must not appear in any conn.run command string."""
+    # Key with shell metacharacters that would execute if interpolated into a shell string
+    public_key = "ssh-ed25519 AAAA$(rm -rf /)test mcp_admin@host"
+
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
+
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = public_key
+    mock_path.return_value = mock_pub_key
+
+    mock_conn = AsyncMock()
+
+    # Sequence: id mcp_admin, mktemp, then remaining setup calls all succeed
+    id_result = MagicMock(exit_status=0, stdout="", stderr="")  # user exists
+    mktemp_result = MagicMock(exit_status=0, stdout="/tmp/mcp_key_aB3x9K.pub\n", stderr="")
+    success_result = MagicMock(exit_status=0, stdout="", stderr="")
+
+    # Make run() return mktemp on second call, then success for remaining calls
+    call_count = 0
+
+    async def run_side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return id_result
+        elif call_count == 2:
+            return mktemp_result
+        return success_result
+
+    mock_conn.run = run_side_effect
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    # Collect all conn.run calls
+    run_calls: list[str] = []
+    original_run = run_side_effect
+
+    async def tracking_run(*args, **kwargs):
+        cmd = args[0] if args else kwargs.get("command", "")
+        run_calls.append(str(cmd))
+        return await original_run(*args, **kwargs)
+
+    mock_conn.run = tracking_run
+
+    try:
+        result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
+        result_data = json.loads(result)
+        assert result_data["status"] == "success"
+    except Exception:
+        pass  # Errors OK — we care about the injection-safety assertions
+
+    # Assert NONE of the conn.run commands contain the literal public key
+    for cmd in run_calls:
+        assert public_key not in cmd, (
+            f"Public key content found in conn.run command (injection risk): {cmd!r}"
+        )
+
+    # Assert SFTP was used (key delivered via SFTP, not shell)
+    mock_conn.start_sftp_client.assert_called()
+
+    # Assert mktemp was called to create a remote tmpfile
+    mktemp_called = any("mktemp" in cmd and "mcp_key_" in cmd for cmd in run_calls)
+    assert mktemp_called, (
+        f"Expected conn.run to be called with a mktemp /tmp/mcp_key_ command. Got: {run_calls}"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure_key):
+    """Key existence check must use grep -Ff with tmpfile path, not -F with key as argument."""
+    public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA mcp_admin@host"
+
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
+
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = public_key
+    mock_path.return_value = mock_pub_key
+
+    mock_conn = AsyncMock()
+
+    id_result = MagicMock(exit_status=0, stdout="", stderr="")
+    mktemp_result = MagicMock(exit_status=0, stdout="/tmp/mcp_key_xYz123.pub\n", stderr="")
+    success_result = MagicMock(exit_status=0, stdout="", stderr="")
+
+    call_count = 0
+    run_calls: list[str] = []
+
+    async def tracking_run(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        cmd = args[0] if args else kwargs.get("command", "")
+        run_calls.append(str(cmd))
+        if call_count == 1:
+            return id_result
+        elif call_count == 2:
+            return mktemp_result
+        return success_result
+
+    mock_conn.run = tracking_run
+
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    try:
+        result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
+        result_data = json.loads(result)
+        assert result_data["status"] == "success"
+    except Exception:
+        pass
+
+    # Find grep calls
+    grep_calls = [cmd for cmd in run_calls if "grep" in cmd]
+    assert grep_calls, f"Expected at least one grep call. Got calls: {run_calls}"
+
+    grep_cmd = grep_calls[0]
+    # Must use file-based grep (-Ff with tmpfile path)
+    assert "grep -Ff" in grep_cmd or "-Ff" in grep_cmd, (
+        f"grep command must use -Ff (file-based): {grep_cmd!r}"
+    )
+    assert "/tmp/mcp_key_" in grep_cmd, (
+        f"grep command must reference the tmpfile path: {grep_cmd!r}"
+    )
+    # Must NOT use argument-based grep with key content as argument
+    assert f'grep -F "{public_key}"' not in grep_cmd, (
+        f"grep must not use quoted key argument (injection risk): {grep_cmd!r}"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path, mock_ensure_key):
+    """Cleanup (rm -f remote tmpfile) runs even when the key append step fails."""
+    public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA mcp_admin@host"
+
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
+
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = public_key
+    mock_path.return_value = mock_pub_key
+
+    mock_conn = AsyncMock()
+
+    remote_tmp = "/tmp/mcp_key_cLn48Q.pub"
+    id_result = MagicMock(exit_status=0, stdout="", stderr="")
+    mktemp_result = MagicMock(exit_status=0, stdout=f"{remote_tmp}\n", stderr="")
+    # grep returns exit_status=1 so key does not exist → triggers append path
+    grep_result = MagicMock(exit_status=1, stdout="", stderr="")
+    success_result = MagicMock(exit_status=0, stdout="", stderr="")
+
+    call_count = 0
+    run_calls: list[str] = []
+
+    async def tracking_run(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        cmd = args[0] if args else kwargs.get("command", "")
+        run_calls.append(str(cmd))
+        if call_count == 1:
+            return id_result
+        elif call_count == 2:
+            return mktemp_result
+        elif "grep" in str(cmd):
+            return grep_result
+        elif "cat" in str(cmd) and "authorized_keys" in str(cmd):
+            # Simulate failure on the cat >> authorized_keys step
+            raise asyncssh.Error("Simulated append failure")
+        return success_result
+
+    mock_conn.run = tracking_run
+
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    try:
+        await setup_remote_mcp_admin("10.0.0.1", "admin", "password", force_update_key=True)
+    except Exception:
+        pass  # Error expected — we care about cleanup assertions
+
+    # Assert remote tmpfile cleanup ran (rm -f /tmp/mcp_key_...)
+    rm_calls = [cmd for cmd in run_calls if "rm -f" in cmd and "mcp_key_" in cmd]
+    assert rm_calls, (
+        f"Expected rm -f cleanup of remote tmpfile in conn.run calls. "
+        f"Got calls: {run_calls}"
+    )
