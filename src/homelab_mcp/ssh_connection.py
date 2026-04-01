@@ -8,8 +8,8 @@ Implements Trust-On-First-Use (TOFU) for SSH host keys:
 All SSH connections in the codebase should use ssh_connect() from this module.
 """
 
-import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 KNOWN_HOSTS_PATH = Path.home() / ".homelab_mcp" / "known_hosts"
 
 # Module-level lock to prevent race conditions on concurrent TOFU
-_tofu_lock = asyncio.Lock()
+_tofu_lock = threading.Lock()
 
 
 class TOFUSSHClient(asyncssh.SSHClient):
@@ -56,6 +56,9 @@ class TOFUSSHClient(asyncssh.SSHClient):
         If a different key was previously stored for this host, reject (MITM).
         If no key exists, store it (TOFU) and accept.
 
+        The entire check-then-store sequence is protected by ``_tofu_lock`` to
+        prevent concurrent first-connections from writing conflicting host keys.
+
         Args:
             host: The hostname being connected to.
             addr: The address being connected to (may be None).
@@ -65,20 +68,21 @@ class TOFUSSHClient(asyncssh.SSHClient):
         Returns:
             True if the key should be accepted, False to reject.
         """
-        host_label = self._format_host_label(host, port)
+        with _tofu_lock:
+            host_label = self._format_host_label(host, port)
 
-        # Check if any key already exists for this host (key mismatch case)
-        if self._host_has_stored_key(host, port):
-            logger.warning(
-                "Host key mismatch for %s -- possible MITM attack. Connection rejected.",
-                host_label,
-            )
-            return False
+            # Check if any key already exists for this host (key mismatch case)
+            if self._host_has_stored_key(host, port):
+                logger.warning(
+                    "Host key mismatch for %s -- possible MITM attack. Connection rejected.",
+                    host_label,
+                )
+                return False
 
-        # No key stored -- TOFU: accept and store
-        self._store_host_key(host, port, key)
-        logger.info("TOFU: Accepted and stored host key for %s", host_label)
-        return True
+            # No key stored -- TOFU: accept and store
+            self._store_host_key(host, port, key)
+            logger.info("TOFU: Accepted and stored host key for %s", host_label)
+            return True
 
     def _host_has_stored_key(self, host: str, port: int) -> bool:
         """Check if any key is already stored for this host.
@@ -112,8 +116,7 @@ class TOFUSSHClient(asyncssh.SSHClient):
     def _store_host_key(self, host: str, port: int, key: asyncssh.SSHKey) -> None:
         """Store a host key in the known_hosts file.
 
-        Uses the module-level _tofu_lock to prevent duplicate entries from
-        concurrent TOFU operations.
+        Caller must hold ``_tofu_lock`` before calling this method.
 
         Args:
             host: The hostname.
@@ -123,9 +126,10 @@ class TOFUSSHClient(asyncssh.SSHClient):
         host_label = self._format_host_label(host, port)
 
         # Extract key data from the public key export
-        key_data = key.export_public_key().decode("utf-8").strip()
-        # key_data is in format: "algorithm base64data"
-        # We want: "host_label algorithm base64data"
+        key_export = key.export_public_key().decode("utf-8").strip()
+        # Strip trailing comment field -- known_hosts requires exactly "algorithm base64"
+        parts = key_export.split()
+        key_data = " ".join(parts[:2])
         entry = f"{host_label} {key_data}\n"
 
         try:
