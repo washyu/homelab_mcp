@@ -303,7 +303,7 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results - need to match the actual sequence in the function
+    # Mock command results - matches the new SFTP-based sequence
     user_check = MagicMock()
     user_check.exit_status = 1  # User doesn't exist
 
@@ -318,6 +318,10 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
+
+    mktemp_result = MagicMock()  # mktemp /tmp/mcp_key_XXXXXX.pub
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
 
     key_check = MagicMock()
     key_check.exit_status = 1  # Key doesn't exist
@@ -334,6 +338,9 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     add_key = MagicMock()
     add_key.exit_status = 0
 
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
+
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
 
@@ -346,14 +353,24 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
         create_user,
         chown_home,
         sudo_group,
+        mktemp_result,
         key_check,
         mkdir_home,
         chown_home2,
         mkdir_cmd,
         add_key,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect is async, returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -395,12 +412,16 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results - for when user already exists
+    # Mock command results - for when user already exists (new SFTP-based sequence)
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
+
+    mktemp_result = MagicMock()
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
 
     key_check = MagicMock()
     key_check.exit_status = 1  # Key doesn't exist
@@ -417,6 +438,9 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     add_key = MagicMock()
     add_key.exit_status = 0
 
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
+
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
 
@@ -426,14 +450,24 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     mock_conn.run.side_effect = [
         user_check,
         sudo_group,
+        mktemp_result,
         key_check,
         mkdir_home,
         chown_home,
         mkdir_cmd,
         add_key,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -601,12 +635,16 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results - for existing user with force update key
+    # Mock command results - for existing user with force update key (new SFTP-based sequence)
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
+
+    mktemp_result = MagicMock()
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
 
     key_check = MagicMock()
     key_check.exit_status = 0  # Key exists (but different)
@@ -620,11 +658,14 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     mkdir_cmd = MagicMock()  # create .ssh directory
     mkdir_cmd.exit_status = 0
 
-    remove_old = MagicMock()  # Remove old key
+    remove_old = MagicMock()  # sed -i '/mcp_admin@/d' (Remove old key)
     remove_old.exit_status = 0
 
     add_key = MagicMock()
     add_key.exit_status = 0
+
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
 
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
@@ -635,15 +676,25 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     mock_conn.run.side_effect = [
         user_check,
         sudo_group,
+        mktemp_result,
         key_check,
         mkdir_home,
         chown_home,
         mkdir_cmd,
         remove_old,
         add_key,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -680,15 +731,22 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results
+    # Mock command results - key already exists, no force update (new SFTP-based sequence)
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
 
+    mktemp_result = MagicMock()
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
+
     key_check = MagicMock()
     key_check.exit_status = 0  # Key already exists
+
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
 
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
@@ -699,10 +757,20 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     mock_conn.run.side_effect = [
         user_check,
         sudo_group,
+        mktemp_result,
         key_check,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect returns a connection usable as async context manager
     mock_ctx = AsyncMock()

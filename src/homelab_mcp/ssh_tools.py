@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -224,62 +226,92 @@ async def setup_remote_mcp_admin(
                 )
                 setup_results["sudo_access"] = f"Failed: {stderr_text}"
 
-            # Check if our key is already in authorized_keys
-            key_check = await conn.run(
-                f'sudo grep -F "{public_key}" /home/mcp_admin/.ssh/authorized_keys 2>/dev/null',
-                check=False,
-            )
-
-            key_exists = key_check.exit_status == 0
-
-            if key_exists and not force_update_key:
-                setup_results["ssh_key"] = "SSH key already exists"
+            # --- SFTP-based key delivery (SEC-01: no shell interpolation of key content) ---
+            # Step 1: Create randomized remote tmpfile to avoid concurrent collision
+            mktemp_result = await conn.run("mktemp /tmp/mcp_key_XXXXXX.pub", check=False)
+            if mktemp_result.exit_status != 0:
+                setup_results["ssh_key"] = "Failed: could not create remote tmpfile"
             else:
-                # Setup SSH directory (more robust approach)
-                # First ensure the home directory exists and has proper ownership
-                await conn.run("sudo mkdir -p /home/mcp_admin", check=False)
-                await conn.run("sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
-
-                # Create .ssh directory as root, then change ownership
-                mkdir_cmd = await conn.run(
-                    "sudo mkdir -p /home/mcp_admin/.ssh && "
-                    "sudo chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
-                    "sudo chmod 700 /home/mcp_admin/.ssh",
-                    check=False,
+                remote_tmp = (
+                    mktemp_result.stdout.decode().strip()
+                    if isinstance(mktemp_result.stdout, bytes)
+                    else str(mktemp_result.stdout).strip()
                 )
 
-                if mkdir_cmd.exit_status != 0:
-                    stderr_text = (
-                        mkdir_cmd.stderr.decode() if isinstance(mkdir_cmd.stderr, bytes) else str(mkdir_cmd.stderr)
+                # Step 2: Write key to local tmpfile and SFTP-upload to remote (key never hits a shell string)
+                local_tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".pub", mode="w"
+                    ) as local_tmp:
+                        local_tmp.write(public_key)
+                        local_tmp_path = local_tmp.name
+
+                    async with conn.start_sftp_client() as sftp:
+                        await sftp.put(local_tmp_path, remote_tmp)
+
+                    # Step 3: Injection-safe existence check — grep reads pattern from file, not args
+                    key_check = await conn.run(
+                        f"sudo grep -Ff {remote_tmp} /home/mcp_admin/.ssh/authorized_keys 2>/dev/null",
+                        check=False,
                     )
-                    setup_results["ssh_key"] = f"Failed to create .ssh directory: {stderr_text}"
-                else:
-                    if force_update_key and key_exists:
-                        # Remove old MCP keys (those with mcp_admin@ comment)
-                        await conn.run(
-                            'sudo grep -v "mcp_admin@" /home/mcp_admin/.ssh/authorized_keys | '
-                            "sudo -u mcp_admin tee /home/mcp_admin/.ssh/authorized_keys.tmp && "
-                            "sudo -u mcp_admin mv /home/mcp_admin/.ssh/authorized_keys.tmp /home/mcp_admin/.ssh/authorized_keys",
+                    key_exists = key_check.exit_status == 0
+
+                    if key_exists and not force_update_key:
+                        setup_results["ssh_key"] = "SSH key already exists"
+                    else:
+                        # Setup SSH directory
+                        await conn.run("sudo mkdir -p /home/mcp_admin", check=False)
+                        await conn.run("sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
+
+                        # Create .ssh directory as root, then change ownership
+                        mkdir_cmd = await conn.run(
+                            "sudo mkdir -p /home/mcp_admin/.ssh && "
+                            "sudo chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
+                            "sudo chmod 700 /home/mcp_admin/.ssh",
                             check=False,
                         )
 
-                    # Add new key
-                    add_key = await conn.run(
-                        f'echo "{public_key}" | sudo -u mcp_admin tee -a /home/mcp_admin/.ssh/authorized_keys && '
-                        "sudo -u mcp_admin chmod 600 /home/mcp_admin/.ssh/authorized_keys",
-                        check=False,
-                    )
-
-                    if add_key.exit_status == 0:
-                        if key_exists and force_update_key:
-                            setup_results["ssh_key"] = "Success: SSH key updated"
+                        if mkdir_cmd.exit_status != 0:
+                            stderr_text = (
+                                mkdir_cmd.stderr.decode()
+                                if isinstance(mkdir_cmd.stderr, bytes)
+                                else str(mkdir_cmd.stderr)
+                            )
+                            setup_results["ssh_key"] = f"Failed to create .ssh directory: {stderr_text}"
                         else:
-                            setup_results["ssh_key"] = "Success: SSH key installed"
-                    else:
-                        stderr_text = (
-                            add_key.stderr.decode() if isinstance(add_key.stderr, bytes) else str(add_key.stderr)
-                        )
-                        setup_results["ssh_key"] = f"Failed: {stderr_text}"
+                            if force_update_key and key_exists:
+                                # Remove old MCP keys (sed does not use key content — safe)
+                                await conn.run(
+                                    "sudo sed -i '/mcp_admin@/d' /home/mcp_admin/.ssh/authorized_keys",
+                                    check=False,
+                                )
+
+                            # Step 4: Append key from tmpfile — no key content in shell string
+                            add_key = await conn.run(
+                                f"sudo bash -c 'cat {remote_tmp} >> /home/mcp_admin/.ssh/authorized_keys && "
+                                "chown mcp_admin:mcp_admin /home/mcp_admin/.ssh/authorized_keys && "
+                                "chmod 600 /home/mcp_admin/.ssh/authorized_keys'",
+                                check=False,
+                            )
+
+                            if add_key.exit_status == 0:
+                                if key_exists and force_update_key:
+                                    setup_results["ssh_key"] = "Success: SSH key updated"
+                                else:
+                                    setup_results["ssh_key"] = "Success: SSH key installed"
+                            else:
+                                stderr_text = (
+                                    add_key.stderr.decode()
+                                    if isinstance(add_key.stderr, bytes)
+                                    else str(add_key.stderr)
+                                )
+                                setup_results["ssh_key"] = f"Failed: {stderr_text}"
+                finally:
+                    # Step 5: Always clean up both local and remote tmpfiles (D-04)
+                    if local_tmp_path and os.path.exists(local_tmp_path):
+                        os.unlink(local_tmp_path)
+                    await conn.run(f"rm -f {remote_tmp}", check=False)
 
             # Enable passwordless sudo for mcp_admin
             sudoers_setup = await conn.run(
