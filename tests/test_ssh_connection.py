@@ -244,12 +244,33 @@ class TestTOFULock:
             f"Expected threading.Lock, got {type(ssh_connection._tofu_lock)}"
         )
 
-    def test_store_host_key_uses_lock(
+    def test_validate_host_public_key_uses_lock(
         self,
         known_hosts_path: Path,
         mock_ssh_key: MagicMock,
     ) -> None:
-        """_store_host_key must acquire _tofu_lock via context manager during file write."""
+        """validate_host_public_key must acquire _tofu_lock via context manager (not _store_host_key)."""
+        from homelab_mcp.ssh_connection import TOFUSSHClient
+
+        known_hosts_path.touch()
+
+        mock_lock = MagicMock()
+        mock_lock.__enter__ = MagicMock(return_value=None)
+        mock_lock.__exit__ = MagicMock(return_value=False)
+
+        client = TOFUSSHClient(known_hosts_path)
+
+        with patch("homelab_mcp.ssh_connection._tofu_lock", mock_lock):
+            client.validate_host_public_key("192.168.1.10", None, 22, mock_ssh_key)
+
+        mock_lock.__enter__.assert_called_once()
+
+    def test_store_host_key_no_internal_lock(
+        self,
+        known_hosts_path: Path,
+        mock_ssh_key: MagicMock,
+    ) -> None:
+        """_store_host_key must NOT acquire _tofu_lock internally (caller is responsible)."""
         from homelab_mcp.ssh_connection import TOFUSSHClient
 
         known_hosts_path.touch()
@@ -263,4 +284,39 @@ class TestTOFULock:
         with patch("homelab_mcp.ssh_connection._tofu_lock", mock_lock):
             client._store_host_key("192.168.1.10", 22, mock_ssh_key)
 
-        mock_lock.__enter__.assert_called_once()
+        mock_lock.__enter__.assert_not_called()
+
+    def test_tofu_concurrent_first_connection_single_entry(
+        self,
+        tmp_path: Path,
+        mock_ssh_key: MagicMock,
+    ) -> None:
+        """Concurrent TOFU for same host must produce exactly one known_hosts entry."""
+        from homelab_mcp.ssh_connection import TOFUSSHClient
+
+        known_hosts_path = tmp_path / "known_hosts"
+        known_hosts_path.touch()
+
+        client = TOFUSSHClient(known_hosts_path)
+        barrier = threading.Barrier(2)
+        results: list[bool] = []
+
+        def worker() -> None:
+            barrier.wait()
+            result = client.validate_host_public_key("10.0.0.1", None, 22, mock_ssh_key)
+            results.append(result)
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        content = known_hosts_path.read_text()
+        matching_lines = [
+            line for line in content.splitlines()
+            if line.startswith("10.0.0.1 ")
+        ]
+        assert len(matching_lines) == 1, (
+            f"Expected exactly 1 known_hosts entry for 10.0.0.1, got {len(matching_lines)}:\n{content}"
+        )

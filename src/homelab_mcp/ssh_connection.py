@@ -56,6 +56,9 @@ class TOFUSSHClient(asyncssh.SSHClient):
         If a different key was previously stored for this host, reject (MITM).
         If no key exists, store it (TOFU) and accept.
 
+        The entire check-then-store sequence is protected by ``_tofu_lock`` to
+        prevent concurrent first-connections from writing conflicting host keys.
+
         Args:
             host: The hostname being connected to.
             addr: The address being connected to (may be None).
@@ -65,20 +68,21 @@ class TOFUSSHClient(asyncssh.SSHClient):
         Returns:
             True if the key should be accepted, False to reject.
         """
-        host_label = self._format_host_label(host, port)
+        with _tofu_lock:
+            host_label = self._format_host_label(host, port)
 
-        # Check if any key already exists for this host (key mismatch case)
-        if self._host_has_stored_key(host, port):
-            logger.warning(
-                "Host key mismatch for %s -- possible MITM attack. Connection rejected.",
-                host_label,
-            )
-            return False
+            # Check if any key already exists for this host (key mismatch case)
+            if self._host_has_stored_key(host, port):
+                logger.warning(
+                    "Host key mismatch for %s -- possible MITM attack. Connection rejected.",
+                    host_label,
+                )
+                return False
 
-        # No key stored -- TOFU: accept and store
-        self._store_host_key(host, port, key)
-        logger.info("TOFU: Accepted and stored host key for %s", host_label)
-        return True
+            # No key stored -- TOFU: accept and store
+            self._store_host_key(host, port, key)
+            logger.info("TOFU: Accepted and stored host key for %s", host_label)
+            return True
 
     def _host_has_stored_key(self, host: str, port: int) -> bool:
         """Check if any key is already stored for this host.
@@ -112,8 +116,7 @@ class TOFUSSHClient(asyncssh.SSHClient):
     def _store_host_key(self, host: str, port: int, key: asyncssh.SSHKey) -> None:
         """Store a host key in the known_hosts file.
 
-        Uses the module-level _tofu_lock to prevent duplicate entries from
-        concurrent TOFU operations.
+        Caller must hold ``_tofu_lock`` before calling this method.
 
         Args:
             host: The hostname.
@@ -124,17 +127,16 @@ class TOFUSSHClient(asyncssh.SSHClient):
 
         # Extract key data from the public key export
         key_export = key.export_public_key().decode("utf-8").strip()
-        # Strip trailing comment field — known_hosts requires exactly "algorithm base64"
+        # Strip trailing comment field -- known_hosts requires exactly "algorithm base64"
         parts = key_export.split()
         key_data = " ".join(parts[:2])
         entry = f"{host_label} {key_data}\n"
 
-        with _tofu_lock:
-            try:
-                with open(self._known_hosts_path, "a") as f:
-                    f.write(entry)
-            except OSError:
-                logger.error("Failed to write to known_hosts file: %s", self._known_hosts_path)
+        try:
+            with open(self._known_hosts_path, "a") as f:
+                f.write(entry)
+        except OSError:
+            logger.error("Failed to write to known_hosts file: %s", self._known_hosts_path)
 
     @staticmethod
     def _format_host_label(host: str, port: int) -> str:
