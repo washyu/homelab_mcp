@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Security & Correctness Hardening
-status: ready_to_plan
-stopped_at: Roadmap created — Phase 30 ready to plan
-last_updated: "2026-03-20T00:00:00.000Z"
-last_activity: 2026-03-20 — v1.5 roadmap created (3 phases, 9 requirements mapped)
+status: planning
+stopped_at: Phase 30 context gathered
+last_updated: "2026-04-01T08:54:26.259Z"
+last_activity: 2026-03-20 — v1.5 roadmap created
 progress:
   total_phases: 3
   completed_phases: 0
@@ -35,6 +35,7 @@ Progress: [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0 (v1.5, starting)
 - Average duration: — min
 - Total execution time: — hours
@@ -52,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 ### Decisions
 
 Key constraints for v1.5 (from PR review findings):
+
 - SEC-01: Use tmpfile or heredoc for public key delivery — never interpolate key content into remote shell string
 - SEC-02: Both existence check and append must execute under `_tofu_lock` — `threading.Lock` (not asyncio) per Phase 21 decision
 - SSH-01: Disambiguation error must name conflicting entries — not a silent fallback or silent pick-first
@@ -72,6 +74,6 @@ None identified at roadmap creation time.
 
 ## Session Continuity
 
-Last session: 2026-03-20
-Stopped at: Roadmap created — ready to plan Phase 30
-Resume file: None
+Last session: 2026-04-01T08:54:26.257Z
+Stopped at: Phase 30 context gathered
+Resume file: .planning/phases/30-security-fixes/30-CONTEXT.md
