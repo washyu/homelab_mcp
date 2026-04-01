@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Credentials & Release Automation
-status: "✅ SHIPPED — milestone complete"
-stopped_at: "v1.3 milestone archived — planning next milestone"
-last_updated: "2026-03-15"
-last_activity: 2026-03-15 — v1.3 milestone complete
+milestone: v1.5
+milestone_name: Security & Correctness Hardening
+status: "🔄 IN PROGRESS — phase 30 plan 01 complete"
+stopped_at: "Phase 30-01 complete (TOFU lock fix SEC-02)"
+last_updated: "2026-04-01"
+last_activity: 2026-04-01 — Phase 30-01 complete (SEC-02 TOFU lock widening)
 progress:
   total_phases: 4
-  completed_phases: 4
+  completed_phases: 0
   total_plans: 9
   completed_plans: 9
   percent: 100
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 ## Current Position
 
-Phase: — (milestone complete)
-Plan: —
-Status: ✅ v1.3 shipped — all 4 phases, 9 plans complete
-Last activity: 2026-03-15 - Completed quick task 6: update README and setup docs to reflect v1.3
+Phase: 30-security-fixes
+Plan: 01 complete (next: 02)
+Status: 🔄 Phase 30-01 complete — SEC-02 TOFU lock widening shipped
+Last activity: 2026-04-01 - Completed 30-01: widen TOFU lock scope in validate_host_public_key
 
 Progress: [██████████] 100%
 
@@ -77,6 +77,11 @@ Progress: [██████████] 100%
 
 Full v1.0 decision log in `.planning/milestones/v1.0-ROADMAP.md`.
 Full v1.1 decision log in `.planning/milestones/v1.1-ROADMAP.md`.
+
+Key decisions from Phase 30 (v1.5):
+- [Phase 30-01]: threading.Lock (not asyncio.Lock) for _tofu_lock — validate_host_public_key is a synchronous callback invoked by asyncssh from thread context
+- [Phase 30-01]: Caller-holds-lock pattern: _store_host_key is a dumb file writer; lock acquisition lives at validate_host_public_key which performs the check-then-store TOCTOU sequence
+- [Phase 30-01]: _store_host_key strips trailing comment field from key export (parts[:2]) — known_hosts requires exactly "algorithm base64" not "algorithm base64 comment"
 
 Key architectural patterns carried into v1.2:
 - Local import of `get_resource_manager` inside handler functions (not module level) — avoids circular import
@@ -153,6 +158,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T07:15:00Z
-Stopped at: Completed quick task 7: fix ssh tool schemas for keyring auto-inject
+Last session: 2026-04-01T22:15:00Z
+Stopped at: Completed Phase 30-01: TOFU lock widening (SEC-02)
 Resume file: None
