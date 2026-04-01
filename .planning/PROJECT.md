@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, three workflow prompt templates, and a secure credential store with OS keyring integration. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
+A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, four workflow prompt templates, and a secure credential store with OS keyring integration. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
 
 ## Core Value
 
@@ -67,12 +67,12 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ All tool schemas synced to function signatures — phantom `port` removed, SSH timeouts fixed, 7 hidden Proxmox params exposed — v1.4
 - ✓ `host=` → `hostname=` fixed in all prompt tool calls; phantom `list_installed_services` replaced with `get_service_status` — v1.4
 - ✓ Regression guard tests for all prompt parameter names and phantom tool references — v1.4
+- ✓ Shell command injection in `setup_mcp_admin` eliminated — public key delivered via SFTP tmpfile, never interpolated into shell strings — v1.4.1
+- ✓ TOFU race condition closed — `threading.Lock` covers entire check+store TOCTOU window in `validate_host_public_key` — v1.4.1
 
 ### Active
 
-<!-- v1.5 Security & Correctness Hardening -->
-- [ ] Shell command injection in `setup_mcp_admin`/`add_to_sudoers` eliminated — public key content never interpolated into remote shell strings
-- [ ] TOFU race condition closed — existence check and append both protected under `_tofu_lock`
+<!-- Deferred from v1.4.1 — carry into next milestone -->
 - [ ] Keyring auto-injection disambiguates multiple usernames per hostname — no silent wrong-user logins
 - [ ] SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
 - [ ] `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
@@ -97,7 +97,8 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ## Context
 
-- Shipped v1.4 with ~15,554 LOC Python (src/) + ~17,569 LOC tests | 86 files changed from v1.3 baseline
+- Shipped v1.4.1 security patch on top of v1.4 — 2 critical security fixes (SEC-01 shell injection, SEC-02 TOFU race condition)
+- v1.4 baseline: ~15,554 LOC Python (src/) + ~17,569 LOC tests | 86 files changed from v1.3 baseline
 - Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite
 - 56 tools: 50 original + 6 `*_preview` variants, organized into 7 categories
 - Available on PyPI as `homelab-mcp` 1.4.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
@@ -148,20 +149,13 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | `asyncio.wait_for(..., timeout=0.05)` for PTY reads | Blocking `stdout.read(4096)` would not return until 4096 bytes or EOF — browser saw nothing | ✓ Good — real-time streaming with tunable timeout |
 | Gap-closure phases (26-29) added mid-milestone via audit | Audit revealed schema/prompt bugs not in original scope; extending milestone cleaner than deferring | ✓ Good — 4 extra phases closed all audit gaps before v1.5 planning |
 
-## Current Milestone: v1.5 Security & Correctness Hardening
+## Current State
 
-**Goal:** Close all security and correctness issues identified in the v1.4 PR review — no new features, just making the existing tools provably safe and correct.
+Shipped v1.4.1 security patch. 7 correctness/quality findings from the CodeRabbit PR #39 review remain as active requirements for the next milestone.
 
-**Target fixes:**
-- Critical shell injection via public key interpolation in remote commands
-- TOFU race condition allowing concurrent writes with different keys
-- Keyring auto-injection silently picking wrong username on ambiguous hosts
-- SSH timeout not reaching `ssh_connect()` handshake
-- `verify_mcp_admin_access()` ignoring resolved port/credentials
-- `resolve_ssh_credentials()` raising instead of returning JSON errors
-- Dead WebSocket sessions after PTY reader EOF
-- Proxmox schema permitting mutually exclusive `iso`/`cdrom` simultaneously
-- Test exercising local `read_output()` copy instead of production code
+**Next milestone goals:**
+- Close remaining 7 CodeRabbit findings (SSH reliability, error handling, schema/test quality)
+- Scope TBD — run `/gsd:new-milestone` to define
 
 ---
-*Last updated: 2026-03-20 after v1.5 milestone start*
+*Last updated: 2026-04-01 after v1.4.1 milestone*

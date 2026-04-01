@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+milestone: v1.4.1
+milestone_name: Security Patch
 status: completed
-stopped_at: "Completed Phase 30-01: TOFU lock widening (SEC-02)"
-last_updated: "2026-04-01T22:29:52.538Z"
+stopped_at: "v1.4.1 milestone archived"
+last_updated: "2026-04-01T23:00:00.000Z"
 last_activity: 2026-04-01
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
   percent: 100
 ---
 
@@ -18,16 +18,16 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-15)
+See: .planning/PROJECT.md (updated 2026-04-01)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
 **Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 30
-Plan: Not started
-Status: 🔄 Phase 30-01 complete — SEC-02 TOFU lock widening shipped
+Phase: —
+Plan: —
+Status: ✅ v1.4.1 shipped — planning next milestone
 Last activity: 2026-04-01
 
 Progress: [██████████] 100%

@@ -178,6 +178,38 @@
 
 ---
 
+## Milestone: v1.4.1 — Security Patch
+
+**Shipped:** 2026-04-01
+**Phases:** 1 | **Plans:** 2
+
+### What Was Built
+- TOFU TOCTOU race condition closed — `threading.Lock` widened to cover entire check+store sequence in `validate_host_public_key` (SEC-02)
+- Shell command injection eliminated in `setup_remote_mcp_admin` — SFTP-based tmpfile delivery replaces f-string key interpolation (SEC-01)
+
+### What Worked
+- Scoping down from full v1.5 (9 requirements) to v1.4.1 patch (2 security-critical) was the right call — ships the urgent fixes without blocking on 7 lower-severity items
+- TDD pattern (RED tests → GREEN implementation) continued to hold for both plans
+- SFTP tmpfile delivery pattern is clean and reusable — could apply to any future command that needs to pass untrusted content to remote hosts
+
+### What Was Inefficient
+- Phase 30 was originally scoped under v1.5 with Phases 31-32 planned but never created — the full v1.5 milestone definition was premature given the gap between security-critical (SEC-01/02) and correctness (SSH/ERR/QUAL) items
+- Worktree-based execution had to adapt tests to the worktree's older API rather than main branch — delta between branches caused extra test adjustment work
+
+### Patterns Established
+- SFTP tmpfile delivery: write to local tmpfile → SFTP upload → remote commands read from file → finally cleanup both local and remote
+- Caller-holds-lock: lock acquired at the method that does check-then-act; inner methods are dumb writers
+
+### Key Lessons
+1. Patch releases are valuable for shipping security fixes fast — don't block critical security fixes behind a full milestone of lower-severity items
+2. SFTP-based content delivery is the correct pattern for passing untrusted content to remote hosts — eliminates an entire class of shell injection vulnerabilities
+
+### Cost Observations
+- Timeline: 1 day (2026-04-01) — fastest milestone
+- Notable: 1 phase, 2 plans, 2 security findings closed; 7 deferred to next milestone
+
+---
+
 ## Milestone: v1.4 — Real-World Reliability
 
 **Shipped:** 2026-03-20
@@ -235,6 +267,7 @@
 | v1.2 | 5 | 10 | PyPI distribution; full MCP protocol surface; integration checker found cross-phase param mismatch |
 | v1.3 | 4 | 9 | Credential store + CLI; OIDC auto-publish; PRMT-02 fix; monkeypatch/lazy-import tension resolved |
 | v1.4 | 9 | 16 | Real-world reliability: TOFU fix, PTY fix, sudo piping, schema sync, prompt correctness; 4 audit gap phases |
+| v1.4.1 | 1 | 2 | Security patch: SFTP key delivery (SEC-01), TOFU lock widening (SEC-02); scoped down from v1.5 |
 
 ### Cumulative Quality
 
@@ -245,6 +278,7 @@
 | v1.2 | 603 | 20/20 requirements satisfied (18 full, 2 partial), 1 integration semantic mismatch in tech debt |
 | v1.3 | ~620+ | 15/15 requirements satisfied, 4/4 E2E flows, 0 gap closure phases; PRMT-02 tech debt resolved |
 | v1.4 | ~650+ | 23/23 requirements satisfied; 4 audit gap phases added mid-milestone; all prompts correct |
+| v1.4.1 | ~650+ | 2/2 security requirements satisfied; 7 deferred; patch release model validated |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -254,3 +288,4 @@
 4. "Build infrastructure, wire it later" fails — v1.0 proxmox_session was orphaned; v1.1 fixed it by treating tech debt as Phase 1
 5. Integration-level tests required for cross-phase contracts — unit tests verify individual components; integration checker is the only thing that caught the PRMT-02 parameter mismatch across Phase 14 and Phase 15
 6. Milestone audit as mid-milestone gate is worth scheduling — v1.4 audit found schema/prompt drift that wouldn't have been caught otherwise; 4 gap phases was the right response vs deferring to v1.5
+7. Patch releases for security-critical fixes — don't bundle urgent security fixes with lower-severity items; v1.4.1 shipped SEC-01/SEC-02 in one day while v1.5 full scope would have taken much longer

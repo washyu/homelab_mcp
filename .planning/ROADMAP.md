@@ -6,6 +6,7 @@
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
+- ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
 
 ## Phases
 
@@ -61,6 +62,16 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
+
+<details>
+<summary>✅ v1.4.1 Security Patch (Phase 30) — SHIPPED 2026-04-01</summary>
+
+- [x] Phase 30: Security Fixes (2/2 plans) — completed 2026-04-01
+
+Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
+
+</details>
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -85,4 +96,4 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 30. Security Fixes | v1.5 | 1/2 | Complete    | 2026-04-01 |
+| 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |

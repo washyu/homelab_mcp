@@ -1,5 +1,26 @@
 # Milestones
 
+## v1.4.1 Security Patch (Shipped: 2026-04-01)
+
+**Phases completed:** 1 phase, 2 plans
+**Timeline:** 1 day (Apr 1, 2026)
+**Stats:** 11 commits, 4 files changed, +479 / -587 lines
+
+**Key accomplishments:**
+1. Closed TOFU TOCTOU race condition (SEC-02) — `threading.Lock` widened to cover entire check+store sequence in `validate_host_public_key`; concurrent first-connections can no longer write conflicting known_hosts entries
+2. Eliminated shell command injection in `setup_remote_mcp_admin` (SEC-01) — public key content now delivered via SFTP tmpfile; `grep -Ff` and `cat` read from file instead of f-string interpolation
+
+**Known gaps (deferred):**
+- SSH-01: Keyring auto-injection disambiguation for multiple credentials per hostname
+- SSH-02: Per-call timeout forwarding to `ssh_connect()` handshake
+- SSH-03: `verify_mcp_admin_access()` not using resolved port/credentials
+- ERR-01: `resolve_ssh_credentials()` unhandled exception path
+- ERR-02: WebSocket PTY reader not closing on EOF/error
+- QUAL-01: Proxmox `iso`/`cdrom` mutual exclusivity not enforced
+- QUAL-02: `test_http_app.py` EOF test exercising local copy
+
+---
+
 ## v1.4 Real-World Reliability (Shipped: 2026-03-20)
 
 **Phases completed:** 9 phases, 16 plans
