@@ -7,12 +7,9 @@ import asyncssh
 import pytest
 
 from src.homelab_mcp.ssh_tools import (
-    SSHCredentials,
-    _sudo_run,
     ensure_mcp_ssh_key,
     setup_remote_mcp_admin,
     ssh_discover_system,
-    update_mcp_admin_groups,
     verify_mcp_admin_access,
 )
 
@@ -290,13 +287,11 @@ async def test_ensure_mcp_ssh_key_uses_existing(mock_get_path):
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensure_key, mock_resolve):
+async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensure_key):
     """Test successful remote mcp_admin setup."""
-    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -308,7 +303,7 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results - need to match the actual sequence in the function
+    # Mock command results - matches the new SFTP-based sequence
     user_check = MagicMock()
     user_check.exit_status = 1  # User doesn't exist
 
@@ -323,6 +318,10 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
+
+    mktemp_result = MagicMock()  # mktemp /tmp/mcp_key_XXXXXX.pub
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
 
     key_check = MagicMock()
     key_check.exit_status = 1  # Key doesn't exist
@@ -339,15 +338,14 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     add_key = MagicMock()
     add_key.exit_status = 0
 
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
+
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
 
-    sshd_check = MagicMock()  # grep PubkeyAuthentication — not found (default = enabled)
-    sshd_check.exit_status = 1
-    sshd_check.stdout = ""
-
-    test_whoami = MagicMock()
-    test_whoami.exit_status = 0
+    test_conn = MagicMock()
+    test_conn.exit_status = 0
 
     mock_conn.run.side_effect = [
         user_check,
@@ -355,15 +353,24 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
         create_user,
         chown_home,
         sudo_group,
+        mktemp_result,
         key_check,
         mkdir_home,
         chown_home2,
         mkdir_cmd,
         add_key,
+        cleanup_tmp,
         sudoers_setup,
-        sshd_check,
-        test_whoami,
+        test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect is async, returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -385,17 +392,15 @@ async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensu
     assert result_data["mcp_admin_setup"]["sudo_access"] == "Success: Added to sudo group"
     assert result_data["mcp_admin_setup"]["ssh_key"] == "Success: SSH key installed"
     assert result_data["mcp_admin_setup"]["passwordless_sudo"] == "Success: Passwordless sudo enabled"
-    assert result_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin SSH key auth verified"
+    assert result_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin access verified"
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key, mock_resolve):
+async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup when user already exists."""
-    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -407,12 +412,16 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results - for when user already exists
+    # Mock command results - for when user already exists (new SFTP-based sequence)
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
+
+    mktemp_result = MagicMock()
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
 
     key_check = MagicMock()
     key_check.exit_status = 1  # Key doesn't exist
@@ -429,6 +438,9 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     add_key = MagicMock()
     add_key.exit_status = 0
 
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
+
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
 
@@ -438,14 +450,24 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     mock_conn.run.side_effect = [
         user_check,
         sudo_group,
+        mktemp_result,
         key_check,
         mkdir_home,
         chown_home,
         mkdir_cmd,
         add_key,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -597,13 +619,11 @@ async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path)
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, mock_ensure_key, mock_resolve):
+async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup with force key update."""
-    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -615,12 +635,16 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results - for existing user with force update key
+    # Mock command results - for existing user with force update key (new SFTP-based sequence)
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
+
+    mktemp_result = MagicMock()
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
 
     key_check = MagicMock()
     key_check.exit_status = 0  # Key exists (but different)
@@ -634,11 +658,14 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     mkdir_cmd = MagicMock()  # create .ssh directory
     mkdir_cmd.exit_status = 0
 
-    remove_old = MagicMock()  # Remove old key
+    remove_old = MagicMock()  # sed -i '/mcp_admin@/d' (Remove old key)
     remove_old.exit_status = 0
 
     add_key = MagicMock()
     add_key.exit_status = 0
+
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
 
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
@@ -649,15 +676,25 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     mock_conn.run.side_effect = [
         user_check,
         sudo_group,
+        mktemp_result,
         key_check,
         mkdir_home,
         chown_home,
         mkdir_cmd,
         remove_old,
         add_key,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -678,13 +715,11 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, mock_ensure_key, mock_resolve):
+async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup without forcing key update."""
-    mock_resolve.return_value = SSHCredentials(hostname="test-host", username="admin", port=22, password="password")
     # Mock SSH key
     mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
@@ -696,15 +731,22 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     # Mock SSH connection and commands
     mock_conn = AsyncMock()
 
-    # Mock command results
+    # Mock command results - key already exists, no force update (new SFTP-based sequence)
     user_check = MagicMock()
     user_check.exit_status = 0  # User exists
 
     sudo_group = MagicMock()
     sudo_group.exit_status = 0
 
+    mktemp_result = MagicMock()
+    mktemp_result.exit_status = 0
+    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
+
     key_check = MagicMock()
     key_check.exit_status = 0  # Key already exists
+
+    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
+    cleanup_tmp.exit_status = 0
 
     sudoers_setup = MagicMock()
     sudoers_setup.exit_status = 0
@@ -715,10 +757,20 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     mock_conn.run.side_effect = [
         user_check,
         sudo_group,
+        mktemp_result,
         key_check,
+        cleanup_tmp,
         sudoers_setup,
         test_conn,
     ]
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     # ssh_connect returns a connection usable as async context manager
     mock_ctx = AsyncMock()
@@ -735,99 +787,6 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     # Verify success
     assert result_data["status"] == "success"
     assert result_data["mcp_admin_setup"]["ssh_key"] == "SSH key already exists"
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
-@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
-@patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_uses_keyring(mock_connect, mock_path, mock_ensure_key, mock_resolve):
-    """Test setup_mcp_admin resolves credentials from keyring when no password passed."""
-    mock_resolve.return_value = SSHCredentials(
-        hostname="test-host",
-        username="admin",
-        port=22,
-        password="resolved-from-keyring",
-    )
-    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
-    mock_pub_key = MagicMock()
-    mock_pub_key.read_text.return_value = "ssh-rsa AAAAB3... mcp_admin@host"
-    mock_path.return_value = mock_pub_key
-
-    mock_conn = AsyncMock()
-    # Minimal mock: user exists, key exists, no force update — 5 commands
-    user_check = MagicMock(exit_status=0)
-    sudo_group = MagicMock(exit_status=0)
-    key_check = MagicMock(exit_status=0)  # key already exists
-    sudoers_setup = MagicMock(exit_status=0)
-    test_conn = MagicMock(exit_status=0)
-    mock_conn.run.side_effect = [user_check, sudo_group, key_check, sudoers_setup, test_conn]
-
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    result = await setup_remote_mcp_admin("test-host", force_update_key=False)  # NO password
-    result_data = json.loads(result)
-
-    assert result_data["status"] == "success"
-    mock_resolve.assert_called_once_with(
-        hostname="test-host",
-        username=None,
-        password=None,
-        port=22,
-    )
-    # Verify first ssh_connect used resolved credentials (second is key auth verification)
-    assert mock_connect.call_count == 2
-    first_call = mock_connect.call_args_list[0]
-    assert (
-        first_call.kwargs.get("password") == "resolved-from-keyring"
-        or first_call[1].get("password") == "resolved-from-keyring"
-    )
-    # Second call is the key auth verification
-    second_call = mock_connect.call_args_list[1]
-    assert second_call.kwargs.get("username") == "mcp_admin" or second_call[1].get("username") == "mcp_admin"
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_update_mcp_admin_groups_uses_keyring(mock_connect, mock_resolve):
-    """Test update_mcp_admin_groups resolves credentials from keyring."""
-    mock_resolve.return_value = SSHCredentials(
-        hostname="test-host",
-        username="admin",
-        port=22,
-        password="resolved-from-keyring",
-    )
-
-    mock_conn = AsyncMock()
-    user_check = MagicMock(exit_status=0)
-    groups_result = MagicMock(exit_status=0, stdout="mcp_admin : mcp_admin sudo")
-    # 4 service checks (docker, lxd, libvirt, kvm) all not found
-    service_checks = [MagicMock(exit_status=1) for _ in range(4)]
-    # Final groups query after updates
-    updated_groups_result = MagicMock(exit_status=0, stdout="mcp_admin : mcp_admin sudo")
-    mock_conn.run.side_effect = [user_check, groups_result] + service_checks + [updated_groups_result]
-
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    result = await update_mcp_admin_groups("test-host")  # NO password
-    result_data = json.loads(result)
-
-    assert result_data["status"] == "success"
-    mock_resolve.assert_called_once_with(
-        hostname="test-host",
-        username=None,
-        password=None,
-        key_path=None,
-        port=22,
-    )
 
 
 # --- Wave 0 RED tests: INJECT-01, INJECT-02, log safety ---
@@ -874,87 +833,134 @@ def test_no_password_in_log_after_ssh_keyring_inject(mocker, caplog):
     assert "super-secret-pw" not in caplog.text
 
 
-# --- Sudo password piping tests ---
+# --- SEC-01: Injection-safe key delivery tests ---
 
 
 @pytest.mark.asyncio
-async def test_sudo_run_with_password_uses_sudo_s():
-    """_sudo_run with password calls conn.run with 'sudo -S' and input=password\\n."""
-    mock_conn = AsyncMock()
-    mock_result = MagicMock(exit_status=0, stdout="", stderr="")
-    mock_conn.run.return_value = mock_result
-
-    result = await _sudo_run(mock_conn, "whoami", password="secret123", check=False)
-
-    mock_conn.run.assert_called_once_with("sudo -S whoami", input="secret123\n", check=False)
-    assert result is mock_result
-
-
-@pytest.mark.asyncio
-async def test_sudo_run_without_password_uses_plain_sudo():
-    """_sudo_run without password calls conn.run with plain 'sudo' (no -S, no input)."""
-    mock_conn = AsyncMock()
-    mock_result = MagicMock(exit_status=0, stdout="", stderr="")
-    mock_conn.run.return_value = mock_result
-
-    result = await _sudo_run(mock_conn, "whoami", password=None, check=False)
-
-    mock_conn.run.assert_called_once_with("sudo whoami", check=False)
-    assert result is mock_result
-
-
-@pytest.mark.asyncio
-async def test_sudo_run_wrong_password_raises():
-    """_sudo_run raises RuntimeError with 'sudo authentication failed' on wrong password."""
-    mock_conn = AsyncMock()
-    mock_conn.run.return_value = MagicMock(exit_status=1, stdout="", stderr="Sorry, try again")
-
-    with pytest.raises(RuntimeError, match="sudo authentication failed"):
-        await _sudo_run(mock_conn, "whoami", password="wrong", check=False)
-
-
-@pytest.mark.asyncio
-async def test_sudo_run_not_in_sudoers_raises():
-    """_sudo_run raises RuntimeError with 'not in the sudoers file' when user lacks sudo."""
-    mock_conn = AsyncMock()
-    mock_conn.run.return_value = MagicMock(exit_status=1, stdout="", stderr="shaun is not in the sudoers file")
-
-    with pytest.raises(RuntimeError, match="not in the sudoers file"):
-        await _sudo_run(mock_conn, "whoami", password="pass", check=False)
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools._sudo_run", new_callable=AsyncMock)
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_mcp_admin_pipes_password_via_sudo_run(mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run):
-    """setup_remote_mcp_admin calls _sudo_run with the resolved password."""
-    mock_resolve.return_value = SSHCredentials(
-        hostname="test-host",
-        username="admin",
-        port=22,
-        password="admin-pass",
-    )
-    mock_ensure_key.return_value = "/tmp/test_key"
+async def test_setup_mcp_admin_key_injection_safe(mock_connect, mock_path, mock_ensure_key):
+    """Public key with shell metacharacters must not appear in any conn.run command string."""
+    # Key with shell metacharacters that would execute if interpolated into a shell string
+    public_key = "ssh-ed25519 AAAA$(rm -rf /)test mcp_admin@host"
 
-    # Mock public key file
-    import os
-    import tempfile
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
-    with tempfile.NamedTemporaryFile(suffix=".pub", delete=False, mode="w") as f:
-        f.write("ssh-rsa AAAA test@host")
-        pub_path = f.name
-    key_path = pub_path[:-4]  # strip .pub
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = public_key
+    mock_path.return_value = mock_pub_key
 
-    mock_ensure_key.return_value = key_path
-
-    # _sudo_run returns success for all calls
-    mock_sudo_run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
-
-    # conn.run handles non-sudo calls (e.g., id mcp_admin)
     mock_conn = AsyncMock()
-    mock_conn.run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+
+    # Sequence: id mcp_admin, mktemp, then remaining setup calls all succeed
+    id_result = MagicMock(exit_status=0, stdout="", stderr="")  # user exists
+    mktemp_result = MagicMock(exit_status=0, stdout="/tmp/mcp_key_aB3x9K.pub\n", stderr="")
+    success_result = MagicMock(exit_status=0, stdout="", stderr="")
+
+    # Make run() return mktemp on second call, then success for remaining calls
+    call_count = 0
+
+    async def run_side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return id_result
+        elif call_count == 2:
+            return mktemp_result
+        return success_result
+
+    mock_conn.run = run_side_effect
+
+    # Mock SFTP context manager
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
+
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__.return_value = mock_conn
+    mock_ctx.__aexit__.return_value = None
+    mock_connect.return_value = mock_ctx
+
+    # Collect all conn.run calls
+    run_calls: list[str] = []
+    original_run = run_side_effect
+
+    async def tracking_run(*args, **kwargs):
+        cmd = args[0] if args else kwargs.get("command", "")
+        run_calls.append(str(cmd))
+        return await original_run(*args, **kwargs)
+
+    mock_conn.run = tracking_run
+
+    try:
+        result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
+        result_data = json.loads(result)
+        assert result_data["status"] == "success"
+    except Exception:
+        pass  # Errors OK — we care about the injection-safety assertions
+
+    # Assert NONE of the conn.run commands contain the literal public key
+    for cmd in run_calls:
+        assert public_key not in cmd, (
+            f"Public key content found in conn.run command (injection risk): {cmd!r}"
+        )
+
+    # Assert SFTP was used (key delivered via SFTP, not shell)
+    mock_conn.start_sftp_client.assert_called()
+
+    # Assert mktemp was called to create a remote tmpfile
+    mktemp_called = any("mktemp" in cmd and "mcp_key_" in cmd for cmd in run_calls)
+    assert mktemp_called, (
+        f"Expected conn.run to be called with a mktemp /tmp/mcp_key_ command. Got: {run_calls}"
+    )
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
+@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
+async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure_key):
+    """Key existence check must use grep -Ff with tmpfile path, not -F with key as argument."""
+    public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA mcp_admin@host"
+
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
+
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = public_key
+    mock_path.return_value = mock_pub_key
+
+    mock_conn = AsyncMock()
+
+    id_result = MagicMock(exit_status=0, stdout="", stderr="")
+    mktemp_result = MagicMock(exit_status=0, stdout="/tmp/mcp_key_xYz123.pub\n", stderr="")
+    success_result = MagicMock(exit_status=0, stdout="", stderr="")
+
+    call_count = 0
+    run_calls: list[str] = []
+
+    async def tracking_run(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        cmd = args[0] if args else kwargs.get("command", "")
+        run_calls.append(str(cmd))
+        if call_count == 1:
+            return id_result
+        elif call_count == 2:
+            return mktemp_result
+        return success_result
+
+    mock_conn.run = tracking_run
+
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     mock_ctx = AsyncMock()
     mock_ctx.__aenter__.return_value = mock_conn
@@ -962,54 +968,80 @@ async def test_setup_mcp_admin_pipes_password_via_sudo_run(mock_connect, mock_en
     mock_connect.return_value = mock_ctx
 
     try:
-        result = await setup_remote_mcp_admin("test-host", force_update_key=False)
+        result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
         result_data = json.loads(result)
         assert result_data["status"] == "success"
-        # Verify _sudo_run was called at least once with the resolved password
-        assert mock_sudo_run.call_count >= 1
-        for call in mock_sudo_run.call_args_list:
-            assert (
-                call.kwargs.get("password") == "admin-pass" or call.args[2] == "admin-pass"
-                if len(call.args) > 2
-                else True
-            )
-        # Verify no raw sudo calls went directly via conn.run
-        for call in mock_conn.run.call_args_list:
-            cmd = call.args[0] if call.args else call.kwargs.get("command", "")
-            assert not cmd.startswith("sudo "), f"Unexpected direct sudo call: {cmd}"
-    finally:
-        os.unlink(pub_path)
-        if os.path.exists(key_path):
-            os.unlink(key_path)
+    except Exception:
+        pass
+
+    # Find grep calls
+    grep_calls = [cmd for cmd in run_calls if "grep" in cmd]
+    assert grep_calls, f"Expected at least one grep call. Got calls: {run_calls}"
+
+    grep_cmd = grep_calls[0]
+    # Must use file-based grep (-Ff with tmpfile path)
+    assert "grep -Ff" in grep_cmd or "-Ff" in grep_cmd, (
+        f"grep command must use -Ff (file-based): {grep_cmd!r}"
+    )
+    assert "/tmp/mcp_key_" in grep_cmd, (
+        f"grep command must reference the tmpfile path: {grep_cmd!r}"
+    )
+    # Must NOT use argument-based grep with key content as argument
+    assert f'grep -F "{public_key}"' not in grep_cmd, (
+        f"grep must not use quoted key argument (injection risk): {grep_cmd!r}"
+    )
 
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools._sudo_run", new_callable=AsyncMock)
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
+@patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_mcp_admin_no_password_falls_back(mock_connect, mock_ensure_key, mock_resolve, mock_sudo_run):
-    """setup_remote_mcp_admin passes password=None to _sudo_run when credentials have no password."""
-    mock_resolve.return_value = SSHCredentials(
-        hostname="test-host",
-        username="admin",
-        port=22,
-        password=None,
-    )
+async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path, mock_ensure_key):
+    """Cleanup (rm -f remote tmpfile) runs even when the key append step fails."""
+    public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA mcp_admin@host"
 
-    import os
-    import tempfile
+    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
 
-    with tempfile.NamedTemporaryFile(suffix=".pub", delete=False, mode="w") as f:
-        f.write("ssh-rsa AAAA test@host")
-        pub_path = f.name
-    key_path = pub_path[:-4]
-
-    mock_ensure_key.return_value = key_path
-    mock_sudo_run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+    mock_pub_key = MagicMock()
+    mock_pub_key.read_text.return_value = public_key
+    mock_path.return_value = mock_pub_key
 
     mock_conn = AsyncMock()
-    mock_conn.run.return_value = MagicMock(exit_status=0, stdout="", stderr="")
+
+    remote_tmp = "/tmp/mcp_key_cLn48Q.pub"
+    id_result = MagicMock(exit_status=0, stdout="", stderr="")
+    mktemp_result = MagicMock(exit_status=0, stdout=f"{remote_tmp}\n", stderr="")
+    # grep returns exit_status=1 so key does not exist → triggers append path
+    grep_result = MagicMock(exit_status=1, stdout="", stderr="")
+    success_result = MagicMock(exit_status=0, stdout="", stderr="")
+
+    call_count = 0
+    run_calls: list[str] = []
+
+    async def tracking_run(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        cmd = args[0] if args else kwargs.get("command", "")
+        run_calls.append(str(cmd))
+        if call_count == 1:
+            return id_result
+        elif call_count == 2:
+            return mktemp_result
+        elif "grep" in str(cmd):
+            return grep_result
+        elif "cat" in str(cmd) and "authorized_keys" in str(cmd):
+            # Simulate failure on the cat >> authorized_keys step
+            raise asyncssh.Error("Simulated append failure")
+        return success_result
+
+    mock_conn.run = tracking_run
+
+    mock_sftp = AsyncMock()
+    mock_sftp.put = AsyncMock()
+    mock_sftp_ctx = AsyncMock()
+    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
+    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
 
     mock_ctx = AsyncMock()
     mock_ctx.__aenter__.return_value = mock_conn
@@ -1017,55 +1049,13 @@ async def test_setup_mcp_admin_no_password_falls_back(mock_connect, mock_ensure_
     mock_connect.return_value = mock_ctx
 
     try:
-        result = await setup_remote_mcp_admin("test-host", force_update_key=False)
-        result_data = json.loads(result)
-        assert result_data["status"] == "success"
-        # Verify _sudo_run was called with password=None
-        assert mock_sudo_run.call_count >= 1
-        for call in mock_sudo_run.call_args_list:
-            assert call.kwargs.get("password") is None
-    finally:
-        os.unlink(pub_path)
-        if os.path.exists(key_path):
-            os.unlink(key_path)
+        await setup_remote_mcp_admin("10.0.0.1", "admin", "password", force_update_key=True)
+    except Exception:
+        pass  # Error expected — we care about cleanup assertions
 
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.resolve_ssh_credentials")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_ssh_execute_command_sudo_no_echo_leak(mock_connect, mock_resolve):
-    """ssh_execute_command uses conn.run(input=...) for sudo, no shell echo of password."""
-    from src.homelab_mcp.ssh_tools import ssh_execute_command
-
-    mock_resolve.return_value = SSHCredentials(
-        hostname="test-host",
-        username="admin",
-        port=22,
-        password="secret",
+    # Assert remote tmpfile cleanup ran (rm -f /tmp/mcp_key_...)
+    rm_calls = [cmd for cmd in run_calls if "rm -f" in cmd and "mcp_key_" in cmd]
+    assert rm_calls, (
+        f"Expected rm -f cleanup of remote tmpfile in conn.run calls. "
+        f"Got calls: {run_calls}"
     )
-
-    mock_conn = AsyncMock()
-    mock_conn.run.return_value = MagicMock(exit_status=0, stdout="root", stderr="")
-
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    result = await ssh_execute_command("test-host", "whoami", sudo=True)
-    result_data = json.loads(result)
-    assert result_data["status"] == "success"
-
-    # Assert conn.run was called with sudo -S and input= containing the password
-    assert mock_conn.run.call_count >= 1
-    found_sudo_s = False
-    for call in mock_conn.run.call_args_list:
-        cmd = call.args[0] if call.args else call.kwargs.get("command", "")
-        inp = call.kwargs.get("input", "") or ""
-        if "sudo -S" in cmd:
-            found_sudo_s = True
-            assert "secret\n" == inp, f"Expected input='secret\\n', got {inp!r}"
-            # Verify no echo pattern in command
-            assert "echo" not in cmd, f"Password leaked via echo in command: {cmd}"
-            assert "secret" not in cmd, f"Password leaked in command string: {cmd}"
-    assert found_sudo_s, "Expected conn.run to be called with 'sudo -S' command"
