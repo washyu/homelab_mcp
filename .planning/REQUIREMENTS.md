@@ -9,7 +9,7 @@ Requirements for the Security & Correctness Hardening milestone. All requirement
 
 ### Security
 
-- [ ] **SEC-01**: The `setup_mcp_admin` and `add_to_sudoers` commands never interpolate public key content directly into remote shell strings — keys are transferred via a safe transport (tmpfile or heredoc)
+- [x] **SEC-01**: The `setup_mcp_admin` and `add_to_sudoers` commands never interpolate public key content directly into remote shell strings — keys are transferred via a safe transport (tmpfile or heredoc)
 - [ ] **SEC-02**: The TOFU existence check and append both execute under `_tofu_lock` — concurrent first-connections cannot write conflicting keys for the same host
 
 ### SSH Reliability
@@ -46,7 +46,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Phase 30 | Pending |
+| SEC-01 | Phase 30 | Complete |
 | SEC-02 | Phase 30 | Pending |
 | SSH-01 | Phase 31 | Pending |
 | SSH-02 | Phase 31 | Pending |

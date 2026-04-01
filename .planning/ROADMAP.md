@@ -155,6 +155,6 @@ Full details: `.planning/milestones/v1.4-ROADMAP.md`
 | 27. Update Tests for Tool Parameters | v1.4 | 2/2 | Complete | 2026-03-15 |
 | 28. Fix Prompt Parameter Names | v1.4 | 1/1 | Complete | 2026-03-19 |
 | 29. Fix deploy_service_workflow Phantom Tool | v1.4 | 1/1 | Complete | 2026-03-20 |
-| 30. Security Fixes | v1.5 | 0/TBD | Not started | - |
+| 30. Security Fixes | v1.5 | 1/2 | In Progress|  |
 | 31. SSH Reliability | v1.5 | 0/TBD | Not started | - |
 | 32. Error Handling, Schema & Tests | v1.5 | 0/TBD | Not started | - |
