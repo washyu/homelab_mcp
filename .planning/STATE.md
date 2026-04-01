@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Security & Correctness Hardening
-status: "🔄 IN PROGRESS — phase 30 plan 01 complete"
-stopped_at: "Phase 30-01 complete (TOFU lock fix SEC-02)"
-last_updated: "2026-04-01"
-last_activity: 2026-04-01 — Phase 30-01 complete (SEC-02 TOFU lock widening)
+milestone: v1.0
+milestone_name: milestone
+status: completed
+stopped_at: "Completed Phase 30-01: TOFU lock widening (SEC-02)"
+last_updated: "2026-04-01T22:29:52.538Z"
+last_activity: 2026-04-01
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 11
+  completed_plans: 11
   percent: 100
 ---
 
@@ -25,16 +25,17 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 ## Current Position
 
-Phase: 30-security-fixes
-Plan: 01 complete (next: 02)
+Phase: 30
+Plan: Not started
 Status: 🔄 Phase 30-01 complete — SEC-02 TOFU lock widening shipped
-Last activity: 2026-04-01 - Completed 30-01: widen TOFU lock scope in validate_host_public_key
+Last activity: 2026-04-01
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0 (v1.3, in progress)
 - Average duration: — min
 - Total execution time: — hours
@@ -46,6 +47,7 @@ Progress: [██████████] 100%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
@@ -79,11 +81,13 @@ Full v1.0 decision log in `.planning/milestones/v1.0-ROADMAP.md`.
 Full v1.1 decision log in `.planning/milestones/v1.1-ROADMAP.md`.
 
 Key decisions from Phase 30 (v1.5):
+
 - [Phase 30-01]: threading.Lock (not asyncio.Lock) for _tofu_lock — validate_host_public_key is a synchronous callback invoked by asyncssh from thread context
 - [Phase 30-01]: Caller-holds-lock pattern: _store_host_key is a dumb file writer; lock acquisition lives at validate_host_public_key which performs the check-then-store TOCTOU sequence
 - [Phase 30-01]: _store_host_key strips trailing comment field from key export (parts[:2]) — known_hosts requires exactly "algorithm base64" not "algorithm base64 comment"
 
 Key architectural patterns carried into v1.2:
+
 - Local import of `get_resource_manager` inside handler functions (not module level) — avoids circular import
 - `build_dry_run_response()` returns flat dict; `_convert_result` fallback handles MCP wrapping
 - `MUTATING_TOOLS: frozenset[str]` for O(1) membership check before notification dispatch
@@ -114,6 +118,7 @@ Key architectural patterns carried into v1.2:
 - [Phase 16-quality-gate]: Do NOT install types-psycopg2 stubs — psycopg2 is optional soft-dependency; false coverage risk
 
 Key constraints for v1.3 (from research):
+
 - `credential_store.py` must have no homelab_mcp imports — circular import prevention
 - Every keyring call path must catch `NoKeyringError`, `RuntimeError`, and `Exception` — headless Linux is the primary deploy target
 - Never call keyring at module import time or during server startup — only at first lookup

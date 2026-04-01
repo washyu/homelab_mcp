@@ -85,4 +85,4 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
-| 30. Security Fixes | v1.5 | 1/2 | In Progress | — |
+| 30. Security Fixes | v1.5 | 1/2 | Complete    | 2026-04-01 |
