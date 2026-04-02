@@ -89,7 +89,10 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
   3. `_sudo_run` with `check=True` raises on non-zero exit code regardless of whether a password was provided — password branch behaves identically to no-password branch
   4. The password propagation test in `test_ssh_tools.py` fails when password is absent — the assertion is not an always-passing ternary
   5. Passing an arbitrary string as `credential_type` to the credentials tool is rejected by schema validation — only "ssh" and "proxmox" are accepted
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 31-01-PLAN.md — Fix timeout error message, test assertion, and credential_type schema (ERR-01, SSH-02, SCH-01)
+- [ ] 31-02-PLAN.md — Fix zombie WebSocket PTY sessions and extract _sudo_run helper (WS-01, SSH-01)
 
 ### Phase 32: Regression Tests
 **Goal**: All 5 fixed bugs have dedicated regression tests that will catch any recurrence before it ships
@@ -128,5 +131,5 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
-| 31. Bug Fixes | v1.5 | 0/? | Not started | - |
+| 31. Bug Fixes | v1.5 | 0/2 | Not started | - |
 | 32. Regression Tests | v1.5 | 0/? | Not started | - |
