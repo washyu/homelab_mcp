@@ -1,36 +1,36 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4.1
-milestone_name: Security Patch
-status: completed
-stopped_at: "v1.4.1 milestone archived"
-last_updated: "2026-04-01T23:00:00.000Z"
-last_activity: 2026-04-01
+milestone: v1.5
+milestone_name: Critical Bug Fixes
+status: planning
+stopped_at: "Defining requirements"
+last_updated: "2026-04-02T00:00:00.000Z"
+last_activity: 2026-04-02
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-01)
+See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Planning next milestone
+**Current focus:** v1.5 Critical Bug Fixes
 
 ## Current Position
 
-Phase: —
+Phase: Not started (defining requirements)
 Plan: —
-Status: ✅ v1.4.1 shipped — planning next milestone
-Last activity: 2026-04-01
+Status: Defining requirements
+Last activity: 2026-04-02 — Milestone v1.5 started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 

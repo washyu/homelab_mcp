@@ -72,14 +72,22 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ### Active
 
-<!-- Deferred from v1.4.1 — carry into next milestone -->
+<!-- v1.5 Critical Bug Fixes -->
+- [ ] WebSocket PTY reader closes websocket on EOF/error — no zombie sessions left open
+- [ ] Timeout error message uses `effective_timeout` (not raw `timeout_seconds`) in `error_handling.py`
+- [ ] `_sudo_run` with `check=True` raises on non-zero exit in password branch
+- [ ] `credential_type` schema constrained to `enum: ["ssh", "proxmox"]`
+- [ ] `test_ssh_tools.py` password assertion fixed — broken ternary replaced with explicit check
+- [ ] Regression tests guard all 5 fixes against recurrence
+
+<!-- Deferred to future milestone -->
 - [ ] Keyring auto-injection disambiguates multiple usernames per hostname — no silent wrong-user logins
 - [ ] SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
 - [ ] `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
 - [ ] `resolve_ssh_credentials()` wrapped in error handler — raises return JSON error payloads, not raw exceptions
-- [ ] WebSocket PTY reader closes websocket on EOF/error — no dead sessions left open
 - [ ] Proxmox schema enforces `iso`/`cdrom` exclusivity via `oneOf`
 - [ ] `test_http_app.py` EOF test drives production `handle_shell_websocket` instead of a local copy
+- [ ] HTTP mode flag accepts common truthy variants (`1`, `yes`, `on`), not just literal `"true"`
 
 ### Out of Scope
 
@@ -149,13 +157,17 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | `asyncio.wait_for(..., timeout=0.05)` for PTY reads | Blocking `stdout.read(4096)` would not return until 4096 bytes or EOF — browser saw nothing | ✓ Good — real-time streaming with tunable timeout |
 | Gap-closure phases (26-29) added mid-milestone via audit | Audit revealed schema/prompt bugs not in original scope; extending milestone cleaner than deferring | ✓ Good — 4 extra phases closed all audit gaps before v1.5 planning |
 
-## Current State
+## Current Milestone: v1.5 Critical Bug Fixes
 
-Shipped v1.4.1 security patch. 7 correctness/quality findings from the CodeRabbit PR #39 review remain as active requirements for the next milestone.
+**Goal:** Close all critical and high-priority bugs from CodeRabbit PR #39 review with regression tests to prevent recurrence.
 
-**Next milestone goals:**
-- Close remaining 7 CodeRabbit findings (SSH reliability, error handling, schema/test quality)
-- Scope TBD — run `/gsd:new-milestone` to define
+**Target fixes:**
+- WebSocket PTY reader zombie session closure (ERR-02)
+- Timeout error reporting using wrong variable
+- `_sudo_run` `check=True` not checking exit code in password branch
+- `credential_type` schema enum constraint
+- Broken test assertion (always-passing ternary)
+- Regression tests for all 5 fixes
 
 ---
-*Last updated: 2026-04-01 after v1.4.1 milestone*
+*Last updated: 2026-04-02 after v1.5 milestone start*
