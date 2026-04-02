@@ -55,18 +55,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WS-01 | — | Pending |
-| ERR-01 | — | Pending |
-| SSH-01 | — | Pending |
-| SSH-02 | — | Pending |
-| SCH-01 | — | Pending |
-| REG-01 | — | Pending |
+| WS-01 | Phase 31 | Pending |
+| ERR-01 | Phase 31 | Pending |
+| SSH-01 | Phase 31 | Pending |
+| SSH-02 | Phase 31 | Pending |
+| SCH-01 | Phase 31 | Pending |
+| REG-01 | Phase 32 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 6 total
-- Mapped to phases: 0
-- Unmapped: 6 ⚠️
+- Mapped to phases: 6
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-02*
-*Last updated: 2026-04-02 after initial definition*
+*Last updated: 2026-04-02 after roadmap creation (Phases 31-32)*

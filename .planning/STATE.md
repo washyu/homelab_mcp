@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Critical Bug Fixes
 status: planning
-stopped_at: "Defining requirements"
+stopped_at: "Roadmap created — ready to plan Phase 31"
 last_updated: "2026-04-02T00:00:00.000Z"
 last_activity: 2026-04-02
 progress:
-  total_phases: 0
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 31 — Bug Fixes (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-02 — Milestone v1.5 started
+Status: Roadmap created — ready to plan Phase 31
+Last activity: 2026-04-02 — v1.5 roadmap created (Phases 31-32)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -36,7 +36,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 0 (v1.3, in progress)
+- Total plans completed: 0 (v1.5, in progress)
 - Average duration: — min
 - Total execution time: — hours
 
@@ -80,7 +80,7 @@ Progress: [░░░░░░░░░░] 0%
 Full v1.0 decision log in `.planning/milestones/v1.0-ROADMAP.md`.
 Full v1.1 decision log in `.planning/milestones/v1.1-ROADMAP.md`.
 
-Key decisions from Phase 30 (v1.5):
+Key decisions from Phase 30 (v1.4.1):
 
 - [Phase 30-01]: threading.Lock (not asyncio.Lock) for _tofu_lock — validate_host_public_key is a synchronous callback invoked by asyncssh from thread context
 - [Phase 30-01]: Caller-holds-lock pattern: _store_host_key is a dumb file writer; lock acquisition lives at validate_host_public_key which performs the check-then-store TOCTOU sequence
@@ -163,6 +163,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-01T22:15:00Z
-Stopped at: Completed Phase 30-01: TOFU lock widening (SEC-02)
+Last session: 2026-04-02T00:00:00Z
+Stopped at: v1.5 roadmap created — Phases 31 and 32 defined
 Resume file: None

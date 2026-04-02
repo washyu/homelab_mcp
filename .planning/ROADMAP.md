@@ -7,6 +7,7 @@
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
+- 🔄 **v1.5 Critical Bug Fixes** — Phases 31-32 (in progress)
 
 ## Phases
 
@@ -62,7 +63,6 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
-
 <details>
 <summary>✅ v1.4.1 Security Patch (Phase 30) — SHIPPED 2026-04-01</summary>
 
@@ -71,6 +71,37 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 
 </details>
+
+### v1.5 Critical Bug Fixes
+
+- [ ] **Phase 31: Bug Fixes** - Close 5 critical/high bugs from CodeRabbit PR #39 review
+- [ ] **Phase 32: Regression Tests** - Regression tests preventing recurrence of all 5 fixed bugs
+
+## Phase Details
+
+### Phase 31: Bug Fixes
+**Goal**: All 5 critical and high-priority bugs from PR #39 review are corrected in production code
+**Depends on**: Nothing (independent fixes)
+**Requirements**: WS-01, ERR-01, SSH-01, SSH-02, SCH-01
+**Success Criteria** (what must be TRUE):
+  1. Closing a WebSocket PTY session (EOF or connection error) cancels the paired reader task and closes the socket — no zombie sessions accumulate
+  2. A timeout error response reports the actual computed effective timeout value, not the raw timeout_seconds parameter passed by the caller
+  3. `_sudo_run` with `check=True` raises on non-zero exit code regardless of whether a password was provided — password branch behaves identically to no-password branch
+  4. The password propagation test in `test_ssh_tools.py` fails when password is absent — the assertion is not an always-passing ternary
+  5. Passing an arbitrary string as `credential_type` to the credentials tool is rejected by schema validation — only "ssh" and "proxmox" are accepted
+**Plans**: TBD
+
+### Phase 32: Regression Tests
+**Goal**: All 5 fixed bugs have dedicated regression tests that will catch any recurrence before it ships
+**Depends on**: Phase 31
+**Requirements**: REG-01
+**Success Criteria** (what must be TRUE):
+  1. A test verifies the WebSocket PTY reader cancels its paired task and closes the socket on EOF — reverting the fix causes the test to fail
+  2. A test verifies the timeout error message contains the effective_timeout value — reverting the fix causes the test to fail
+  3. A test verifies `_sudo_run(check=True)` raises on non-zero exit in the password branch — reverting the fix causes the test to fail
+  4. A test verifies the password assertion in `test_ssh_tools.py` fails when password is not propagated — the test is not unconditionally passing
+  5. A test verifies the credentials tool schema rejects non-enum credential_type values — reverting the fix causes the test to fail
+**Plans**: TBD
 
 ## Progress
 
@@ -97,3 +128,5 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
+| 31. Bug Fixes | v1.5 | 0/? | Not started | - |
+| 32. Regression Tests | v1.5 | 0/? | Not started | - |
