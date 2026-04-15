@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:8080",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "mcp_python_server",
+    "projectPath": "C:\\Users\\washy\\projects\\mcp_python_server",
+    "testIds": [],
+    "additionalInstruction": "Server is running in OpenAPI/REST mode at http://127.0.0.1:8080 with --no-auth (no API key required). No live SSH or Proxmox infrastructure is available — tests targeting external hosts should expect HTTP 424 Failed Dependency (with status=failed_dependency, host, port, protocol, requires fields) when the TCP preflight cannot reach the target. Treat 424 as the expected/correct response for unreachable-target scenarios, not a failure. Standalone tools (list_available_services, get_service_info, list_registered_servers, get_network_sitemap, analyze_network_topology, suggest_deployments, get_device_changes, search_proxmox_scripts, get_proxmox_script_info) should return 200.</additionalInstruction>\n<parameter name=\"serverMode\">development",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-_tOKC9_YANIIWGpWvUFZAWQ5mjh_5UEoGqfSaLgA81CwQaqvSjiq8964rhU8GdBHqjm5uiYtkFRvfQHmMn9o9z0Op-9x-lJKfVTZ4ghUZTPMP28865FjQMVfZR76U8NJ3fw"
+    }
+  },
+  "serverPort": 54170,
+  "proxy": "http://dae22cd3-0e0e-41fe-8aa9-42f42264a7dd:IOvs5ZAmY0zEGWbAs5qVo38zoq70ABTI@tun.testsprite.com:8080"
+}

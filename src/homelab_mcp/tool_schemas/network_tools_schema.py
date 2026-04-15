@@ -38,6 +38,7 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                 "targets": {
                     "type": "array",
                     "description": "Array of target device configurations",
+                    "minItems": 1,
                     "items": {
                         "type": "object",
                         "properties": {

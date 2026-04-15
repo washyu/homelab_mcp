@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Entry point for running the Homelab MCP server.
 
-Supports two transport modes:
+Supports three transport modes:
   - stdio (default): for Claude Desktop and other stdio-based MCP clients
   - HTTP (--http): for OpenWebUI and network-based MCP clients
+  - OpenAPI (--openapi): REST API with Swagger UI at /docs
 """
 
 from __future__ import annotations
@@ -27,6 +28,9 @@ Examples:
   # Run in HTTP mode (for OpenWebUI)
   python run_server.py --http --port 8080
 
+  # Run in OpenAPI/REST mode (Swagger UI at /docs)
+  python run_server.py --openapi --port 8080
+
   # Run HTTP mode with custom host/port
   python run_server.py --http --host 127.0.0.1 --port 9000
 
@@ -47,6 +51,13 @@ Environment Variables:
         action="store_true",
         default=os.getenv("MCP_HTTP_ENABLED", "false").lower() == "true",
         help="Run in HTTP mode instead of stdio mode",
+    )
+
+    parser.add_argument(
+        "--openapi",
+        action="store_true",
+        default=os.getenv("MCP_OPENAPI_ENABLED", "false").lower() == "true",
+        help="Run in OpenAPI/REST mode with Swagger UI at /docs",
     )
 
     parser.add_argument(
@@ -146,13 +157,43 @@ async def run_http(
     port: int = 8080,
     ssl_certfile: str | None = None,
     ssl_keyfile: str | None = None,
+    api_key: str | None = None,
+    auth_enabled: bool = True,
 ) -> None:
     """Run the MCP server in HTTP mode using the SDK transport."""
     import uvicorn
 
     from src.homelab_mcp.http_app import create_http_app
 
-    app = create_http_app()
+    app = create_http_app(api_key=api_key, auth_enabled=auth_enabled)
+
+    config = uvicorn.Config(
+        app=app,
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=True,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
+    )
+    uvi_server = uvicorn.Server(config)
+    await uvi_server.serve()
+
+
+async def run_openapi(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    ssl_certfile: str | None = None,
+    ssl_keyfile: str | None = None,
+    api_key: str | None = None,
+    auth_enabled: bool = True,
+) -> None:
+    """Run the MCP server in OpenAPI/REST mode with Swagger UI."""
+    import uvicorn
+
+    from src.homelab_mcp.openapi_app import create_openapi_app
+
+    app = create_openapi_app(api_key=api_key, auth_enabled=auth_enabled)
 
     config = uvicorn.Config(
         app=app,
@@ -171,7 +212,16 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Debug output to stderr (will appear in logs)
-    if args.http:
+    if args.openapi:
+        protocol = "HTTPS" if args.ssl_cert else "HTTP"
+        print(
+            f"MCP Server starting in OpenAPI/REST mode on {args.host}:{args.port}",
+            file=sys.stderr,
+        )
+        print(f"Swagger UI: {protocol.lower()}://{args.host}:{args.port}/docs", file=sys.stderr)
+        if args.ssl_cert:
+            print(f"SSL: enabled (cert: {args.ssl_cert})", file=sys.stderr)
+    elif args.http:
         protocol = "HTTPS" if args.ssl_cert else "HTTP"
         print(
             f"MCP Server starting in {protocol} mode on {args.host}:{args.port}",
@@ -190,13 +240,26 @@ if __name__ == "__main__":
     print(f"Python executable: {sys.executable}", file=sys.stderr)
 
     try:
-        if args.http:
+        if args.openapi:
+            asyncio.run(
+                run_openapi(
+                    host=args.host,
+                    port=args.port,
+                    ssl_certfile=args.ssl_cert,
+                    ssl_keyfile=args.ssl_key,
+                    api_key=args.api_key,
+                    auth_enabled=not args.no_auth,
+                )
+            )
+        elif args.http:
             asyncio.run(
                 run_http(
                     host=args.host,
                     port=args.port,
                     ssl_certfile=args.ssl_cert,
                     ssl_keyfile=args.ssl_key,
+                    api_key=args.api_key,
+                    auth_enabled=not args.no_auth,
                 )
             )
         else:

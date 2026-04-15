@@ -237,6 +237,8 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
 def create_http_app(
     cors_origins: list[str] | None = None,
     allowed_origins: list[str] | None = None,
+    api_key: str | None = None,
+    auth_enabled: bool = True,
 ) -> Starlette | APIKeyAuth:
     """Create a Starlette ASGI application with MCP SDK HTTP transport.
 
@@ -307,13 +309,17 @@ def create_http_app(
         lifespan=lifespan,
     )
 
-    api_key = os.getenv("MCP_API_KEY")
-    if api_key:
+    if not auth_enabled:
+        logger.warning("Authentication disabled — HTTP endpoints are unauthenticated")
+        return starlette_app
+
+    resolved_key = api_key or os.getenv("MCP_API_KEY")
+    if resolved_key:
         from .auth import APIKeyAuth
 
         return APIKeyAuth(
             starlette_app,
-            api_key=api_key,
+            api_key=resolved_key,
             enabled=True,
             exclude_paths=["/health", "/shell/", "/ws/shell/"],
         )
