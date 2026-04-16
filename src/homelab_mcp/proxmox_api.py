@@ -235,7 +235,10 @@ def get_proxmox_client(
                 keyring_secret = get_credential(keyring_host, keyring_username, credential_type="proxmox")
                 if keyring_secret:
                     host = host or keyring_host
-                    api_token = api_token or keyring_secret
+                    # Proxmox API tokens use "user@realm!tokenid=secret" format.
+                    # The registry username holds the token ID (e.g. root@pam!mcp_test),
+                    # the keyring holds the secret UUID.
+                    api_token = api_token or f"{keyring_username}={keyring_secret}"
                     logger.debug("Auto-injected Proxmox keyring credential for %s", host)
 
     # Validation gates

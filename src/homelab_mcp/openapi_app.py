@@ -483,6 +483,30 @@ def _classify_error(tool_name: str, error_msg: str) -> tuple[int, str]:
     return 500, "error"
 
 
+def _build_example(schema: dict[str, Any]) -> dict[str, Any]:
+    """Build an example request body from a JSON schema for Swagger 'Try it out'."""
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
+    example: dict[str, Any] = {}
+    type_defaults: dict[str, Any] = {
+        "string": "",
+        "integer": 0,
+        "number": 0,
+        "boolean": False,
+        "array": [],
+        "object": {},
+    }
+    for name, prop in props.items():
+        if "default" in prop:
+            example[name] = prop["default"]
+        elif "enum" in prop:
+            example[name] = prop["enum"][0]
+        elif name in required:
+            example[name] = type_defaults.get(prop.get("type", "string"), "")
+        # Skip optional fields with no default — keep the example concise
+    return example
+
+
 def _format_validation_error(err: jsonschema.ValidationError) -> dict[str, Any]:
     """Render a jsonschema ValidationError into a stable, FastAPI-style detail entry."""
     loc = ["body", *list(err.absolute_path)]
@@ -526,12 +550,26 @@ def _register_tool_route(
         summary=tool_name,
         description=description,
         name=tool_name,
+        openapi_extra={
+            "requestBody": {
+                "required": bool(input_schema.get("required")),
+                "content": {
+                    "application/json": {
+                        "schema": input_schema,
+                        "example": _build_example(input_schema),
+                    }
+                },
+            }
+        }
+        if input_schema.get("properties")
+        else None,
     )
     async def tool_endpoint(
         request: Request,
-        _handler: Any = handler,
-        _tool_name: str = tool_name,
     ) -> JSONResponse:
+        # `handler` and `tool_name` are captured from the enclosing
+        # _register_tool_route scope — keeping them out of the signature
+        # prevents FastAPI from exposing them as query parameters in Swagger.
         global _request_count, _error_count
         _request_count += 1
 
@@ -556,7 +594,7 @@ def _register_tool_route(
                     status_code=422,
                     content={
                         "status": "error",
-                        "tool": _tool_name,
+                        "tool": tool_name,
                         "error": f"Validation error at {first_path}: {first.message}",
                         "details": [_format_validation_error(e) for e in errors],
                     },
@@ -564,7 +602,7 @@ def _register_tool_route(
 
         # External dependency preflight: TCP-probe the target host before
         # invoking the handler. Fails fast with 424 when the target is down.
-        target = _resolve_external_host(_tool_name, body)
+        target = _resolve_external_host(tool_name, body)
         if target is not None:
             host, port, proto = target
             reachable, reason = await _check_reachable(host, port)
@@ -574,17 +612,17 @@ def _register_tool_route(
                     status_code=424,
                     content={
                         "status": "failed_dependency",
-                        "tool": _tool_name,
+                        "tool": tool_name,
                         "error": reason or f"{host}:{port} unreachable",
                         "host": host,
                         "port": port,
                         "protocol": proto,
-                        "requires": _get_remediation_hint(_tool_name),
+                        "requires": _get_remediation_hint(tool_name),
                     },
                 )
 
         try:
-            result = await _handler(body)
+            result = await handler(body)
             content = _extract_text_content(result)
             # Detect error results from handlers that don't raise exceptions.
             # Some handlers (e.g. vm_operations) emit `{status: error, message: ...}`
@@ -593,22 +631,22 @@ def _register_tool_route(
                 _error_count += 1
                 error_msg = content.get("error") or content.get("message") or "Tool execution failed"
                 status_code, response_status = _classify_error(
-                    _tool_name,
+                    tool_name,
                     error_msg,
                 )
-                resp: dict[str, Any] = {"status": response_status, "tool": _tool_name, "error": error_msg}
+                resp: dict[str, Any] = {"status": response_status, "tool": tool_name, "error": error_msg}
                 if status_code == 412:
-                    resp["requires"] = _get_remediation_hint(_tool_name)
+                    resp["requires"] = _get_remediation_hint(tool_name)
                 return JSONResponse(status_code=status_code, content=resp)
             return JSONResponse(
                 status_code=200,
-                content={"status": "success", "tool": _tool_name, "result": content},
+                content={"status": "success", "tool": tool_name, "result": content},
             )
         except ValueError as e:
             _error_count += 1
             return JSONResponse(
                 status_code=400,
-                content={"status": "error", "tool": _tool_name, "error": str(e)},
+                content={"status": "error", "tool": tool_name, "error": str(e)},
             )
         except KeyError as e:
             # Handler accessed a required field that wasn't in the body. Treat
@@ -619,7 +657,7 @@ def _register_tool_route(
                 status_code=422,
                 content={
                     "status": "error",
-                    "tool": _tool_name,
+                    "tool": tool_name,
                     "error": "Validation error",
                     "details": [
                         {
@@ -634,11 +672,11 @@ def _register_tool_route(
             _error_count += 1
             error_msg = str(e)
             status_code, response_status = _classify_error(
-                _tool_name,
+                tool_name,
                 error_msg,
             )
-            logger.error(f"Tool {_tool_name} failed: {e}\n{traceback.format_exc()}")
-            resp = {"status": response_status, "tool": _tool_name, "error": error_msg}
+            logger.error(f"Tool {tool_name} failed: {e}\n{traceback.format_exc()}")
+            resp = {"status": response_status, "tool": tool_name, "error": error_msg}
             if status_code == 412:
-                resp["requires"] = _get_remediation_hint(_tool_name)
+                resp["requires"] = _get_remediation_hint(tool_name)
             return JSONResponse(status_code=status_code, content=resp)
