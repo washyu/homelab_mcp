@@ -38,7 +38,7 @@ async def deploy_vm(device_id: int, platform: str, vm_name: str, vm_config: dict
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Device with ID {device_id} not found in sitemap",
+                    "message": f"Device not found: ID {device_id} is not registered in the sitemap",
                 }
             )
 
@@ -70,7 +70,7 @@ async def control_vm_state(device_id: int, platform: str, vm_name: str, action: 
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Device with ID {device_id} not found in sitemap",
+                    "message": f"Device not found: ID {device_id} is not registered in the sitemap",
                 }
             )
 
@@ -102,7 +102,7 @@ async def get_vm_status(device_id: int, platform: str, vm_name: str) -> str:  # 
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Device with ID {device_id} not found in sitemap",
+                    "message": f"Device not found: ID {device_id} is not registered in the sitemap",
                 }
             )
 
@@ -134,7 +134,7 @@ async def list_vms_on_device(device_id: int, platforms: list[str] | None = None)
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Device with ID {device_id} not found in sitemap",
+                    "message": f"Device not found: ID {device_id} is not registered in the sitemap",
                 }
             )
 
@@ -203,7 +203,7 @@ async def get_vm_logs(device_id: int, platform: str, vm_name: str, lines: int = 
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Device with ID {device_id} not found in sitemap",
+                    "message": f"Device not found: ID {device_id} is not registered in the sitemap",
                 }
             )
 
@@ -235,7 +235,7 @@ async def remove_vm(device_id: int, platform: str, vm_name: str, force: bool = F
             return json.dumps(
                 {
                     "status": "error",
-                    "message": f"Device with ID {device_id} not found in sitemap",
+                    "message": f"Device not found: ID {device_id} is not registered in the sitemap",
                 }
             )
 

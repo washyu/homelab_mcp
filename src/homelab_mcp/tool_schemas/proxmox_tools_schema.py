@@ -56,7 +56,7 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                 "resource_type": {
                     "type": "string",
                     "description": "Filter by resource type",
-                    "enum": ["vm", "lxc", "node", "storage", "pool"],
+                    "enum": ["qemu", "lxc", "node", "storage", "pool"],
                 },
             },
             "required": [],

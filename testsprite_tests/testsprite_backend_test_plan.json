@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "post api tools ssh discover returns success on reachable host",
+    "description": "Test POST /api/tools/ssh_discover with valid reachable hostname and credentials to verify it returns 200 with expected system info in result."
+  },
+  {
+    "id": "TC002",
+    "title": "post api tools ssh discover returns failed dependency on unreachable host",
+    "description": "Test POST /api/tools/ssh_discover with unreachable hostname to verify it returns 424 failed_dependency with correct host, port, protocol, and requires fields."
+  },
+  {
+    "id": "TC003",
+    "title": "post api tools setup mcp admin returns error on missing hostname",
+    "description": "Test POST /api/tools/setup_mcp_admin with missing hostname field to verify it returns 422 or 400 with appropriate error message about missing required field."
+  },
+  {
+    "id": "TC004",
+    "title": "post api tools bulk discover and map returns error on missing targets array",
+    "description": "Test POST /api/tools/bulk_discover_and_map with empty or missing targets array to verify it returns 422 with error indicating missing or malformed targets array."
+  },
+  {
+    "id": "TC005",
+    "title": "post api tools deploy vm returns precondition failed on unknown device",
+    "description": "Test POST /api/tools/deploy_vm with unknown device_id to verify it returns 412 precondition_failed with error indicating device not found or no infrastructure registered."
+  },
+  {
+    "id": "TC006",
+    "title": "post api tools register server returns failed dependency on unreachable host",
+    "description": "Test POST /api/tools/register_server with unreachable hostname to verify it returns 424 failed_dependency with correct host, port, protocol, and requires fields."
+  },
+  {
+    "id": "TC007",
+    "title": "post api tools list proxmox resources returns failed dependency on unreachable proxmox host",
+    "description": "Test POST /api/tools/list_proxmox_resources with unreachable Proxmox host to verify it returns 424 failed_dependency indicating Proxmox API unreachable on port 8006."
+  },
+  {
+    "id": "TC008",
+    "title": "post api tools scan infrastructure drift returns precondition failed when no baseline",
+    "description": "Test POST /api/tools/scan_infrastructure_drift with hostname that has no baseline or no PROXMOX_HOST configured to verify it returns 412 precondition_failed with appropriate error message."
+  },
+  {
+    "id": "TC009",
+    "title": "post api tools ssh execute command returns failed dependency on unreachable host",
+    "description": "Test POST /api/tools/ssh_execute_command with unreachable hostname to verify it returns 424 failed_dependency with correct host, port, protocol, and requires fields."
+  },
+  {
+    "id": "TC010",
+    "title": "get api tools returns list of all registered tools",
+    "description": "Test GET /api/tools to verify it returns 200 with a list of 56 registered tools including their name, description, category, requires_infrastructure flag, and input_schema."
+  }
+]
