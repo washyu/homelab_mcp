@@ -55,7 +55,7 @@ def timeout_wrapper(timeout_seconds: float = 30.0, default_response: dict[str, A
                 result = await asyncio.wait_for(func(*args, **kwargs), timeout=effective_timeout)
                 return result
             except TimeoutError:
-                error_msg = f"Operation '{func.__name__}' timed out after {timeout_seconds} seconds"
+                error_msg = f"Operation '{func.__name__}' timed out after {effective_timeout} seconds"
                 logger.error(error_msg)
 
                 if default_response:

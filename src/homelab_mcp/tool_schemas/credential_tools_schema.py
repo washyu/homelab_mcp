@@ -127,6 +127,7 @@ CREDENTIAL_TOOLS["list_keyring_credentials"] = {
                 "type": "string",
                 "description": "Credential type to list: 'ssh' (default) or 'proxmox'",
                 "default": "ssh",
+                "enum": ["ssh", "proxmox"],
             }
         },
         "required": [],
