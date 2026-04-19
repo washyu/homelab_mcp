@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
 
 
+class CredentialNotFoundError(RuntimeError):
+    """Raised when no credentials are found for a hostname in any tier."""
+
+
 @dataclass
 class SSHCredentials:
     """Resolved SSH credentials for connection."""
@@ -83,6 +87,14 @@ def resolve_ssh_credentials(
                 port=port,
                 password=keyring_password,
             )
+        logger.warning(
+            "Credential desync for %s (user: %s): registry entry exists but keyring "
+            "returned None — re-run 'homelab-mcp credentials add %s %s' to restore",
+            hostname,
+            stored_username,
+            hostname,
+            stored_username,
+        )
 
     # Try to find stored credentials
     try:
@@ -125,11 +137,10 @@ def resolve_ssh_credentials(
                 key_path=str(mcp_key),
             )
 
-    # Return minimal credentials - will need password or explicit key
-    return SSHCredentials(
-        hostname=hostname,
-        username=resolved_username,
-        port=port,
+    raise CredentialNotFoundError(
+        f"No credentials found for {hostname}. "
+        "Run `homelab-mcp credentials add <hostname> <username>` in your terminal, "
+        "or call the `register_server` MCP tool to store credentials."
     )
 
 
@@ -241,9 +252,7 @@ async def setup_remote_mcp_admin(
                 # Step 2: Write key to local tmpfile and SFTP-upload to remote (key never hits a shell string)
                 local_tmp_path = None
                 try:
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=".pub", mode="w"
-                    ) as local_tmp:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pub", mode="w") as local_tmp:
                         local_tmp.write(public_key)
                         local_tmp_path = local_tmp.name
 

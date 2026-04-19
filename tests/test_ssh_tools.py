@@ -905,18 +905,14 @@ async def test_setup_mcp_admin_key_injection_safe(mock_connect, mock_path, mock_
 
     # Assert NONE of the conn.run commands contain the literal public key
     for cmd in run_calls:
-        assert public_key not in cmd, (
-            f"Public key content found in conn.run command (injection risk): {cmd!r}"
-        )
+        assert public_key not in cmd, f"Public key content found in conn.run command (injection risk): {cmd!r}"
 
     # Assert SFTP was used (key delivered via SFTP, not shell)
     mock_conn.start_sftp_client.assert_called()
 
     # Assert mktemp was called to create a remote tmpfile
     mktemp_called = any("mktemp" in cmd and "mcp_key_" in cmd for cmd in run_calls)
-    assert mktemp_called, (
-        f"Expected conn.run to be called with a mktemp /tmp/mcp_key_ command. Got: {run_calls}"
-    )
+    assert mktemp_called, f"Expected conn.run to be called with a mktemp /tmp/mcp_key_ command. Got: {run_calls}"
 
 
 @pytest.mark.asyncio
@@ -947,9 +943,10 @@ async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure
         call_count += 1
         cmd = args[0] if args else kwargs.get("command", "")
         run_calls.append(str(cmd))
-        if call_count == 1:
+        # Dispatch by command content rather than call index — robust to ordering changes.
+        if cmd.startswith("id "):
             return id_result
-        elif call_count == 2:
+        if "mktemp" in cmd:
             return mktemp_result
         return success_result
 
@@ -980,12 +977,8 @@ async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure
 
     grep_cmd = grep_calls[0]
     # Must use file-based grep (-Ff with tmpfile path)
-    assert "grep -Ff" in grep_cmd or "-Ff" in grep_cmd, (
-        f"grep command must use -Ff (file-based): {grep_cmd!r}"
-    )
-    assert "/tmp/mcp_key_" in grep_cmd, (
-        f"grep command must reference the tmpfile path: {grep_cmd!r}"
-    )
+    assert "grep -Ff" in grep_cmd or "-Ff" in grep_cmd, f"grep command must use -Ff (file-based): {grep_cmd!r}"
+    assert "/tmp/mcp_key_" in grep_cmd, f"grep command must reference the tmpfile path: {grep_cmd!r}"
     # Must NOT use argument-based grep with key content as argument
     assert f'grep -F "{public_key}"' not in grep_cmd, (
         f"grep must not use quoted key argument (injection risk): {grep_cmd!r}"
@@ -1023,13 +1016,14 @@ async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path,
         call_count += 1
         cmd = args[0] if args else kwargs.get("command", "")
         run_calls.append(str(cmd))
-        if call_count == 1:
+        # Dispatch by command content rather than call index — robust to ordering changes.
+        if cmd.startswith("id "):
             return id_result
-        elif call_count == 2:
+        if "mktemp" in cmd:
             return mktemp_result
-        elif "grep" in str(cmd):
+        if "grep" in cmd:
             return grep_result
-        elif "cat" in str(cmd) and "authorized_keys" in str(cmd):
+        if "cat" in cmd and "authorized_keys" in cmd:
             # Simulate failure on the cat >> authorized_keys step
             raise asyncssh.Error("Simulated append failure")
         return success_result
@@ -1055,7 +1049,4 @@ async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path,
 
     # Assert remote tmpfile cleanup ran (rm -f /tmp/mcp_key_...)
     rm_calls = [cmd for cmd in run_calls if "rm -f" in cmd and "mcp_key_" in cmd]
-    assert rm_calls, (
-        f"Expected rm -f cleanup of remote tmpfile in conn.run calls. "
-        f"Got calls: {run_calls}"
-    )
+    assert rm_calls, f"Expected rm -f cleanup of remote tmpfile in conn.run calls. Got calls: {run_calls}"
