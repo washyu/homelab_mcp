@@ -197,10 +197,14 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
                             text = data if isinstance(data, str) else data.decode("utf-8")
                             await websocket.send_text(text)
                         else:
-                            # EOF — process exited
+                            # EOF — process exited; close websocket to unblock outer loop
                             await websocket.send_text("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n")
+                            with contextlib.suppress(Exception):
+                                await websocket.close()
                             break
                     else:
+                        with contextlib.suppress(Exception):
+                            await websocket.close()
                         break
                 except TimeoutError:
                     logger.debug("No PTY data within timeout — retrying")
@@ -210,6 +214,8 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
                         await websocket.send_text(f"\r\n\x1b[31m[Read error: {e}]\x1b[0m\r\n")
                     except Exception as send_err:
                         logger.debug(f"Could not send error to websocket: {send_err}")
+                    with contextlib.suppress(Exception):
+                        await websocket.close()
                     break
 
         output_task = asyncio.create_task(read_output())
