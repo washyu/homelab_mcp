@@ -188,7 +188,7 @@ async def test_ssh_discover_no_credentials(mock_get_db):
     result_data = json.loads(result)
     assert result_data["status"] == "error"
     # Updated error message since we now use credential resolver
-    assert "No credentials" in result_data["error"] or "credentials add" in result_data["error"]
+    assert "No credentials" in result_data["error"]
 
 
 @pytest.mark.asyncio
