@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Credentials & Release Automation
-status: "✅ SHIPPED — milestone complete"
-stopped_at: "v1.3 milestone archived — planning next milestone"
-last_updated: "2026-03-15"
-last_activity: 2026-03-15 — v1.3 milestone complete
+milestone: v1.5
+milestone_name: Credential Architecture Cleanup
+status: planning
+stopped_at: "Phase 33 added — ready to spec"
+last_updated: "2026-04-19"
+last_activity: 2026-04-19 — Phase 33 added to roadmap; v1.4/v1.5-critbugs work parked on v1.4 branch
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Planning next milestone
+**Current focus:** v1.5 Credential Architecture Cleanup
 
 ## Current Position
 
-Phase: — (milestone complete)
+Phase: 33 — Credential Architecture Cleanup (not started)
 Plan: —
-Status: ✅ v1.3 shipped — all 4 phases, 9 plans complete
-Last activity: 2026-03-15 - Completed quick task 6: update README and setup docs to reflect v1.3
+Status: Phase added to roadmap — ready to spec
+Last activity: 2026-04-19 — Phase 33 added; v1.4 branch (phases 21-32) parked for triage
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
+
+## Parked Work
+
+Phases 21-32 exist on the `v1.4` git branch but were never merged to main:
+- **v1.4 Real-World Reliability** (phases 21-29) — mostly complete, some known-broken (phase 30-02 wiped the `CredentialNotFoundError` class added in phase 22-01 via a stale worktree merge)
+- **v1.4.1 Security Patch** (phase 30) — SFTP tmpfile tests failing
+- **v1.5 Critical Bug Fixes** (phases 31-32) — planning started, never executed
+
+These require dedicated triage before any of their work can ship. Phase 33 (current) is intentionally independent and builds on current main, not on the parked v1.4 work.
 
 ## Performance Metrics
 

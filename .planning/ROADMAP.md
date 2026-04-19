@@ -6,6 +6,8 @@
 - ✅ **v1.1 Safety & Observability** — Phases 6-11 (shipped 2026-03-12)
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
+- 🅿️ **v1.4/v1.4.1/v1.5-critbugs** — Phases 21-32 parked on `v1.4` branch, never shipped to main. Known-broken (missing `CredentialNotFoundError` class wiped by phase 30-02 worktree merge; SEC-01 tmpfile tests failing). Requires triage before merge.
+- 🔄 **v1.5 Credential Architecture Cleanup** — Phase 33 (in progress)
 
 ## Phases
 
@@ -61,6 +63,20 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
+### v1.5 Credential Architecture Cleanup
+
+- [ ] **Phase 33: Credential Architecture Cleanup** — Keyring as single source of truth; drop DB ssh_credentials table, mcp_admin defaults, setup_mcp_admin tool; fix register_server verify; add cluster-scoped credentials for Proxmox API tokens
+
+## Phase Details
+
+### Phase 33: Credential Architecture Cleanup
+
+**Goal**: The OS keyring is the single source of truth for all remote credentials (SSH + Proxmox API). All parallel credential surfaces (DB ssh_credentials table, mcp_admin defaults, setup_mcp_admin tool, register_server verify-path bypass) are removed. Proxmox clusters can share one datacenter-wide API token across N nodes via a named cluster scope.
+
+**Depends on**: Nothing (builds off current main; v1.4 branch phases parked separately)
+
+**Plans**: TBD (pending SPEC.md and PLAN.md)
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -85,3 +101,4 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 18. Credentials CLI + --version | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
+| 33. Credential Architecture Cleanup | v1.5 | 0/? | Not started | - |
