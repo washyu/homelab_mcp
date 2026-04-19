@@ -648,6 +648,25 @@ async def ssh_discover_system(
     )
 
 
+async def _sudo_run(
+    conn: asyncssh.SSHClientConnection,
+    command: str,
+    password: str | None = None,
+    check: bool = False,
+) -> "asyncssh.SSHCompletedProcess":
+    """Execute command with sudo, with consistent check= semantics for both auth paths.
+
+    Both the password and no-password branches forward ``check`` to
+    ``conn.run``, so callers get identical raise-on-failure semantics
+    regardless of whether a password is supplied.
+    """
+    if password:
+        full_command = f"echo '{password}' | sudo -S {command}"  # nosec B608 -- password is user-provided credential, not SQL
+    else:
+        full_command = f"sudo {command}"
+    return await conn.run(full_command, check=check)
+
+
 @ssh_connection_wrapper(timeout_seconds=20.0)
 async def ssh_execute_command(
     hostname: str,
@@ -686,19 +705,16 @@ async def ssh_execute_command(
         password=creds.password,
         key_path=resolved_key,
     ) as conn:
-        # Prepare the command with sudo if requested
+        # Execute the command, routing sudo through _sudo_run for consistent check= semantics
         if sudo:
             if creds.username == "mcp_admin":
                 # mcp_admin has passwordless sudo
-                full_command = f"sudo {command}"
+                result = await _sudo_run(conn, command, password=None, check=False)
             else:
                 # Other users might need password for sudo
-                full_command = f"echo '{creds.password}' | sudo -S {command}" if creds.password else f"sudo {command}"
+                result = await _sudo_run(conn, command, password=creds.password, check=False)
         else:
-            full_command = command
-
-        # Execute the command
-        result = await conn.run(full_command, check=False)
+            result = await conn.run(command, check=False)
 
         output = []
         if result.stdout:
