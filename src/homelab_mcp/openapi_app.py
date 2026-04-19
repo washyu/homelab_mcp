@@ -110,8 +110,8 @@ async def _check_reachable(host: str, port: int, timeout: float = 1.0) -> tuple[
         writer.close()
         try:
             await writer.wait_closed()
-        except Exception:  # noqa: BLE001 - close errors are not reachability failures
-            pass
+        except Exception as close_err:  # noqa: BLE001 - close errors are not reachability failures
+            logger.debug("wait_closed after reachability probe failed for %s:%s: %s", host, port, close_err)
         return True, None
     except TimeoutError:
         return False, f"TCP connect to {host}:{port} timed out after {timeout}s"

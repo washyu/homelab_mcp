@@ -1690,11 +1690,13 @@ def test_get_proxmox_client_keyring_fallback(mocker, monkeypatch):
     monkeypatch.delenv("PROXMOX_API_TOKEN", raising=False)
     monkeypatch.delenv("PROXMOX_USER", raising=False)
     monkeypatch.delenv("PROXMOX_PASSWORD", raising=False)
+    # Keyring contract (proxmox_api.py:239-241): registry username holds the token ID
+    # (user@realm!tokenid), secret holds the UUID. Final api_token = "{username}={secret}".
     mocker.patch(
         "homelab_mcp.proxmox_api.list_credentials",
-        return_value=[{"hostname": "proxmox.local", "username": "root@pam", "credential_type": "proxmox"}],
+        return_value=[{"hostname": "proxmox.local", "username": "root@pam!mytoken", "credential_type": "proxmox"}],
     )
-    mocker.patch("homelab_mcp.proxmox_api.get_credential", return_value="root@pam!mytoken=abc123")
+    mocker.patch("homelab_mcp.proxmox_api.get_credential", return_value="abc123")
     from homelab_mcp.proxmox_api import get_proxmox_client
 
     client = get_proxmox_client()
