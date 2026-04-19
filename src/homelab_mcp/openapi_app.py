@@ -110,8 +110,8 @@ async def _check_reachable(host: str, port: int, timeout: float = 1.0) -> tuple[
         writer.close()
         try:
             await writer.wait_closed()
-        except Exception:  # noqa: BLE001 - close errors are not reachability failures
-            pass
+        except Exception as close_err:  # noqa: BLE001 - close errors are not reachability failures
+            logger.debug("wait_closed after reachability probe failed for %s:%s: %s", host, port, close_err)
         return True, None
     except TimeoutError:
         return False, f"TCP connect to {host}:{port} timed out after {timeout}s"
@@ -310,7 +310,7 @@ def create_openapi_app(
         allow_headers=["*"],
     )
 
-    @app.exception_handler(StarletteHTTPException)  # type: ignore[misc]
+    @app.exception_handler(StarletteHTTPException)  # type: ignore[misc,unused-ignore]
     async def http_exception_handler(
         request: Request,
         exc: StarletteHTTPException,
@@ -323,7 +323,7 @@ def create_openapi_app(
             },
         )
 
-    @app.exception_handler(RequestValidationError)  # type: ignore[misc]
+    @app.exception_handler(RequestValidationError)  # type: ignore[misc,unused-ignore]
     async def validation_exception_handler(
         request: Request,
         exc: RequestValidationError,
@@ -337,7 +337,7 @@ def create_openapi_app(
             },
         )
 
-    @app.get("/health", tags=["System"])  # type: ignore[misc]
+    @app.get("/health", tags=["System"])  # type: ignore[misc,unused-ignore]
     async def health_check() -> dict[str, Any]:
         """Health check endpoint."""
         return {
@@ -352,7 +352,7 @@ def create_openapi_app(
             },
         }
 
-    @app.get("/api/tools", tags=["System"])  # type: ignore[misc]
+    @app.get("/api/tools", tags=["System"])  # type: ignore[misc,unused-ignore]
     async def list_tools() -> dict[str, Any]:
         """List all available tools with their schemas."""
         tools = []
@@ -544,7 +544,7 @@ def _register_tool_route(
         except jsonschema.SchemaError as e:
             logger.warning(f"Tool {tool_name} has invalid input schema, skipping validation: {e}")
 
-    @app.post(  # type: ignore[misc]
+    @app.post(  # type: ignore[misc,unused-ignore]
         f"/api/tools/{tool_name}",
         tags=[tag],
         summary=tool_name,

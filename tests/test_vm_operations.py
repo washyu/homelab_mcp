@@ -112,7 +112,7 @@ class TestVMOperations:
         result = json.loads(result_json)
 
         assert result["status"] == "error"
-        assert "not found in sitemap" in result["message"]
+        assert "is not registered in the sitemap" in result["message"]
 
     @patch("src.homelab_mcp.vm_operations.VMManager")
     @patch("src.homelab_mcp.vm_operations.get_vm_provider")
