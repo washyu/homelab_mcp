@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Critical Bug Fixes
-status: planning
-stopped_at: "Roadmap created — ready to plan Phase 31"
-last_updated: "2026-04-02T00:00:00.000Z"
-last_activity: 2026-04-02
+status: executing
+stopped_at: "Completed 31-bug-fixes/31-01-PLAN.md"
+last_updated: "2026-04-19T20:41:25Z"
+last_activity: 2026-04-19
 progress:
   total_phases: 2
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: 31 — Bug Fixes (not started)
-Plan: —
-Status: Roadmap created — ready to plan Phase 31
-Last activity: 2026-04-02 — v1.5 roadmap created (Phases 31-32)
+Phase: 31 — Bug Fixes (in progress)
+Plan: 31-01 complete; 31-02 remaining
+Status: Completed 31-bug-fixes/31-01-PLAN.md
+Last activity: 2026-04-19 — Phase 31-01 closed (ERR-01, SSH-02, SCH-01 fixed)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 20-release-automation-prmt-02 P01 | 5 | 1 tasks | 1 files |
 | Phase 20-release-automation-prmt-02 P02 | 5 | 2 tasks | 2 files |
 | Phase 20-release-automation-prmt-02 P03 | 2 | 1 tasks | 1 files |
+| Phase 31-bug-fixes P01 | 2 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,13 @@ Key constraints for v1.3 (from research):
 - [Phase 20-release-automation-prmt-02]: publish-to-pypi uses OIDC (id-token: write at job level, no stored secrets) with pypa/gh-action-pypi-publish@release/v1
 - [Phase 20-release-automation-prmt-02]: 5-step decommission workflow uses get_network_sitemap to resolve hostname->device_id before calling decommission_device (CLI-02 fix)
 
+Key decisions from Phase 31 (v1.5):
+
+- [Phase 31-01]: ERR-01 fix is minimal single-variable substitution in error_handling.py:58 — effective_timeout already in scope from lines 50-53, no helper refactor needed
+- [Phase 31-01]: SCH-01 enum goes on the property definition inside list_keyring_credentials.inputSchema.properties.credential_type — MCP framework validates against JSON Schema before handler runs
+- [Phase 31-01]: SSH-02 assertion simplified to single check on "No credentials" — paired `status == "error"` assertion at line 189 already guards the error-path precondition, so two-assertion form is unnecessary
+- [Phase 31-01]: _sudo_run helper in ssh_tools.py:651 has broken `SSHCompletedProcess[str]` annotation (not subscriptable) — deferred to SSH-01 plan owner, logged in deferred-items.md; does not impact 31-01 test verification scope
+
 ### Pending Todos
 
 None.
@@ -163,6 +171,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-02T00:00:00Z
-Stopped at: v1.5 roadmap created — Phases 31 and 32 defined
+Last session: 2026-04-19T20:41:25Z
+Stopped at: Completed 31-bug-fixes/31-01-PLAN.md
 Resume file: None

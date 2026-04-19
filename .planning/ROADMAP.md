@@ -91,7 +91,7 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
   5. Passing an arbitrary string as `credential_type` to the credentials tool is rejected by schema validation — only "ssh" and "proxmox" are accepted
 **Plans:** 2 plans
 Plans:
-- [ ] 31-01-PLAN.md — Fix timeout error message, test assertion, and credential_type schema (ERR-01, SSH-02, SCH-01)
+- [x] 31-01-PLAN.md — Fix timeout error message, test assertion, and credential_type schema (ERR-01, SSH-02, SCH-01) — completed 2026-04-19
 - [ ] 31-02-PLAN.md — Fix zombie WebSocket PTY sessions and extract _sudo_run helper (WS-01, SSH-01)
 
 ### Phase 32: Regression Tests
@@ -131,5 +131,5 @@ Plans:
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
-| 31. Bug Fixes | v1.5 | 0/2 | Not started | - |
+| 31. Bug Fixes | v1.5 | 1/2 | In Progress | - |
 | 32. Regression Tests | v1.5 | 0/? | Not started | - |
