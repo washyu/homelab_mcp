@@ -310,7 +310,7 @@ def create_openapi_app(
         allow_headers=["*"],
     )
 
-    @app.exception_handler(StarletteHTTPException)  # type: ignore[misc]
+    @app.exception_handler(StarletteHTTPException)  # type: ignore[misc,unused-ignore]
     async def http_exception_handler(
         request: Request,
         exc: StarletteHTTPException,
@@ -323,7 +323,7 @@ def create_openapi_app(
             },
         )
 
-    @app.exception_handler(RequestValidationError)  # type: ignore[misc]
+    @app.exception_handler(RequestValidationError)  # type: ignore[misc,unused-ignore]
     async def validation_exception_handler(
         request: Request,
         exc: RequestValidationError,
@@ -337,7 +337,7 @@ def create_openapi_app(
             },
         )
 
-    @app.get("/health", tags=["System"])  # type: ignore[misc]
+    @app.get("/health", tags=["System"])  # type: ignore[misc,unused-ignore]
     async def health_check() -> dict[str, Any]:
         """Health check endpoint."""
         return {
@@ -352,7 +352,7 @@ def create_openapi_app(
             },
         }
 
-    @app.get("/api/tools", tags=["System"])  # type: ignore[misc]
+    @app.get("/api/tools", tags=["System"])  # type: ignore[misc,unused-ignore]
     async def list_tools() -> dict[str, Any]:
         """List all available tools with their schemas."""
         tools = []
@@ -544,7 +544,7 @@ def _register_tool_route(
         except jsonschema.SchemaError as e:
             logger.warning(f"Tool {tool_name} has invalid input schema, skipping validation: {e}")
 
-    @app.post(  # type: ignore[misc]
+    @app.post(  # type: ignore[misc,unused-ignore]
         f"/api/tools/{tool_name}",
         tags=[tag],
         summary=tool_name,
