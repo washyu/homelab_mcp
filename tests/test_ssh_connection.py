@@ -313,10 +313,7 @@ class TestTOFULock:
             t.join()
 
         content = known_hosts_path.read_text()
-        matching_lines = [
-            line for line in content.splitlines()
-            if line.startswith("10.0.0.1 ")
-        ]
+        matching_lines = [line for line in content.splitlines() if line.startswith("10.0.0.1 ")]
         assert len(matching_lines) == 1, (
             f"Expected exactly 1 known_hosts entry for 10.0.0.1, got {len(matching_lines)}:\n{content}"
         )
