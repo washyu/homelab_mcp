@@ -320,6 +320,42 @@ class TestUtilityFunctions:
         assert len(hash1) == 64  # SHA256 produces 64-character hex string
 
 
+class TestCredentialDBRemoval:
+    """CRED-04: ssh_credentials table and CRUD methods must not exist after v1.6 migration."""
+
+    @pytest.fixture
+    def temp_db(self):
+        """Create an in-memory database."""
+        yield ":memory:"
+
+    def test_ssh_credentials_table_dropped(self, temp_db):
+        """CRED-04 D-01: ssh_credentials table must not exist after init_schema (v1.6)."""
+        adapter = SQLiteAdapter(temp_db)
+        adapter.init_schema()
+        cursor = adapter.connection.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'"
+        )
+        assert cursor.fetchone() is None, (
+            "ssh_credentials table must not be created by init_schema after v1.6 migration"
+        )
+        adapter.close()
+
+    def test_no_credential_methods_on_adapter(self, temp_db):
+        """CRED-04 D-02: SQLiteAdapter must not expose credential CRUD methods after Phase 33."""
+        adapter = SQLiteAdapter(temp_db)
+        for method_name in (
+            "add_credential",
+            "get_credential_by_hostname",
+            "update_credential",
+            "delete_credential",
+            "update_last_verified",
+        ):
+            assert not hasattr(adapter, method_name), (
+                f"SQLiteAdapter must not have {method_name!r} after Phase 33 credential DB removal"
+            )
+
+
 class TestDriftBaselines:
     """Tests for DRFT-04: SQLiteAdapter drift baseline CRUD methods.
 
