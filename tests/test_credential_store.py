@@ -134,7 +134,7 @@ def test_register_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
     register_credential("host1", "user1", credential_type="ssh")
     entries = list_credentials(credential_type="ssh")
-    assert entries == [{"hostname": "host1", "username": "user1", "credential_type": "ssh"}]
+    assert entries == [{"hostname": "host1", "username": "user1", "credential_type": "ssh", "auth_type": "password"}]
 
 
 def test_unregister_removes_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -194,6 +194,10 @@ def test_list_filters_by_type(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     register_credential("ssh-host", "ssh-user", credential_type="ssh")
     register_credential("px-host", "px-user", credential_type="proxmox")
     ssh_entries = list_credentials(credential_type="ssh")
-    assert ssh_entries == [{"hostname": "ssh-host", "username": "ssh-user", "credential_type": "ssh"}]
+    assert ssh_entries == [
+        {"hostname": "ssh-host", "username": "ssh-user", "credential_type": "ssh", "auth_type": "password"}
+    ]
     proxmox_entries = list_credentials(credential_type="proxmox")
-    assert proxmox_entries == [{"hostname": "px-host", "username": "px-user", "credential_type": "proxmox"}]
+    assert proxmox_entries == [
+        {"hostname": "px-host", "username": "px-user", "credential_type": "proxmox", "auth_type": "password"}
+    ]

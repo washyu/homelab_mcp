@@ -113,18 +113,40 @@ def _save_registry(entries: list[dict[str, str]]) -> None:
     _REGISTRY_PATH.write_text(json.dumps(entries, indent=2))
 
 
-def register_credential(hostname: str, username: str, credential_type: str = "ssh") -> None:
+def register_credential(
+    hostname: str,
+    username: str,
+    credential_type: str = "ssh",
+    auth_type: str = "password",
+) -> None:
     """Record credential metadata in the registry (no password stored here).
 
     Upserts: replaces existing entry for same (hostname, username, credential_type).
+
+    Args:
+        hostname: Target host identifier.
+        username: Account used on the target host.
+        credential_type: "ssh" or "proxmox".
+        auth_type: "password" (keyring stores password string) or "key"
+            (keyring stores an SSH private-key filesystem path — D-09). Legacy
+            entries without this field are treated as "password" by readers.
     """
+    if auth_type not in ("password", "key"):
+        raise ValueError(f"auth_type must be 'password' or 'key', got {auth_type!r}")
     entries = _load_registry()
     entries = [
         e
         for e in entries
         if not (e["hostname"] == hostname and e["username"] == username and e["credential_type"] == credential_type)
     ]
-    entries.append({"hostname": hostname, "username": username, "credential_type": credential_type})
+    entries.append(
+        {
+            "hostname": hostname,
+            "username": username,
+            "credential_type": credential_type,
+            "auth_type": auth_type,
+        }
+    )
     _save_registry(entries)
 
 
@@ -138,6 +160,12 @@ def unregister_credential(hostname: str, credential_type: str = "ssh") -> None:
 def list_credentials(credential_type: str = "ssh") -> list[dict[str, str]]:
     """Return all registry entries for the given credential type.
 
-    Returns empty list if registry file does not exist (fresh install).
+    Returns:
+        List of dicts with keys: ``hostname``, ``username``, ``credential_type``,
+        and optionally ``auth_type`` (``"password"`` | ``"key"``) — entries
+        written before v1.6 lack this field and should be treated as
+        ``"password"`` (use ``.get("auth_type", "password")``).
+
+        Returns empty list if registry file does not exist (fresh install).
     """
     return [e for e in _load_registry() if e["credential_type"] == credential_type]
