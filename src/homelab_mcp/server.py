@@ -489,18 +489,57 @@ def _convert_result(
 
 
 def _cmd_credentials_add(args: argparse.Namespace) -> None:
-    """Handle `homelab-mcp credentials add <hostname> <username> [--type ssh|proxmox]`."""
+    """Handle `homelab-mcp credentials add <hostname> <username> [--type ssh|proxmox] [--key-path PATH]`.
+
+    When ``--key-path`` is given, the key file path (resolved absolute) is stored as the
+    "secret" in the OS keyring and the registry entry gets ``auth_type="key"``.
+    When absent, the user is prompted for a password via ``getpass`` (TTY echo suppressed)
+    and the registry entry gets ``auth_type="password"``.
+    """
     import getpass  # noqa: PLC0415
+    import pathlib  # noqa: PLC0415
     import sys  # noqa: PLC0415
 
     credential_type: str = args.credential_type
-    prompt = "Token/Password: " if credential_type == "proxmox" else "Password: "
-    password = getpass.getpass(prompt)
+    key_path: str | None = getattr(args, "key_path", None)
 
-    ok = store_credential(args.hostname, args.username, password, credential_type=credential_type)
+    if key_path is not None:
+        # Key-path auth branch (D-09). Strict validation (Claude's Discretion).
+        if credential_type != "ssh":
+            print(
+                f"Error: --key-path is only valid with --type ssh (got {credential_type!r})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        key_file = pathlib.Path(key_path).expanduser()
+        if not key_file.exists():
+            print(f"Error: key file not found: {key_path}", file=sys.stderr)
+            sys.exit(1)
+        if not key_file.is_file():
+            print(f"Error: key path is not a file: {key_path}", file=sys.stderr)
+            sys.exit(1)
+        secret = str(key_file.resolve())
+        auth_type = "key"
+    else:
+        prompt = "Token/Password: " if credential_type == "proxmox" else "Password: "
+        secret = getpass.getpass(prompt)
+        if not secret:
+            print("Error: empty password rejected", file=sys.stderr)
+            sys.exit(1)
+        auth_type = "password"
+
+    ok = store_credential(args.hostname, args.username, secret, credential_type=credential_type)
     if ok:
-        register_credential(args.hostname, args.username, credential_type=credential_type)
-        print(f"Stored {credential_type} credential for {args.username}@{args.hostname}")
+        register_credential(
+            args.hostname,
+            args.username,
+            credential_type=credential_type,
+            auth_type=auth_type,
+        )
+        if auth_type == "key":
+            print(f"Stored {credential_type} credential (key-path) for {args.username}@{args.hostname}")
+        else:
+            print(f"Stored {credential_type} credential for {args.username}@{args.hostname}")
     else:
         print(
             f"Warning: OS keyring unavailable — credential not persisted for {args.hostname}",
@@ -585,12 +624,13 @@ Examples:
   uvx homelab-mcp --http --port 8080     # HTTP mode (OpenWebUI)
 
 Credential management (OS keyring):
-  uvx homelab-mcp credentials add <hostname> <username>           # store SSH credential
-  uvx homelab-mcp credentials add <hostname> <username> --type proxmox  # store Proxmox credential
-  uvx homelab-mcp credentials list                                # list stored SSH credentials
-  uvx homelab-mcp credentials list --type proxmox                 # list stored Proxmox credentials
-  uvx homelab-mcp credentials remove <hostname>                   # remove SSH credential
-  uvx homelab-mcp credentials remove <hostname> --type proxmox    # remove Proxmox credential
+  uvx homelab-mcp credentials add <hostname> <username>                    # store SSH credential (prompts for password)
+  uvx homelab-mcp credentials add <hostname> <username> --key-path PATH    # store SSH key-path credential (D-09)
+  uvx homelab-mcp credentials add <hostname> <username> --type proxmox     # store Proxmox credential
+  uvx homelab-mcp credentials list                                         # list stored SSH credentials
+  uvx homelab-mcp credentials list --type proxmox                          # list stored Proxmox credentials
+  uvx homelab-mcp credentials remove <hostname>                            # remove SSH credential
+  uvx homelab-mcp credentials remove <hostname> --type proxmox             # remove Proxmox credential
 """,
     )
     parser.add_argument(
@@ -649,11 +689,23 @@ Credential management (OS keyring):
     cred_p = sub.add_parser("credentials", help="Manage stored credentials")
     cred_sub = cred_p.add_subparsers(dest="cred_action")
 
-    # credentials add <hostname> <username> [--type ssh|proxmox]
+    # credentials add <hostname> <username> [--type ssh|proxmox] [--key-path PATH]
     add_p = cred_sub.add_parser("add", help="Store a credential")
     add_p.add_argument("hostname")
     add_p.add_argument("username")
     add_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
+    add_p.add_argument(
+        "--key-path",
+        dest="key_path",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to SSH private key file for key-based auth. "
+            "When given, skips the password prompt and stores the path "
+            "as the credential instead (D-09). The key file itself is "
+            "not copied — only its filesystem path."
+        ),
+    )
     add_p.set_defaults(func=_cmd_credentials_add)
 
     # credentials list [--type ssh|proxmox]
