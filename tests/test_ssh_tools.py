@@ -367,6 +367,7 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     mock_connect.return_value = mock_ctx
 
     # Execute
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
 
     # Parse result
@@ -594,6 +595,7 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     mock_connect.return_value = mock_ctx
 
     # Execute with force_update_key=True (default)
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
 
     # Parse result
@@ -670,6 +672,7 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     mock_connect.return_value = mock_ctx
 
     # Execute with force_update_key=False
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     result = await setup_remote_mcp_admin("test-host", "admin", "password", force_update_key=False)
 
     # Parse result
@@ -776,6 +779,7 @@ async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure
     mock_ctx.__aexit__.return_value = None
     mock_connect.return_value = mock_ctx
 
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     try:
         result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
         result_data = json.loads(result)
@@ -854,6 +858,7 @@ async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path,
     mock_ctx.__aexit__.return_value = None
     mock_connect.return_value = mock_ctx
 
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     try:
         await setup_remote_mcp_admin("10.0.0.1", "admin", "password", force_update_key=True)
     except Exception:

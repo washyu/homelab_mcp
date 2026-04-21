@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "ssh_credentials",           # D-15: DB table name
     "add_credential",            # D-15: removed DB method
@@ -87,6 +86,7 @@ def test_no_removed_db_methods_in_source() -> None:
 def test_register_server_handler_no_verify_connection_param() -> None:
     """D-25: register_server in ssh_tools.py must not have verify_connection/key_path/password params."""
     import inspect
+
     from homelab_mcp.ssh_tools import register_server
 
     sig = inspect.signature(register_server)

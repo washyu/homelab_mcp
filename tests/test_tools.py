@@ -929,4 +929,3 @@ def test_remove_server_removed_from_tool_handlers() -> None:
     from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
     assert "remove_server" not in TOOL_HANDLERS
     assert "remove_server_preview" not in TOOL_HANDLERS
-    assert prop.get("default") == "ssh", f"credential_type default must be 'ssh'; got {prop.get('default')!r}"
