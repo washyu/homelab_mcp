@@ -178,6 +178,127 @@
 
 ---
 
+## Milestone: v1.4.1 — Security Patch
+
+**Shipped:** 2026-04-01
+**Phases:** 1 | **Plans:** 2
+
+### What Was Built
+- TOFU TOCTOU race condition closed — `threading.Lock` widened to cover entire check+store sequence in `validate_host_public_key` (SEC-02)
+- Shell command injection eliminated in `setup_remote_mcp_admin` — SFTP-based tmpfile delivery replaces f-string key interpolation (SEC-01)
+
+### What Worked
+- Scoping down from full v1.5 (9 requirements) to v1.4.1 patch (2 security-critical) was the right call — ships the urgent fixes without blocking on 7 lower-severity items
+- TDD pattern (RED tests → GREEN implementation) continued to hold for both plans
+- SFTP tmpfile delivery pattern is clean and reusable — could apply to any future command that needs to pass untrusted content to remote hosts
+
+### What Was Inefficient
+- Phase 30 was originally scoped under v1.5 with Phases 31-32 planned but never created — the full v1.5 milestone definition was premature given the gap between security-critical (SEC-01/02) and correctness (SSH/ERR/QUAL) items
+- Worktree-based execution had to adapt tests to the worktree's older API rather than main branch — delta between branches caused extra test adjustment work
+
+### Patterns Established
+- SFTP tmpfile delivery: write to local tmpfile → SFTP upload → remote commands read from file → finally cleanup both local and remote
+- Caller-holds-lock: lock acquired at the method that does check-then-act; inner methods are dumb writers
+
+### Key Lessons
+1. Patch releases are valuable for shipping security fixes fast — don't block critical security fixes behind a full milestone of lower-severity items
+2. SFTP-based content delivery is the correct pattern for passing untrusted content to remote hosts — eliminates an entire class of shell injection vulnerabilities
+
+### Cost Observations
+- Timeline: 1 day (2026-04-01) — fastest milestone
+- Notable: 1 phase, 2 plans, 2 security findings closed; 7 deferred to next milestone
+
+---
+
+## Milestone: v1.4 — Real-World Reliability
+
+**Shipped:** 2026-03-20
+**Phases:** 9 | **Plans:** 16
+
+### What Was Built
+- SSH TOFU bug fixes: known_hosts comment field leak stripped; dead `asyncio.Lock` replaced with `threading.Lock`
+- PTY interactive shell fixed: inverted dimensions (24×80 → 80×24), blocking read replaced with `asyncio.wait_for`, explicit `[Connection closed]` EOF notification
+- `connect_to_device` onboarding prompt with keyring desync warning log
+- Keyring auto-resolve for `setup_mcp_admin` and `update_mcp_admin_groups` — no explicit password required at call site
+- `_sudo_run` helper with `sudo -S` stdin piping — eliminates shell injection and bootstrap timeout for password-based sudo
+- Full tool schema sync: 7+ mismatches fixed (phantom `port`, SSH timeout, Proxmox hidden params)
+- Prompt correctness fixes: `host=` → `hostname=`, phantom `list_installed_services` → `get_service_status`; regression guards added
+
+### What Worked
+- Milestone audit mid-way caught real E2E gaps that the original 5-phase scope would have missed — gap closure phases (26-29) extended the milestone but shipped a correct product
+- Wave-0 TDD pattern continued to hold — RED assertions written before all fixes, GREEN confirmed implementation correctness
+- `_sudo_run` abstraction was a clean extraction — all three call sites (setup, groups, ssh_execute_command) adopted it uniformly
+- Regression guards (pytest assertions for `host=` absence, phantom tool absence) prevent exact-same bugs re-occurring silently; CI now owns that contract
+- Schema sync + handler wiring tests together (Phases 26-27) treated as a paired phase — schema and behavior verified in lockstep
+
+### What Was Inefficient
+- Phases 26-29 were not in the original roadmap — they were discovered via audit after Phases 21-25 shipped. The 5 original phases fixed all real-world bugs but left tool schemas, prompt parameter names, and phantom prompt tools as accumulated drift. A pre-planning schema/prompt integrity check would have caught these before phase planning.
+- SUMMARY.md `one_liner` frontmatter field remained empty across all phases — `gsd-tools summary-extract` cannot extract accomplishments without it; the CLI auto-populated empty accomplishments in MILESTONES.md. Requires manual correction at milestone close.
+- Phase 25 SUMMARY.md accomplishments section was empty — the summary file was committed without filling in the key bullets. Pattern: summary file structure created but content not fully populated.
+
+### Patterns Established
+- `_sudo_run(conn, cmd, password, error_prefix)` helper — single point for all `sudo -S` stdin piping; centralizes error classification
+- `asyncio.wait_for(stdout.read(1), timeout=0.05)` non-blocking PTY read pattern — tunable, replaces blocking `read(4096)`
+- `threading.Lock()` for synchronous TOFU callback — `asyncio.Lock` cannot be acquired from sync callbacks in asyncssh
+- Paired schema+test phases: fix schema in phase N, add handler wiring and regression guard tests in phase N+1
+- Regression guard pattern: `assert "bad_token" not in prompt_text` at test suite level blocks future drift via CI
+
+### Key Lessons
+1. Milestone audit is valuable mid-scope, not just post-completion — the v1.4 audit found gaps that would have left deploy and onboarding workflows broken; treating audit gaps as first-class phases is the right response
+2. Prompt parameter correctness is a system property, not a unit property — prompt text uses parameter names that tool schemas must match; add cross-reference tests as part of any new prompt's test scaffold
+3. Schema drift accumulates silently — 7+ mismatches between inputSchema and function signatures existed across 4 modules with zero failures because MCP silently ignores undeclared params. A periodic schema integrity check should be part of quality gate or CI.
+4. SUMMARY.md completeness matters for downstream tooling — `gsd-tools summary-extract` and milestone CLI depend on structured frontmatter; empty `one_liner` fields are a recurring friction point at milestone close
+5. Paired fix+test phases are more reliable than fix phases alone — Phase 26 (schema fix) without Phase 27 (regression tests) would leave the fixes undocumented and easy to accidentally revert
+
+### Cost Observations
+- Timeline: 5 days (2026-03-15 → 2026-03-19) — longest v1.x milestone due to 4 audit gap closure phases
+- Notable: 9 phases (5 planned + 4 gap closure); all 23 requirements met; all 4 prompts now have correct parameter names and no phantom tool references
+
+---
+
+## Milestone: v1.5 — Critical Bug Fixes
+
+**Shipped:** 2026-04-20
+**Phases:** 2 | **Plans:** 7
+
+### What Was Built
+- 5 CodeRabbit PR #39 critical/high findings closed in Phase 31 (WS-01, ERR-01, SSH-01, SSH-02, SCH-01)
+- 5 revert-proof regression tests in Phase 32 across `test_http_app.py`, `test_ssh_tools.py`, `test_error_handling.py`, `test_tools.py`
+- AST meta-guard for tautological-assertion detection (extended in 32-05 gap closure to catch `Compare(Constant in X)` form)
+- `_sudo_run` helper with consistent `check=` forwarding across both sudo auth branches
+- `contextlib.suppress(Exception)` pattern for idempotent websocket cleanup
+
+### What Worked
+- Integration checker caught Phase 31 SUMMARY-only merge before it reached the close gate — the audit step's `tech_debt` verdict (vs `passed`) accurately surfaced the missing VERIFICATION.md without blocking a sound functional result
+- Revert-proof regression tests made the missing Phase-31 VERIFICATION.md an acceptable debt item rather than a risk — the test suite itself proves each fix's behavior change under the revert-then-test experiment
+- 32-02 → 32-05 scope gap closure worked cleanly: AST detector's initial form missed the `d25c915` pre-fix mutation shape, D-05 mutation experiment surfaced it, 32-05 extended the detector in a single plan
+- Inline ROADMAP reconcile (Path B of `/gsd-plan-milestone-gaps`) avoided creating a Phase 33 "tech debt cleanup" phase for 3 one-line edits — kept the milestone close fast without sweeping problems under the rug
+
+### What Was Inefficient
+- Phase 31 shipped without running the phase-level verifier gate — merged on plan-SUMMARY evidence alone; a one-command gate step was skipped
+- Both v1.5 VALIDATION.md (Nyquist) files incomplete: 31 is `status: draft`, 32 is absent entirely — Nyquist bookkeeping drifted further from the spec in this milestone
+- SUMMARY frontmatter shape inconsistency between 32-01 (flat `requirements-completed: [...]`) and 32-02..05 (nested `requirements:`) — both parse but extraction is non-uniform; this has been a recurring pattern (see v1.1 Phase 09 note) and should be fixed at the template level rather than per-milestone
+- 7 quick-task audit-open false positives flagged at milestone close — the tool's `status: missing` heuristic doesn't match the actual PLAN.md/SUMMARY.md convention; noise that requires human triage every close
+
+### Patterns Established
+- AST meta-tests as lint-style regression guards — parse the test file itself and walk the AST for tautological patterns; catches a class of bugs that positive regression tests can't
+- `contextlib.suppress(Exception)` around idempotent cleanup calls — cleaner than try/except, matches module's existing contextlib usage
+- Quoted return annotations (`'ClassName'`) for non-subscriptable third-party types — defers evaluation under both mypy and runtime
+- Report computed/derived values in error messages (not raw decorator parameters) — users see the actual constraint they were subject to
+
+### Key Lessons
+1. **Phase-level verifier gate is not optional** — Phase 31 shipped without it and the milestone audit had to use Phase-32 integration evidence as a compensating control; the debt was acceptable *this time* because regressions were revert-proof, but the next bug-fix milestone must run the verifier before Phase 32 starts
+2. **`tech_debt` as a distinct audit verdict is useful** — it's the right answer when functional coverage is sound but process gates are missing; forces an explicit "acknowledge or fix" decision at milestone close rather than a binary pass/fail
+3. **Inline reconcile beats a cleanup phase for 3-line bookkeeping fixes** — `/gsd-plan-milestone-gaps` Path B saved a whole phase lifecycle for what was a 2-minute edit
+4. **Revert-proof regression tests are a valid compensating control** for a missing phase VERIFICATION.md — but only when the integration checker confirms 0 broken/0 weak wirings; a weaker-wired milestone wouldn't get this free pass
+
+### Cost Observations
+- Model mix: orchestrator on opus, executors on sonnet (standard pattern)
+- Timeline: 19 days elapsed (Apr 2-20) but active work was concentrated in 2 days (Apr 19-20)
+- Notable: Phase 32 shipped 5 plans including a mid-phase scope gap-closure (32-05) inside the same day — gap closure workflow worked well at the plan level, not just the milestone level
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -188,6 +309,9 @@
 | v1.1 | 6 | 16 | Tech-debt-first ordering; Wave-0 TDD scaffolding; audit confirmed 0 gaps needed |
 | v1.2 | 5 | 10 | PyPI distribution; full MCP protocol surface; integration checker found cross-phase param mismatch |
 | v1.3 | 4 | 9 | Credential store + CLI; OIDC auto-publish; PRMT-02 fix; monkeypatch/lazy-import tension resolved |
+| v1.4 | 9 | 16 | Real-world reliability: TOFU fix, PTY fix, sudo piping, schema sync, prompt correctness; 4 audit gap phases |
+| v1.4.1 | 1 | 2 | Security patch: SFTP key delivery (SEC-01), TOFU lock widening (SEC-02); scoped down from v1.5 |
+| v1.5 | 2 | 7 | Bug-fix-only milestone from CodeRabbit PR #39; revert-proof regressions + AST meta-guards; `tech_debt` close (first time) — Phase-31 VERIFICATION.md gate skipped, debt acknowledged |
 
 ### Cumulative Quality
 
@@ -197,6 +321,9 @@
 | v1.1 | ~500+ | 22/22 requirements satisfied, 6/6 E2E flows, 0 gap closure phases |
 | v1.2 | 603 | 20/20 requirements satisfied (18 full, 2 partial), 1 integration semantic mismatch in tech debt |
 | v1.3 | ~620+ | 15/15 requirements satisfied, 4/4 E2E flows, 0 gap closure phases; PRMT-02 tech debt resolved |
+| v1.4 | ~650+ | 23/23 requirements satisfied; 4 audit gap phases added mid-milestone; all prompts correct |
+| v1.4.1 | ~650+ | 2/2 security requirements satisfied; 7 deferred; patch release model validated |
+| v1.5 | ~660+ | 6/6 requirements functionally satisfied (5 via partial traceability through Phase-32 integration); 5/5 revert-proof flows; 4 bookkeeping items deferred as `tech_debt` |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -205,3 +332,8 @@
 3. Upgrade tooling when first encountered — deferring mypy upgrade from Phase 06 to Phase 08 added friction across 3 phases
 4. "Build infrastructure, wire it later" fails — v1.0 proxmox_session was orphaned; v1.1 fixed it by treating tech debt as Phase 1
 5. Integration-level tests required for cross-phase contracts — unit tests verify individual components; integration checker is the only thing that caught the PRMT-02 parameter mismatch across Phase 14 and Phase 15
+6. Milestone audit as mid-milestone gate is worth scheduling — v1.4 audit found schema/prompt drift that wouldn't have been caught otherwise; 4 gap phases was the right response vs deferring to v1.5
+7. Patch releases for security-critical fixes — don't bundle urgent security fixes with lower-severity items; v1.4.1 shipped SEC-01/SEC-02 in one day while v1.5 full scope would have taken much longer
+8. **Phase-level VERIFICATION.md gate is not optional** (v1.5) — Phase 31 shipped without one; closed as `tech_debt` on Phase-32 integration evidence, but the workflow should block phase merge until the gate runs
+9. **`tech_debt` audit verdict is a feature, not a bug** (v1.5) — distinct from `passed` and `gaps_found`; forces explicit acknowledge/resolve decision at milestone close when functional coverage is sound but process gates are missing
+10. **Inline reconcile for one-line bookkeeping drift** (v1.5) — `/gsd-plan-milestone-gaps` Path B beats creating a cleanup phase when the gap is 3 edits; reserve phase creation for real work

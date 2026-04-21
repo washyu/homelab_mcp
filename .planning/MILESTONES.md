@@ -1,5 +1,67 @@
 # Milestones
 
+## v1.5 Critical Bug Fixes (Shipped: 2026-04-20)
+
+**Phases completed:** 2 phases, 7 plans
+**Timeline:** 19 days elapsed (Apr 2 - Apr 20, 2026); active work Apr 19-20
+**Stats:** 43 commits, 82 files changed, +11,987 / -87 lines
+**Audit verdict:** `tech_debt` — all functional coverage sound; 4 process-level bookkeeping items accepted as deferred debt
+
+**Key accomplishments:**
+1. **WS-01** — WebSocket PTY handler closes socket on EOF/error paths; `contextlib.suppress(Exception)` for idempotent cleanup eliminates zombie shell sessions
+2. **SSH-01** — Extracted `_sudo_run` helper with consistent `check=` forwarding across both password and no-password sudo branches; non-zero exits now raise in both paths
+3. **ERR-01** — Timeout error messages report computed `effective_timeout` value (e.g., `35.0 seconds`) instead of raw `timeout_seconds` decorator default
+4. **SCH-01** — `credential_type` in `list_keyring_credentials` schema constrained to `enum: ["ssh", "proxmox"]`; MCP framework rejects arbitrary strings before handler runs
+5. **SSH-02** — Fixed broken always-passing ternary assertion in `test_ssh_tools.py`; added AST meta-guard that fails on `assert X or <structurally-always-true>` patterns, extended in 32-05 to catch the `Compare(Constant in X)` form
+6. **REG-01** — 5/5 revert-proof regression tests across `test_http_app.py`, `test_ssh_tools.py`, `test_error_handling.py`, `test_tools.py`; integration checker verified 0 broken / 0 weak wirings
+
+**Known gaps (deferred tech_debt):**
+- Missing `31-VERIFICATION.md` — Phase 31 merged on plan-SUMMARY evidence; Phase 32 regressions re-prove each fix via integration, but the phase-level gate was skipped
+- `31-VALIDATION.md` status: draft; `nyquist_compliant: false`
+- Missing `32-VALIDATION.md` entirely
+- SUMMARY frontmatter inconsistency: `32-01` flat `requirements-completed:` vs `32-02..05` nested `requirements:` — both parse but extraction inconsistent
+- Known deferred items at close: 7 false-positive quick-task audits from earlier milestones (see STATE.md Deferred Items)
+
+---
+
+## v1.4.1 Security Patch (Shipped: 2026-04-01)
+
+**Phases completed:** 1 phase, 2 plans
+**Timeline:** 1 day (Apr 1, 2026)
+**Stats:** 11 commits, 4 files changed, +479 / -587 lines
+
+**Key accomplishments:**
+1. Closed TOFU TOCTOU race condition (SEC-02) — `threading.Lock` widened to cover entire check+store sequence in `validate_host_public_key`; concurrent first-connections can no longer write conflicting known_hosts entries
+2. Eliminated shell command injection in `setup_remote_mcp_admin` (SEC-01) — public key content now delivered via SFTP tmpfile; `grep -Ff` and `cat` read from file instead of f-string interpolation
+
+**Known gaps (deferred):**
+- SSH-01: Keyring auto-injection disambiguation for multiple credentials per hostname
+- SSH-02: Per-call timeout forwarding to `ssh_connect()` handshake
+- SSH-03: `verify_mcp_admin_access()` not using resolved port/credentials
+- ERR-01: `resolve_ssh_credentials()` unhandled exception path
+- ERR-02: WebSocket PTY reader not closing on EOF/error
+- QUAL-01: Proxmox `iso`/`cdrom` mutual exclusivity not enforced
+- QUAL-02: `test_http_app.py` EOF test exercising local copy
+
+---
+
+## v1.4 Real-World Reliability (Shipped: 2026-03-20)
+
+**Phases completed:** 9 phases, 16 plans
+**Timeline:** 5 days (Mar 15-19, 2026)
+**Stats:** 91 commits, 86 files changed, +11,406 / -230 lines | ~15,554 LOC src + ~17,569 LOC tests
+
+**Key accomplishments:**
+1. Fixed SSH TOFU known_hosts corruption — `export_public_key()` comment field leak stripped; dead `asyncio.Lock` replaced with `threading.Lock` so TOFU lock actually works
+2. Fixed PTY interactive shell — inverted dimensions (24×80 → 80×24), blocking read replaced with `asyncio.wait_for`, explicit `[Connection closed]` EOF notification
+3. Added `connect_to_device` onboarding prompt — 6-step sequence covering setup, registration, credentials, discovery, and verification; includes keyring desync warning log
+4. Keyring auto-resolve for admin tools — `setup_mcp_admin` and `update_mcp_admin_groups` resolve credentials from keyring; no explicit password required
+5. Sudo password piping via stdin (`sudo -S`) — eliminates shell injection and bootstrap timeout for password-based sudo users; distinct errors for wrong password vs not-in-sudoers
+6. Synced all tool schemas to function signatures — removed phantom `port` from SERVICE_TOOLS, fixed SSH timeout mismatches, made `username` optional in discover tools, exposed 7 hidden Proxmox VM/LXC parameters
+7. Fixed phantom tools in prompts — `list_installed_services` replaced with `get_service_status`; `host=` → `hostname=` fixed in both `connect_to_device` and `deploy_service_workflow` prompts; regression guards added
+
+---
+
 ## v1.3 Credentials & Release Automation (Shipped: 2026-03-15)
 
 **Phases completed:** 4 phases, 9 plans

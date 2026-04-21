@@ -11,7 +11,8 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                 "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
                     "type": "string",
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
+                    "description": "SSH username. Defaults to 'mcp_admin' if omitted. Omit if credentials were stored with `credentials add` — they are auto-injected.",
+                    "default": "mcp_admin",
                 },
                 "password": {
                     "type": "string",
@@ -27,7 +28,7 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                     "default": 22,
                 },
             },
-            "required": ["hostname", "username"],
+            "required": ["hostname"],
         },
     },
     "bulk_discover_and_map": {
@@ -43,12 +44,12 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                         "type": "object",
                         "properties": {
                             "hostname": {"type": "string"},
-                            "username": {"type": "string"},
+                            "username": {"type": "string", "default": "mcp_admin"},
                             "password": {"type": "string"},
                             "key_path": {"type": "string"},
                             "port": {"type": "integer", "default": 22},
                         },
-                        "required": ["hostname", "username"],
+                        "required": ["hostname"],
                     },
                 }
             },

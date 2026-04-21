@@ -1,22 +1,74 @@
 # Feature Research
 
-**Domain:** CLI credential management + CI/CD release automation for Python MCP server
-**Researched:** 2026-03-14
-**Confidence:** HIGH (keyring API verified via official docs; argparse --version pattern verified against Python stdlib docs and existing codebase; PyPI OIDC workflow verified via PyPI docs and Python Packaging User Guide)
+**Domain:** Bug fixes for interactive shell, SSH credential flow, and TOFU known_hosts — homelab MCP server real-world reliability
+**Researched:** 2026-03-13
+**Confidence:** HIGH (all three bugs diagnosed from direct codebase inspection — shell_session.py, ssh_tools.py, ssh_connection.py, credential_store.py, tool_schemas/ssh_tools_schema.py)
 
 ---
 
-## Context: What Already Exists (v1.2 baseline)
+## Context: What Already Exists (v1.3 baseline)
 
-Relevant to v1.3 scope only:
+Relevant to v1.4 scope only:
 
-- **`resolve_ssh_credentials()`** in `ssh_tools.py` — three-step fallback chain: explicit args → DB `ssh_credentials` table → default mcp_admin SSH key. Keyring is not yet in the chain.
-- **`ssh_credentials` DB table** — DatabaseAdapter has full CRUD (`add_credential`, `get_credential_by_hostname`, `list_credentials`, `delete_credential`). Password is NOT stored — only hostname, username, key_path, port.
-- **`keyring` in optional-dependencies** — `pyproject.toml` has `keyring>=25.0.0` under `[project.optional-dependencies] security`. Not a core dependency. Must be promoted to core for CLI subcommand to work unconditionally.
-- **`main()` in `server.py`** — argparse-based entry point exists with `--http`, `--host`, `--port`, `--no-auth`, `--api-key`, `--ssl-cert`, `--ssl-key`. No `--version` flag. No subcommands yet.
-- **`importlib.metadata` version unification** — already done in v1.2. `version("homelab-mcp")` works. No new work needed for `--version`.
-- **CI `main.yml`** — has `test-and-quality`, `integration-tests`, `cross-platform`, `security`, and `release` (GitHub Release) jobs. No PyPI publish job. The `release` job already gates on `startsWith(github.ref, 'refs/tags/')`.
-- **`prompt_registry.py` PRMT-02** — `_build_decommission_result()` generates `hostname=` args for `decommission_device` calls. Tool schema requires `device_id` (integer). The mismatch causes AI to generate invalid tool calls.
+- **`start_interactive_shell` tool** in `ssh_handlers.py` — creates a `ShellSession` (asyncssh PTY), stores it in `ShellSessionManager`, returns a JSON blob containing a `shell_url` like `http://localhost:8080/shell/{session_id}`. The URL is browser-only. An MCP agent receives the URL but cannot open a browser; it reports success but the user gets nothing actionable in their chat context.
+- **`register_server` tool** — writes hostname + username + key_path to the DB `ssh_credentials` table. Does NOT accept a password. Calls `ssh_connect` with the key path during `verify_connection=True`, which triggers TOFU host key storage in `~/.homelab_mcp/known_hosts`.
+- **`credentials add` CLI** — writes username + password to OS keyring. Also calls `register_credential()` to add hostname to the JSON registry (`credential_registry.json`). Does NOT call `ssh_connect`; does NOT trigger TOFU.
+- **`resolve_ssh_credentials()`** in `ssh_tools.py` — three-tier chain: (1) explicit args, (2) OS keyring via `list_credentials` + `get_credential`, (3) DB `ssh_credentials` table. Priority 2 and 3 are mutually exclusive per lookup but can coexist in storage.
+- **`ssh_connect()`** in `ssh_connection.py` — always uses `known_hosts=str(kh_path)` where `kh_path` defaults to `~/.homelab_mcp/known_hosts`. Uses `TOFUSSHClient` as `client_factory`, which stores new host keys on first connection.
+- **TOFU path**: `TOFUSSHClient.validate_host_public_key()` is called by asyncssh only when the connecting host is NOT already in the `known_hosts` file. If the host IS in `known_hosts`, asyncssh validates directly — `TOFUSSHClient` is bypassed.
+- **Tool schema descriptions** — `ssh_discover` and `ssh_execute_command` say "Omit [credentials] if credentials were stored with `credentials add` — they are auto-injected." `start_interactive_shell` says "SSH username (optional, uses registered credentials if available)." No description explains what to do when credentials are missing.
+
+---
+
+## The Three Bugs — Root Cause Analysis
+
+### Bug 1: Interactive Shell Returns Nothing Actionable
+
+**What the agent does today:**
+1. Agent calls `start_interactive_shell(hostname="192.168.1.10")`
+2. Tool creates an asyncssh PTY session and returns: `{"status": "success", "shell_url": "http://localhost:8080/shell/abc123", ...}`
+3. Agent reads this response and reports "Interactive shell started at http://localhost:8080/shell/abc123"
+4. User sees a URL. In most MCP clients (Claude Desktop, etc.), there is no browser to open it. Nothing happened.
+
+**Why it's silent failure:** The tool returns `status: success` — from the agent's perspective the operation succeeded. There is no error. The agent has no way to know the user can't interact with the URL.
+
+**What should happen instead:** The tool should either (a) make the shell useful within the MCP protocol context — executing a command and returning its output — or (b) return an explicit explanation that this requires a browser with a WebSocket connection, and surface the limitation clearly in the tool schema and response so the agent guides the user correctly.
+
+---
+
+### Bug 2: SSH Credential Flow Is Invisible to the Agent
+
+**What the agent does today:**
+1. Agent calls `ssh_discover(hostname="192.168.1.10")` with no credentials.
+2. `resolve_ssh_credentials()` checks keyring (empty), checks DB (empty), falls back to mcp_admin key.
+3. If `~/.ssh/mcp/mcp_admin_key` doesn't exist, returns `SSHCredentials` with no auth.
+4. `ssh_discover_system()` raises `ValueError("No credentials found for 192.168.1.10. Store them with credentials add...")`.
+5. Agent sees an error, but doesn't know the right recovery workflow: which tool to use first, whether to use `register_server` or `credentials add`, and in what order.
+
+**The credential path confusion:** There are two distinct storage mechanisms that coexist:
+- **Keyring path** (`credentials add`): Stores password in OS keyring + hostname in JSON registry. No DB write. Best for password-auth SSH.
+- **DB path** (`register_server`): Stores hostname + username + key_path in SQLite. No keyring write. Best for key-auth SSH (especially `mcp_admin` after `setup_mcp_admin`).
+
+The agent has no tool or schema text that describes this distinction or the correct workflow. The tool descriptions for `ssh_discover` and `ssh_execute_command` say "omit credentials if stored with `credentials add`" — but they don't say what to do when credentials aren't stored, or that `register_server` is the alternative.
+
+**What should happen instead:** When an SSH tool fails due to missing credentials, the error response should tell the agent the exact recovery steps. Tool schema descriptions should document the two paths and guide the agent to call `list_registered_servers` or `list_credentials` (a new tool) to diagnose the state before attempting SSH.
+
+---
+
+### Bug 3: TOFU Known_Hosts Not Populated for Keyring-Only Hosts
+
+**What happens today:**
+1. User runs `homelab-mcp credentials add 192.168.1.10 root hunter2` → writes to keyring + JSON registry. No SSH connection made. `known_hosts` unchanged.
+2. Agent calls `ssh_discover(hostname="192.168.1.10")` → `resolve_ssh_credentials()` finds keyring entry → calls `ssh_connect(hostname="192.168.1.10", password="hunter2")`.
+3. `ssh_connect` reads `known_hosts` → host not found → asyncssh calls `TOFUSSHClient.validate_host_public_key()`.
+4. **Expected behavior:** TOFU accepts and stores key. First connection succeeds.
+5. **Actual behavior during Mac testing:** SSH times out or fails. The known_hosts file isn't populated.
+
+**Why it times out (hypothesis based on asyncssh behavior):** When `known_hosts=str(kh_path)` is passed and the file is empty (or the host isn't present), asyncssh may not call `validate_host_public_key()` at all for hosts in non-standard formats. Alternatively, the `TOFUSSHClient` factory may not be invoked correctly when asyncssh finds a `known_hosts` file path (as opposed to no `known_hosts`). The TOFU path was tested with `register_server` (which uses `verify_connection=True`), not with the keyring-first path. The keyring path was added in v1.3 but was not exercised against a real host.
+
+**The real root cause:** `register_server(verify_connection=True)` calls `ssh_connect()` which triggers TOFU. The DB credential path inherently exercises TOFU. The keyring path (`credentials add`) skips `ssh_connect` entirely. If a user only uses `credentials add` and never calls `register_server`, no TOFU occurs, and the first real `ssh_discover` call either triggers TOFU (and works) or fails with a timeout depending on asyncssh's exact behavior when `known_hosts` is present but empty vs missing.
+
+**What should happen instead:** Either (a) `credentials add` should trigger a connection probe to populate known_hosts, or (b) the first SSH connection attempt should handle a failed TOFU gracefully with a clear error telling the agent to call a dedicated "trust this host" tool, or (c) `ssh_connect` should be verified to correctly trigger TOFU when `known_hosts` is present but doesn't contain the host.
 
 ---
 
@@ -24,363 +76,199 @@ Relevant to v1.3 scope only:
 
 ### Table Stakes (Users Expect These)
 
-Features users assume exist in a credential-managing CLI tool. Missing these = product feels broken.
+Features required to make the three bugs non-issues. Missing these = bugs persist or errors are cryptic.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| `credentials add <host> <user> <pass>` | Standard CRUD entry point for any credential store | LOW | Positional args; `keyring.set_password("homelab-mcp-ssh", "<host>:<user>", password)` call |
-| `credentials list` | Enumerate what's stored — user can't manage blind | LOW | List from keyring; show host + user, never echo password |
-| `credentials remove <host> <user>` | Cleanup without manual OS keyring UI | LOW | `keyring.delete_password`; silent success if not found |
-| Auto-inject on hostname match | Core payoff of storing creds — silent resolution during SSH tool calls | MEDIUM | Insert keyring lookup in `resolve_ssh_credentials()` at priority 2 (after explicit args, before DB) |
-| `homelab-mcp --version` | Every CLI tool has this; users verify what's running | LOW | argparse `action="version"` + `importlib.metadata.version("homelab-mcp")` |
-| Automated PyPI publish on `git tag v*` | `uvx homelab-mcp` users expect new versions without manual CI steps | MEDIUM | OIDC trusted publishing via `pypa/gh-action-pypi-publish@release/v1` |
-| Graceful failure on missing OS keyring | Headless homelab servers lack GUI keyring; must not silently fail | LOW | Catch `keyring.errors.NoKeyringError`; emit actionable message with `PYTHON_KEYRING_BACKEND` hint |
-| PRMT-02 bug fix | AI following prompt hits validation error — `hostname=` vs `device_id=` mismatch | LOW | Surgical change to `_build_decommission_result()` in `prompt_registry.py` |
+| Interactive shell tool returns actionable output | An MCP tool that returns "open this URL" is not useful inside a chat interface. Either the tool executes a command and returns output, or it clearly tells the agent and user what action is needed. | MEDIUM | The fix is a schema description change + response content change. The WebSocket server can stay; the tool should acknowledge its browser-only limitation and explain next steps. |
+| SSH credential error tells agent the recovery workflow | Every SSH tool should return a structured, actionable error when credentials are missing. "No credentials found" is not enough — the error must name the correct tool and the correct parameter order. | LOW | Change the `ValueError` message in `ssh_discover_system()` and `ssh_execute_command()` (and the general `resolve_ssh_credentials()` fallback path) to include: "1. Call `register_server(hostname=...)` to register a key-auth device. 2. Or run `homelab-mcp credentials add <host> <user> <pass>` to store a password." |
+| Agent-facing credential workflow in tool schema descriptions | `ssh_discover` and `ssh_execute_command` schema descriptions say "omit credentials if stored" but don't tell the agent what to do when credentials are missing. | LOW | Add one sentence: "If credentials are missing, call `list_registered_servers` to check registered key-auth servers, or use `credentials add` CLI for password auth." |
+| TOFU works on first SSH connection for keyring-registered hosts | A host added via `credentials add` must successfully connect on the first `ssh_discover` call. Today there is a timeout bug in this path. | MEDIUM | Root cause must be verified (empty `known_hosts` + asyncssh behavior). Fix is either: ensure `known_hosts` file doesn't exist (so asyncssh uses TOFU correctly) OR remove `known_hosts=` param to let asyncssh handle new hosts OR add a dedicated "trust host" step. |
+| `list_keyring_credentials` tool (or equivalent) | The agent needs a tool to inspect what credentials are in the keyring registry — analogous to `list_registered_servers` for the DB path. Today there is no MCP tool that calls `list_credentials()` from `credential_store.py`. The agent has no way to diagnose credential state. | LOW | New tool `list_keyring_credentials` that calls `credential_store.list_credentials("ssh")` and returns the result. No passwords returned. One handler function, one schema entry. |
 
 ### Differentiators (Competitive Advantage)
 
-Features beyond table stakes that add compounding value.
+Features beyond bug fixes that improve reliability and agent guidance.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Proxmox creds storable via CLI | Alternative to `.env` file for Proxmox host credentials; especially useful for multi-host setups | MEDIUM | Separate keyring service "homelab-mcp-proxmox"; env vars still override |
-| Per-credential-type service namespace | SSH and Proxmox creds isolated in keyring — no cross-type contamination; visible as distinct groups in OS keyring UI | LOW | Convention: `"homelab-mcp-ssh"` vs `"homelab-mcp-proxmox"` |
-| Password never visible in list output | Passwords masked in `credentials list` output; matches `git credential` and `gh auth status` UX | LOW | `CredentialFilter` already exists in `log_filter.py`; same principle applied to CLI output |
+| SSH credential flow prompt template | A `MCP Prompt` named `ssh_credential_setup` that walks the agent through the correct setup sequence: check existing credentials → decide keyring vs register_server path → confirm TOFU on first connect. Analogous to `decommission_device_workflow`. | MEDIUM | Adds a 4th prompt to `prompt_registry.py`. The template should branch on whether the user is doing password auth vs key auth. |
+| Interactive shell tool description explains browser requirement | Schema description for `start_interactive_shell` should say: "Returns a browser URL — this tool is intended for human use in a browser, not for AI-initiated commands. For AI-driven command execution use `ssh_execute_command` instead." | LOW | Pure description change — prevents agent from calling the wrong tool. |
+| `trust_host_key` tool for explicit TOFU | A dedicated tool that connects to a host and forces TOFU acceptance, independent of any credential lookup. Allows the agent to say "establish trust with this host first" before the first SSH command. | MEDIUM | Thin wrapper around `ssh_connect` that accepts and stores the key then closes. Handles the chicken-and-egg problem where TOFU must happen before `ssh_discover` can run. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Encrypted file-based credential store | "I don't want OS keyring dependency" | Reinvents keyring with worse security; file permission management is fragile cross-platform | Instruct users to set `PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring` for headless scenarios |
-| `credentials update <host>` | Natural CRUD verb | keyring has no update primitive — `set_password` silently overwrites. A separate `update` subcommand creates false expectation of different behavior. | `credentials add` with same host/user silently overwrites; document this in help text |
-| Credential rotation / expiry | "Security best practice" | Out of scope for single-operator homelab; adds persistent state (expiry timestamps) with no homelab benefit | Document `credentials remove` + `credentials add` as manual rotation procedure |
-| SSH key generation via credentials CLI | "One credential management surface" | SSH key management already lives in `ssh_tools.ensure_mcp_ssh_key()`; conflates two distinct concerns | Keep key generation separate; `credentials` CLI handles username/password only |
-| Credential groups / tags | "Organize by network segment" | Scope creep; homelab is single-operator with handful of hosts; hostname is sufficient discriminator | Use hostname as the natural grouping key |
-| Publish on every merge to main | "Always latest on PyPI" | Risks bad/incomplete releases; PyPI versions are permanent; requires version bump discipline on every PR | Tag-gated publish: `git tag v1.3.0 && git push --tags` is the one release path |
+| Remove `start_interactive_shell` entirely | "It doesn't work in the chat interface" | The browser-based shell is genuinely useful for humans — just not from within an AI tool call. It should stay but its description must be honest about requiring a browser. | Update schema description to say it's browser-only; tool stays for human-initiated browser use. |
+| Merge `register_server` and `credentials add` into one tool | "Two credential paths is confusing" | They serve different auth mechanisms: DB path = key auth (no password), keyring path = password auth. Merging would require storing passwords in DB (security regression) or keys in keyring (wrong abstraction). | Keep both; fix agent guidance to explain when to use each. |
+| Auto-discover and store all hosts on network scan | "Pre-populate known_hosts" | Network scan hits devices that may not be SSH targets. Storing host keys speculatively creates false trust. | TOFU on first actual connection attempt is the correct model. |
+| Disable TOFU / use `known_hosts=None` globally | "Simpler, avoids the bug" | Disabling host key verification opens MITM attacks on all SSH operations. This is a homelab but the SSH sessions run privileged commands. | Fix TOFU for the keyring path specifically; keep verification enforced. |
 
 ---
 
-## Credential Lookup Precedence Chain
+## Credential + TOFU Workflow — Correct Sequences
 
-This is the authoritative precedence order. All implementations must follow this chain exactly.
+This is the authoritative workflow the agent should follow. All fixes must guide toward this.
 
-### SSH Credentials (in `resolve_ssh_credentials()`)
-
-```
-Priority 1 — Explicit args in tool call (password=, key_path= present)
-    → Use as-is; return immediately. Backward compatible.
-
-Priority 2 — OS keyring lookup [NEW in v1.3]
-    → keyring.get_credential("homelab-mcp-ssh", "<hostname>:<username>")
-    → If found: use stored username + password
-    → If NoKeyringError or not found: continue to next priority
-
-Priority 3 — DB ssh_credentials table (existing)
-    → db.get_credential_by_hostname(hostname, username)
-    → If found: use stored username + key_path (no password stored in DB)
-
-Priority 4 — Default mcp_admin SSH key
-    → If username is "mcp_admin" and ~/.ssh/mcp/mcp_admin_key exists: use it
-
-Priority 5 — No credentials
-    → Return minimal SSHCredentials; SSH tool will report auth failure
-```
-
-### Proxmox Credentials (in config.py MCPConfig)
+### Sequence A: Password-auth SSH (user has username + password)
 
 ```
-Priority 1 — Environment variables
-    → PROXMOX_HOST, PROXMOX_USER, PROXMOX_PASSWORD (or PROXMOX_TOKEN_ID + PROXMOX_TOKEN_SECRET)
-    → If any relevant env var is set: use env vars; stop. (12-factor compatibility)
-
-Priority 2 — OS keyring lookup [NEW in v1.3]
-    → keyring.get_credential("homelab-mcp-proxmox", proxmox_host)
-    → If found: use stored user + password
-
-Priority 3 — No credentials
-    → Raise configuration error with actionable message
+1. User: "I want to SSH into 192.168.1.10 as root with password hunter2"
+2. Agent: Run `homelab-mcp credentials add 192.168.1.10 root hunter2` (CLI — cannot be done from MCP tool)
+   → Writes to OS keyring + JSON registry. No SSH connection yet.
+3. Agent: Call `ssh_discover(hostname="192.168.1.10")`
+   → resolve_ssh_credentials() finds keyring entry → calls ssh_connect()
+   → TOFU fires on first connect (host key stored) → discovery proceeds
+   → [BUG: today this may timeout if TOFU doesn't fire correctly]
+4. Agent: Subsequent calls to ssh_execute_command / ssh_discover work without credentials.
 ```
 
-**Why env vars beat keyring for Proxmox:** Proxmox is often run in Docker or CI where env vars are the standard injection mechanism. Keyring is an enhancement for interactive use, not a replacement.
+**Agent guidance needed:** The agent should know that `credentials add` is a CLI command, not an MCP tool. It cannot call it directly. It should instruct the user to run it, then retry.
 
----
-
-## Keyring Service Naming Conventions
-
-The Python keyring API: `keyring.set_password(service, username, password)` — stores exactly one password per `(service, username)` tuple.
-
-| Credential Type | Service Name | Username Field | Password Field |
-|----------------|--------------|----------------|----------------|
-| SSH host credential | `homelab-mcp-ssh` | `<hostname>:<user>` | SSH password |
-| Proxmox API credential | `homelab-mcp-proxmox` | `<proxmox_host>` | password or API token value |
-
-**Service name rationale:**
-- `homelab-mcp-ssh` groups all SSH entries as one visible namespace in OS keyring UI (Keychain, GNOME Keyring, Windows Credential Manager)
-- The `:` separator in username field (`hostname:user`) encodes multi-user-per-host in the single username field, since keyring has no secondary key
-- Service names are lowercase kebab-case matching the PyPI package name pattern
-
-**Multi-user-per-host encoding:**
-```python
-keyring.set_password("homelab-mcp-ssh", "192.168.1.10:root", "root_pass")
-keyring.set_password("homelab-mcp-ssh", "192.168.1.10:deploy", "deploy_pass")
-# Lookup: keyring.get_credential("homelab-mcp-ssh", "192.168.1.10:root")
-```
-
-**CLI commands store username in the key:**
-```
-homelab-mcp credentials add 192.168.1.10 root hunter2
-  → keyring.set_password("homelab-mcp-ssh", "192.168.1.10:root", "hunter2")
-
-homelab-mcp credentials list
-  → enumerate all entries under "homelab-mcp-ssh"
-
-homelab-mcp credentials remove 192.168.1.10 root
-  → keyring.delete_password("homelab-mcp-ssh", "192.168.1.10:root")
-```
-
-**Headless server fallback behavior:**
-On servers without a GUI keyring, `keyring.set_password()` raises `keyring.errors.NoKeyringError`. The CLI must:
-1. Catch `NoKeyringError` on `credentials add`
-2. Print: `"No OS keyring available. Set PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring for file-based credential storage, or configure PROXMOX_* environment variables directly."`
-3. Exit non-zero. Never silently succeed with no storage.
-
-Auto-inject (in `resolve_ssh_credentials()`) must also catch `NoKeyringError` and continue to the next priority level rather than crashing.
-
----
-
-## `--version` Flag Implementation Details
-
-**Approach:** argparse `action="version"` built-in — prints and exits automatically.
-
-```python
-# In server.py main(), before parser.parse_args()
-try:
-    _pkg_version = version("homelab-mcp")
-except PackageNotFoundError:
-    _pkg_version = "dev"
-
-parser.add_argument(
-    "--version",
-    action="version",
-    version=f"homelab-mcp {_pkg_version}",
-)
-```
-
-**Why:** `importlib.metadata.version()` and `PackageNotFoundError` are already imported in `server.py` (used for the existing version unification from v1.2). This is a 6-line change with zero new imports.
-
-**Output format:** `homelab-mcp 1.3.0` — matches the convention of `git --version`, `python --version`, `uv --version`.
-
-**What NOT to do:**
-- Do not hardcode `"1.3.0"` — defeats v1.2's importlib.metadata unification
-- Do not implement as a subcommand (`homelab-mcp version`) — `--version` is a standard global flag
-
----
-
-## Automated PyPI Publishing Details
-
-**Approach:** OIDC trusted publishing — no stored API tokens, no secrets in GitHub.
-
-**One-time setup (PyPI project settings):**
-1. Go to PyPI → Project `homelab-mcp` → Settings → Publishing
-2. Add a new publisher:
-   - Publisher: GitHub Actions
-   - Owner: `<github_username_or_org>`
-   - Repository: `mcp_python_server`
-   - Workflow filename: `main.yml`
-   - Environment name: `pypi` (optional; use if adding environment protection rules)
-
-**GitHub Actions job to add to main.yml:**
-
-```yaml
-publish:
-  name: Publish to PyPI
-  runs-on: ubuntu-latest
-  needs: [test-and-quality]
-  if: startsWith(github.ref, 'refs/tags/v')
-  environment: pypi
-  permissions:
-    id-token: write
-
-  steps:
-    - uses: actions/checkout@v6
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v4
-      with:
-        enable-cache: true
-        cache-dependency-glob: "pyproject.toml"
-
-    - name: Build distributions
-      run: uv build
-
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-```
-
-**Key constraints:**
-- `id-token: write` at the job level is **mandatory** — OIDC exchange fails without it. Must be job-level, not workflow-level.
-- `needs: [test-and-quality]` — tests must pass before publish. Never publish a broken release.
-- `if: startsWith(github.ref, 'refs/tags/v')` — gates on `v*` prefix specifically. A bare `refs/tags/1.3.0` (no `v`) would not trigger.
-- `uv build` produces both `.whl` and `.tar.gz` in `dist/` — pypa action uploads both.
-- `environment: pypi` links to a GitHub environment — allows branch protection rules and required approvals.
-- The existing `release` job (GitHub Release creation) remains unchanged; `publish` runs in parallel after `test-and-quality`.
-
-**Version/tag alignment contract:**
-- `pyproject.toml version = "1.3.0"` must match `git tag v1.3.0` (PyPI strips the `v`)
-- PyPI rejects uploads where wheel version doesn't match the already-published version string
-- The version bump commit must be merged to main and the `pyproject.toml` version must be correct before tagging
-- Workflow: bump version in `pyproject.toml` → commit → merge to main → `git tag v1.3.0` → `git push --tags`
-
-**Confidence:** HIGH — verified against PyPI official docs and Python Packaging User Guide.
-
----
-
-## PRMT-02 Bug Analysis
-
-**Location:** `src/homelab_mcp/prompt_registry.py`, function `_build_decommission_result()` (line 73-87)
-
-**What's broken:**
-- Prompt accepts argument `hostname` (string)
-- Generated instructions tell AI: `Call decommission_device with hostname="{hostname}"`
-- Tool schema (`infrastructure_tools_schema.py` line 105-110): `decommission_device` requires `device_id` (integer). There is no `hostname` parameter.
-- Result: AI following the prompt generates an invalid tool call. Tool handler receives `hostname` instead of `device_id` and fails schema validation.
-
-**Fix — Option A (recommended): Lookup workflow in prompt text**
-
-Update `_build_decommission_result()` to generate:
+### Sequence B: Key-auth SSH (mcp_admin workflow)
 
 ```
-1. Call list_devices to find the device with hostname matching "{hostname}". Note its device_id.
-2. Call decommission_device_preview with device_id=<found_id> to preview the operation.
-3. Present the preview result and ask for explicit user confirmation.
-4. Only if confirmed: call decommission_device with device_id=<found_id>.
-5. Report the result.
+1. User: "Set up mcp_admin on 192.168.1.10"
+2. Agent: Call `setup_mcp_admin(hostname="192.168.1.10", username="root", password="hunter2")`
+   → Connects with root credentials → creates mcp_admin → installs public key
+   → TOFU fires during this connection
+3. Agent: Call `register_server(hostname="192.168.1.10", username="mcp_admin")`
+   → verify_connection=True by default → calls ssh_connect with mcp_admin key
+   → If TOFU already fired in step 2, this validates against stored key (no re-TOFU)
+   → Saves to DB
+4. Agent: All future ssh_discover/ssh_execute_command calls use DB mcp_admin entry.
 ```
 
-This approach is correct: the tool schema is right (integer device_id for precision), and the prompt guides AI through the natural lookup step.
+**Current problem:** The agent doesn't know to call `register_server` after `setup_mcp_admin`. It's not in any prompt or schema description.
 
-**Fix — Option B: Add hostname alias to tool schema**
-Accept `hostname` as optional alias, resolve in handler. This changes the tool schema and adds handler complexity. Not recommended — the tool schema is correct.
+### Sequence C: First SSH call fails with no credentials (most common agent confusion)
 
-**Complexity:** LOW — 4-6 line change in `_build_decommission_result()`. No schema changes, no handler changes, no new imports. This is a pure prompt text fix.
+```
+Today:
+1. Agent: Call ssh_discover(hostname="192.168.1.10")
+2. Error: "No credentials found for 192.168.1.10. Store them with `credentials add`..."
+3. Agent: ??? (doesn't know if keyring or DB or what to ask the user)
+
+After fix:
+1. Agent: Call ssh_discover(hostname="192.168.1.10")
+2. Error: "No credentials found for 192.168.1.10.
+   For key-auth (mcp_admin): call setup_mcp_admin then register_server.
+   For password-auth: ask user to run: homelab-mcp credentials add 192.168.1.10 <user> <password>
+   Then call list_registered_servers or list_keyring_credentials to verify before retrying."
+3. Agent: Can decide path based on available information and ask user the right question.
+```
 
 ---
 
 ## Feature Dependencies
 
 ```
-[credentials add/list/remove CLI subcommand]
-    └──requires──> [keyring promoted to core dependency in pyproject.toml]
-    └──requires──> [argparse subparsers in server.py main()]
-    └──requires──> [NoKeyringError handling]
+[Fix interactive shell — schema + response]
+    └──modifies──> [tool_schemas/ssh_tools_schema.py start_interactive_shell description]
+    └──modifies──> [tool_handlers/ssh_handlers.py handle_start_interactive_shell response text]
+    └──independent-of──> [credential fixes] (different code path)
 
-[auto-inject SSH credentials]
-    └──requires──> [credentials add CLI] (to populate keyring store)
-    └──requires──> [keyring promoted to core dependency]
-    └──modifies──> [resolve_ssh_credentials() in ssh_tools.py] (insert keyring at priority 2)
-    └──coexists-with──> [DB ssh_credentials table] (DB becomes priority 3; keyring is priority 2)
+[Fix SSH credential error messages]
+    └──modifies──> [ssh_tools.py ssh_discover_system() ValueError text]
+    └──modifies──> [ssh_tools.py ssh_execute_command() error path]
+    └──requires──> [list_keyring_credentials tool] (error message references it)
 
-[Proxmox creds via CLI]
-    └──requires──> [credentials add CLI] (same CLI surface, --type proxmox flag)
-    └──requires──> [keyring promoted to core dependency]
-    └──modifies──> [config.py MCPConfig] (add keyring fallback after env var check)
-    └──preserves──> [env vars PROXMOX_* take precedence] (env vars always win)
+[list_keyring_credentials tool]
+    └──requires──> [credential_store.list_credentials("ssh")] (already exists — just needs MCP exposure)
+    └──adds──> [tool_schemas/credential_tools_schema.py new entry]
+    └──adds──> [tool_handlers/credential_handlers.py new handler]
+    └──adds──> [tool_handlers/__init__.py registration]
+    └──independent-of──> [TOFU fix]
 
-[homelab-mcp --version]
-    └──depends-on──> [importlib.metadata version unification from v1.2] (already done — zero new work)
-    └──modifies──> [server.py main() argparse setup] (add --version argument)
+[Fix TOFU for keyring path]
+    └──modifies──> [ssh_connection.py ssh_connect()] (verify TOFU fires correctly with non-empty empty known_hosts)
+    └──requires-investigation──> [asyncssh behavior with known_hosts file present but host absent]
+    └──may-require──> [trust_host_key tool] if TOFU can't be fixed transparently
 
-[automated PyPI publish]
-    └──requires──> [OIDC trusted publisher configured on PyPI project] (one-time manual setup)
-    └──requires──> [main.yml publish job] (new job added to workflow)
-    └──depends-on──> [test-and-quality job passing] (needs: [test-and-quality])
-    └──independent-of──> [credential store features] (can be done in any order)
+[trust_host_key tool] (differentiator, only if TOFU transparent fix is insufficient)
+    └──adds──> [tool_schemas/ssh_tools_schema.py new entry]
+    └──adds──> [tool_handlers/ssh_handlers.py new handler]
+    └──uses──> [ssh_connection.ssh_connect()] (existing)
 
-[PRMT-02 fix]
-    └──modifies──> [prompt_registry.py _build_decommission_result()]
-    └──independent-of──> [all other v1.3 features] (pure bug fix, no new deps)
+[SSH credential flow prompt]
+    └──adds──> [prompt_registry.py new prompt entry]
+    └──independent-of──> [code fixes] (purely additive)
+    └──benefits-from──> [list_keyring_credentials tool being available]
 ```
-
-### Dependency Notes
-
-- **keyring must become a core dependency:** Currently in `[project.optional-dependencies] security`. If it stays optional, `credentials add` fails for users who installed `uvx homelab-mcp` without extras. Promoted to `[project.dependencies]` so every installation has it.
-- **DB ssh_credentials and keyring coexist:** The DB table stores key_path; the keyring stores passwords. They are complementary. Priority 2 (keyring) provides password-based SSH auth; priority 3 (DB) provides key-based SSH auth. Do not remove the DB path.
-- **Proxmox keyring modifies config.py MCPConfig:** The `proxmox_host` is needed to look up the keyring entry, but MCPConfig currently reads host from env var `PROXMOX_HOST`. If `PROXMOX_HOST` env var is absent and keyring is being used, the host must come from the keyring entry itself — stored as the `username` field in the `homelab-mcp-proxmox` service. This is the correct design: the CLI stores the host in the username field, so `credentials add --type proxmox 192.168.1.100 root password` stores `keyring.set_password("homelab-mcp-proxmox", "192.168.1.100", "password")` where host is the username field.
 
 ---
 
 ## MVP Definition
 
-### Launch With (v1.3 — all in scope per PROJECT.md)
+### Must Fix (v1.4 — blocking real-world use)
 
-- [ ] `keyring` promoted to core `[project.dependencies]` — prerequisite for all credential features
-- [ ] `homelab-mcp credentials add <host> <user> <pass>` — writes to OS keyring `"homelab-mcp-ssh"` service
-- [ ] `homelab-mcp credentials add --type proxmox <host> <user> <pass>` — writes to `"homelab-mcp-proxmox"` service
-- [ ] `homelab-mcp credentials list` — lists host + user (no password) for all SSH keyring entries
-- [ ] `homelab-mcp credentials remove <host> <user>` — removes from keyring; no error if not found
-- [ ] Graceful `NoKeyringError` handling in both CLI and auto-inject code paths
-- [ ] Auto-inject: `resolve_ssh_credentials()` checks keyring at priority 2 before DB
-- [ ] Proxmox keyring fallback in `MCPConfig` at priority 2 after env vars
-- [ ] `homelab-mcp --version` flag — outputs `homelab-mcp 1.3.0` and exits
-- [ ] Automated PyPI publish job in `main.yml` on `startsWith(github.ref, 'refs/tags/v')`
-- [ ] PRMT-02 fix: `_build_decommission_result()` generates `list_devices` lookup step, not `hostname=`
+- [ ] **Interactive shell — honest schema description**: Change `start_interactive_shell` description to state it opens a browser-based terminal. Add explicit note: "Use `ssh_execute_command` for AI-driven command execution." Add to response: "Open this URL in a browser to access the interactive shell."
+- [ ] **Interactive shell — no silent success**: Response should include a field `requires_browser: true` and a `note` explaining the agent cannot interact with this session. The agent must not report "task complete" when it can't verify interaction.
+- [ ] **SSH credential error — actionable recovery**: `ssh_discover_system()` and `ssh_execute_command()` must return errors that name the exact recovery steps (both paths: CLI `credentials add` for passwords; `register_server` for mcp_admin key auth).
+- [ ] **`list_keyring_credentials` tool**: New MCP tool that calls `credential_store.list_credentials("ssh")` and returns hostname + username list (no passwords). Enables agent to inspect keyring state without going blind.
+- [ ] **TOFU fix for keyring path**: Investigate and fix why `ssh_connect()` with an existing (but host-absent) `known_hosts` file fails to trigger TOFU correctly on Mac. This is the core timeout bug. Fix must be verified with a real SSH connection test.
+
+### Should Add (v1.4 — high value, low cost)
+
+- [ ] **SSH tools schema: credential guidance sentence**: Each SSH tool description that says "omit if stored" should add: "If no credentials are stored, check state with `list_registered_servers` (key auth) or `list_keyring_credentials` (password auth)."
+- [ ] **`register_server` description mentions TOFU**: Schema description should say "Registers the server and stores its SSH host key for future connections."
 
 ### Add After Validation (v1.x)
 
-- [ ] `credentials verify <host> [<user>]` — test SSH connectivity with stored creds; report success/failure
-- [ ] `credentials list --type proxmox` — list Proxmox keyring entries separately
+- [ ] `trust_host_key` tool — only needed if TOFU transparent fix is insufficient or users want explicit "verify this host" step
+- [ ] `ssh_credential_setup` prompt — walkthrough template for the credential setup sequence
+- [ ] `credentials verify <host>` CLI command — test connectivity with stored credentials
 
-### Future Consideration (v2+)
+### Out of Scope (v1.4)
 
-- [ ] `credentials export --format env` — dump stored creds as `.env` format for migration/backup
-- [ ] Credential import from existing `.env` files
+- [ ] Merge `register_server` and `credentials add` into a single flow — requires design work, not a bug fix
+- [ ] Persistent browser UI for interactive shell — out of scope per PROJECT.md
+- [ ] Auto-TOFU for all hosts on network scan
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| `credentials add/list/remove` CLI | HIGH | LOW | P1 |
-| Auto-inject SSH on hostname match | HIGH | MEDIUM | P1 |
-| `homelab-mcp --version` | MEDIUM | LOW | P1 |
-| Automated PyPI publish (OIDC) | HIGH | MEDIUM | P1 |
-| PRMT-02 fix | HIGH | LOW | P1 |
-| Proxmox creds via CLI | MEDIUM | MEDIUM | P1 |
-| Graceful NoKeyringError handling | HIGH | LOW | P1 |
-| keyring promoted to core dependency | HIGH | LOW | P1 (prerequisite) |
-
-All features are P1 — this is a focused milestone with no filler.
+| Feature | User/Agent Value | Implementation Cost | Priority |
+|---------|-----------------|---------------------|----------|
+| Interactive shell — honest description + response | HIGH (stops false "success" reports) | LOW | P1 |
+| SSH credential error — actionable recovery text | HIGH (agent can recover without confusion) | LOW | P1 |
+| `list_keyring_credentials` tool | HIGH (closes the diagnostic gap) | LOW | P1 |
+| TOFU fix for keyring path | HIGH (eliminates real SSH timeout bug) | MEDIUM (requires asyncssh investigation) | P1 |
+| SSH tool schema: credential guidance sentence | MEDIUM (improves proactive guidance) | LOW | P1 |
+| `register_server` description mentions TOFU | LOW (informational) | LOW | P2 |
+| `trust_host_key` tool | MEDIUM (belt-and-suspenders for TOFU) | MEDIUM | P2 (defer if TOFU fix works) |
+| `ssh_credential_setup` prompt | MEDIUM (end-to-end workflow guidance) | MEDIUM | P2 |
 
 ---
 
-## Competitor Feature Analysis
+## Competitor / Analogous Tool Reference
 
-| Dimension | AWS CLI credentials | GitHub CLI (`gh auth`) | Our Approach |
-|-----------|---------------------|------------------------|--------------|
-| Storage backend | `~/.aws/credentials` plaintext file | OS keyring (file fallback) | OS keyring via `keyring` library |
-| Precedence | CLI flag > env var > profile file > default | flag > env var > stored | CLI arg > env var > keyring > DB > default key |
-| List stored | `aws configure list-profiles` | `gh auth status` | `credentials list` (host + user, masked password) |
-| Remove | Manual file edit | `gh auth logout` | `credentials remove <host> <user>` |
-| Headless | File always works; no keyring needed | Graceful error with fallback hint | Actionable error + `PYTHON_KEYRING_BACKEND` env hint |
-| Version flag | `aws --version` | `gh --version` | `homelab-mcp --version` |
-| Release automation | Internal CI | GitHub Actions OIDC | GitHub Actions OIDC (`pypa/gh-action-pypi-publish`) |
+| Dimension | OpenSSH `ssh` CLI | Ansible | Our Approach (post-fix) |
+|-----------|-------------------|---------|------------------------|
+| First connection to unknown host | Interactive prompt: "Are you sure you want to continue connecting?" | `host_key_checking=False` default or TOFU via `StrictHostKeyChecking=accept-new` | TOFU transparent — first connect stores key, agent not interrupted |
+| Missing credentials | `Permission denied (publickey,password)` — tells you what was tried | Task fails with `Failed to connect to the host via ssh` — shows what auth methods failed | Error message names exact recovery tools and CLI commands |
+| Credential inventory | `~/.ssh/config` is human-readable; `ssh-add -l` lists loaded keys | `ansible-vault` for secrets, inventory files for hosts | Two-path: `list_registered_servers` (DB/key) + `list_keyring_credentials` (keyring/password) |
+| Browser shell | N/A | N/A | `start_interactive_shell` with explicit browser-required language |
 
 ---
 
 ## Sources
 
-- [keyring 25.7.0 documentation](https://keyring.readthedocs.io/) — `set_password`/`get_password`/`get_credential` API, `NoKeyringError`, backend behavior
-- [Publishing to PyPI with a Trusted Publisher](https://docs.pypi.org/trusted-publishers/) — OIDC trusted publishing overview
-- [Using a Trusted Publisher — PyPI Docs](https://docs.pypi.org/trusted-publishers/using-a-publisher/) — `id-token: write` requirement, workflow structure
-- [Python Packaging User Guide: Publishing with GitHub Actions](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/) — canonical workflow structure
-- [pypa/gh-action-pypi-publish GitHub](https://github.com/pypa/gh-action-pypi-publish) — action reference; PEP 740 attestations default in v1.11+
-- [Python argparse docs: action="version"](https://docs.python.org/3/library/argparse.html) — built-in version action
-- [keyring NoKeyringError on headless Ubuntu — jaraco/keyring issue #477](https://github.com/jaraco/keyring/issues/477) — confirmed headless failure mode
-- [Python keyring backends: SecretService, Windows Credential Manager 2025](https://johal.in/python-keyring-backends-secretservice-windows-credential-manager-support-2025/) — platform availability matrix
-- Codebase inspection (HIGH confidence): `src/homelab_mcp/ssh_tools.py` (`resolve_ssh_credentials`, `SSHCredentials`), `src/homelab_mcp/config.py` (`MCPConfig`, env var reading), `src/homelab_mcp/server.py` (`main()`, `importlib.metadata` usage), `src/homelab_mcp/prompt_registry.py` (PRMT-02 location), `src/homelab_mcp/tool_schemas/infrastructure_tools_schema.py` (`decommission_device` schema), `pyproject.toml` (keyring in optional-dependencies, CI workflow shape), `.github/workflows/main.yml` (existing job structure)
+- Codebase inspection (HIGH confidence):
+  - `src/homelab_mcp/shell_session.py` — `ShellSessionManager.create_session()` return type; `handle_start_interactive_shell` builds `shell_url` string
+  - `src/homelab_mcp/ssh_tools.py` — `resolve_ssh_credentials()` tier logic; `ssh_discover_system()` ValueError raise; `register_server()` `verify_connection=True` path calls `ssh_connect()`
+  - `src/homelab_mcp/ssh_connection.py` — `ssh_connect()` passes `known_hosts=str(kh_path)`; `TOFUSSHClient` as `client_factory`; `validate_host_public_key()` called only when host NOT in file
+  - `src/homelab_mcp/credential_store.py` — `store_credential()` writes to keyring only; `register_credential()` writes to JSON registry; no `ssh_connect()` call
+  - `src/homelab_mcp/tool_schemas/ssh_tools_schema.py` — current descriptions for `start_interactive_shell`, `ssh_discover`, `ssh_execute_command`
+  - `src/homelab_mcp/tool_schemas/credential_tools_schema.py` — `register_server` has no description about TOFU
+  - `src/homelab_mcp/tool_handlers/credential_handlers.py` — no `list_keyring_credentials` handler exists
+  - `src/homelab_mcp/prompt_registry.py` — no SSH setup prompt exists
+- asyncssh docs: `known_hosts` parameter behavior — when file is present, asyncssh validates against it; `validate_host_public_key` is called ONLY for hosts not found in the file; an empty file should trigger TOFU on all connections (LOW confidence — needs verification in TOFU bug investigation)
+- PROJECT.md milestone context — v1.4 goal: fix interactive shell, SSH credential flow, TOFU known_hosts
 
 ---
 
-*Feature research for: homelab-mcp v1.3 — credential management + release automation*
-*Researched: 2026-03-14*
+*Feature research for: homelab-mcp v1.4 — real-world reliability bug fixes*
+*Researched: 2026-03-13*

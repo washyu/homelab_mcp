@@ -1,147 +1,75 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.5
-milestone_name: Credential Architecture Cleanup
-status: planning
-stopped_at: "Phase 33 added — ready to spec"
-last_updated: "2026-04-19"
-last_activity: 2026-04-19 — Phase 33 added to roadmap; v1.4/v1.5-critbugs work parked on v1.4 branch
+milestone_name: Critical Bug Fixes
+status: shipped
+stopped_at: v1.5 milestone closed 2026-04-20 (audit verdict tech_debt — 4 bookkeeping items deferred)
+last_updated: "2026-04-20T00:00:00.000Z"
+last_activity: 2026-04-20 -- milestone v1.5 archived; ROADMAP collapsed; REQUIREMENTS.md recreated fresh for next milestone
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-15)
+See: .planning/PROJECT.md (updated 2026-04-20 after v1.5 close)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** v1.5 Credential Architecture Cleanup
+**Current focus:** Planning next milestone (run `/gsd-new-milestone`)
 
 ## Current Position
 
-Phase: 33 — Credential Architecture Cleanup (not started)
+Phase: v1.5 shipped (Phases 31-32 complete)
 Plan: —
-Status: Phase added to roadmap — ready to spec
-Last activity: 2026-04-19 — Phase 33 added; v1.4 branch (phases 21-32) parked for triage
+Status: Between milestones. v1.5 archived with `tech_debt` verdict accepted.
+Last activity: 2026-04-20 -- v1.5 milestone closed; archive files in `.planning/milestones/v1.5-*`
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] v1.5 100%
 
-## Parked Work
+## Deferred Items
 
-Phases 21-32 exist on the `v1.4` git branch but were never merged to main:
-- **v1.4 Real-World Reliability** (phases 21-29) — mostly complete, some known-broken (phase 30-02 wiped the `CredentialNotFoundError` class added in phase 22-01 via a stale worktree merge)
-- **v1.4.1 Security Patch** (phase 30) — SFTP tmpfile tests failing
-- **v1.5 Critical Bug Fixes** (phases 31-32) — planning started, never executed
+Items acknowledged and deferred at milestone close on 2026-04-20:
 
-These require dedicated triage before any of their work can ship. Phase 33 (current) is intentionally independent and builds on current main, not on the parked v1.4 work.
-
-## Performance Metrics
-
-**Velocity:**
-- Total plans completed: 0 (v1.3, in progress)
-- Average duration: — min
-- Total execution time: — hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| - | - | - | - |
-
-**Recent Trend:**
-- Last 5 plans: —
-- Trend: —
-
-*Updated after each plan completion*
-| Phase 12-pypi-distribution P01 | 4 | 2 tasks | 2 files |
-| Phase 12-pypi-distribution P02 | 15 | 2 tasks | 6 files |
-| Phase 12-pypi-distribution P03 | 8 | 2 tasks | 4 files |
-| Phase 12-pypi-distribution P03 | 45 | 3 tasks | 4 files |
-| Phase 13-drift-resource P01 | 2 | 1 tasks | 1 files |
-| Phase 13-drift-resource P02 | 132 | 2 tasks | 3 files |
-| Phase 14-mcp-prompts P01 | 1 | 1 tasks | 1 files |
-| Phase 14-mcp-prompts P02 | 4 | 2 tasks | 3 files |
-| Phase 15-preview-tool-split P01 | 2 | 2 tasks | 2 files |
-| Phase 15-preview-tool-split P02 | 4 | 2 tasks | 12 files |
-| Phase 16-quality-gate P01 | 8 | 2 tasks | 4 files |
-| Phase 17-credential-store-foundation P01 | 25 | 2 tasks | 3 files |
-| Phase 18-credentials-cli-version P01 | 4 | 2 tasks | 2 files |
-| Phase 18-credentials-cli-version P02 | 1 | 1 tasks | 1 files |
-| Phase 18-credentials-cli-version P03 | 2 | 2 tasks | 1 files |
-| Phase 19-credential-auto-inject P01 | 1 | 1 tasks | 2 files |
-| Phase 19-credential-auto-inject P02 | 4 | 2 tasks | 2 files |
-| Phase 20-release-automation-prmt-02 P01 | 5 | 1 tasks | 1 files |
-| Phase 20-release-automation-prmt-02 P02 | 5 | 2 tasks | 2 files |
-| Phase 20-release-automation-prmt-02 P03 | 2 | 1 tasks | 1 files |
+| Category | Item | Status | Notes |
+|----------|------|--------|-------|
+| tech_debt | 31-VERIFICATION.md missing | deferred | Phase 31 merged on plan-SUMMARY evidence; Phase 32 revert-proof regressions re-prove each fix via integration, but the formal Phase-31 gate was skipped |
+| tech_debt | 31-VALIDATION.md draft | deferred | `status: draft`, `nyquist_compliant: false`, `wave_0_complete: false` — Nyquist validation incomplete |
+| tech_debt | 32-VALIDATION.md missing | deferred | No Nyquist VALIDATION.md for regression-tests phase |
+| tech_debt | SUMMARY frontmatter shape inconsistency | deferred | 32-01 uses flat `requirements-completed: [REG-01]`; 32-02..05 use nested `requirements:\n - REG-01`. Both parse; extraction via `summary-extract --fields requirements_completed` picks up only the flat form |
+| quick_task | 1-fix-ruff-ci-cd-pipeline-failures | deferred (false-positive) | audit-open flagged `status: missing` but PLAN.md + SUMMARY.md exist on disk — pre-existing bookkeeping artifact from earlier milestone |
+| quick_task | 2-run-all-pre-commit-checks-before-push | deferred (false-positive) | Same as above |
+| quick_task | 3-fix-windows-cross-platform-ci-failures | deferred (false-positive) | Same as above |
+| quick_task | 4-create-manual-verification-test-checklis | deferred (false-positive) | Same as above |
+| quick_task | 5-we-are-missing-the-new-cli-arguments-for | completed (audit false-positive) | Shipped in v1.3 at commit 88e972f (see Quick Tasks Completed table below) |
+| quick_task | 6-update-readme-and-setup-docs-to-reflect- | completed (audit false-positive) | Shipped in v1.3 at commit 1357903 |
+| quick_task | 7-fix-ssh-tool-schemas-so-the-model-knows- | completed (audit false-positive) | Shipped in v1.3 at commit d261600 |
 
 ## Accumulated Context
 
 ### Decisions
 
-Full v1.0 decision log in `.planning/milestones/v1.0-ROADMAP.md`.
-Full v1.1 decision log in `.planning/milestones/v1.1-ROADMAP.md`.
+Full v1.0-v1.5 decision logs in `.planning/milestones/v{X.Y}-ROADMAP.md`.
 
-Key architectural patterns carried into v1.2:
-- Local import of `get_resource_manager` inside handler functions (not module level) — avoids circular import
-- `build_dry_run_response()` returns flat dict; `_convert_result` fallback handles MCP wrapping
-- `MUTATING_TOOLS: frozenset[str]` for O(1) membership check before notification dispatch
-- New modules stay thin — business logic in dedicated modules, `server.py` is registration hub only
-- `INSERT OR REPLACE` + UNIQUE constraint for SQLite upsert (established in drift_baselines, extend for drift_latest_report)
-- [Phase 12-pypi-distribution]: Wave 0 tests are intentionally RED at commit time -- correctness verified by pytest --collect-only
-- [Phase 12-pypi-distribution]: PKG-03 patch target: homelab_mcp.service_installer.files (importlib.resources.files as imported), replacing src.homelab_mcp.service_installer.TEMPLATES_DIR
-- [Phase 12-pypi-distribution]: Package renamed from homelab-mcp-server to homelab-mcp (enables uvx homelab-mcp)
-- [Phase 12-pypi-distribution]: importlib.metadata version pattern with try/except PackageNotFoundError -> fallback 'unknown' used in all 4 locations
-- [Phase 12-pypi-distribution]: main() entry point imports argparse/asyncio/os/sys locally to avoid module-level import overhead on server startup
-- [Phase 12-pypi-distribution]: Patch target for importlib.resources.files must be src.homelab_mcp.service_installer.files due to dual module path in sys.modules when ServiceInstaller imported via src. prefix
-- [Phase 12-pypi-distribution]: _make_files_mock(dict) helper pattern established for multi-template mocking in tests replacing TEMPLATES_DIR patch approach
-- [Phase 12-pypi-distribution]: homelab-mcp 1.2.0 published to PyPI; uvx homelab-mcp --help confirmed working from PyPI index — PKG-03 complete
-- [Phase 13-drift-resource]: Wave 0 tests use local imports inside test function bodies — avoids collection-level ImportError for symbols not yet implemented
-- [Phase 13-drift-resource]: test_drift_resource_notification checks DRIFT_SCAN_TOOLS membership instead of MCP session mocking — simpler and sufficient for verifying DRFT-10 wiring constant
-- [Phase 13-drift-resource]: set_latest_drift_report accepts None to support test teardown — widens signature from dict to dict|None
-- [Phase 13-drift-resource]: server.py and resource_readers.py committed together because mypy pre-commit hook requires both when server.py imports read_drift_resource
-- [Phase 14-mcp-prompts]: Wave 0 tests use local imports inside test function bodies — avoids collection-level ImportError for prompt_registry.py not yet implemented
-- [Phase 14-mcp-prompts]: Plain def (non-async) test functions throughout — get_prompt_result is synchronous
-- [Phase 14-mcp-prompts]: prompt_registry.py imports only mcp.types/mcp.shared.exceptions — no homelab_mcp imports (circular import prevention)
-- [Phase 14-mcp-prompts]: HOMELAB_PROMPTS is dict[str, types.Prompt] keyed by name; @server.list_prompts() registration auto-advertises PromptsCapability
-- [Phase 15-preview-tool-split]: Wave 0 tests use local imports inside test function bodies — avoids collection-level ImportError (consistent with Phase 13/14 pattern)
-- [Phase 15-preview-tool-split]: test_preview_tool_schema_has_no_dry_run_param uses pytest.skip() rather than ERROR when schema not present — keeps test RED not ERROR
-- [Phase 15-preview-tool-split]: Preview handlers inject dry_run=True transparently — callers never set it and schemas never expose it
-- [Phase 15-preview-tool-split]: Delegation pattern keeps preview handler logic to 3 lines; all dry-run logic lives in the parent handler
-- [Phase 16-quality-gate]: Use list syntax ["psycopg2", "psycopg2.*"] in mypy override — single string does not suppress submodule imports
-- [Phase 16-quality-gate]: nosec annotations are inline with specific B-code and justification comment — not bare nosec, not on the line above
-- [Phase 16-quality-gate]: Do NOT install types-psycopg2 stubs — psycopg2 is optional soft-dependency; false coverage risk
+Active patterns established through v1.5:
 
-Key constraints for v1.3 (from research):
+- `contextlib.suppress(Exception)` around `websocket.close()` — idempotent cleanup for PTY session teardown
+- Quoted return annotations for non-subscriptable third-party classes (e.g., `'asyncssh.SSHCompletedProcess'`) — defers evaluation safely under mypy and runtime
+- AST meta-tests for lint-style regression guards — catches tautological-assertion bugs that no single positive regression test can catch
+- Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
+- JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
+
+Key constraints carried forward:
+
 - `credential_store.py` must have no homelab_mcp imports — circular import prevention
-- Every keyring call path must catch `NoKeyringError`, `RuntimeError`, and `Exception` — headless Linux is the primary deploy target
-- Never call keyring at module import time or during server startup — only at first lookup
-- `parser.set_defaults(func=_run_server)` + `getattr(args, 'func', _run_server)(args)` dispatch pattern — prevents bare `homelab-mcp` regression
-- `sanitize_error(e)` from `log_filter.py` in every except block touching credential values — prevents credential leak in logs
-- PyPI OIDC trusted publisher must be manually registered at pypi.org before pushing any v* tag
-- [Phase 17-credential-store-foundation]: Lazy import keyring inside each function body — prevents D-Bus probing during server startup
-- [Phase 17-credential-store-foundation]: Assign keyring.get_password result to typed variable (str | None) to satisfy mypy warn_return_any
-- [Phase 17-credential-store-foundation]: credential_store.py imports only stdlib logging — no homelab_mcp imports (circular import prevention, mirrors prompt_registry.py constraint)
-- [Phase 18-credentials-cli-version]: Local import pattern inside test function bodies used for all new symbols — consistent with Phases 12-17 pattern
-- [Phase 18-credentials-cli-version]: test_bare_invocation_starts_server is GREEN because bare invocation behavior already exists — guards against regression
-- [Phase 18-credentials-cli-version]: Handler functions tested directly (_cmd_credentials_add/list/remove) via argparse.Namespace — avoids argparse dispatch complexity
-- [Phase 18-credentials-cli-version]: type: ignore[return-value] in plan was wrong mypy code — corrected to no-any-return for json.loads Any return
-- [Phase 18-credentials-cli-version]: _SERVICE_NAME string kept alongside _SERVICE_NAMES dict for backward compatibility
-- [Phase 18-credentials-cli-version]: Module-level credential_store imports in server.py for test monkeypatching support
-- [Phase 18-credentials-cli-version]: argparse dest names (hostname/username/credential_type) match test Namespace expectations
-- [Phase 19-credential-auto-inject]: Patch targets homelab_mcp.ssh_tools.list_credentials and homelab_mcp.ssh_tools.get_credential (function-body import pattern)
-- [Phase 19-credential-auto-inject]: Wave 0 RED tests: tests fail at pytest-mock patch time (AttributeError) which registers as FAILED not ERROR — acceptable Wave 0 RED state
-- [Phase 19-credential-auto-inject]: Module-level import of get_credential/list_credentials in ssh_tools.py and proxmox_api.py (not lazy function-body) — required for mocker.patch compatibility at test patch time
-- [Phase 19-credential-auto-inject]: Proxmox validation gates moved after keyring fallback block — allows keyring to supply host when PROXMOX_HOST env var absent
-- [Phase 20-release-automation-prmt-02]: Wave 0 RED assertions committed before GREEN implementation: get_network_sitemap + device_id assertions in test_decommission_workflow_prompt (CLI-02 contract)
-- [Phase 20-release-automation-prmt-02]: GitHub repo is 'homelab_mcp' (underscore) — use this name when registering PyPI trusted publisher
-- [Phase 20-release-automation-prmt-02]: publish-to-pypi uses OIDC (id-token: write at job level, no stored secrets) with pypa/gh-action-pypi-publish@release/v1
-- [Phase 20-release-automation-prmt-02]: 5-step decommission workflow uses get_network_sitemap to resolve hostname->device_id before calling decommission_device (CLI-02 fix)
+- Every keyring call path must catch `NoKeyringError`, `RuntimeError`, and `Exception` — headless Linux primary deploy target
+- `_sudo_run` helper is the only path for sudo invocation — single consistent `check=` forwarding
+- PyPI OIDC trusted publisher registered at pypi.org; `git tag v*` push triggers publish
 
 ### Pending Todos
 
@@ -157,11 +85,11 @@ None.
 
 ### Blockers/Concerns
 
-- PyPI OIDC trusted publisher must be manually registered at pypi.org/manage/project/homelab-mcp/settings/publishing/ before the first `git tag v*` push triggers the publish job
+- PyPI OIDC trusted publisher must remain registered at pypi.org/manage/project/homelab-mcp/settings/publishing/ for future `git tag v*` pushes to trigger the publish job (one-time, stable)
 - Human-only verifiable items: `homelab-mcp --version` in installed env, TTY echo suppression for `credentials add` — cannot be automated in headless CI
 
 ## Session Continuity
 
-Last session: 2026-03-15T07:15:00Z
-Stopped at: Completed quick task 7: fix ssh tool schemas for keyring auto-inject
-Resume file: None
+Last session: 2026-04-20 (v1.5 milestone close)
+Stopped at: v1.5 archived; next action is `/gsd-new-milestone`
+Resume file: —

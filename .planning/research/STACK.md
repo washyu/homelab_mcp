@@ -1,396 +1,389 @@
-# Stack Research
+# Technology Stack
 
-**Domain:** Homelab MCP Server — v1.3 Credentials & Release Automation
-**Researched:** 2026-03-14
-**Confidence:** HIGH (keyring API), HIGH (PyPI OIDC workflow), HIGH (argparse subparsers)
-
-**Scope:** New dependencies and integration patterns for v1.3 only.
-Validated v1.2 stack (Python 3.12+, uv, mcp[cli], asyncssh, hatchling, SQLite, PyPI distribution) is NOT re-researched.
+**Project:** Homelab MCP Server — v1.4 Real-World Reliability
+**Researched:** 2026-03-13
+**Scope:** Bug-fix milestone. Only the three bugs found during real Mac testing are in scope. Everything else is NOT re-researched.
 
 ---
 
-## Summary: What Changes for v1.3
+## Summary: What Changes for v1.4
 
-| Feature | Stack Change | Verdict |
-|---------|-------------|---------|
-| OS keyring credential store | Promote `keyring>=25.0.0` from optional → core dependency | `keyring` is already in `[project.optional-dependencies] security`; move to `[project.dependencies]` |
-| Keyring fallback (headless/CI) | No new dep — handle `keyring.errors.NoKeyringError` in code | Catch `NoKeyringError` and degrade gracefully to env-var-only mode |
-| PyPI trusted publishing | Workflow-only change — no new dependencies | Add `publish` job to existing `main.yml` using `pypa/gh-action-pypi-publish@release/v1` |
-| `--version` CLI flag | No new dep | `argparse` `--version` action built-in |
-| `credentials add/list/remove` CLI subcommands | No new dep | `argparse.add_subparsers()` in existing `main()` function |
+| Bug | Stack Change | Verdict |
+|-----|-------------|---------|
+| Interactive shell returns nothing silently | No new deps — fix error propagation in WebSocket handler, fix `term_size` arg order | Pure code fix in `shell_session.py` and `http_app.py` |
+| SSH workflow requires prior device registration; agent doesn't know this | No new deps — fix `resolve_ssh_credentials` to surface actionable error when no credentials found | Pure code fix in `ssh_tools.py`; possibly add a tool-description update |
+| SSH timeout after registration — TOFU known_hosts doesn't include new hosts | No new deps — fix `ssh_connect()` TOFU interaction when `known_hosts` file exists but host is absent | Pure code fix in `ssh_connection.py` |
 
-**Net new runtime dependencies for v1.3: one — `keyring>=25.0.0` promoted to core.**
+**Net new runtime dependencies for v1.4: zero.** All three bugs are fixable within the existing stack.
 
 ---
 
-## Recommended Stack
+## Bug 1: Interactive Shell — Silent Failure
 
-### Core Technologies
+**Confidence: HIGH** — verified by reading asyncssh 2.21.0 source installed at `.venv/lib/python3.12/site-packages/asyncssh/`.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| keyring | >=25.6.0 | OS keyring abstraction (GNOME Secret Service, macOS Keychain, Windows Credential Manager) | Already in project optional deps; v25.6.0 removed spurious warning logs when no backend configured, making fallback detection clean; provides `keyring.errors.NoKeyringError` for graceful degradation |
-| argparse (stdlib) | Python 3.12 built-in | `credentials add/list/remove` subcommands, `--version` flag | No new dep; `add_subparsers()` + `set_defaults(func=...)` pattern is idiomatic Python; already used in `main()` |
-| pypa/gh-action-pypi-publish | release/v1 (pinned v1.13.0) | PyPI publish step in GitHub Actions | Official PyPA action; supports trusted publishing OIDC natively; no API tokens needed |
+### Root Cause A: `term_size` Argument Order Is Wrong
 
-### Supporting Libraries — No Changes
+`asyncssh.create_process(term_type=..., term_size=(24, 80))` passes `(width=24, height=80)`.
 
-All existing runtime deps (asyncssh, aiohttp, starlette, uvicorn, rich, pydantic, websockets) remain unchanged for v1.3.
-
----
-
-## Feature 1: OS Keyring Integration
-
-**Confidence: HIGH** — verified against keyring 25.7.0 docs and source.
-
-### Dependency Change
-
-Move `keyring` from optional to core:
-
-```toml
-# pyproject.toml — BEFORE (v1.2)
-[project.optional-dependencies]
-security = [
-    "keyring>=25.0.0",
-    "cryptography>=42.0.0",
-]
-
-# AFTER (v1.3)
-[project.dependencies]
-# ... existing deps ...
-"keyring>=25.6.0",
-```
-
-The `security` optional group can keep `cryptography>=42.0.0` if it is used elsewhere, but `keyring` must move to core because `homelab-mcp credentials add` will fail without it.
-
-### API — What to Use
+asyncssh `term_size` is `(width, height)` = `(cols, rows)`. Source: `channel.py:1176`:
 
 ```python
-import keyring
-import keyring.errors
-
-# Store credential (service = "homelab-mcp", username = hostname)
-keyring.set_password("homelab-mcp", hostname, password)
-
-# Retrieve credential
-password = keyring.get_password("homelab-mcp", hostname)  # returns None if not found
-
-# Get credential object (includes username)
-cred = keyring.get_credential("homelab-mcp", hostname)
-# cred.username, cred.password — or None if not found
-
-# Delete credential
-keyring.delete_password("homelab-mcp", hostname)
-# Raises keyring.errors.PasswordDeleteError if not found
+elif len(term_size) == 2:
+    width, height = cast(Tuple[int, int], term_size)
 ```
 
-`get_credential()` was added in keyring 21.4 and is present in all v25.x versions. It is preferred over `get_password()` when the stored username may differ from the lookup key.
+The current value `(24, 80)` creates a terminal that is **24 columns wide and 80 rows tall** — inverted. Normal terminals are 80 columns × 24 rows.
 
-`AnonymousCredential` was introduced in v25.4.0 to model secrets without usernames — not needed here since hostname is the natural username key.
+A 24-column terminal causes the shell's PS1 prompt to wrap aggressively and disrupts output layout. On some SSH servers, an extremely narrow PTY will cause the shell to emit control sequences that confuse the xterm.js client, resulting in blank output even though bytes ARE being sent.
 
-### Fallback Strategy — Headless / No Keyring
+**Fix:** Change `term_size=(24, 80)` to `term_size=(80, 24)` in `shell_session.py:109`.
 
-The target audience (Proxmox homelabbers) runs the MCP server on headless Linux servers or in containers where GNOME Secret Service / KWallet are unavailable. `keyring` raises `keyring.errors.NoKeyringError` in this case (on v25.x; earlier versions raised `RuntimeError`).
+### Root Cause B: WebSocket `read()` Silently Breaks on EOF Without Notifying Client
 
-**Required fallback pattern:**
-
+`http_app.py:198`:
 ```python
-import keyring
-import keyring.errors
-
-def get_credential_from_keyring(service: str, hostname: str) -> str | None:
-    """Retrieve credential, returning None if keyring unavailable."""
-    try:
-        return keyring.get_password(service, hostname)
-    except keyring.errors.NoKeyringError:
-        return None  # degrade gracefully — caller falls back to env vars
-    except Exception:
-        return None  # corrupt backend — same degradation
-
-def store_credential_in_keyring(service: str, hostname: str, password: str) -> bool:
-    """Store credential. Returns False if keyring unavailable."""
-    try:
-        keyring.set_password(service, hostname, password)
-        return True
-    except keyring.errors.NoKeyringError:
-        return False  # caller must warn the user
+data = await session.process.stdout.read(4096)
+if data:
+    ...
+else:
+    break  # silent exit — WebSocket stays open, no output ever sent
 ```
 
-**User-facing behaviour when no keyring:**
+When `data` is an empty string (EOF), the `read_output` task silently exits. The WebSocket connection stays open but nothing will ever be sent to the browser. The user sees a blank terminal with "Connected" status.
 
-- `homelab-mcp credentials add` — print a clear warning: "No OS keyring available on this system. Credentials cannot be stored securely. Use environment variables instead." and exit with non-zero status.
-- Auto-inject on SSH tool calls — silently skip keyring lookup, use env vars if set.
-- Do NOT fall back to `keyrings.alt` (plaintext file on disk) — homelab-mcp does not want silent credential storage in a world-readable file.
+EOF from `session.process.stdout` happens when:
+1. The SSH process exits (connection dropped, shell exited)
+2. The SSH channel is closed by the remote end
+3. The PTY allocation fails on the remote end (server rejects PTY request)
 
-**Detection without attempting an operation:**
+In all three cases, the browser receives no notification. Silence looks like a bug but is actually an unhandled error path.
 
+**Fix:** On EOF, send an error message to the WebSocket client before closing:
 ```python
-backend = keyring.get_keyring()
-# backend.__class__.__name__ == "NullKeyring" → no usable backend
-# or check: hasattr(backend, 'priority') and backend.priority < 0
+else:
+    # EOF — process exited or PTY allocation failed
+    await websocket.send_text("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n")
+    break
 ```
 
-Alternatively, set `PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring` in the environment to force null backend (useful for CI to prevent keyring prompts during tests).
+Also: wrap the exception handler to send the error text to the terminal rather than only logging it.
 
-### Backend Availability by Platform
+### Root Cause C: Exception in `create_session()` Does Not Surface to Browser
 
-| Platform | Backend | Available Headless? |
-|----------|---------|-------------------|
-| GNOME desktop Linux | SecretService (libsecret) | No — requires D-Bus session |
-| KDE Linux | KWallet | No — requires D-Bus session |
-| macOS | Keychain | Yes (with TTY) |
-| Windows | Credential Manager | Yes |
-| Headless Linux server | None (NullKeyring) | No — `NoKeyringError` |
-| WSL2 | None by default | No — same as headless Linux |
+If SSH connection fails AFTER `start_interactive_shell` returns a session URL (unlikely but possible in a race), or if `create_process()` raises, the exception propagates to the tool handler and returns an error dict — but the user already has a shell URL from the tool response. Opening that URL returns a 404 (session not found) with no explanation.
 
-For the primary homelab use case (headless Proxmox host), the keyring will be unavailable. The implementation must treat env vars as the fully supported path and keyring as a convenience feature on desktop systems.
+This is a secondary UX failure, not the primary silent failure, but it should be addressed: the error should surface in the tool response text, not just as a 404.
 
-### Proxmox Credentials Storage
-
-Proxmox API credentials (`PROXMOX_HOST`, `PROXMOX_TOKEN_ID`, `PROXMOX_TOKEN_SECRET`) should use the same keyring service with a `proxmox:` prefix in the username key:
-
-```python
-keyring.set_password("homelab-mcp", "proxmox:host", proxmox_host)
-keyring.set_password("homelab-mcp", "proxmox:token_id", token_id)
-keyring.set_password("homelab-mcp", "proxmox:token_secret", token_secret)
-```
-
-Env vars always take precedence — check `os.getenv("PROXMOX_HOST")` first, fall back to `keyring.get_password("homelab-mcp", "proxmox:host")`.
-
-### What NOT to Add for Keyring
+### What NOT to Change for Interactive Shell
 
 | Avoid | Why |
 |-------|-----|
-| `keyrings.alt` (PlaintextKeyring) | Stores credentials base64-encoded on disk with no encryption; false security; explicitly warn and refuse instead |
-| `cryptography` for DIY encryption | Reinvents keyring's purpose; not needed if using OS keyring correctly |
-| SQLite as credential store | Database is already used for device tracking; mixing credentials into device DB creates privilege-confusion; OS keyring is the correct abstraction |
-| Secret scanning in code | `log_filter.py` already handles credential redaction; no change needed |
+| Replace asyncssh `create_process` with raw SSH subprocess | `create_process` with `term_type` correctly allocates a PTY and handles encoding. The fundamental approach is correct |
+| Add `encoding=None` to `create_process` | Default encoding is `'utf-8'` (verified at `connection.py:8128`). This means stdout returns `str`, which is correct. Switching to `encoding=None` (bytes) would require changing the decode path; no benefit |
+| Replace xterm.js CDN with bundled copy | CDN at cdn.jsdelivr.net works fine; not the cause of silence |
+| Add explicit `request_pty='force'` | Default `request_pty=True` already enables PTY when `term_type` is set (verified at `connection.py:4359-4360`). No change needed |
 
 ---
 
-## Feature 2: GitHub Actions PyPI Trusted Publishing
+## Bug 2: SSH Credential Flow — Agent Needs Guidance
 
-**Confidence: HIGH** — verified against official PyPI docs and pypa/gh-action-pypi-publish README.
+**Confidence: HIGH** — verified by reading `ssh_tools.py:resolve_ssh_credentials()` and `credential_store.py`.
 
-### What Trusted Publishing Is
+### Root Cause: Silent Fallthrough to Keyless Connection
 
-PyPI Trusted Publishing uses GitHub's OIDC token to authenticate publish requests. No long-lived API token is stored in GitHub Secrets. The OIDC token is short-lived and scoped to a specific workflow run. Sigstore attestations are generated automatically for each distribution.
+`resolve_ssh_credentials()` has this priority chain:
 
-This is the current PyPI-recommended approach as of 2023 and is now the de facto standard.
+1. Explicit `password` or `key_path` argument → use immediately
+2. Keyring lookup via `list_credentials()` → if hostname found in registry AND password in keyring → use
+3. Database `ssh_credentials` table → if stored credential found → use
+4. Default `~/.ssh/mcp/mcp_admin_key` → if file exists → use
+5. Return minimal `SSHCredentials` with no password and no key
 
-### Pre-Requisite: One-Time PyPI Configuration
+At step 5, the function returns `SSHCredentials(hostname, username)` with no auth method. `ssh_connect()` then attempts connection with no password and no client keys. asyncssh falls back to agent keys (if any) or fails with an auth error.
 
-Before the workflow can publish, a Trusted Publisher must be configured at:
-`https://pypi.org/manage/project/homelab-mcp/settings/publishing/`
+The agent gets an opaque `PermissionDenied` or `ConnectionResetError` from asyncssh. There is no message saying "you need to run `homelab-mcp credentials add`." The agent knows the tool failed but has no path forward.
 
-Required fields:
-- **Owner:** GitHub organisation or username (e.g. `shaunpalmer` or org name)
-- **Repository name:** `mcp_python_server`
-- **Workflow filename:** `publish.yml` (or `main.yml` if publishing from the existing workflow)
-- **Environment name:** `pypi` (must match the `environment:` in the workflow)
-- **Tag (optional):** Can restrict to `v*` tags for extra safety
+**The workflow the agent doesn't know about:**
+- User must run `homelab-mcp credentials add --hostname HOST --username USER` before SSH tools will work for that host
+- This isn't surfaced in any tool description or error message
+- The agent may try ssh_execute_command, get auth failure, and have no idea what to do
 
-This is a manual one-time step — it cannot be automated.
+**Fix options (pick one or combine):**
 
-### Workflow Addition
+**Option A — Error message with action guidance:** At step 5 of `resolve_ssh_credentials`, detect that no auth method is available and raise with an actionable message:
 
-Add a `publish` job to the existing `.github/workflows/main.yml`. The job should:
-
-1. Depend on `test-and-quality` passing
-2. Trigger only on `v*` tags
-3. Build the wheel and sdist using `uv build`
-4. Publish using `pypa/gh-action-pypi-publish@release/v1` with OIDC permissions
-
-```yaml
-publish:
-  name: Publish to PyPI
-  runs-on: ubuntu-latest
-  needs: [test-and-quality]
-  if: startsWith(github.ref, 'refs/tags/v')
-  environment:
-    name: pypi
-    url: https://pypi.org/p/homelab-mcp
-  permissions:
-    id-token: write  # mandatory for trusted publishing
-
-  steps:
-    - uses: actions/checkout@v6
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@v4
-      with:
-        enable-cache: true
-        cache-dependency-glob: "pyproject.toml"
-
-    - name: Set up Python
-      run: uv python install 3.12
-
-    - name: Build distribution
-      run: uv build
-
-    - name: Publish to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+```python
+raise ValueError(
+    f"No credentials found for {hostname}. "
+    f"Run: homelab-mcp credentials add --hostname {hostname} --username <USER> "
+    f"and then retry."
+)
 ```
 
-**Why `uv build` instead of `python -m build`:** The project already uses uv throughout CI; `uv build` respects the same lockfile and produces identical output. No extra dependency install step needed.
+This surfaces in the tool's error response. The agent can read it and guide the user.
 
-**Why `release/v1` not a pinned SHA:** The `release/v1` branch is maintained by PyPA as a rolling stable pointer — it receives security fixes (e.g. GHSA-vxmw-7h4f-hqxh fixed in v1.13.0) without changing the user-facing interface. Pinning to a SHA would require manual updates for security patches. The PyPA project explicitly recommends `release/v1` for this reason.
+**Option B — Tool description update:** Update the `ssh_execute_command` and related SSH tool descriptions in `ssh_tools_schema.py` to mention that `credentials add` must be run first for new hosts.
 
-### GitHub Environment Protection
+**Option C — Check-credentials tool or pre-flight:** Add a `check_ssh_credentials(hostname)` tool that returns whether credentials are stored. Prompts workflow before attempting connection.
 
-Create a `pypi` environment in GitHub repository settings (`Settings > Environments > New environment`):
-- Name: `pypi`
-- Optional: add protection rule requiring a manual approval for tag-triggered deploys (adds a human gate before every PyPI release)
+**Recommended: Option A + Option B.** Option A provides runtime guidance; Option B surfaces it during tool discovery. Option C adds a new tool and is unnecessary if A+B work.
 
-### Version Bump Workflow
+### What NOT to Change for Credential Flow
 
-Tag-triggered publishing means the release workflow is:
+| Avoid | Why |
+|-------|-----|
+| Auto-prompt user for password from within MCP tool | MCP tools are server-side; no stdin for interactive prompts. `getpass.getpass()` would block and hang |
+| Store credentials in cleartext in `~/.homelab_mcp/` as a fallback | Insecure; explicitly rejected in v1.3 design. OS keyring or nothing |
+| Change the credential priority order | The current order (explicit → keyring → DB → mcp_admin_key → bare) is correct |
+| Remove the DB fallback path (step 3) | Existing devices may have credentials in the DB from pre-v1.3 registration |
+
+---
+
+## Bug 3: SSH Timeout After Registration — TOFU Known_Hosts Issue
+
+**Confidence: HIGH** — verified by reading asyncssh 2.21.0 source at `connection.py:1329-1348` and `ssh_connection.py`.
+
+### Root Cause: TOFU Logic and `known_hosts` File Check Are Redundant and Conflicting
+
+`ssh_connect()` passes BOTH:
+- `known_hosts=str(kh_path)` — asyncssh loads the file and checks the server key against entries
+- `client_factory=lambda: TOFUSSHClient(kh_path)` — custom client that implements `validate_host_public_key`
+
+asyncssh's behavior (verified at `connection.py:1334-1344`):
+
+```python
+if self._trusted_host_keys is not None:
+    if key in self._revoked_host_keys:
+        raise ValueError('Host key is revoked')
+
+    if key not in self._trusted_host_keys and \
+       not self._owner.validate_host_public_key(host, addr, port, key):
+        raise ValueError('Host key is not trusted')
+```
+
+**What happens for a NEW host (not yet in known_hosts file):**
+
+1. asyncssh loads the known_hosts file → `_trusted_host_keys` is populated but does NOT contain this host
+2. Server sends its host key
+3. asyncssh checks: `key not in self._trusted_host_keys` → True
+4. asyncssh calls `validate_host_public_key()` on our `TOFUSSHClient`
+5. `TOFUSSHClient.validate_host_public_key()` checks `_host_has_stored_key()` → False (not in file yet)
+6. TOFU: stores key in file, returns `True`
+7. Connection succeeds
+
+**What happens AFTER device registration (host IS in known_hosts file):**
+
+If the device was discovered/registered via `ssh_discover_system` (which internally calls `ssh_connect`), the TOFU flow in step 5-6 ran and the key IS in the file. Subsequent connections load the key from the file at step 1, match at step 3, skip `validate_host_public_key`. Works correctly.
+
+**The actual reported bug: SSH timeouts after registration**
+
+The timeout is not caused by the known_hosts logic per se. Reading the `TOFUSSHClient._host_has_stored_key()` method reveals the actual bug:
+
+```python
+for line in content.splitlines():
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    parts = line.split()
+    if len(parts) >= 2 and parts[0] == host_label:
+        return True
+```
+
+`_host_has_stored_key()` ONLY checks whether a key is already stored (to detect MITM). It does NOT verify the key matches — it just checks host label presence. If the host label IS present, `validate_host_public_key` returns `False` (MITM rejection path):
+
+```python
+if self._host_has_stored_key(host, port):
+    logger.warning("Host key mismatch for %s -- possible MITM attack...")
+    return False
+```
+
+So: if the host IS in the known_hosts file but asyncssh loaded a DIFFERENT key format or the key in `_trusted_host_keys` doesn't match, the flow would be:
+1. `key not in _trusted_host_keys` → True (key didn't match)
+2. `validate_host_public_key()` called
+3. `_host_has_stored_key()` → True (host IS in file)
+4. Returns False (MITM rejection)
+5. asyncssh raises `ValueError('Host key is not trusted')`
+
+**But the reported symptom is "timeout", not authentication error.** A timeout suggests the connection attempt hangs. This points to a different failure mode: the `connect_timeout=10` in `ssh_connect()` is the default, but this timeout applies to the SSH handshake layer. If the device doesn't respond on port 22 (wrong IP after registration, network issue) or if the known_hosts file has a corrupted entry that causes asyncssh to stall, the timeout fires.
+
+**More likely root cause of the timeout**: The `register_credential` CLI flow stores credentials in the keyring and registry, but does NOT trigger an SSH connection test. The device IP stored in the DB may differ from the hostname used in the registry. When `resolve_ssh_credentials()` looks up the registry by `hostname`, it finds the entry, gets the password, and calls `ssh_connect()` with the original hostname. If the hostname doesn't resolve to the correct IP (e.g., hostname was registered as `192.168.1.x` during discovery but the credential was added with a different label), the connection attempt hits a non-responding host and times out.
+
+**The TOFU file interaction bug** (confirmed): When a new device is connected for the FIRST time via `ssh_connect()`, the TOFU code writes the key to the file. But `_format_host_label()` formats non-default ports as `[hostname]:port`. The known_hosts file stores `hostname` for port 22. asyncssh loads the file and checks using the same host label. This is correct behavior.
+
+However, there IS a subtle race: if two simultaneous SSH connections to the same new host fire concurrently, both call `validate_host_public_key` before either writes to the file. Both see `_host_has_stored_key() = False`, both accept the key, and both write to the file. The result is two identical entries in known_hosts. asyncssh handles duplicate entries gracefully (the key IS in the set), so this doesn't cause failures. But the module-level `_tofu_lock = asyncio.Lock()` in `ssh_connection.py` is NEVER USED in the `_store_host_key` or `validate_host_public_key` methods — it's defined but not acquired. This is a latent bug but not the cause of the reported timeout.
+
+**Actual fix for the timeout bug**: The timeout is most likely caused by `credentials add` adding a hostname to the registry that doesn't match any device registered via `ssh_discover_system`. The credential registry stores `hostname` as provided on the CLI, but the DB stores the discovered IP. If the user runs:
 
 ```bash
-# 1. Update version in pyproject.toml
-# 2. Commit: "chore: bump version to v1.3.0"
-# 3. Tag: git tag v1.3.0
-# 4. Push tag: git push origin v1.3.0
-# → CI runs tests → publish job triggers → PyPI updated
+homelab-mcp credentials add --hostname mydevice --username admin
 ```
 
-No manual `uv publish` command needed after the first release. The `release` job (GitHub Release creation) already exists in `main.yml` and will continue to run in parallel.
+But `ssh_discover_system` discovered the device as `192.168.1.100`, then `resolve_ssh_credentials("192.168.1.100")` looks up the registry by hostname `192.168.1.100` — not found. Falls through to DB lookup, finds the device, but no password in DB. Falls through to `mcp_admin_key`. If that key doesn't work, returns bare `SSHCredentials`. No credentials → connection attempt → timeout or auth failure.
 
-### What NOT to Do for PyPI Publishing
+**Fix:** Improve `resolve_ssh_credentials()` to also check the registry by IP when the registry entry uses a hostname alias, OR document clearly that `credentials add --hostname` must use exactly the same hostname/IP as used for discovery.
+
+Additionally: add actionable error messages when credentials resolve to "no auth method" (covered by Bug 2 fix).
+
+### asyncssh `known_hosts=None` Option
+
+Setting `known_hosts=None` disables ALL host key checking (verified at `connection.py:3473-3474`: `_trusted_host_keys = None`, and the check block at line 1334 is skipped). This would also skip calling `validate_host_public_key`. So our current `TOFUSSHClient.validate_host_public_key` ONLY runs when `known_hosts` is set to a file path AND the key is NOT in that file.
+
+The TOFU design is architecturally sound. The issue is that first-time TOFU (writing the key) and subsequent connections (reading the key) work correctly. The timeout is a credential mismatch issue, not a TOFU issue.
+
+### What NOT to Change for TOFU
 
 | Avoid | Why |
 |-------|-----|
-| `UV_PUBLISH_TOKEN` secret in GitHub | Token-based auth requires manual rotation; trusted publishing is keyless |
-| Publishing from the existing `release` job | Separation of concerns — GitHub Release creation and PyPI publish are independent; if PyPI is down, GitHub Release should still succeed |
-| `uv publish` in CI without trusted publishing configured | Would fail with auth error; trusted publishing must be configured at pypi.org first |
+| Set `known_hosts=None` to skip file check | Would disable all host key verification; TOFU would fire for every connection even for known hosts |
+| Use `asyncssh.read_known_hosts()` to reload file on each connection | Unnecessary overhead; the current file-path approach causes asyncssh to read the file on each `connect()` call already |
+| Move to `SSHKnownHosts` object passed as `known_hosts` | Would need to reload the object on every connection to pick up newly written entries; file-path approach is simpler |
+| Fix the unused `_tofu_lock` as a v1.4 priority | The race condition requires concurrent connections to the SAME new host; unlikely in homelab use. Low priority |
 
 ---
 
-## Feature 3: argparse Subcommands for Credentials CLI
+## Recommended Stack (No Changes)
 
-**Confidence: HIGH** — stdlib, documented pattern, verified against existing `main()` in `server.py`.
+### Runtime Dependencies — No Changes for v1.4
 
-### Current CLI Structure
+| Package | Locked Version | Purpose | Change? |
+|---------|---------------|---------|---------|
+| asyncssh | 2.21.0 | SSH connections, TOFU, PTY processes | None — behavior is correct, bugs are in how we call it |
+| mcp[cli] | 1.9.4 | MCP protocol server | None |
+| starlette | 0.47.1 | ASGI app, WebSocket routing | None |
+| websockets | 16.0 | WebSocket transport layer | None |
+| keyring | (installed via core dep) | Credential storage | None |
+| All others | as locked | — | None |
 
-The existing `main()` in `server.py` (lines 483–563) uses `argparse.ArgumentParser` with flat flags:
+### Dev Dependencies — No Changes for v1.4
 
-```
-homelab-mcp [--http] [--host HOST] [--port PORT] [--no-auth] [--api-key KEY] [--ssl-cert CERT] [--ssl-key KEY]
-```
+All dev tools (pytest, ruff, mypy, bandit) unchanged. No new test fixtures required beyond mocking asyncssh `create_process` and `SSHClientProcess.stdout`.
 
-The entry point `homelab_mcp.server:main` is wired in `pyproject.toml`.
+---
 
-### Adding Subcommands Without Breaking Existing Behaviour
+## File Changes Required
 
-The challenge: adding `credentials add/list/remove` as subcommands while keeping `homelab-mcp` (no subcommand) as the MCP server start command.
+### `src/homelab_mcp/shell_session.py`
 
-**Pattern: subparsers with default behaviour when no subcommand given**
-
-```python
-def main() -> None:
-    parser = argparse.ArgumentParser(...)
-
-    # -- existing flags (--http, --host, --port, etc.) stay on the root parser --
-    parser.add_argument("--version", action="version",
-                        version=f"%(prog)s {_get_version()}")
-
-    subparsers = parser.add_subparsers(dest="subcommand")
-
-    # credentials subcommand
-    creds_parser = subparsers.add_parser(
-        "credentials",
-        help="Manage stored credentials",
-    )
-    creds_sub = creds_parser.add_subparsers(dest="creds_action")
-
-    # credentials add
-    add_parser = creds_sub.add_parser("add", help="Store a credential")
-    add_parser.add_argument("--hostname", required=True)
-    add_parser.add_argument("--username", required=True)
-    add_parser.add_argument("--password", required=False,
-                            help="If omitted, prompted securely")
-    add_parser.add_argument("--type", choices=["ssh", "proxmox"], default="ssh")
-
-    # credentials list
-    creds_sub.add_parser("list", help="List stored credentials")
-
-    # credentials remove
-    remove_parser = creds_sub.add_parser("remove", help="Remove a credential")
-    remove_parser.add_argument("--hostname", required=True)
-
-    args = parser.parse_args()
-
-    # Dispatch
-    if args.subcommand == "credentials":
-        _run_credentials_cli(args)
-    else:
-        # Default: start MCP server (existing behaviour)
-        _run_mcp_server(args)
-```
-
-**Why this is the correct pattern:**
-
-- `args.subcommand` is `None` when no subcommand is given — existing `homelab-mcp` invocations continue to start the MCP server unchanged.
-- The root-level flags (`--http`, `--port`, etc.) remain on the root parser and apply to the server-start path only.
-- `credentials` dispatches to a synchronous CLI path that does not start the MCP server.
-- No third-party CLI framework (Click, Typer) needed — argparse stdlib handles two levels of subcommands cleanly for this scope.
-
-### Password Input Security
-
-When adding a credential via CLI, never accept the password as a positional or flag argument (it would appear in shell history). Use `getpass.getpass()` for interactive prompts:
+Line 109: Fix `term_size` argument order.
 
 ```python
-import getpass
+# BEFORE (wrong — 24 cols × 80 rows)
+process = await connection.create_process(
+    term_type="xterm-256color",
+    term_size=(24, 80),
+)
 
-if not args.password:
-    args.password = getpass.getpass(f"Password for {args.hostname}: ")
+# AFTER (correct — 80 cols × 24 rows)
+process = await connection.create_process(
+    term_type="xterm-256color",
+    term_size=(80, 24),
+)
 ```
 
-`getpass` is stdlib — no new dependency.
+asyncssh `term_size` is `(width, height)` = `(cols, rows)`. Verified at `channel.py:1176`.
 
-### `--version` Flag
+### `src/homelab_mcp/http_app.py`
+
+WebSocket `read_output` coroutine: add error notification to browser on EOF and exception paths.
 
 ```python
-from importlib.metadata import version, PackageNotFoundError
-
-def _get_version() -> str:
-    try:
-        return version("homelab-mcp")
-    except PackageNotFoundError:
-        return "unknown"
-
-parser.add_argument("--version", action="version", version=f"%(prog)s {_get_version()}")
+async def read_output() -> None:
+    while True:
+        try:
+            if session.process.stdout:
+                data = await session.process.stdout.read(4096)
+                if data:
+                    text = data if isinstance(data, str) else data.decode("utf-8")
+                    await websocket.send_text(text)
+                else:
+                    # EOF — process exited or PTY allocation failed
+                    await websocket.send_text(
+                        "\r\n\x1b[31m[Shell process ended]\x1b[0m\r\n"
+                    )
+                    break
+            else:
+                break
+        except Exception as e:
+            logger.error(f"Error reading output: {e}")
+            try:
+                await websocket.send_text(
+                    f"\r\n\x1b[31m[Read error: {e}]\x1b[0m\r\n"
+                )
+            except Exception:
+                pass
+            break
+        await asyncio.sleep(0.01)
 ```
 
-This follows the existing `importlib.metadata` pattern already used elsewhere in the project (server.py imports `version` from `importlib.metadata`).
+### `src/homelab_mcp/ssh_tools.py`
 
-### What NOT to Do for CLI Extension
+`resolve_ssh_credentials()`: at the final fallthrough (step 5), raise with an actionable message instead of returning bare credentials.
 
-| Avoid | Why |
-|-------|-----|
-| Click or Typer | New dependency for a two-level subcommand tree that argparse handles natively; breaks existing argparse-based invocation |
-| `homelab-mcp-credentials` as a separate entry point | Confuses users; a single entrypoint with subcommands is more discoverable |
-| Accepting password via `--password` flag | Appears in shell history and `ps aux` output; `getpass.getpass()` is the secure alternative |
-| Starting MCP server when credentials subcommand is invoked | Credentials CLI is synchronous and must exit; starting the server would block |
+```python
+# At the end of resolve_ssh_credentials(), replace:
+return SSHCredentials(
+    hostname=resolved_username,
+    username=resolved_username,
+    port=port,
+)
+
+# With:
+raise ValueError(
+    f"No SSH credentials found for {hostname}. "
+    f"Store credentials first: "
+    f"homelab-mcp credentials add --hostname {hostname} --username <USER> --type ssh"
+)
+```
+
+Also update tool descriptions in `ssh_tools_schema.py` to mention that credentials must be registered before use.
+
+### `src/homelab_mcp/ssh_connection.py`
+
+The `_tofu_lock` is module-level but never acquired. The lock should guard `_store_host_key` to prevent duplicate entries on concurrent TOFU. This is a latent defect — not the reported bug, but trivially fixed:
+
+```python
+# In _store_host_key, acquire the lock:
+# Note: validate_host_public_key is a sync method — cannot use async lock
+# Use threading.Lock() instead of asyncio.Lock() for sync context
+```
+
+Actually: `validate_host_public_key` is a SYNCHRONOUS method (returns `bool`, not `Awaitable[bool]`). An `asyncio.Lock()` cannot be acquired from a sync context. The correct fix is to use `threading.Lock()` instead. This is a latent bug; whether to fix it in v1.4 is a scope call.
+
+---
+
+## asyncssh Behavior Summary (Verified)
+
+| Scenario | asyncssh Behavior | Source |
+|----------|-------------------|--------|
+| `known_hosts=str(path)` + `client_factory` with `validate_host_public_key` | File is loaded; callback only fires when key NOT in file | `connection.py:1334-1344` |
+| `known_hosts=None` | Host key verification fully disabled; `validate_host_public_key` NEVER called | `connection.py:3473-3474` |
+| `term_size=(width, height)` | `width` = cols, `height` = rows (not rows, cols) | `channel.py:1176` |
+| `change_terminal_size(width, height)` | Same order: cols then rows | `process.py:1456` |
+| Default `encoding` for `create_session` / `create_process` | `'utf-8'` — stdout.read() returns `str` | `connection.py:8128` |
+| `read(n)` on asyncssh SSHReader | Blocks until n bytes arrive OR EOF. Returns `''` (empty str) on EOF with encoding set | `stream.py:575` |
+| PTY request with `request_pty=True` (default) and `term_type` set | PTY is requested (truthy `term_type` → `request_pty=True`) | `connection.py:4359-4360` |
 
 ---
 
 ## Installation
 
+No new packages. All bugs are code-level fixes.
+
 ```bash
-# Move keyring from optional to core deps in pyproject.toml, then:
-uv sync
+# Verify asyncssh version matches what was analyzed
+uv run python -c "import asyncssh; print(asyncssh.__version__)"
+# Expected: 2.21.0
 
-# Verify keyring is available
-uv run python -c "import keyring; print(keyring.get_keyring())"
+# Run existing tests after fixes
+uv run pytest tests/ -m "not integration" -v
 
-# Test credentials CLI (after implementation)
-uv run homelab-mcp credentials add --hostname 192.168.1.10 --username admin --type ssh
-uv run homelab-mcp credentials list
-uv run homelab-mcp credentials remove --hostname 192.168.1.10
-
-# Test --version
-uv run homelab-mcp --version
+# Verify term_size is correct after fix
+uv run python -c "
+import asyncssh
+# term_size=(80, 24) means width=80 (cols), height=24 (rows) — correct
+print('term_size order: (width/cols, height/rows)')
+"
 ```
 
 ---
@@ -399,37 +392,25 @@ uv run homelab-mcp --version
 
 | Category | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| Credential storage | OS keyring (keyring lib) | SQLite device DB | Device DB is for topology data, not secrets; mixes concerns |
-| Credential storage | OS keyring (keyring lib) | `keyrings.alt` PlaintextKeyring | Plaintext on disk is false security; no warning possible after the fact |
-| Credential storage | OS keyring (keyring lib) | `cryptography` + custom file | Re-implements what keyring does; key management complexity |
-| Headless fallback | `NoKeyringError` → env-var-only | `PYTHON_KEYRING_BACKEND=keyrings.alt...` | Forces plaintext fallback silently; homelab-mcp should be explicit |
-| PyPI auth | Trusted Publishing (OIDC) | `UV_PUBLISH_TOKEN` GitHub secret | Token requires manual rotation; OIDC is keyless and scoped to the workflow run |
-| CLI framework | argparse (stdlib) | Click / Typer | No new dependency justified for 3 subcommands; argparse already in use |
-
----
-
-## Version Compatibility
-
-| Package | Version Required | Notes |
-|---------|-----------------|-------|
-| keyring | >=25.6.0 | v25.6.0 removed spurious no-backend warning; `NoKeyringError` present since v23.x |
-| pypa/gh-action-pypi-publish | release/v1 (v1.13.0+) | v1.13.0 fixed GHSA-vxmw-7h4f-hqxh; `release/v1` branch auto-tracks security fixes |
-| Python | 3.12+ | No change — `getpass`, `argparse`, `importlib.metadata` all stdlib |
+| Interactive shell fix | Fix `term_size` order + add error notification | Replace with paramiko-based PTY | asyncssh is already in use; paramiko would be a new dep; not the cause of silence |
+| Interactive shell fix | Fix error notification on EOF | Add heartbeat/ping from server | EOF notification is the correct signal; heartbeats complicate the protocol |
+| SSH credential guidance | Raise `ValueError` with actionable message at no-auth fallthrough | Add `check_credentials` tool | New tool adds complexity; actionable error in existing tool is simpler for the agent |
+| TOFU timeout fix | Document hostname/IP matching requirement + add error message | Auto-scan registry by IP range | Auto-scan is complex and out of scope for v1.4 |
+| `_tofu_lock` fix | Replace `asyncio.Lock` with `threading.Lock` | Leave as-is | Concurrent TOFU to same new host is unlikely in homelab; low risk |
 
 ---
 
 ## Sources
 
-- [keyring 25.7.0 documentation](https://keyring.readthedocs.io/en/latest/) — API methods, PYTHON_KEYRING_BACKEND, backend list (HIGH confidence)
-- [keyring changelog / history](https://keyring.readthedocs.io/en/latest/history.html) — v25.6.0 warning removal, v25.4.0 AnonymousCredential, v25.7.0 KWallet 6 (HIGH confidence)
-- [keyring PyPI page](https://pypi.org/project/keyring/) — latest version 25.7.0 confirmed (HIGH confidence)
-- [PyPI Trusted Publishers documentation](https://docs.pypi.org/trusted-publishers/using-a-publisher/) — one-time setup, required fields, OIDC flow (HIGH confidence)
-- [pypa/gh-action-pypi-publish GitHub](https://github.com/pypa/gh-action-pypi-publish) — workflow YAML, `release/v1` recommendation, permissions requirement (HIGH confidence)
-- [Python Packaging User Guide — publishing with CI/CD](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/) — complete reference workflow (HIGH confidence)
-- [Python stdlib argparse docs](https://docs.python.org/3/library/argparse.html) — `add_subparsers`, `set_defaults`, `dest` parameter (HIGH confidence)
-- [keyring WSL2/headless issues #566, #569](https://github.com/jaraco/keyring/issues/566) — confirms NoKeyringError on headless Linux (MEDIUM confidence, issue tracker)
-- `pyproject.toml` direct inspection — confirmed keyring already in optional security group, version constraint `>=25.0.0` (HIGH confidence)
-- `server.py` direct inspection — confirmed existing argparse structure and `main()` entry point shape (HIGH confidence)
+- asyncssh 2.21.0 source, `.venv/lib/python3.12/site-packages/asyncssh/connection.py` lines 1334-1344, 3473-3491, 4355-4388, 8128 — host key validation flow, `known_hosts` behavior, `create_session` defaults (HIGH confidence — direct source read)
+- asyncssh 2.21.0 source, `.venv/lib/python3.12/site-packages/asyncssh/channel.py` lines 1170-1184 — `term_size` argument order (HIGH confidence — direct source read)
+- asyncssh 2.21.0 source, `.venv/lib/python3.12/site-packages/asyncssh/process.py` lines 1456-1480 — `change_terminal_size` argument order (HIGH confidence — direct source read)
+- asyncssh 2.21.0 source, `.venv/lib/python3.12/site-packages/asyncssh/client.py` lines 124-162 — `validate_host_public_key` contract and default (HIGH confidence — direct source read)
+- `src/homelab_mcp/ssh_connection.py` — TOFUSSHClient implementation (HIGH confidence — direct source read)
+- `src/homelab_mcp/ssh_tools.py` — `resolve_ssh_credentials` priority chain (HIGH confidence — direct source read)
+- `src/homelab_mcp/shell_session.py` — `create_process` call with `term_size=(24, 80)` (HIGH confidence — direct source read)
+- `src/homelab_mcp/http_app.py` — WebSocket `read_output` handler (HIGH confidence — direct source read)
+- `uv.lock` — asyncssh 2.21.0, mcp 1.9.4, starlette 0.47.1, websockets 16.0 confirmed (HIGH confidence)
 
 ---
 
@@ -437,14 +418,14 @@ uv run homelab-mcp --version
 
 | Area | Level | Reason |
 |------|-------|--------|
-| keyring API (set/get/delete/NoKeyringError) | HIGH | Official docs + pyproject.toml confirms lib already present |
-| keyring fallback on headless Linux | HIGH | Official docs + multiple confirmed issue reports; NullKeyring path documented |
-| Trusted publishing workflow YAML | HIGH | Official PyPI docs + Python Packaging User Guide + pypa action README |
-| PyPI one-time setup requirement | HIGH | Official PyPI docs — no automation possible |
-| argparse subparsers pattern | HIGH | Python stdlib docs; matches existing `main()` structure |
-| `--version` implementation | HIGH | Existing `importlib.metadata` usage in codebase |
+| `term_size` order bug | HIGH | Directly verified in asyncssh `channel.py` source |
+| WebSocket silent failure on EOF | HIGH | Direct code analysis of `http_app.py` read loop |
+| `validate_host_public_key` / `known_hosts` interaction | HIGH | Directly verified in asyncssh `connection.py` source |
+| TOFU timeout root cause | MEDIUM | Inferred from credential flow analysis; specific network conditions not reproduced |
+| `resolve_ssh_credentials` fallthrough behavior | HIGH | Direct code read of `ssh_tools.py` |
+| No new deps needed | HIGH | All three bugs are call-site or error-handling issues |
 
 ---
 
-*Stack research for: Homelab MCP Server v1.3 Credentials & Release Automation*
-*Researched: 2026-03-14*
+*Stack research for: Homelab MCP Server v1.4 Real-World Reliability*
+*Researched: 2026-03-13*

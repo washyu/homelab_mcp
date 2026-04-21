@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, three workflow prompt templates, and a secure credential store with OS keyring integration. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
+A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, four workflow prompt templates, and a secure credential store with OS keyring integration. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
 
 ## Core Value
 
@@ -58,10 +58,39 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ Credential auto-inject into SSH tools and Proxmox client — v1.3
 - ✓ Automated PyPI publish via GitHub Actions OIDC trusted publishing on `git tag v*` — v1.3
 - ✓ `decommission_device_workflow` prompt resolves hostname→`device_id` before calling decommission — v1.3
+- ✓ TOFU known_hosts writes correct 3-field format (no comment leak); `asyncio.Lock` replaced with `threading.Lock` — v1.4
+- ✓ PTY interactive shell streams in real time with correct 80×24 dimensions and explicit EOF notification — v1.4
+- ✓ `connect_to_device` onboarding prompt — full 6-step device setup sequence — v1.4
+- ✓ Keyring desync detection — warning logged when registry entry exists but keyring returns None — v1.4
+- ✓ `setup_mcp_admin` and `update_mcp_admin_groups` resolve credentials from keyring (no explicit password required) — v1.4
+- ✓ All sudo calls use `_sudo_run` helper with `sudo -S` stdin piping; distinct error for wrong password vs not-in-sudoers — v1.4
+- ✓ All tool schemas synced to function signatures — phantom `port` removed, SSH timeouts fixed, 7 hidden Proxmox params exposed — v1.4
+- ✓ `host=` → `hostname=` fixed in all prompt tool calls; phantom `list_installed_services` replaced with `get_service_status` — v1.4
+- ✓ Regression guard tests for all prompt parameter names and phantom tool references — v1.4
+- ✓ Shell command injection in `setup_mcp_admin` eliminated — public key delivered via SFTP tmpfile, never interpolated into shell strings — v1.4.1
+- ✓ TOFU race condition closed — `threading.Lock` covers entire check+store TOCTOU window in `validate_host_public_key` — v1.4.1
+- ✓ WebSocket PTY reader closes the socket on EOF and error paths — `contextlib.suppress(Exception)` around `websocket.close()` — v1.5
+- ✓ Timeout error message reports computed `effective_timeout` (e.g., `35.0 seconds`), not the raw `timeout_seconds` decorator default — v1.5
+- ✓ `_sudo_run` helper with consistent `check=` forwarding in both password and no-password sudo branches — v1.5
+- ✓ `test_ssh_tools.py` password-propagation assertion fixed — broken disjunctive ternary replaced with explicit check, AST meta-guard added to catch reintroduction — v1.5
+- ✓ `credential_type` parameter constrained to `enum: ["ssh", "proxmox"]` in `list_keyring_credentials` schema — v1.5
+- ✓ Revert-proof regression tests guard all 5 v1.5 fixes; integration checker verified 0 broken / 0 weak wirings — v1.5
 
 ### Active
 
-<!-- Populated during next milestone requirements definition -->
+_(None — v1.5 shipped. Next milestone defines its requirements via `/gsd-new-milestone`.)_
+
+<!-- Deferred to future milestone -->
+- [ ] Keyring auto-injection disambiguates multiple usernames per hostname — no silent wrong-user logins
+- [ ] SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
+- [ ] `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
+- [ ] `resolve_ssh_credentials()` wrapped in error handler — raises return JSON error payloads, not raw exceptions
+- [ ] Proxmox schema enforces `iso`/`cdrom` exclusivity via `oneOf`
+- [ ] HTTP mode flag accepts common truthy variants (`1`, `yes`, `on`), not just literal `"true"`
+<!-- QUAL-02 closed by v1.5 Phase 32-01 — WS-01 regression uses production `handle_shell_websocket` -->
+<!-- Phase-31 VERIFICATION.md retroactive pass — tech debt from v1.5 close -->
+<!-- 31/32 Nyquist VALIDATION.md finalization — tech debt from v1.5 close -->
+<!-- SUMMARY frontmatter normalization (`requirements-completed` vs `requirements:`) — tech debt from v1.5 close -->
 
 ### Out of Scope
 
@@ -79,13 +108,17 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ## Context
 
-- Shipped v1.3 with ~15,229 LOC Python (src/) | 41 files changed from v1.2 baseline
+- Shipped v1.5 Critical Bug Fixes — 5 CodeRabbit PR #39 findings closed (WS-01, SSH-01, SSH-02, ERR-01, SCH-01) with 5 revert-proof regression tests
+- v1.5 audit verdict: `tech_debt` — functional coverage sound (6/6 requirements satisfied, 5/5 integrations WIRED); 4 process-level bookkeeping items deferred (missing Phase-31 VERIFICATION.md, both VALIDATION.md files incomplete, SUMMARY frontmatter shape inconsistency)
+- v1.5 stats: 43 commits, 82 files changed, +11,987 / -87 lines; active work Apr 19-20 on top of scope defined Apr 2
+- v1.4 baseline: ~15,554 LOC Python (src/) + ~17,569 LOC tests
 - Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite
 - 56 tools: 50 original + 6 `*_preview` variants, organized into 7 categories
-- Available on PyPI as `homelab-mcp` 1.3.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
+- Available on PyPI as `homelab-mcp` 1.4.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
 - MCP protocol surface complete: Tools + Resources + Prompts + Notifications
-- New modules added in v1.3: `credential_store.py`
-- Key v1.3 patterns: Lazy keyring import (function-body, not module-level), `set_defaults` argparse dispatch, module-level imports for monkeypatch compatibility, JSON hostname registry alongside OS keyring
+- 4 workflow prompts: `connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`
+- All prompts use correct parameter names (`hostname=`) with regression tests guarding against regressions
+- Key patterns now in production: `_sudo_run` helper for all sudo calls with consistent `check=` forwarding, `asyncio.wait_for` for non-blocking PTY reads, `threading.Lock` for TOFU host key validation, `contextlib.suppress(Exception)` for idempotent websocket cleanup, AST meta-tests for lint-style regression guards
 
 ## Constraints
 
@@ -124,6 +157,26 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | `set_defaults(func=_run_server)` argparse dispatch | Prevents bare `homelab-mcp` regression when subparsers added | ✓ Good — clean dispatch, bare invocation regression-tested |
 | OIDC trusted publishing for PyPI | No stored secrets in GitHub; verified at publish time | ✓ Good — requires one-time manual trusted publisher registration at pypi.org before first tag push |
 | `decommission_device_workflow` uses get_network_sitemap for device_id | Fixes PRMT-02: tool schema requires device_id, not hostname | ✓ Good — 5-step workflow; AI no longer hits schema validation errors |
+| `_sudo_run` helper with `sudo -S` stdin piping | Shell injection risk and bootstrap timeout for password-based sudo | ✓ Good — clean abstraction, covers both setup_mcp_admin and update_mcp_admin_groups; distinct error messages |
+| `threading.Lock` for TOFU `validate_host_public_key` | `asyncio.Lock` can't be acquired from sync callback context — was completely ineffective | ✓ Good — correct primitive for sync callback; existing asyncio call sites unaffected |
+| `asyncio.wait_for(..., timeout=0.05)` for PTY reads | Blocking `stdout.read(4096)` would not return until 4096 bytes or EOF — browser saw nothing | ✓ Good — real-time streaming with tunable timeout |
+| Gap-closure phases (26-29) added mid-milestone via audit | Audit revealed schema/prompt bugs not in original scope; extending milestone cleaner than deferring | ✓ Good — 4 extra phases closed all audit gaps before v1.5 planning |
+| `contextlib.suppress(Exception)` around `websocket.close()` (v1.5 WS-01) | Idempotent cleanup without try/except boilerplate; matches module's existing contextlib usage | ✓ Good — eliminates zombie PTY sessions cleanly |
+| Quoted return annotation `'asyncssh.SSHCompletedProcess'` on `_sudo_run` (v1.5 SSH-01) | Class is not subscriptable at runtime; mypy stubs have no generic support; string quoting defers evaluation | ✓ Good — type-safe under both mypy and runtime |
+| AST meta-tests for lint-style regression guards (v1.5 SSH-02) | Tautological-assertion class of bugs can't be caught by a single positive regression test — parse the test file itself and walk the AST | ✓ Good — 32-02 detector extended in 32-05 to cover `Compare(Constant in X)` pre-fix form; guards future reintroduction |
+| Report computed/derived values in error messages, not raw decorator parameters (v1.5 ERR-01) | Users see the actual number they were subject to (`effective_timeout`), not the unrelated input constant | ✓ Good — single-variable substitution, no helper refactor needed |
+| JSON Schema `enum` for fixed-choice MCP tool parameters (v1.5 SCH-01) | MCP framework validates JSON Schema before handler runs; cheaper than handler-side validation and self-documenting | ✓ Good — `credential_type` rejects arbitrary strings at protocol boundary |
+| Closed v1.5 with `tech_debt` verdict (not blocking) after inline ROADMAP reconcile | Revert-proof Phase-32 regressions make missing Phase-31 VERIFICATION.md a paperwork gap, not a risk gap | ⚠️ Revisit — if a future milestone repeats this pattern, consider building a retroactive verifier skill |
+
+## Current State
+
+**Shipped:** v1.5 Critical Bug Fixes (2026-04-20) — all 5 CodeRabbit PR #39 findings closed with revert-proof regression tests. Audit verdict: `tech_debt` (functional coverage sound; 4 process-level bookkeeping items deferred).
+
+**Latest PyPI:** `homelab-mcp` 1.4.0 (v1.5 did not bump the PyPI version — v1.5 scope was bug fixes inside the 1.4.x line; next release tag will be cut when a future milestone ships).
+
+## Next Milestone Goals
+
+_(To be defined — run `/gsd-new-milestone` to start. Deferred candidates in the Active section above are the natural starting backlog.)_
 
 ---
-*Last updated: 2026-03-15 after v1.3 milestone*
+*Last updated: 2026-04-20 after v1.5 milestone completion*
