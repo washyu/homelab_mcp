@@ -631,6 +631,10 @@ Credential management (OS keyring):
   uvx homelab-mcp credentials list --type proxmox                          # list stored Proxmox credentials
   uvx homelab-mcp credentials remove <hostname>                            # remove SSH credential
   uvx homelab-mcp credentials remove <hostname> --type proxmox             # remove Proxmox credential
+
+  Note: `add` is upsert — re-running it for the same (hostname, username, type)
+  replaces the existing credential (both the keyring secret and the registry
+  entry's auth_type). There is no separate `update` subcommand.
 """,
     )
     parser.add_argument(
@@ -690,7 +694,15 @@ Credential management (OS keyring):
     cred_sub = cred_p.add_subparsers(dest="cred_action")
 
     # credentials add <hostname> <username> [--type ssh|proxmox] [--key-path PATH]
-    add_p = cred_sub.add_parser("add", help="Store a credential")
+    add_p = cred_sub.add_parser(
+        "add",
+        help="Store a credential (upsert — re-run to replace an existing entry)",
+        description=(
+            "Store a credential in the OS keyring. This is upsert behavior: re-running "
+            "`add` for the same (hostname, username, type) replaces the existing secret "
+            "and its auth_type. There is no separate `update` subcommand — `add` is it."
+        ),
+    )
     add_p.add_argument("hostname")
     add_p.add_argument("username")
     add_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")

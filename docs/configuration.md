@@ -187,9 +187,11 @@ homelab-mcp credentials <subcommand> [options]
 
 | Subcommand | Arguments | Description |
 |------------|-----------|-------------|
-| `add` | `<hostname> <username> [--type ssh\|proxmox]` | Prompt for password/token and store in OS keyring |
+| `add` | `<hostname> <username> [--type ssh\|proxmox] [--key-path PATH]` | Prompt for password/token (or store key path) in OS keyring. **Upsert** — re-running `add` for the same `(hostname, username, type)` replaces the existing credential. |
 | `list` | `[--type ssh\|proxmox]` | List hostnames with stored credentials |
 | `remove` | `<hostname> [--type ssh\|proxmox]` | Delete stored credential for a host |
+
+> **No `update` subcommand:** Use `add` to update. It atomically replaces both the keyring secret and the registry entry's `auth_type` field. This is a deliberate CRUD design choice ([D-20](../.planning/phases/33-keyring-single-source-of-truth/33-CONTEXT.md)).
 
 **--type flag:**
 
@@ -203,6 +205,13 @@ homelab-mcp credentials <subcommand> [options]
 ```bash
 # Add SSH credential (prompts for password)
 homelab-mcp credentials add 192.168.1.10 admin
+
+# Add SSH credential with key-based auth (stores the key path, not the key)
+homelab-mcp credentials add 192.168.1.10 admin --key-path ~/.ssh/id_ed25519
+
+# Update an existing credential — same `add` command; it replaces the previous entry
+homelab-mcp credentials add 192.168.1.10 admin           # rotate password
+homelab-mcp credentials add 192.168.1.10 admin --key-path ~/.ssh/new_key  # switch to key auth
 
 # Add Proxmox credential (prompts for API token or password)
 homelab-mcp credentials add 192.168.1.200 root@pam --type proxmox

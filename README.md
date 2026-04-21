@@ -140,8 +140,14 @@ Store SSH and Proxmox credentials once so the server auto-injects them on every 
 # Store an SSH credential
 homelab-mcp credentials add 192.168.1.10 admin
 
+# Store an SSH key-based credential (stores the key file path in the keyring, not the key)
+homelab-mcp credentials add 192.168.1.10 admin --key-path ~/.ssh/id_ed25519
+
 # Store a Proxmox API credential
 homelab-mcp credentials add 192.168.1.200 root@pam --type proxmox
+
+# Update an existing credential — `add` is upsert; re-running replaces the stored entry
+homelab-mcp credentials add 192.168.1.10 admin
 
 # List stored credentials
 homelab-mcp credentials list
@@ -150,6 +156,8 @@ homelab-mcp credentials list --type proxmox
 # Remove a credential
 homelab-mcp credentials remove 192.168.1.10
 ```
+
+The CLI provides full CRUD over credentials: `add` (create/update — upsert), `list` (read), `remove` (delete). There is no separate `update` subcommand — re-running `add` replaces both the keyring secret and the registry entry's auth type.
 
 Credentials are stored in the OS keyring (libsecret on Linux, Keychain on macOS). When the OS keyring is unavailable (headless servers), credentials fall back to environment variables.
 
