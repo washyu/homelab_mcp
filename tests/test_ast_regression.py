@@ -9,17 +9,18 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 # Strings whose presence in source AST (as Name, Attribute, or string literals) indicates regression
 FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "ssh_credentials",            # D-15: DB table name
     "add_credential",             # D-15: removed DB method
     "get_credential_by_hostname", # D-15: removed DB method
-    "update_credential",          # D-15: removed DB method
+    "get_credential_by_id",       # D-15/D-02: removed DB method (NOTE: do NOT add "get_credential"/"delete_credential"/"list_credentials" — those are legit credential_store.py method names)
+    "update_credential",          # D-15: removed DB method (distinct from update_server_credentials MCP tool name below)
     "update_last_verified",       # D-15: removed DB method
     "setup_remote_mcp_admin",     # D-25: deleted function
     "setup_mcp_admin",            # D-25: removed MCP tool name
     "update_server_credentials",  # D-25: removed MCP tool name
+    "remove_server",              # D-25: removed MCP tool name (D-21)
 ]
 
 # Narrow allowlist: certain files may legitimately contain specific forbidden strings
@@ -92,8 +93,15 @@ def test_no_forbidden_strings_in_source() -> None:
     )
 
 
+def test_no_removed_db_methods_in_source() -> None:
+    """D-15: AST scan proves removed DB methods are not called anywhere in source."""
+    # Wraps test_no_forbidden_strings_in_source with explicit DB-method focus — same assertion shape.
+    # This is the `-k "no_removed_db_methods"` test referenced in VALIDATION.md.
+    test_no_forbidden_strings_in_source()
+
+
 def test_register_server_handler_no_verify_connection_param() -> None:
-    """D-25: register_server in ssh_tools.py must not have verify_connection parameter."""
+    """D-25: register_server in ssh_tools.py must not have verify_connection/key_path/password params."""
     import inspect
 
     from homelab_mcp.ssh_tools import register_server

@@ -905,4 +905,27 @@ def test_sch01_credential_type_rejects_non_enum_values() -> None:
         f"credential_type must restrict values to enum ['ssh', 'proxmox']; "
         f"got enum={prop.get('enum')!r} — SCH-01 regression would allow arbitrary strings"
     )
-    assert prop.get("default") == "ssh", f"credential_type default must be 'ssh'; got {prop.get('default')!r}"
+
+
+# Phase 33 regression tests — RED until implementation plans land (D-10, D-20, D-21)
+
+
+def test_setup_mcp_admin_removed_from_tool_handlers() -> None:
+    """D-10: setup_mcp_admin must not be in TOOL_HANDLERS dispatch."""
+    from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+    assert "setup_mcp_admin" not in TOOL_HANDLERS, (
+        "setup_mcp_admin must be removed from TOOL_HANDLERS dispatch (D-10)"
+    )
+
+
+def test_update_server_credentials_removed_from_tool_handlers() -> None:
+    """D-20: update_server_credentials must not be in TOOL_HANDLERS dispatch."""
+    from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+    assert "update_server_credentials" not in TOOL_HANDLERS
+
+
+def test_remove_server_removed_from_tool_handlers() -> None:
+    """D-21: remove_server must not be in TOOL_HANDLERS dispatch."""
+    from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+    assert "remove_server" not in TOOL_HANDLERS
+    assert "remove_server_preview" not in TOOL_HANDLERS

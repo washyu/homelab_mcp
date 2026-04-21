@@ -106,9 +106,15 @@ def test_connect_to_device_prompt() -> None:
     assert isinstance(result, GetPromptResult)
     assert len(result.messages) >= 1
     combined_text = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text")).lower()
-    assert "setup_mcp_admin" in combined_text
-    assert "credentials add" in combined_text
-    assert "register_server" in combined_text
+    assert "setup_mcp_admin" not in combined_text, (
+        "D-14: connect_to_device prompt must not reference setup_mcp_admin after Phase 33"
+    )
+    assert "credentials add" in combined_text, (
+        "D-13 step 2: prompt must instruct user to run `homelab-mcp credentials add`"
+    )
+    assert "register_server" in combined_text, (
+        "D-13 step 3: prompt must instruct AI to call register_server"
+    )
     assert "ssh_discover" in combined_text
     assert "discover_and_map" in combined_text
     assert "verify_mcp_admin" in combined_text
@@ -138,7 +144,7 @@ def test_connect_to_device_prompt_parameter_names() -> None:
     # All tools in this prompt use hostname=, never host=
     assert "host=" not in combined, f"Prompt must use hostname= not host= for tool parameters. Found: {combined}"
     # Each tool step must use hostname= with the interpolated value
-    for tool in ("setup_mcp_admin", "ssh_discover", "discover_and_map", "verify_mcp_admin"):
+    for tool in ("register_server", "ssh_discover", "discover_and_map", "verify_mcp_admin"):
         assert f"{tool}" in combined, f"Missing tool reference: {tool}"
     assert 'hostname="myhost"' in combined, "hostname= must appear with interpolated value"
 
@@ -170,4 +176,39 @@ def test_deploy_service_workflow_no_phantom_tool() -> None:
     )
     assert "get_service_status" in combined, (
         "deploy_service_workflow step 2 must use registered get_service_status tool"
+    )
+
+
+def test_connect_to_device_no_verify_bypass() -> None:
+    """D-14: connect_to_device prompt must not name verify_connection=False bypass."""
+    from homelab_mcp.prompt_registry import _build_connect_to_device_result
+
+    result = _build_connect_to_device_result({"hostname": "test.local"})
+    combined = " ".join(
+        msg.content.text if hasattr(msg.content, "text") else str(msg.content)
+        for msg in result.messages
+    )
+    assert "verify_connection=False" not in combined, (
+        "D-14: prompt must not reference the removed verify_connection=False bypass"
+    )
+    assert "verify_connection" not in combined, (
+        "D-07: prompt must not reference the removed verify_connection parameter"
+    )
+
+
+def test_connect_to_device_mentions_credentials_cli() -> None:
+    """D-22: prompt must tell the user to run `homelab-mcp credentials add` in their terminal."""
+    from homelab_mcp.prompt_registry import _build_connect_to_device_result
+
+    result = _build_connect_to_device_result({"hostname": "test.local"})
+    combined = " ".join(
+        msg.content.text if hasattr(msg.content, "text") else str(msg.content)
+        for msg in result.messages
+    )
+    assert "homelab-mcp credentials add" in combined, (
+        "D-22: prompt step 2 must name the CLI command `homelab-mcp credentials add`"
+    )
+    # D-18: no mcp_admin specificity — user can pick any username
+    assert "mcp_admin" not in combined or "<username>" in combined, (
+        "D-18/D-22: prompt must not mandate mcp_admin; should use <username> placeholder"
     )

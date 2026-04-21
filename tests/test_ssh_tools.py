@@ -9,7 +9,6 @@ import pytest
 from src.homelab_mcp.ssh_tools import (
     _sudo_run,
     ensure_mcp_ssh_key,
-    setup_remote_mcp_admin,
     ssh_discover_system,
     verify_mcp_admin_access,
 )
@@ -291,115 +290,6 @@ async def test_ensure_mcp_ssh_key_uses_existing(mock_get_path):
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_remote_mcp_admin_success(mock_connect, mock_path, mock_ensure_key):
-    """Test successful remote mcp_admin setup."""
-    # Mock SSH key
-    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
-
-    # Mock public key path
-    mock_pub_key = MagicMock()
-    mock_pub_key.read_text.return_value = "ssh-rsa AAAAB3... mcp_admin@host"
-    mock_path.return_value = mock_pub_key
-
-    # Mock SSH connection and commands
-    mock_conn = AsyncMock()
-
-    # Mock command results - matches the new SFTP-based sequence
-    user_check = MagicMock()
-    user_check.exit_status = 1  # User doesn't exist
-
-    cleanup_home = MagicMock()  # sudo rm -rf /home/mcp_admin
-    cleanup_home.exit_status = 0
-
-    create_user = MagicMock()
-    create_user.exit_status = 0
-
-    chown_home = MagicMock()  # sudo chown -R mcp_admin:mcp_admin /home/mcp_admin
-    chown_home.exit_status = 0
-
-    sudo_group = MagicMock()
-    sudo_group.exit_status = 0
-
-    mktemp_result = MagicMock()  # mktemp /tmp/mcp_key_XXXXXX.pub
-    mktemp_result.exit_status = 0
-    mktemp_result.stdout = "/tmp/mcp_key_aBcXyZ.pub\n"
-
-    key_check = MagicMock()
-    key_check.exit_status = 1  # Key doesn't exist
-
-    mkdir_home = MagicMock()  # sudo mkdir -p /home/mcp_admin
-    mkdir_home.exit_status = 0
-
-    chown_home2 = MagicMock()  # sudo chown mcp_admin:mcp_admin /home/mcp_admin
-    chown_home2.exit_status = 0
-
-    mkdir_cmd = MagicMock()  # create .ssh directory
-    mkdir_cmd.exit_status = 0
-
-    add_key = MagicMock()
-    add_key.exit_status = 0
-
-    cleanup_tmp = MagicMock()  # rm -f /tmp/mcp_key_...
-    cleanup_tmp.exit_status = 0
-
-    sudoers_setup = MagicMock()
-    sudoers_setup.exit_status = 0
-
-    test_conn = MagicMock()
-    test_conn.exit_status = 0
-
-    mock_conn.run.side_effect = [
-        user_check,
-        cleanup_home,
-        create_user,
-        chown_home,
-        sudo_group,
-        mktemp_result,
-        key_check,
-        mkdir_home,
-        chown_home2,
-        mkdir_cmd,
-        add_key,
-        cleanup_tmp,
-        sudoers_setup,
-        test_conn,
-    ]
-
-    # Mock SFTP context manager
-    mock_sftp = AsyncMock()
-    mock_sftp.put = AsyncMock()
-    mock_sftp_ctx = AsyncMock()
-    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
-    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
-    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
-
-    # ssh_connect is async, returns a connection usable as async context manager
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    # Execute
-    result = await setup_remote_mcp_admin("test-host", "admin", "password")
-
-    # Parse result
-    result_data = json.loads(result)
-
-    # Verify success
-    assert result_data["status"] == "success"
-    assert result_data["hostname"] == "test-host"
-    assert "mcp_admin_setup" in result_data
-    assert result_data["mcp_admin_setup"]["user_creation"] == "Success: mcp_admin user created"
-    assert result_data["mcp_admin_setup"]["sudo_access"] == "Success: Added to sudo group"
-    assert result_data["mcp_admin_setup"]["ssh_key"] == "Success: SSH key installed"
-    assert result_data["mcp_admin_setup"]["passwordless_sudo"] == "Success: Passwordless sudo enabled"
-    assert result_data["mcp_admin_setup"]["test_access"] == "Success: mcp_admin access verified"
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
-@patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_ensure_key):
     """Test remote mcp_admin setup when user already exists."""
     # Mock SSH key
@@ -477,6 +367,7 @@ async def test_setup_remote_mcp_admin_user_exists(mock_connect, mock_path, mock_
     mock_connect.return_value = mock_ctx
 
     # Execute
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
 
     # Parse result
@@ -704,6 +595,7 @@ async def test_setup_remote_mcp_admin_force_update_key(mock_connect, mock_path, 
     mock_connect.return_value = mock_ctx
 
     # Execute with force_update_key=True (default)
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     result = await setup_remote_mcp_admin("test-host", "admin", "password")
 
     # Parse result
@@ -780,6 +672,7 @@ async def test_setup_remote_mcp_admin_no_force_update(mock_connect, mock_path, m
     mock_connect.return_value = mock_ctx
 
     # Execute with force_update_key=False
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     result = await setup_remote_mcp_admin("test-host", "admin", "password", force_update_key=False)
 
     # Parse result
@@ -841,85 +734,6 @@ def test_no_password_in_log_after_ssh_keyring_inject(mocker, caplog):
 @patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
 @patch("src.homelab_mcp.ssh_tools.Path")
 @patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_setup_mcp_admin_key_injection_safe(mock_connect, mock_path, mock_ensure_key):
-    """Public key with shell metacharacters must not appear in any conn.run command string."""
-    # Key with shell metacharacters that would execute if interpolated into a shell string
-    public_key = "ssh-ed25519 AAAA$(rm -rf /)test mcp_admin@host"
-
-    mock_ensure_key.return_value = "/home/user/.ssh/mcp_admin_rsa"
-
-    mock_pub_key = MagicMock()
-    mock_pub_key.read_text.return_value = public_key
-    mock_path.return_value = mock_pub_key
-
-    mock_conn = AsyncMock()
-
-    # Sequence: id mcp_admin, mktemp, then remaining setup calls all succeed
-    id_result = MagicMock(exit_status=0, stdout="", stderr="")  # user exists
-    mktemp_result = MagicMock(exit_status=0, stdout="/tmp/mcp_key_aB3x9K.pub\n", stderr="")
-    success_result = MagicMock(exit_status=0, stdout="", stderr="")
-
-    # Make run() return mktemp on second call, then success for remaining calls
-    call_count = 0
-
-    async def run_side_effect(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return id_result
-        elif call_count == 2:
-            return mktemp_result
-        return success_result
-
-    mock_conn.run = run_side_effect
-
-    # Mock SFTP context manager
-    mock_sftp = AsyncMock()
-    mock_sftp.put = AsyncMock()
-    mock_sftp_ctx = AsyncMock()
-    mock_sftp_ctx.__aenter__ = AsyncMock(return_value=mock_sftp)
-    mock_sftp_ctx.__aexit__ = AsyncMock(return_value=None)
-    mock_conn.start_sftp_client = MagicMock(return_value=mock_sftp_ctx)
-
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    # Collect all conn.run calls
-    run_calls: list[str] = []
-    original_run = run_side_effect
-
-    async def tracking_run(*args, **kwargs):
-        cmd = args[0] if args else kwargs.get("command", "")
-        run_calls.append(str(cmd))
-        return await original_run(*args, **kwargs)
-
-    mock_conn.run = tracking_run
-
-    try:
-        result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
-        result_data = json.loads(result)
-        assert result_data["status"] == "success"
-    except Exception:
-        pass  # Errors OK — we care about the injection-safety assertions
-
-    # Assert NONE of the conn.run commands contain the literal public key
-    for cmd in run_calls:
-        assert public_key not in cmd, f"Public key content found in conn.run command (injection risk): {cmd!r}"
-
-    # Assert SFTP was used (key delivered via SFTP, not shell)
-    mock_conn.start_sftp_client.assert_called()
-
-    # Assert mktemp was called to create a remote tmpfile
-    mktemp_called = any("mktemp" in cmd and "mcp_key_" in cmd for cmd in run_calls)
-    assert mktemp_called, f"Expected conn.run to be called with a mktemp /tmp/mcp_key_ command. Got: {run_calls}"
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.ensure_mcp_ssh_key")
-@patch("src.homelab_mcp.ssh_tools.Path")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
 async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure_key):
     """Key existence check must use grep -Ff with tmpfile path, not -F with key as argument."""
     public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAA mcp_admin@host"
@@ -965,6 +779,7 @@ async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure
     mock_ctx.__aexit__.return_value = None
     mock_connect.return_value = mock_ctx
 
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     try:
         result = await setup_remote_mcp_admin("10.0.0.1", "admin", "password")
         result_data = json.loads(result)
@@ -1043,6 +858,7 @@ async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path,
     mock_ctx.__aexit__.return_value = None
     mock_connect.return_value = mock_ctx
 
+    from src.homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
     try:
         await setup_remote_mcp_admin("10.0.0.1", "admin", "password", force_update_key=True)
     except Exception:
@@ -1185,4 +1001,12 @@ def test_ssh02_no_disjunctive_always_true_assertions() -> None:
     assert not offenders, (
         "Found `assert X or <always-true>` anti-pattern(s) in test_ssh_tools.py.\n"
         "Replace with explicit single-check asserts (see SSH-02 fix in commit d25c915):\n" + "\n".join(offenders)
+    )
+
+
+def test_setup_remote_mcp_admin_absent() -> None:
+    """D-11: setup_remote_mcp_admin function must be removed from ssh_tools."""
+    from src.homelab_mcp import ssh_tools
+    assert not hasattr(ssh_tools, "setup_remote_mcp_admin"), (
+        "setup_remote_mcp_admin must be deleted from ssh_tools.py (D-11)"
     )
