@@ -57,8 +57,20 @@ Out of this phase: fresh-device bootstrap of the `mcp_admin` OS user (deferred);
 ### Claude's Discretion
 - Exact file-layout of the DROP TABLE migration step (new migration module vs inline in `init_schema`) — planner chooses; must be idempotent on repeated startups.
 - Exact error-message wording for `CredentialNotFoundError` variants — existing message already names the CLI; minor wording polish is planner's call.
-- How documentation pages are laid out for the manual `mcp_admin` bootstrap description — docs location and structure are planner's call so long as it's discoverable from the onboarding flow.
 - Whether `--key-path` validation (file exists? readable? permissions 0600?) is strict or permissive — planner picks; strict is preferred for actionable errors.
+
+### Addendum Decisions (2026-04-20 — resolved before planning)
+
+Resolved by user after gsd-phase-researcher flagged three open questions. These LOCK the planner's answer — supersede any earlier guidance where they conflict.
+
+- **D-18 (supersedes D-12):** `mcp_admin` is no longer a privileged default. The `credentials add <hostname> <username>` CLI accepts any username, and any SSH-accessible sudo-capable account on the target device works. **Drop the `docs/mcp_admin_bootstrap.md` requirement entirely.** No `docs/` directory is created in this phase. Onboarding language shifts from "bootstrap mcp_admin" to "use any SSH-accessible sudo account".
+- **D-19:** `list_registered_servers` MCP tool is **rewritten to read the keyring registry** via `credential_store.list_credentials()` (read-only; no D-06 conflict). Same function signature; return shape stays registry-entry-compatible.
+- **D-20:** `update_server_credentials` MCP tool is **removed** from the tool surface — its semantics (mutate stored credential) directly conflict with D-06 ("passwords never enter chat"). Users run `homelab-mcp credentials add <host> <user>` again to overwrite (keyring's `set_password` is idempotent).
+- **D-21:** `remove_server` MCP tool is **removed** from the tool surface — CLI gains a `homelab-mcp credentials remove <host> <user>` subcommand if not already present. Deletion is treated as a credential-write operation for D-06 consistency. Same schema/handler/dispatch/annotation/openapi removal pattern as `setup_mcp_admin` (D-10).
+- **D-22 (prompt rewrite refinement of D-13):** Step 1 of `_build_connect_to_device_result` becomes: "Ensure you have an SSH-accessible user on the target device with sudo privileges. The username can be anything — you will specify it in the next step." No doc link, no `mcp_admin` specificity.
+- **D-23:** `register_server` signature: `username` parameter is **required with no default** (removing the current `username: str = "mcp_admin"` default). The keyring registry is keyed by `(hostname, username)` — there is no universal fallback username after D-08.
+- **D-24 (pitfall-5 resolution, research-flagged):** `update_mcp_admin_groups` error message at `ssh_tools.py:758` — "Run setup_mcp_admin first" → becomes "mcp_admin user does not exist on target. Create any sudo-capable user and register it via `homelab-mcp credentials add <hostname> <username>`." No `setup_mcp_admin` reference; no docs link.
+- **D-25 (D-15 scope extension, research-flagged):** AST meta-test scans for additional forbidden strings beyond CONTEXT.md's original list: `setup_remote_mcp_admin`, `verify_connection` (narrowly, in `register_server` handler context only — the string appears legitimately elsewhere), and the removed tool names `setup_mcp_admin`, `update_server_credentials`, `remove_server` outside tests.
 
 </decisions>
 
@@ -131,7 +143,7 @@ Out of this phase: fresh-device bootstrap of the `mcp_admin` OS user (deferred);
 <deferred>
 ## Deferred Ideas
 
-- **Fresh-device `mcp_admin` bootstrap CLI** — `homelab-mcp bootstrap <host> --admin-user <existing-user>` that prompts for the existing sudoer's password on the terminal (never via MCP), SSHs in, creates `mcp_admin`, installs MCP pubkey, sets sudoers. Previously implicit in `setup_mcp_admin`. Candidate for v1.7 milestone scoping. (v1.6 docs describe the manual out-of-band path instead.)
+- **Fresh-device `mcp_admin` bootstrap CLI** — `homelab-mcp bootstrap <host> --admin-user <existing-user>` that prompts for the existing sudoer's password on the terminal (never via MCP), SSHs in, creates `mcp_admin`, installs MCP pubkey, sets sudoers. Previously implicit in `setup_mcp_admin`. Candidate for v1.7 milestone scoping. Note: post-D-18 this is less urgent — users already have an any-username path via `credentials add`.
 - **Auto-migration of legacy DB rows into the keyring** — explicit Out of Scope per `REQUIREMENTS.md`. Users with credentials stored only in the dropped DB table re-add via `credentials add`. A future phase could add a one-shot `homelab-mcp migrate-credentials` CLI that walks a legacy `.homelab_mcp/homelab.db` and emits `credentials add` commands to stdout (leaving the user in control of what gets written to the keyring).
 - **Encrypted keyring backups / export** — explicit Out of Scope (homelab user manages their own keyring).
 - **Provisioning script shipped with the package** (`scripts/bootstrap-mcp-admin.sh`) — simpler alternative to the `bootstrap` CLI for v1.7; captured as a candidate approach.
