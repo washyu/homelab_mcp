@@ -663,106 +663,67 @@ async def update_mcp_admin_groups(hostname: str, username: str, password: str, p
 
 async def register_server(
     hostname: str,
-    username: str = "mcp_admin",
-    key_path: str | None = None,
+    username: str,
     port: int = 22,
     display_name: str | None = None,
-    verify_connection: bool = True,
 ) -> str:
-    """
-    Register a server with SSH credentials for persistent access.
+    """Verify SSH connectivity using keyring credentials. Does NOT write credentials.
 
-    Args:
-        hostname: Hostname or IP address of the server
-        username: SSH username (default: mcp_admin)
-        key_path: Path to SSH private key (optional, uses default MCP key if None)
-        port: SSH port (default: 22)
-        display_name: Friendly name for the server (optional)
-        verify_connection: Whether to verify SSH connection before saving
+    Phase 33 (v1.6) — verify-only (D-03, D-04, D-07, D-23).
 
-    Returns:
-        JSON string with registration result
+    Resolves credentials via ``resolve_ssh_credentials`` (keyring-only after D-08),
+    opens one SSH connection to prove the credential works, then returns the
+    result. The server database is not touched.
     """
     try:
-        db = get_database_adapter()
-        db.connect()
-        db.init_schema()
-
-        # Check if server already registered
-        existing = db.get_credential_by_hostname(hostname, username)
-        if existing:
-            db.close()
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": f"Server {hostname} with username {username} is already registered",
-                    "existing_id": existing.get("id"),
-                },
-                indent=2,
-            )
-
-        # Determine key path to use
-        resolved_key_path = key_path
-        if not resolved_key_path and username == "mcp_admin":
-            mcp_key = get_mcp_ssh_key_path()
-            if mcp_key.exists():
-                resolved_key_path = str(mcp_key)
-
-        # Optionally verify connection before saving
-        last_verified = None
-        if verify_connection and resolved_key_path:
-            try:
-                async with await ssh_connect(
-                    hostname=hostname,
-                    username=username,
-                    port=port,
-                    key_path=resolved_key_path,
-                ) as conn:
-                    result = await conn.run("hostname", check=False)
-                    if result.exit_status == 0:
-                        last_verified = "verified"
-            except Exception as e:
-                db.close()
-                return json.dumps(
-                    {
-                        "status": "error",
-                        "error": f"Connection verification failed: {e}",
-                        "hostname": hostname,
-                    },
-                    indent=2,
-                )
-
-        # Add credential to database
-        credential_id = db.add_credential(
-            hostname=hostname,
-            username=username,
-            key_path=resolved_key_path,
-            port=port,
-            display_name=display_name,
-        )
-
-        if last_verified:
-            db.update_last_verified(credential_id)
-
-        db.close()
-
+        creds = resolve_ssh_credentials(hostname=hostname, username=username, port=port)
+    except CredentialNotFoundError as e:
         return json.dumps(
             {
-                "status": "success",
-                "message": f"Server {hostname} registered successfully",
-                "credential_id": credential_id,
+                "status": "error",
                 "hostname": hostname,
                 "username": username,
-                "port": port,
+                "verified": False,
                 "display_name": display_name,
-                "key_path": resolved_key_path,
-                "connection_verified": last_verified is not None,
-            },
-            indent=2,
+                "error": str(e),
+            }
         )
 
+    try:
+        async with asyncssh.connect(
+            host=hostname,
+            username=creds.username,
+            password=creds.password,
+            client_keys=[creds.key_path] if creds.key_path else None,
+            port=creds.port,
+            known_hosts=None,
+        ) as _conn:
+            pass
     except Exception as e:
-        return json.dumps({"status": "error", "error": sanitize_error(e), "hostname": hostname}, indent=2)
+        return json.dumps(
+            {
+                "status": "error",
+                "hostname": hostname,
+                "username": username,
+                "verified": False,
+                "display_name": display_name,
+                "error": (
+                    f"SSH verification failed: {e}. "
+                    "Re-add credentials with: "
+                    f"homelab-mcp credentials add {hostname} {username}"
+                ),
+            }
+        )
+
+    return json.dumps(
+        {
+            "status": "success",
+            "hostname": hostname,
+            "username": username,
+            "verified": True,
+            "display_name": display_name,
+        }
+    )
 
 
 def list_registered_servers(active_only: bool = True) -> str:
