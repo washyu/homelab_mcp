@@ -2,8 +2,6 @@
 
 import json
 import logging
-import os
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -153,193 +151,6 @@ async def ensure_mcp_ssh_key() -> str:
     pub_key_path.chmod(0o644)
 
     return str(key_path)
-
-
-@ssh_connection_wrapper(timeout_seconds=30.0)
-@retry_on_failure(max_retries=2, delay_seconds=2.0)
-async def setup_remote_mcp_admin(
-    hostname: str,
-    username: str,
-    password: str,
-    force_update_key: bool = True,
-    port: int = 22,
-) -> str:
-    """SSH into a remote system and setup mcp_admin user with SSH key access."""
-    # First ensure we have a key
-    key_path = await ensure_mcp_ssh_key()
-    pub_key_path = Path(key_path + ".pub")
-
-    # Read public key
-    public_key = pub_key_path.read_text().strip()
-
-    try:
-        # Connect with admin credentials
-        async with await ssh_connect(
-            hostname=hostname,
-            username=username,
-            port=port,
-            password=password,
-        ) as conn:
-            setup_results = {}
-
-            # Check if mcp_admin user already exists
-            user_check = await conn.run("id mcp_admin", check=False)
-            user_exists = user_check.exit_status == 0
-
-            if not user_exists:
-                # Clean up any leftover home directory before creating user
-                await conn.run("sudo rm -rf /home/mcp_admin", check=False)
-
-                # Create mcp_admin user
-                create_user = await conn.run("sudo useradd -m -s /bin/bash -G sudo mcp_admin", check=False)
-                if create_user.exit_status != 0:
-                    stderr_text = (
-                        create_user.stderr.decode()
-                        if isinstance(create_user.stderr, bytes)
-                        else str(create_user.stderr)
-                    )
-                    setup_results["user_creation"] = f"Failed: {stderr_text}"
-                else:
-                    setup_results["user_creation"] = "Success: mcp_admin user created"
-                    # Ensure proper ownership of home directory
-                    await conn.run("sudo chown -R mcp_admin:mcp_admin /home/mcp_admin", check=False)
-            else:
-                setup_results["user_creation"] = "User already exists"
-
-            # Ensure mcp_admin is in sudo group
-            sudo_group = await conn.run("sudo usermod -a -G sudo mcp_admin", check=False)
-            if sudo_group.exit_status == 0:
-                setup_results["sudo_access"] = "Success: Added to sudo group"
-            else:
-                stderr_text = (
-                    sudo_group.stderr.decode() if isinstance(sudo_group.stderr, bytes) else str(sudo_group.stderr)
-                )
-                setup_results["sudo_access"] = f"Failed: {stderr_text}"
-
-            # --- SFTP-based key delivery (SEC-01: no shell interpolation of key content) ---
-            # Step 1: Create randomized remote tmpfile to avoid concurrent collision
-            mktemp_result = await conn.run("mktemp /tmp/mcp_key_XXXXXX.pub", check=False)
-            if mktemp_result.exit_status != 0:
-                setup_results["ssh_key"] = "Failed: could not create remote tmpfile"
-            else:
-                remote_tmp = (
-                    mktemp_result.stdout.decode().strip()
-                    if isinstance(mktemp_result.stdout, bytes)
-                    else str(mktemp_result.stdout).strip()
-                )
-
-                # Step 2: Write key to local tmpfile and SFTP-upload to remote (key never hits a shell string)
-                local_tmp_path = None
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pub", mode="w") as local_tmp:
-                        local_tmp.write(public_key)
-                        local_tmp_path = local_tmp.name
-
-                    async with conn.start_sftp_client() as sftp:
-                        await sftp.put(local_tmp_path, remote_tmp)
-
-                    # Step 3: Injection-safe existence check — grep reads pattern from file, not args
-                    key_check = await conn.run(
-                        f"sudo grep -Ff {remote_tmp} /home/mcp_admin/.ssh/authorized_keys 2>/dev/null",
-                        check=False,
-                    )
-                    key_exists = key_check.exit_status == 0
-
-                    if key_exists and not force_update_key:
-                        setup_results["ssh_key"] = "SSH key already exists"
-                    else:
-                        # Setup SSH directory
-                        await conn.run("sudo mkdir -p /home/mcp_admin", check=False)
-                        await conn.run("sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
-
-                        # Create .ssh directory as root, then change ownership
-                        mkdir_cmd = await conn.run(
-                            "sudo mkdir -p /home/mcp_admin/.ssh && "
-                            "sudo chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
-                            "sudo chmod 700 /home/mcp_admin/.ssh",
-                            check=False,
-                        )
-
-                        if mkdir_cmd.exit_status != 0:
-                            stderr_text = (
-                                mkdir_cmd.stderr.decode()
-                                if isinstance(mkdir_cmd.stderr, bytes)
-                                else str(mkdir_cmd.stderr)
-                            )
-                            setup_results["ssh_key"] = f"Failed to create .ssh directory: {stderr_text}"
-                        else:
-                            if force_update_key and key_exists:
-                                # Remove old MCP keys (sed does not use key content — safe)
-                                await conn.run(
-                                    "sudo sed -i '/mcp_admin@/d' /home/mcp_admin/.ssh/authorized_keys",
-                                    check=False,
-                                )
-
-                            # Step 4: Append key from tmpfile — no key content in shell string
-                            add_key = await conn.run(
-                                f"sudo bash -c 'cat {remote_tmp} >> /home/mcp_admin/.ssh/authorized_keys && "
-                                "chown mcp_admin:mcp_admin /home/mcp_admin/.ssh/authorized_keys && "
-                                "chmod 600 /home/mcp_admin/.ssh/authorized_keys'",
-                                check=False,
-                            )
-
-                            if add_key.exit_status == 0:
-                                if key_exists and force_update_key:
-                                    setup_results["ssh_key"] = "Success: SSH key updated"
-                                else:
-                                    setup_results["ssh_key"] = "Success: SSH key installed"
-                            else:
-                                stderr_text = (
-                                    add_key.stderr.decode()
-                                    if isinstance(add_key.stderr, bytes)
-                                    else str(add_key.stderr)
-                                )
-                                setup_results["ssh_key"] = f"Failed: {stderr_text}"
-                finally:
-                    # Step 5: Always clean up both local and remote tmpfiles (D-04)
-                    if local_tmp_path and os.path.exists(local_tmp_path):
-                        os.unlink(local_tmp_path)
-                    await conn.run(f"rm -f {remote_tmp}", check=False)
-
-            # Enable passwordless sudo for mcp_admin
-            sudoers_setup = await conn.run(
-                'echo "mcp_admin ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/mcp_admin',
-                check=False,
-            )
-
-            if sudoers_setup.exit_status == 0:
-                setup_results["passwordless_sudo"] = "Success: Passwordless sudo enabled"
-            else:
-                stderr_text = (
-                    sudoers_setup.stderr.decode()
-                    if isinstance(sudoers_setup.stderr, bytes)
-                    else str(sudoers_setup.stderr)
-                )
-                setup_results["passwordless_sudo"] = f"Failed: {stderr_text}"
-
-            # Test SSH key authentication
-            test_conn = await conn.run("sudo -u mcp_admin whoami", check=False)
-            if test_conn.exit_status == 0:
-                setup_results["test_access"] = "Success: mcp_admin access verified"
-            else:
-                stderr_text = (
-                    test_conn.stderr.decode() if isinstance(test_conn.stderr, bytes) else str(test_conn.stderr)
-                )
-                setup_results["test_access"] = f"Failed: {stderr_text}"
-
-        return json.dumps(
-            {
-                "status": "success",
-                "hostname": hostname,
-                "mcp_admin_setup": setup_results,
-                "ssh_key_path": key_path,
-                "public_key": public_key,
-            },
-            indent=2,
-        )
-
-    except Exception as e:
-        return json.dumps({"status": "error", "hostname": hostname, "error": sanitize_error(e)}, indent=2)
 
 
 @ssh_connection_wrapper(timeout_seconds=15.0)
@@ -734,7 +545,11 @@ async def update_mcp_admin_groups(hostname: str, username: str, password: str, p
                     {
                         "status": "error",
                         "hostname": hostname,
-                        "error": "mcp_admin user does not exist. Run setup_mcp_admin first.",
+                        "error": (
+                            "mcp_admin user does not exist on target. "
+                            "Create any sudo-capable user and register it via "
+                            "`homelab-mcp credentials add <hostname> <username>`."
+                        ),
                     },
                     indent=2,
                 )
@@ -951,203 +766,20 @@ async def register_server(
 
 
 def list_registered_servers(active_only: bool = True) -> str:
+    """List servers registered in the keyring credential registry (D-19).
+
+    Returns a JSON string with ``status``, ``count``, and a ``servers`` list of
+    ``{"hostname", "username"}`` entries sourced from
+    ``credential_store.list_credentials(credential_type="ssh")``.
+
+    The ``active_only`` parameter is retained for MCP schema back-compat but has
+    no effect — the keyring registry does not track active/inactive state.
     """
-    List all registered servers with their credentials.
-
-    Args:
-        active_only: Only show active servers (default: True)
-
-    Returns:
-        JSON string with list of registered servers
-    """
-    try:
-        db = get_database_adapter()
-        db.connect()
-        db.init_schema()
-
-        credentials = db.list_credentials(active_only=active_only)
-        db.close()
-
-        # Format for display
-        servers = []
-        for cred in credentials:
-            servers.append(
-                {
-                    "id": cred.get("id"),
-                    "hostname": cred.get("hostname"),
-                    "username": cred.get("username"),
-                    "port": cred.get("port"),
-                    "display_name": cred.get("display_name"),
-                    "is_active": bool(cred.get("is_active")),
-                    "last_verified": cred.get("last_verified"),
-                    "has_key": bool(cred.get("key_path")),
-                    "device_id": cred.get("device_id"),
-                }
-            )
-
-        return json.dumps(
-            {
-                "status": "success",
-                "total_servers": len(servers),
-                "servers": servers,
-            },
-            indent=2,
-        )
-
-    except Exception as e:
-        return json.dumps({"status": "error", "error": sanitize_error(e)}, indent=2)
-
-
-def update_server_credentials(
-    credential_id: int | None = None,
-    hostname: str | None = None,
-    **kwargs: Any,
-) -> str:
-    """
-    Update credentials for an existing registered server.
-
-    Args:
-        credential_id: ID of the credential to update (optional if hostname provided)
-        hostname: Hostname to look up (optional if credential_id provided)
-        **kwargs: Fields to update (username, key_path, port, display_name, is_active)
-
-    Returns:
-        JSON string with update result
-    """
-    try:
-        db = get_database_adapter()
-        db.connect()
-        db.init_schema()
-
-        # Find credential by ID or hostname
-        if credential_id:
-            cred = db.get_credential(credential_id)
-        elif hostname:
-            cred = db.get_credential_by_hostname(hostname)
-            if cred:
-                credential_id = cred.get("id")
-        else:
-            db.close()
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": "Must provide either credential_id or hostname",
-                },
-                indent=2,
-            )
-
-        if not cred:
-            db.close()
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": "Credential not found",
-                },
-                indent=2,
-            )
-
-        # Update the credential
-        assert credential_id is not None
-        success = db.update_credential(credential_id, **kwargs)
-        db.close()
-
-        if success:
-            return json.dumps(
-                {
-                    "status": "success",
-                    "message": "Credential updated successfully",
-                    "credential_id": credential_id,
-                    "updated_fields": list(kwargs.keys()),
-                },
-                indent=2,
-            )
-        else:
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": "No fields updated",
-                },
-                indent=2,
-            )
-
-    except Exception as e:
-        return json.dumps({"status": "error", "error": sanitize_error(e)}, indent=2)
-
-
-def remove_server(
-    credential_id: int | None = None,
-    hostname: str | None = None,
-) -> str:
-    """
-    Remove a server from the registered servers list.
-
-    Args:
-        credential_id: ID of the credential to remove (optional if hostname provided)
-        hostname: Hostname to look up (optional if credential_id provided)
-
-    Returns:
-        JSON string with removal result
-    """
-    try:
-        db = get_database_adapter()
-        db.connect()
-        db.init_schema()
-
-        # Find credential by ID or hostname
-        if credential_id:
-            cred = db.get_credential(credential_id)
-        elif hostname:
-            cred = db.get_credential_by_hostname(hostname)
-            if cred:
-                credential_id = cred.get("id")
-        else:
-            db.close()
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": "Must provide either credential_id or hostname",
-                },
-                indent=2,
-            )
-
-        if not cred:
-            db.close()
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": "Credential not found",
-                },
-                indent=2,
-            )
-
-        # Store info for response before deleting
-        removed_hostname = cred.get("hostname")
-        removed_username = cred.get("username")
-
-        # Delete the credential
-        assert credential_id is not None
-        success = db.delete_credential(credential_id)
-        db.close()
-
-        if success:
-            return json.dumps(
-                {
-                    "status": "success",
-                    "message": f"Server {removed_hostname} removed successfully",
-                    "credential_id": credential_id,
-                    "hostname": removed_hostname,
-                    "username": removed_username,
-                },
-                indent=2,
-            )
-        else:
-            return json.dumps(
-                {
-                    "status": "error",
-                    "error": "Failed to delete credential",
-                },
-                indent=2,
-            )
-
-    except Exception as e:
-        return json.dumps({"status": "error", "error": sanitize_error(e)}, indent=2)
+    _ = active_only  # retained for API compat; see docstring
+    entries = list_credentials(credential_type="ssh")
+    result = {
+        "status": "success",
+        "count": len(entries),
+        "servers": [{"hostname": e["hostname"], "username": e["username"]} for e in entries],
+    }
+    return json.dumps(result, indent=2)

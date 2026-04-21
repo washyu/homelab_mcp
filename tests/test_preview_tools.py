@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
+# Phase 33 (D-21): remove_server + remove_server_preview deleted from the tool surface.
 _PREVIEW_TOOLS = [
     "decommission_device_preview",
     "delete_proxmox_vm_preview",
     "remove_vm_preview",
-    "remove_server_preview",
     "destroy_terraform_service_preview",
     "rollback_infrastructure_changes_preview",
 ]
@@ -21,7 +21,6 @@ _DESTRUCTIVE_TOOLS = [
     "decommission_device",
     "delete_proxmox_vm",
     "remove_vm",
-    "remove_server",
     "destroy_terraform_service",
     "rollback_infrastructure_changes",
 ]
@@ -51,12 +50,8 @@ def test_remove_vm_preview_in_schema_registry() -> None:
     assert "remove_vm_preview" in schemas
 
 
-def test_remove_server_preview_in_schema_registry() -> None:
-    """PREV-04: remove_server_preview is registered in the tool schema registry."""
-    from homelab_mcp.tool_schemas import get_all_tool_schemas
-
-    schemas = get_all_tool_schemas()
-    assert "remove_server_preview" in schemas
+# test_remove_server_preview_in_schema_registry REMOVED in Phase 33 (D-21).
+# remove_server + remove_server_preview deleted; replacement is CLI `credentials remove`.
 
 
 def test_destroy_terraform_service_preview_in_schema_registry() -> None:

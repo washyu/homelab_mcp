@@ -13,17 +13,17 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 57
-    )  # All tools: SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift, preview, list_keyring_credentials
+        len(tools) == 53
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview
     assert "ssh_discover" in tools
-    assert "setup_mcp_admin" in tools
+    assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
     assert "verify_mcp_admin" in tools
 
-    # Server registration tools
+    # Server registration tools (Phase 33: update_server_credentials and remove_server removed)
     assert "register_server" in tools
     assert "list_registered_servers" in tools
-    assert "update_server_credentials" in tools
-    assert "remove_server" in tools
+    assert "update_server_credentials" not in tools  # D-20: removed
+    assert "remove_server" not in tools  # D-21: replaced by CLI credentials remove
 
     # New sitemap tools
     assert "discover_and_map" in tools
