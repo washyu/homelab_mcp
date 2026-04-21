@@ -75,7 +75,7 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 ### v1.5 Critical Bug Fixes
 
 - [ ] **Phase 31: Bug Fixes** - Close 5 critical/high bugs from CodeRabbit PR #39 review
-- [ ] **Phase 32: Regression Tests** - Regression tests preventing recurrence of all 5 fixed bugs
+- [x] **Phase 32: Regression Tests** - Regression tests preventing recurrence of all 5 fixed bugs — completed 2026-04-20
 
 ## Phase Details
 
@@ -138,4 +138,4 @@ Plans:
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
 | 31. Bug Fixes | v1.5 | 1/2 | In Progress | - |
-| 32. Regression Tests | v1.5 | 4/4 | In Progress | - |
+| 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |

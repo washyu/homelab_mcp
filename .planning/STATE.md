@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Critical Bug Fixes
 status: executing
-stopped_at: Phase 32 gap closure (32-05) merged, pending re-verification
+stopped_at: Phase 32 complete (5/5 regression tests verified, all gaps closed)
 last_updated: "2026-04-20T00:00:00.000Z"
-last_activity: 2026-04-20 -- Phase 32-05 gap closure executed (SSH-02 detector extended, D-10 recorded)
+last_activity: 2026-04-20 -- Phase 32 verified passed (5/5 SC); milestone v1.5 awaits Phase 31 plan 31-02
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
-  percent: 86
+  completed_plans: 7
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: 32 — Regression Tests (in progress)
-Plan: 32-01 through 32-05 all complete (pending phase re-verification)
-Status: Awaiting phase-goal re-verification (SSH-02 detector gap closed via 32-05)
-Last activity: 2026-04-20 -- Phase 32-05 gap closure executed & merged
+Phase: 32 — Regression Tests (complete 2026-04-20)
+Plan: 32-01 through 32-05 all complete (phase verification: passed 5/5 SC)
+Status: Phase 32 verified; milestone v1.5 awaits Phase 31 plan 31-02 (ROADMAP note: already shipped at b0a5f33/9f752c0)
+Last activity: 2026-04-20 -- Phase 32 passed re-verification after 32-05 gap closure
 
-Progress: [████████▌░] 86%
+Progress: [██████████] 100%
 
 Note: Phase 31 plan 31-02 (WS-01, SSH-01 fixes) was already shipped on v1.4 at
 commits b0a5f33 and 9f752c0 before Phase 32 began; ROADMAP still shows it as
