@@ -123,22 +123,28 @@ If pre-flight checks pass:
 
 
 def _build_connect_to_device_result(args: dict[str, str]) -> types.GetPromptResult:
-    """Build the connect_to_device prompt result (TOFU-03)."""
+    """Build the connect_to_device prompt result (TOFU-03, Phase 33 D-13/D-18/D-22)."""
     hostname = args.get("hostname", "<hostname>")
     text = f"""Follow these steps to onboard {hostname} into your homelab:
 
-1. Call setup_mcp_admin with hostname="{hostname}" to create the mcp_admin user and \
-SSH key on the device.
-2. Run the CLI command: homelab-mcp credentials add {hostname} mcp_admin — \
-this stores the SSH credential in your OS keyring.
-3. Call register_server with hostname="{hostname}" and username="mcp_admin" to \
-add the device to the server database.
+1. Ensure you have an SSH-accessible user on {hostname} with sudo privileges. \
+The username can be anything — you will specify it in the next step.
+
+2. Run the CLI command in your terminal: homelab-mcp credentials add {hostname} \
+<username> — this stores the SSH credential in your OS keyring. For key-based auth: \
+homelab-mcp credentials add {hostname} <username> --key-path <path>.
+
+3. Call register_server with hostname="{hostname}" and username="<username>" to \
+verify the stored credential end-to-end.
+
 4. Call ssh_discover with hostname="{hostname}" to collect hardware and system info \
 and record it in the database.
+
 5. Call discover_and_map with hostname="{hostname}" to add the device to the network \
 sitemap.
-6. Call verify_mcp_admin with hostname="{hostname}" to confirm that mcp_admin can \
-connect successfully.
+
+6. Call verify_mcp_admin with hostname="{hostname}" to confirm that the registered \
+user has sudo access.
 
 If any step fails, fix the issue before proceeding to the next step."""
     return types.GetPromptResult(

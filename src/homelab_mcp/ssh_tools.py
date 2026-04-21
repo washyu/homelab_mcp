@@ -685,7 +685,7 @@ async def register_server(
                 "username": username,
                 "verified": False,
                 "display_name": display_name,
-                "error": str(e),
+                "error": sanitize_error(e),
             }
         )
 
@@ -708,7 +708,7 @@ async def register_server(
                 "verified": False,
                 "display_name": display_name,
                 "error": (
-                    f"SSH verification failed: {e}. "
+                    f"SSH verification failed: {sanitize_error(e)}. "
                     "Re-add credentials with: "
                     f"homelab-mcp credentials add {hostname} {username}"
                 ),
