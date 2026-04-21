@@ -7,7 +7,7 @@
 - ✅ **v1.2 Protocol Completeness** — Phases 12-16 (shipped 2026-03-13)
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
-- 🔄 **v1.5 Critical Bug Fixes** — Phases 31-32 (in progress)
+- ✅ **v1.5 Critical Bug Fixes** — Phases 31-32 (shipped 2026-04-20)
 
 ## Phases
 
@@ -72,45 +72,15 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 
 </details>
 
-### v1.5 Critical Bug Fixes
+<details>
+<summary>✅ v1.5 Critical Bug Fixes (Phases 31-32) — SHIPPED 2026-04-20</summary>
 
-- [x] **Phase 31: Bug Fixes** - Close 5 critical/high bugs from CodeRabbit PR #39 review — completed 2026-04-19
-- [x] **Phase 32: Regression Tests** - Regression tests preventing recurrence of all 5 fixed bugs — completed 2026-04-20
+- [x] Phase 31: Bug Fixes (2/2 plans) — completed 2026-04-19
+- [x] Phase 32: Regression Tests (5/5 plans) — completed 2026-04-20
 
-## Phase Details
+Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
-### Phase 31: Bug Fixes
-**Goal**: All 5 critical and high-priority bugs from PR #39 review are corrected in production code
-**Depends on**: Nothing (independent fixes)
-**Requirements**: WS-01, ERR-01, SSH-01, SSH-02, SCH-01
-**Success Criteria** (what must be TRUE):
-  1. Closing a WebSocket PTY session (EOF or connection error) cancels the paired reader task and closes the socket — no zombie sessions accumulate
-  2. A timeout error response reports the actual computed effective timeout value, not the raw timeout_seconds parameter passed by the caller
-  3. `_sudo_run` with `check=True` raises on non-zero exit code regardless of whether a password was provided — password branch behaves identically to no-password branch
-  4. The password propagation test in `test_ssh_tools.py` fails when password is absent — the assertion is not an always-passing ternary
-  5. Passing an arbitrary string as `credential_type` to the credentials tool is rejected by schema validation — only "ssh" and "proxmox" are accepted
-**Plans:** 2 plans
-Plans:
-- [x] 31-01-PLAN.md — Fix timeout error message, test assertion, and credential_type schema (ERR-01, SSH-02, SCH-01) — completed 2026-04-19
-- [x] 31-02-PLAN.md — Fix zombie WebSocket PTY sessions and extract _sudo_run helper (WS-01, SSH-01) — completed 2026-04-19
-
-### Phase 32: Regression Tests
-**Goal**: All 5 fixed bugs have dedicated regression tests that will catch any recurrence before it ships
-**Depends on**: Phase 31
-**Requirements**: REG-01
-**Success Criteria** (what must be TRUE):
-  1. A test verifies the WebSocket PTY reader cancels its paired task and closes the socket on EOF — reverting the fix causes the test to fail
-  2. A test verifies the timeout error message contains the effective_timeout value — reverting the fix causes the test to fail
-  3. A test verifies `_sudo_run(check=True)` raises on non-zero exit in the password branch — reverting the fix causes the test to fail
-  4. A test verifies the password assertion in `test_ssh_tools.py` fails when password is not propagated — the test is not unconditionally passing
-  5. A test verifies the credentials tool schema rejects non-enum credential_type values — reverting the fix causes the test to fail
-**Plans:** 5 plans
-Plans:
-- [x] 32-01-PLAN.md — WS-01 E2E regression test in tests/test_http_app.py (closes QUAL-02) — completed 2026-04-20
-- [x] 32-02-PLAN.md — SSH-01 + SSH-02 regression tests in tests/test_ssh_tools.py (includes AST meta-test with D-05 mutation experiment) — completed 2026-04-20
-- [x] 32-03-PLAN.md — ERR-01 regression test in tests/test_error_handling.py (monkeypatched asyncio.wait_for) — completed 2026-04-20
-- [x] 32-04-PLAN.md — SCH-01 regression test in tests/test_tools.py (credential_type enum shape) — completed 2026-04-20
-- [x] 32-05-PLAN.md — Gap closure: extend SSH-02 AST detector to catch d25c915 pre-fix Compare(Constant in X) form + D-10 note — completed 2026-04-20
+</details>
 
 ## Progress
 

@@ -1,5 +1,29 @@
 # Milestones
 
+## v1.5 Critical Bug Fixes (Shipped: 2026-04-20)
+
+**Phases completed:** 2 phases, 7 plans
+**Timeline:** 19 days elapsed (Apr 2 - Apr 20, 2026); active work Apr 19-20
+**Stats:** 43 commits, 82 files changed, +11,987 / -87 lines
+**Audit verdict:** `tech_debt` — all functional coverage sound; 4 process-level bookkeeping items accepted as deferred debt
+
+**Key accomplishments:**
+1. **WS-01** — WebSocket PTY handler closes socket on EOF/error paths; `contextlib.suppress(Exception)` for idempotent cleanup eliminates zombie shell sessions
+2. **SSH-01** — Extracted `_sudo_run` helper with consistent `check=` forwarding across both password and no-password sudo branches; non-zero exits now raise in both paths
+3. **ERR-01** — Timeout error messages report computed `effective_timeout` value (e.g., `35.0 seconds`) instead of raw `timeout_seconds` decorator default
+4. **SCH-01** — `credential_type` in `list_keyring_credentials` schema constrained to `enum: ["ssh", "proxmox"]`; MCP framework rejects arbitrary strings before handler runs
+5. **SSH-02** — Fixed broken always-passing ternary assertion in `test_ssh_tools.py`; added AST meta-guard that fails on `assert X or <structurally-always-true>` patterns, extended in 32-05 to catch the `Compare(Constant in X)` form
+6. **REG-01** — 5/5 revert-proof regression tests across `test_http_app.py`, `test_ssh_tools.py`, `test_error_handling.py`, `test_tools.py`; integration checker verified 0 broken / 0 weak wirings
+
+**Known gaps (deferred tech_debt):**
+- Missing `31-VERIFICATION.md` — Phase 31 merged on plan-SUMMARY evidence; Phase 32 regressions re-prove each fix via integration, but the phase-level gate was skipped
+- `31-VALIDATION.md` status: draft; `nyquist_compliant: false`
+- Missing `32-VALIDATION.md` entirely
+- SUMMARY frontmatter inconsistency: `32-01` flat `requirements-completed:` vs `32-02..05` nested `requirements:` — both parse but extraction inconsistent
+- Known deferred items at close: 7 false-positive quick-task audits from earlier milestones (see STATE.md Deferred Items)
+
+---
+
 ## v1.4.1 Security Patch (Shipped: 2026-04-01)
 
 **Phases completed:** 1 phase, 2 plans
