@@ -1102,3 +1102,64 @@ async def test_ssh01_sudo_run_check_raises_in_password_branch():
     assert mock_conn.run.call_args.kwargs.get("check") is True, (
         f"check=True must be forwarded to conn.run; got kwargs={mock_conn.run.call_args.kwargs!r}"
     )
+
+
+def test_ssh02_no_disjunctive_always_true_assertions() -> None:
+    """SSH-02 meta-guard: no `assert X or <structurally-always-true>` in this file.
+
+    Before commit d25c915 the assertion at test_ssh_discover_no_credentials (currently
+    line ~191) read:
+        assert "No credentials" in err or "other" in err
+    which is equivalent to `True or True` for any non-empty `err` — the test always
+    passed and never exercised the "No credentials" precondition it claimed to guard.
+
+    This AST meta-test parses tests/test_ssh_tools.py (itself) and fails if any
+    `ast.Assert(test=ast.BoolOp(op=ast.Or(), values=[_, <always_true>]))` pattern
+    is present. "Structurally always true" is defined conservatively:
+      - ast.Constant with a truthy value
+      - nested ast.BoolOp(op=ast.Or) with an always-true branch
+      - ast.Compare over two ast.Constant operands
+
+    Revert-proof (captured in this plan's commit message, per CONTEXT.md D-05):
+    temporarily mutate line ~191 to `assert "No credentials" in err or "other" in err`
+    (where `"other"` is a non-empty string Constant — structurally always true),
+    re-run this test, observe FAILED with offender line ~191. Do NOT commit the
+    mutation — the commit message captures the diagnostic output.
+    """
+    import ast
+    from pathlib import Path
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    def _is_structurally_always_true(node: ast.expr) -> bool:
+        """Conservative truthy-constant detector.
+
+        Flags ONLY shapes provably true at parse time. Dynamic expressions
+        (Name, Call, Attribute, Compare over non-constants) are NOT flagged.
+        """
+        if isinstance(node, ast.Constant):
+            # Non-empty string, non-zero number, True
+            return bool(node.value)
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            return any(_is_structurally_always_true(v) for v in node.values)
+        if isinstance(node, ast.Compare):
+            # Compare over two Constants is evaluable at parse time
+            if isinstance(node.left, ast.Constant) and all(isinstance(c, ast.Constant) for c in node.comparators):
+                return True
+        return False
+
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assert) and isinstance(node.test, ast.BoolOp):
+            if isinstance(node.test.op, ast.Or):
+                # Flag if any operand beyond the first is structurally always true.
+                for operand in node.test.values[1:]:
+                    if _is_structurally_always_true(operand):
+                        offenders.append(f"line {node.lineno}: {ast.unparse(node)}")
+                        break
+
+    assert not offenders, (
+        "Found `assert X or <always-true>` anti-pattern(s) in test_ssh_tools.py.\n"
+        "Replace with explicit single-check asserts (see SSH-02 fix in commit d25c915):\n" + "\n".join(offenders)
+    )
