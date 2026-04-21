@@ -46,23 +46,19 @@ def resolve_ssh_credentials(
     key_path: str | None = None,
     port: int = 22,
 ) -> SSHCredentials:
-    """
-    Resolve SSH credentials with priority order:
-    1. Explicit credentials passed to function (backward compatible)
-    2. Stored credentials from ssh_credentials table
-    3. Default mcp_admin key (if username is mcp_admin or None)
+    """Resolve SSH credentials for a hostname.
 
-    Args:
-        hostname: Target hostname or IP
-        username: SSH username (optional)
-        password: SSH password (optional)
-        key_path: Path to SSH key (optional)
-        port: SSH port (default 22)
+    Two-tier resolution (v1.6, Phase 33):
+      1. Explicit args (password or key_path passed in) — returned as-is.
+      2. Keyring registry — look up by hostname; return password or key_path
+         based on the registry entry's ``auth_type`` field (D-09).
 
-    Returns:
-        SSHCredentials with resolved connection parameters
+    Raises:
+        CredentialNotFoundError: if neither tier resolves credentials. The error
+        message names ``homelab-mcp credentials add <hostname> <username>`` as the
+        remediation (D-05).
     """
-    # If explicit password or key_path provided, use those (backward compatible)
+    # Tier 1: explicit args (backward compatible with test-only callers)
     if password or key_path:
         return SSHCredentials(
             hostname=hostname,
@@ -72,21 +68,44 @@ def resolve_ssh_credentials(
             password=password,
         )
 
-    # Tier 2: Keyring lookup (INJECT-01) — only runs when no explicit password/key_path
+    # Tier 2: Keyring — sole remaining fallback.
     registry_entries = list_credentials(credential_type="ssh")
     matched = [e for e in registry_entries if e["hostname"] == hostname]
     if matched:
         stored_username = matched[0]["username"]
         resolved_username = username or stored_username
-        keyring_password = get_credential(hostname, stored_username, credential_type="ssh")
-        if keyring_password:
-            logger.debug("Auto-injected keyring credential for %s", hostname)
-            return SSHCredentials(
-                hostname=hostname,
-                username=resolved_username,
-                port=port,
-                password=keyring_password,
-            )
+        auth_type = matched[0].get("auth_type", "password")  # D-09 backward compat
+
+        if auth_type == "key":
+            key_path_stored = get_credential(hostname, stored_username, credential_type="ssh")
+            if key_path_stored:
+                logger.debug(
+                    "Auto-injected keyring key-path credential for %s (user: %s)",
+                    hostname,
+                    stored_username,
+                )
+                return SSHCredentials(
+                    hostname=hostname,
+                    username=resolved_username,
+                    port=port,
+                    key_path=key_path_stored,
+                )
+        else:
+            keyring_password = get_credential(hostname, stored_username, credential_type="ssh")
+            if keyring_password:
+                logger.debug(
+                    "Auto-injected keyring password credential for %s (user: %s)",
+                    hostname,
+                    stored_username,
+                )
+                return SSHCredentials(
+                    hostname=hostname,
+                    username=resolved_username,
+                    port=port,
+                    password=keyring_password,
+                )
+
+        # Registry entry exists but keyring returned None — desync
         logger.warning(
             "Credential desync for %s (user: %s): registry entry exists but keyring "
             "returned None — re-run 'homelab-mcp credentials add %s %s' to restore",
@@ -96,51 +115,11 @@ def resolve_ssh_credentials(
             stored_username,
         )
 
-    # Try to find stored credentials
-    try:
-        db = get_database_adapter()
-        db.connect()
-        db.init_schema()
-
-        stored_cred = db.get_credential_by_hostname(hostname, username)
-        db.close()
-
-        if stored_cred:
-            logger.debug(f"Found stored credentials for {hostname}")
-            resolved_key_path = stored_cred.get("key_path")
-
-            # If no key_path stored and username is mcp_admin, use default MCP key
-            if not resolved_key_path and stored_cred.get("username") == "mcp_admin":
-                mcp_key = get_mcp_ssh_key_path()
-                if mcp_key.exists():
-                    resolved_key_path = str(mcp_key)
-
-            return SSHCredentials(
-                hostname=hostname,
-                username=stored_cred.get("username", "mcp_admin"),
-                port=stored_cred.get("port", 22),
-                key_path=resolved_key_path,
-                credential_id=stored_cred.get("id"),
-            )
-    except Exception as e:
-        logger.warning(f"Error looking up stored credentials: {e}")
-
-    # Fall back to default mcp_admin key if available
-    resolved_username = username or "mcp_admin"
-    if resolved_username == "mcp_admin":
-        mcp_key = get_mcp_ssh_key_path()
-        if mcp_key.exists():
-            return SSHCredentials(
-                hostname=hostname,
-                username=resolved_username,
-                port=port,
-                key_path=str(mcp_key),
-            )
-
+    # Terminal: no credential anywhere. Actionable error (D-05).
     raise CredentialNotFoundError(
         f"No credentials found for {hostname}. "
-        "Run `homelab-mcp credentials add <hostname> <username>` in your terminal, "
-        "or call the `register_server` MCP tool to store credentials."
+        f"Run `homelab-mcp credentials add {hostname} {username or '<username>'}` "
+        "in your terminal."
     )
 
 
