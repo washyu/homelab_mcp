@@ -412,3 +412,54 @@ class TestIntegration:
         assert data["status"] == "success"
         assert data["hostname"] == "retry-host"
         assert attempt_count == 2
+
+
+# --- Regression guards (v1.5 / PR #39) ---
+
+
+@pytest.mark.asyncio
+async def test_err01_timeout_message_reports_effective_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ERR-01 regression: timeout error f-string reports effective_timeout, not decorator default.
+
+    Production computes effective_timeout = max(override + 5.0, timeout_seconds).
+    Before commit bdb76bb the error f-string at error_handling.py:58 used `timeout_seconds`
+    (the decorator default) — so a caller passing {"timeout": 30} with the default 2.0s
+    decorator would see "timed out after 2.0 seconds" rather than the true 35.0s value.
+
+    Revert-proof: reverting commit bdb76bb (restoring `{timeout_seconds}` in the f-string)
+    causes this test to fail on the `"35.0 seconds" in error_data["error"]` assertion.
+
+    Speed: we monkeypatch asyncio.wait_for to raise TimeoutError immediately — the test
+    never sleeps for 35 real seconds.
+    """
+
+    @timeout_wrapper(timeout_seconds=2.0)
+    async def op(kwargs: dict) -> dict:
+        return {"ok": True}
+
+    async def fake_wait_for(coro, timeout):
+        # Close the coroutine to avoid "coroutine was never awaited" RuntimeWarning
+        coro.close()
+        raise TimeoutError()
+
+    monkeypatch.setattr(
+        "src.homelab_mcp.error_handling.asyncio.wait_for",
+        fake_wait_for,
+    )
+
+    # {"timeout": 30} → effective_timeout = max(30 + 5.0, 2.0) = 35.0
+    result = await op({"timeout": 30})
+
+    assert "content" in result, f"expected MCP-wrapped response; got {result!r}"
+    error_data = json.loads(result["content"][0]["text"])
+
+    assert error_data["status"] == "error"
+    assert error_data["error_type"] == "timeout"
+
+    # The core assertion — this is what ERR-01 guards.
+    assert "35.0 seconds" in error_data["error"], (
+        f"Expected effective_timeout (35.0s) in error msg; got: {error_data['error']!r}"
+    )
+    assert "2.0 seconds" not in error_data["error"], (
+        f"Error msg must NOT report decorator default (2.0s); got: {error_data['error']!r}"
+    )
