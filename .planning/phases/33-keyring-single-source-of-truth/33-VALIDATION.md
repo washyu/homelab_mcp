@@ -83,9 +83,10 @@ Wave 0 must land all test file changes BEFORE implementation waves, so every imp
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Manual `mcp_admin` bootstrap docs are discoverable from onboarding flow | CRED-06 (D-12) | Human reading-comprehension check; doc layout quality | Load `docs/mcp_admin_bootstrap.md` (or equivalent); confirm it is linked from the main onboarding README and from the `connect_to_device` prompt step 1 note |
 | `homelab-mcp credentials add <host> <user> --key-path <path>` stores key-path, sets `auth_type="key"` in registry, subsequent `ssh_discover` via MCP succeeds | CRED-05 (D-09) | Requires real TTY for getpass-free path and real keyring | Run CLI with `--key-path ~/.ssh/id_ed25519`; inspect JSON registry file for `auth_type: "key"`; call `ssh_discover` against a test host |
 | Fresh install on a machine with the old `ssh_credentials` DB table: server startup emits notice + drops table idempotently | CRED-04 (D-01) | Integration-level DB state | Seed `~/.homelab_mcp/homelab.db` with legacy `ssh_credentials` row; start server; confirm stderr notice + table removed |
+
+> **Note (D-18 addendum):** The `docs/mcp_admin_bootstrap.md` manual verification was dropped — `mcp_admin` is no longer a privileged default; any SSH-accessible sudo account works via `credentials add <host> <user>`.
 
 ---
 
