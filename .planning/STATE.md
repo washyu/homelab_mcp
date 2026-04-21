@@ -1,54 +1,53 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Critical Bug Fixes
-status: shipped
-stopped_at: v1.5 milestone closed 2026-04-20 (audit verdict tech_debt — 4 bookkeeping items deferred)
+milestone: v1.6
+milestone_name: Credential Architecture Cleanup
+status: planning
+stopped_at: v1.6 started — defining requirements and roadmap
 last_updated: "2026-04-20T00:00:00.000Z"
-last_activity: 2026-04-20 -- milestone v1.5 archived; ROADMAP collapsed; REQUIREMENTS.md recreated fresh for next milestone
+last_activity: 2026-04-20 -- v1.6 milestone started; scope: keyring single source of truth + cluster-scoped Proxmox tokens
 progress:
   total_phases: 2
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-20 after v1.5 close)
+See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Planning next milestone (run `/gsd-new-milestone`)
+**Current focus:** v1.6 Credential Architecture Cleanup
 
 ## Current Position
 
-Phase: v1.5 shipped (Phases 31-32 complete)
+Phase: 33 — Keyring Single Source of Truth (not started)
 Plan: —
-Status: Between milestones. v1.5 archived with `tech_debt` verdict accepted.
-Last activity: 2026-04-20 -- v1.5 milestone closed; archive files in `.planning/milestones/v1.5-*`
+Status: Defining requirements and roadmap
+Last activity: 2026-04-20 -- v1.6 milestone scope confirmed (Tier A — Phase 33 core from commit 8ac2270)
 
-Progress: [██████████] v1.5 100%
+Progress: [░░░░░░░░░░] 0%
 
-## Deferred Items
+## Milestone Origin
 
-Items acknowledged and deferred at milestone close on 2026-04-20:
+v1.6 anchors on the Phase 33 idea originally drafted at commit `8ac2270` on 2026-04-19 (credential-cleanup branch). That commit's narrative labeled v1.4/v1.5 as "parked/broken" — superseded. v1.4/v1.4.1/v1.5 all shipped cleanly. v1.6 picks up the actual credential cleanup scope from that commit's SPEC without the stale narrative.
+
+## Deferred Items (carried from v1.5 close)
 
 | Category | Item | Status | Notes |
 |----------|------|--------|-------|
-| tech_debt | 31-VERIFICATION.md missing | deferred | Phase 31 merged on plan-SUMMARY evidence; Phase 32 revert-proof regressions re-prove each fix via integration, but the formal Phase-31 gate was skipped |
-| tech_debt | 31-VALIDATION.md draft | deferred | `status: draft`, `nyquist_compliant: false`, `wave_0_complete: false` — Nyquist validation incomplete |
+| tech_debt | 31-VERIFICATION.md missing | deferred | Phase 31 merged on plan-SUMMARY evidence; Phase 32 revert-proof regressions re-prove each fix via integration |
+| tech_debt | 31-VALIDATION.md draft | deferred | Nyquist validation incomplete |
 | tech_debt | 32-VALIDATION.md missing | deferred | No Nyquist VALIDATION.md for regression-tests phase |
-| tech_debt | SUMMARY frontmatter shape inconsistency | deferred | 32-01 uses flat `requirements-completed: [REG-01]`; 32-02..05 use nested `requirements:\n - REG-01`. Both parse; extraction via `summary-extract --fields requirements_completed` picks up only the flat form |
-| quick_task | 1-fix-ruff-ci-cd-pipeline-failures | deferred (false-positive) | audit-open flagged `status: missing` but PLAN.md + SUMMARY.md exist on disk — pre-existing bookkeeping artifact from earlier milestone |
-| quick_task | 2-run-all-pre-commit-checks-before-push | deferred (false-positive) | Same as above |
-| quick_task | 3-fix-windows-cross-platform-ci-failures | deferred (false-positive) | Same as above |
-| quick_task | 4-create-manual-verification-test-checklis | deferred (false-positive) | Same as above |
-| quick_task | 5-we-are-missing-the-new-cli-arguments-for | completed (audit false-positive) | Shipped in v1.3 at commit 88e972f (see Quick Tasks Completed table below) |
-| quick_task | 6-update-readme-and-setup-docs-to-reflect- | completed (audit false-positive) | Shipped in v1.3 at commit 1357903 |
-| quick_task | 7-fix-ssh-tool-schemas-so-the-model-knows- | completed (audit false-positive) | Shipped in v1.3 at commit d261600 |
+| tech_debt | SUMMARY frontmatter shape inconsistency | deferred | 32-01 flat vs 32-02..05 nested |
+| v1.7_candidate | SSH-04 per-call timeout handshake | deferred | Not credential-architecture; v1.7 candidate |
+| v1.7_candidate | QUAL-01 Proxmox iso/cdrom exclusivity | deferred | Schema correctness; v1.7 candidate |
+| v1.7_candidate | HTTP-01 HTTP flag truthy variants | deferred | Ergonomic polish; v1.7 candidate |
+| v1.7_candidate | SSH-03/SSH-05/ERR-02 credential-adjacent | deferred | Scoped out of v1.6 Tier A — could fit v1.6.x or v1.7 |
 
 ## Accumulated Context
 
@@ -85,11 +84,12 @@ None.
 
 ### Blockers/Concerns
 
-- PyPI OIDC trusted publisher must remain registered at pypi.org/manage/project/homelab-mcp/settings/publishing/ for future `git tag v*` pushes to trigger the publish job (one-time, stable)
+- PyPI OIDC trusted publisher must remain registered at pypi.org/manage/project/homelab-mcp/settings/publishing/ for future `git tag v*` pushes
 - Human-only verifiable items: `homelab-mcp --version` in installed env, TTY echo suppression for `credentials add` — cannot be automated in headless CI
+- v1.6 migration implications: users with credentials stored only in the DB `ssh_credentials` table will need to re-add via `credentials add` after the drop — no auto-migration planned (homelab scope, single-user)
 
 ## Session Continuity
 
-Last session: 2026-04-20 (v1.5 milestone close)
-Stopped at: v1.5 archived; next action is `/gsd-new-milestone`
+Last session: 2026-04-20 (v1.6 milestone start)
+Stopped at: REQUIREMENTS.md + ROADMAP.md pending write
 Resume file: —

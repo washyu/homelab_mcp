@@ -78,15 +78,20 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ### Active
 
-_(None — v1.5 shipped. Next milestone defines its requirements via `/gsd-new-milestone`.)_
+<!-- v1.6 Credential Architecture Cleanup -->
+- [ ] SSH credentials stored exclusively in OS keyring — DB `ssh_credentials` table removed
+- [ ] SSH tools no longer fall back to `mcp_admin` hardcoded defaults — explicit keyring entries required
+- [ ] `setup_mcp_admin` MCP tool removed; device onboarding via `credentials add` CLI + `connect_to_device` prompt
+- [ ] `register_server` validates credentials through standard resolve path — no verify-bypass
+- [ ] Cluster-scoped Proxmox API tokens — one datacenter-wide token serves N cluster nodes
 
 <!-- Deferred to future milestone -->
-- [ ] Keyring auto-injection disambiguates multiple usernames per hostname — no silent wrong-user logins
-- [ ] SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
-- [ ] `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
-- [ ] `resolve_ssh_credentials()` wrapped in error handler — raises return JSON error payloads, not raw exceptions
-- [ ] Proxmox schema enforces `iso`/`cdrom` exclusivity via `oneOf`
-- [ ] HTTP mode flag accepts common truthy variants (`1`, `yes`, `on`), not just literal `"true"`
+- [ ] SSH-03: Keyring auto-injection disambiguates multiple usernames per hostname
+- [ ] SSH-04: SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
+- [ ] SSH-05: `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
+- [ ] ERR-02: `resolve_ssh_credentials()` wrapped in error handler — raises return JSON error payloads, not raw exceptions
+- [ ] QUAL-01: Proxmox schema enforces `iso`/`cdrom` exclusivity via `oneOf`
+- [ ] HTTP-01: HTTP mode flag accepts common truthy variants (`1`, `yes`, `on`), not just literal `"true"`
 <!-- QUAL-02 closed by v1.5 Phase 32-01 — WS-01 regression uses production `handle_shell_websocket` -->
 <!-- Phase-31 VERIFICATION.md retroactive pass — tech debt from v1.5 close -->
 <!-- 31/32 Nyquist VALIDATION.md finalization — tech debt from v1.5 close -->
@@ -174,9 +179,38 @@ _(None — v1.5 shipped. Next milestone defines its requirements via `/gsd-new-m
 
 **Latest PyPI:** `homelab-mcp` 1.4.0 (v1.5 did not bump the PyPI version — v1.5 scope was bug fixes inside the 1.4.x line; next release tag will be cut when a future milestone ships).
 
-## Next Milestone Goals
+## Current Milestone: v1.6 Credential Architecture Cleanup
 
-_(To be defined — run `/gsd-new-milestone` to start. Deferred candidates in the Active section above are the natural starting backlog.)_
+**Goal:** The OS keyring becomes the single source of truth for remote credentials. The parallel DB `ssh_credentials` table, `mcp_admin` hardcoded defaults, and `setup_mcp_admin` bootstrap tool are removed. Proxmox API tokens can be stored at cluster scope so one credential serves all nodes in a datacenter.
+
+**Target features:**
+- Keyring-only SSH credential storage — drop the DB `ssh_credentials` table; no parallel store
+- Remove `mcp_admin` hardcoded fallback — explicit keyring entries required (actionable error otherwise)
+- Remove `setup_mcp_admin` MCP tool — device onboarding flows through `credentials add` CLI and the existing `connect_to_device` prompt
+- Fix `register_server` verify-path bypass — registration validates credentials via the standard resolve path
+- Cluster-scoped Proxmox API tokens — one datacenter-wide token shared across N nodes; per-node tokens remain supported
+
+**Why this milestone:**
+- v1.3 shipped keyring (`credential_store.py`) as a parallel layer next to the DB table for a fast, non-breaking rollout
+- v1.4/v1.4.1 added keyring auto-inject to specific tools but kept the DB fallback
+- v1.6 finishes the migration — keyring primary, DB removed, hardcoded fallbacks gone, Proxmox cluster model corrected
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ---
-*Last updated: 2026-04-20 after v1.5 milestone completion*
+*Last updated: 2026-04-20 after v1.6 milestone start*

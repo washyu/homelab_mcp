@@ -8,6 +8,7 @@
 - ✅ **v1.3 Credentials & Release Automation** — Phases 17-20 (shipped 2026-03-15)
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
 - ✅ **v1.5 Critical Bug Fixes** — Phases 31-32 (shipped 2026-04-20)
+- 🚧 **v1.6 Credential Architecture Cleanup** — Phases 33-34 (in progress)
 
 ## Phases
 
@@ -82,13 +83,36 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 </details>
 
-## Pending — Not Yet Assigned to Milestone
+### v1.6 Credential Architecture Cleanup (In Progress)
 
-- [ ] **Phase 33: Credential Architecture Cleanup** — Keyring as single source of truth for SSH + Proxmox API credentials. Drops parallel DB `ssh_credentials` table, `mcp_admin` defaults, and `setup_mcp_admin` bootstrap tool. Fixes `register_server` verify-path bypass. Adds cluster-scoped credentials so a Proxmox cluster can share one datacenter-wide API token across N nodes.
+**Milestone Goal:** The OS keyring becomes the single source of truth for remote credentials. Parallel DB `ssh_credentials` storage, `mcp_admin` hardcoded fallbacks, and the `setup_mcp_admin` bootstrap tool are removed. Proxmox API tokens can be stored at cluster scope so one credential serves all nodes in a datacenter.
 
-**Origin:** drafted on `credential-cleanup` branch 2026-04-19 (commit `8ac2270`) before v1.5 close. Branch's original narrative assumed v1.4/v1.5 work was parked and broken — that narrative is superseded: v1.4/v1.4.1/v1.5 have all shipped to main as of 2026-04-20.
+- [ ] **Phase 33: Keyring Single Source of Truth** — Drop DB `ssh_credentials` table; remove `mcp_admin` defaults; remove `setup_mcp_admin` tool; fix `register_server` verify-bypass (CRED-04, CRED-05, CRED-06, CRED-07)
+- [ ] **Phase 34: Cluster-Scoped Proxmox Credentials** — Add cluster-scope credential storage and auto-inject; per-node tokens remain supported and take precedence (CRED-08)
 
-**To activate:** run `/gsd-new-milestone` to define the next milestone scope, then `/gsd-plan-phase 33` to produce SPEC.md and PLAN.md. The Phase 33 directory should live in the new milestone once created.
+## Phase Details
+
+### Phase 33: Keyring Single Source of Truth
+**Goal**: The OS keyring is the only place remote credentials are stored; all hardcoded fallbacks and MCP-side credential-write paths are removed
+**Depends on**: Nothing (builds on v1.5 shipped state)
+**Requirements**: CRED-04, CRED-05, CRED-06, CRED-07
+**Success Criteria** (what must be TRUE):
+  1. The `ssh_credentials` table no longer exists in the SQLite schema; no server code reads or writes to it; existing installs' tables are documented as orphaned (users re-add via `credentials add`)
+  2. SSH tools with no keyring entry for a host raise an actionable `CredentialNotFoundError` naming `credentials add <hostname>` — they do NOT log in as `mcp_admin` with a default password
+  3. `setup_mcp_admin` is no longer exposed in `tools.py`; the handler function is removed; its schema is removed; MCP clients see one fewer tool; onboarding docs point at `credentials add` + `connect_to_device`
+  4. `register_server` calls `resolve_ssh_credentials()` and rejects registration with an actionable error if credentials are absent or invalid; there is no code path that accepts a registration without verified credentials
+  5. All existing SSH tests pass with the DB path removed; new regression tests prove keyring-only behavior
+
+### Phase 34: Cluster-Scoped Proxmox Credentials
+**Goal**: One Proxmox API token stored at cluster scope serves all nodes in the same datacenter; per-node tokens override when both exist
+**Depends on**: Phase 33 (keyring-only foundation)
+**Requirements**: CRED-08
+**Success Criteria** (what must be TRUE):
+  1. `credentials add --type proxmox --scope cluster:<cluster_name>` stores a cluster-scoped token in the keyring alongside per-node entries
+  2. `get_proxmox_client(node)` resolves credentials in priority order: per-node → cluster → error; resolution is observable via debug log
+  3. A Proxmox cluster discovery step populates a `cluster_name` for each node registered to the same datacenter; cluster lookup uses that name
+  4. Docs and `credentials list` output distinguish per-node from cluster-scoped credentials
+  5. Per-node credentials from v1.3/v1.4 continue to work unchanged (backward-compatible precedence)
 
 ## Progress
 
@@ -117,3 +141,5 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
 | 31. Bug Fixes | v1.5 | 2/2 | Complete | 2026-04-19 |
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
+| 33. Keyring Single Source of Truth | v1.6 | 0/? | Not started | - |
+| 34. Cluster-Scoped Proxmox Credentials | v1.6 | 0/? | Not started | - |
