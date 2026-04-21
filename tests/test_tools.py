@@ -870,3 +870,39 @@ def test_all_tool_schema_properties_are_valid_dicts():
             assert has_type or has_desc or has_oneof or has_anyof, (
                 f"Tool '{tool_name}' property '{prop_name}' missing type/description/oneOf/anyOf"
             )
+
+
+# --- Regression guards (v1.5 / PR #39) ---
+
+
+def test_sch01_credential_type_rejects_non_enum_values() -> None:
+    """SCH-01 regression: list_keyring_credentials.credential_type has enum=['ssh','proxmox'].
+
+    Before commit bdb76bb the schema accepted arbitrary strings for credential_type, so
+    MCP clients could call `list_keyring_credentials(credential_type='bogus')` and reach
+    the handler with an invalid value. The fix adds `enum: ["ssh", "proxmox"]` to the
+    property, causing the MCP framework to reject non-matching values at the JSON Schema
+    validation step before the handler runs.
+
+    Revert-proof: reverting commit bdb76bb (removing the `enum: ["ssh", "proxmox"]` line
+    from credential_tools_schema.py) causes this test to fail on the
+    `prop["enum"] == ["ssh", "proxmox"]` assertion because the `enum` key is absent
+    (KeyError) or has a different value.
+    """
+    tools = get_available_tools()
+
+    assert "list_keyring_credentials" in tools, "list_keyring_credentials must be registered in the tool registry"
+    tool = tools["list_keyring_credentials"]
+
+    assert "inputSchema" in tool
+    props = tool["inputSchema"]["properties"]
+    assert "credential_type" in props, "list_keyring_credentials must expose credential_type in its inputSchema"
+    prop = props["credential_type"]
+
+    # Core SCH-01 assertions:
+    assert prop["type"] == "string", f"credential_type type must be 'string'; got {prop!r}"
+    assert prop["enum"] == ["ssh", "proxmox"], (
+        f"credential_type must restrict values to enum ['ssh', 'proxmox']; "
+        f"got enum={prop.get('enum')!r} — SCH-01 regression would allow arbitrary strings"
+    )
+    assert prop.get("default") == "ssh", f"credential_type default must be 'ssh'; got {prop.get('default')!r}"
