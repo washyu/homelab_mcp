@@ -110,7 +110,7 @@ Plans:
 - [x] 32-02-PLAN.md — SSH-01 + SSH-02 regression tests in tests/test_ssh_tools.py (includes AST meta-test with D-05 mutation experiment) — completed 2026-04-20
 - [x] 32-03-PLAN.md — ERR-01 regression test in tests/test_error_handling.py (monkeypatched asyncio.wait_for) — completed 2026-04-20
 - [x] 32-04-PLAN.md — SCH-01 regression test in tests/test_tools.py (credential_type enum shape) — completed 2026-04-20
-- [ ] 32-05-PLAN.md — Gap closure: extend SSH-02 AST detector to catch d25c915 pre-fix Compare(Constant in X) form + D-10 note
+- [x] 32-05-PLAN.md — Gap closure: extend SSH-02 AST detector to catch d25c915 pre-fix Compare(Constant in X) form + D-10 note — completed 2026-04-20
 
 ## Progress
 
