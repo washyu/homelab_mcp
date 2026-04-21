@@ -106,10 +106,10 @@ Plans:
   5. A test verifies the credentials tool schema rejects non-enum credential_type values — reverting the fix causes the test to fail
 **Plans:** 4 plans
 Plans:
-- [ ] 32-01-PLAN.md — WS-01 E2E regression test in tests/test_http_app.py (closes QUAL-02)
-- [ ] 32-02-PLAN.md — SSH-01 + SSH-02 regression tests in tests/test_ssh_tools.py (includes AST meta-test with D-05 mutation experiment)
-- [ ] 32-03-PLAN.md — ERR-01 regression test in tests/test_error_handling.py (monkeypatched asyncio.wait_for)
-- [ ] 32-04-PLAN.md — SCH-01 regression test in tests/test_tools.py (credential_type enum shape)
+- [x] 32-01-PLAN.md — WS-01 E2E regression test in tests/test_http_app.py (closes QUAL-02) — completed 2026-04-20
+- [x] 32-02-PLAN.md — SSH-01 + SSH-02 regression tests in tests/test_ssh_tools.py (includes AST meta-test with D-05 mutation experiment) — completed 2026-04-20
+- [x] 32-03-PLAN.md — ERR-01 regression test in tests/test_error_handling.py (monkeypatched asyncio.wait_for) — completed 2026-04-20
+- [x] 32-04-PLAN.md — SCH-01 regression test in tests/test_tools.py (credential_type enum shape) — completed 2026-04-20
 
 ## Progress
 
@@ -137,4 +137,4 @@ Plans:
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
 | 31. Bug Fixes | v1.5 | 1/2 | In Progress | - |
-| 32. Regression Tests | v1.5 | 0/4 | Not started | - |
+| 32. Regression Tests | v1.5 | 4/4 | In Progress | - |

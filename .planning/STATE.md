@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Critical Bug Fixes
 status: executing
-stopped_at: Phase 32 context gathered
-last_updated: "2026-04-21T00:52:58.893Z"
-last_activity: 2026-04-21 -- Phase 32 planning complete
+stopped_at: Phase 32 regression tests executed, pending verification
+last_updated: "2026-04-20T00:00:00.000Z"
+last_activity: 2026-04-20 -- Phase 32 Wave 1 executed (4 plans merged, SSH-02 detector gap flagged)
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 5
+  percent: 83
 ---
 
 # Project State
@@ -25,12 +25,16 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: 31 — Bug Fixes (in progress)
-Plan: 31-01 complete; 31-02 remaining
-Status: Ready to execute
-Last activity: 2026-04-21 -- Phase 32 planning complete
+Phase: 32 — Regression Tests (in progress)
+Plan: 32-01, 32-02, 32-03, 32-04 all complete (pending phase verification)
+Status: Awaiting phase-goal verification
+Last activity: 2026-04-20 -- Phase 32 Wave 1 executed, 4 plans merged
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 83%
+
+Note: Phase 31 plan 31-02 (WS-01, SSH-01 fixes) was already shipped on v1.4 at
+commits b0a5f33 and 9f752c0 before Phase 32 began; ROADMAP still shows it as
+pending but the fixes exist on the branch. Update ROADMAP separately.
 
 ## Performance Metrics
 
