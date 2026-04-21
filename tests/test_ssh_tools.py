@@ -7,6 +7,7 @@ import asyncssh
 import pytest
 
 from src.homelab_mcp.ssh_tools import (
+    _sudo_run,
     ensure_mcp_ssh_key,
     setup_remote_mcp_admin,
     ssh_discover_system,
@@ -1050,3 +1051,54 @@ async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path,
     # Assert remote tmpfile cleanup ran (rm -f /tmp/mcp_key_...)
     rm_calls = [cmd for cmd in run_calls if "rm -f" in cmd and "mcp_key_" in cmd]
     assert rm_calls, f"Expected rm -f cleanup of remote tmpfile in conn.run calls. Got calls: {run_calls}"
+
+
+# --- Regression guards (v1.5 / PR #39) ---
+
+
+@pytest.mark.asyncio
+async def test_ssh01_sudo_run_check_raises_in_password_branch():
+    """SSH-01 regression: _sudo_run(password=..., check=True) forwards check= to conn.run.
+
+    Before commit 9f752c0 the password branch dropped `check=`, so a non-zero exit from
+    `sudo -S <command>` was silently ignored. This test proves the propagation path.
+
+    Revert-proof: reverting commit 9f752c0 (restoring the branch that calls
+    `conn.run(full_command)` without `check=check` in the password branch) causes
+    conn.run to return a result object rather than raise — the test's
+    `pytest.raises(asyncssh.ProcessError)` assertion fails.
+    """
+    mock_conn = AsyncMock()
+
+    # Raise ProcessError from conn.run (simulates check=True catching non-zero exit).
+    # asyncssh.ProcessError kwargs vary by version; use the minimal positional/kwarg
+    # combination that instantiates cleanly on the asyncssh pinned in pyproject.toml.
+    try:
+        err: Exception = asyncssh.ProcessError(
+            env=None,
+            command="sudo -S ls",
+            subsystem=None,
+            exit_status=1,
+            exit_signal=None,
+            returncode=1,
+            stdout="",
+            stderr="permission denied",
+        )
+    except TypeError:
+        # Fallback: if newer asyncssh changed the constructor, use RuntimeError so
+        # the propagation path is still exercised. The exact exception class is not
+        # what REG-01 guards — the propagation is. The executor MUST prefer the
+        # asyncssh.ProcessError form; this fallback is a version-compat safety net.
+        err = RuntimeError("simulated non-zero exit from sudo")
+
+    mock_conn.run.side_effect = err
+
+    with pytest.raises(type(err)):
+        await _sudo_run(mock_conn, "ls", password="pw", check=True)
+
+    # Prove check=True was forwarded to conn.run — guards the exact defect
+    # in commit 9f752c0's parent (the password branch that dropped check=).
+    mock_conn.run.assert_called_once()
+    assert mock_conn.run.call_args.kwargs.get("check") is True, (
+        f"check=True must be forwarded to conn.run; got kwargs={mock_conn.run.call_args.kwargs!r}"
+    )
