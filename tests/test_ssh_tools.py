@@ -978,7 +978,7 @@ async def test_setup_mcp_admin_uses_grep_ff(mock_connect, mock_path, mock_ensure
 
     grep_cmd = grep_calls[0]
     # Must use file-based grep (-Ff with tmpfile path)
-    assert "grep -Ff" in grep_cmd or "-Ff" in grep_cmd, f"grep command must use -Ff (file-based): {grep_cmd!r}"
+    assert "-Ff" in grep_cmd, f"grep command must use -Ff (file-based): {grep_cmd!r}"
     assert "/tmp/mcp_key_" in grep_cmd, f"grep command must reference the tmpfile path: {grep_cmd!r}"
     # Must NOT use argument-based grep with key content as argument
     assert f'grep -F "{public_key}"' not in grep_cmd, (
@@ -1136,7 +1136,20 @@ def test_ssh02_no_disjunctive_always_true_assertions() -> None:
         """Conservative truthy-constant detector.
 
         Flags ONLY shapes provably true at parse time. Dynamic expressions
-        (Name, Call, Attribute, Compare over non-constants) are NOT flagged.
+        (Name, Call, Attribute, Compare over non-constants) are NOT flagged,
+        with ONE broadened exception for the `in` operator:
+
+        A `Compare` node is treated as structurally always-true when:
+        - `node.left` is an `ast.Constant` AND all comparators are `ast.Constant`
+          (plain parse-time tautology like `"a" == "a"`), OR
+        - `node.left` is an `ast.Constant` AND `node.ops[0]` is `ast.In`
+          (a constant literal is `in` SOMETHING — tautological in a disjunctive
+          `or` assert where the other branch is the real check).
+
+        The `Constant in X` case is the exact shape of the d25c915 pre-fix defect
+        and is special-cased because the comparator may be any expression
+        (Subscript, Attribute, Name, Call) and still yield a tautology in context.
+        See .planning/phases/32-regression-tests/32-CONTEXT.md decision D-10.
         """
         if isinstance(node, ast.Constant):
             # Non-empty string, non-zero number, True
@@ -1144,8 +1157,18 @@ def test_ssh02_no_disjunctive_always_true_assertions() -> None:
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
             return any(_is_structurally_always_true(v) for v in node.values)
         if isinstance(node, ast.Compare):
-            # Compare over two Constants is evaluable at parse time
+            # (a) Constant <op> Constant is evaluable at parse time (e.g., `"a" == "a"`).
             if isinstance(node.left, ast.Constant) and all(isinstance(c, ast.Constant) for c in node.comparators):
+                return True
+            # (b) `<Constant literal> in <anything>` — in the context of a disjunctive
+            # `or` assert where the other branch is the real check, a constant string
+            # literal being `in` some container is a tautology. This is the exact
+            # shape of the d25c915 pre-fix defect:
+            #     assert "No credentials" in err or "other" in err["error"]
+            # where the RHS is Compare(left=Constant("other"), ops=[In()], comparators=[Subscript(...)])
+            # and is always-true whenever `err["error"]` is a non-empty string.
+            # See CONTEXT.md decision D-10 for the full rationale.
+            if isinstance(node.left, ast.Constant) and node.ops and isinstance(node.ops[0], ast.In):
                 return True
         return False
 
