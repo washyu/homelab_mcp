@@ -1,0 +1,110 @@
+"""D-15 + D-25 AST meta-test: no source file re-introduces removed credential DB paths.
+
+Scans src/homelab_mcp/**/*.py for forbidden strings that indicate a regression.
+Test files are excluded (they may mention removed names in negative assertions).
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+
+# Strings whose presence in source AST (as Name, Attribute, or string literals) indicates regression
+FORBIDDEN_SOURCE_STRINGS: list[str] = [
+    "ssh_credentials",            # D-15: DB table name
+    "add_credential",             # D-15: removed DB method
+    "get_credential_by_hostname", # D-15: removed DB method
+    "update_credential",          # D-15: removed DB method
+    "update_last_verified",       # D-15: removed DB method
+    "setup_remote_mcp_admin",     # D-25: deleted function
+    "setup_mcp_admin",            # D-25: removed MCP tool name
+    "update_server_credentials",  # D-25: removed MCP tool name
+]
+
+# Narrow allowlist: certain files may legitimately contain specific forbidden strings
+# without it being a regression (e.g., migration.py names ssh_credentials inside DROP logic).
+ALLOWED_EXCEPTIONS: dict[str, set[str]] = {
+    # migration.py legitimately names `ssh_credentials` inside the DROP statement
+    # (removing this reference would prevent the drop from firing — self-defeating).
+    "ssh_credentials": {"migration.py"},
+}
+
+
+def _collect_string_literals(tree: ast.AST) -> list[str]:
+    """Walk AST and collect all string constant values."""
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+
+
+def _collect_name_and_attr_ids(tree: ast.AST) -> list[str]:
+    """Walk AST and collect all Name.id and Attribute.attr values."""
+    ids: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            ids.append(node.id)
+        elif isinstance(node, ast.Attribute):
+            ids.append(node.attr)
+    return ids
+
+
+def test_no_forbidden_strings_in_source() -> None:
+    """D-15 + D-25: No source file contains removed credential DB names or deleted tool references."""
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    assert src_root.exists(), f"Source root not found: {src_root}"
+
+    violations: list[str] = []
+
+    for py_file in sorted(src_root.rglob("*.py")):
+        source = py_file.read_text(encoding="utf-8")
+
+        # Fast pre-check: skip files that don't contain any forbidden string
+        if not any(forbidden in source for forbidden in FORBIDDEN_SOURCE_STRINGS):
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(py_file))
+        except SyntaxError as e:
+            violations.append(f"{py_file}: SyntaxError during AST parse: {e}")
+            continue
+
+        all_strings = _collect_string_literals(tree)
+        all_ids = _collect_name_and_attr_ids(tree)
+        all_tokens = set(all_strings + all_ids)
+
+        for forbidden in FORBIDDEN_SOURCE_STRINGS:
+            if forbidden in all_tokens:
+                allowed_files = ALLOWED_EXCEPTIONS.get(forbidden, set())
+                if py_file.name in allowed_files:
+                    continue
+                violations.append(
+                    f"{py_file.relative_to(src_root.parent.parent)}: "
+                    f"contains forbidden identifier/string {forbidden!r}"
+                )
+
+    assert not violations, (
+        "Phase 33 regression: found removed DB/tool references in source files.\n"
+        "These strings must not appear outside test files:\n"
+        + "\n".join(f"  - {v}" for v in violations)
+    )
+
+
+def test_register_server_handler_no_verify_connection_param() -> None:
+    """D-25: register_server in ssh_tools.py must not have verify_connection parameter."""
+    import inspect
+
+    from homelab_mcp.ssh_tools import register_server
+
+    sig = inspect.signature(register_server)
+    assert "verify_connection" not in sig.parameters, (
+        "register_server must not accept verify_connection parameter after Phase 33 (D-07)"
+    )
+    assert "key_path" not in sig.parameters, (
+        "register_server must not accept key_path parameter after Phase 33 (D-03)"
+    )
+    assert "password" not in sig.parameters, (
+        "register_server must not accept password parameter after Phase 33 (D-06)"
+    )

@@ -24,46 +24,31 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
 
     applied_migrations: list[str] = []
 
-    # Check if ssh_credentials table exists
+    # D-01: Drop legacy ssh_credentials table if it still exists (v1.6 cleanup).
+    # Keyring is now the single source of truth for remote credentials (CRED-04).
     cursor = adapter.connection.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT name FROM sqlite_master
         WHERE type='table' AND name='ssh_credentials'
-    """)
-
-    if not cursor.fetchone():
-        # Create ssh_credentials table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER,
-                hostname TEXT NOT NULL,
-                username TEXT NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name TEXT,
-                is_active INTEGER DEFAULT 1,
-                last_verified TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, username),
-                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
+        """
+    )
+    if cursor.fetchone():
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_hostname")
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_device_id")
+        cursor.execute("DROP TABLE IF EXISTS ssh_credentials")
         adapter.connection.commit()
-        applied_migrations.append("create_ssh_credentials_table")
-        print("✓ Created ssh_credentials table")
+        applied_migrations.append("drop_ssh_credentials_table")
+        import sys  # noqa: PLC0415
+        print(
+            "Dropped legacy ssh_credentials table (v1.6: keyring is now the sole credential store)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Any credentials previously stored in the database have been removed.\n"
+            "Re-add them with: homelab-mcp credentials add <hostname> <username>",
+            file=sys.stderr,
+        )
 
     # Check if drift_baselines table exists
     cursor.execute("""
@@ -108,46 +93,32 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
 
     cursor = adapter.connection.cursor()
 
-    # Check if ssh_credentials table exists
-    cursor.execute("""
+    # D-01: Drop legacy ssh_credentials table if it still exists (v1.6 cleanup — Postgres path).
+    # Keyring is now the single source of truth for remote credentials (CRED-04).
+    cursor.execute(
+        """
         SELECT EXISTS (
             SELECT FROM information_schema.tables
             WHERE table_name = 'ssh_credentials'
         )
-    """)
-
-    if not cursor.fetchone()[0]:
-        # Create ssh_credentials table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name VARCHAR(255),
-                is_active BOOLEAN DEFAULT TRUE,
-                last_verified TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, username)
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
+        """
+    )
+    if cursor.fetchone()[0]:
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_hostname")
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_device_id")
+        cursor.execute("DROP TABLE IF EXISTS ssh_credentials")
         adapter.connection.commit()
-        applied_migrations.append("create_ssh_credentials_table")
-        print("✓ Created ssh_credentials table")
+        applied_migrations.append("drop_ssh_credentials_table")
+        import sys  # noqa: PLC0415
+        print(
+            "Dropped legacy ssh_credentials table from Postgres (v1.6: keyring is now the sole credential store)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Any credentials previously stored in the database have been removed.\n"
+            "Re-add them with: homelab-mcp credentials add <hostname> <username>",
+            file=sys.stderr,
+        )
 
     adapter.close()
     return applied_migrations
