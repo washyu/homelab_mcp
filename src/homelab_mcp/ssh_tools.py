@@ -9,6 +9,7 @@ from typing import Any, cast
 import asyncssh
 
 from .credential_store import get_credential, list_credentials
+from .database import get_database_adapter  # noqa: F401 — module-level attr for test monkeypatch (tests assert not-called)
 from .error_handling import retry_on_failure, ssh_connection_wrapper
 from .log_filter import sanitize_error
 from .ssh_connection import ssh_connect
