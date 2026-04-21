@@ -104,12 +104,13 @@ Plans:
   3. A test verifies `_sudo_run(check=True)` raises on non-zero exit in the password branch — reverting the fix causes the test to fail
   4. A test verifies the password assertion in `test_ssh_tools.py` fails when password is not propagated — the test is not unconditionally passing
   5. A test verifies the credentials tool schema rejects non-enum credential_type values — reverting the fix causes the test to fail
-**Plans:** 4 plans
+**Plans:** 5 plans
 Plans:
 - [x] 32-01-PLAN.md — WS-01 E2E regression test in tests/test_http_app.py (closes QUAL-02) — completed 2026-04-20
 - [x] 32-02-PLAN.md — SSH-01 + SSH-02 regression tests in tests/test_ssh_tools.py (includes AST meta-test with D-05 mutation experiment) — completed 2026-04-20
 - [x] 32-03-PLAN.md — ERR-01 regression test in tests/test_error_handling.py (monkeypatched asyncio.wait_for) — completed 2026-04-20
 - [x] 32-04-PLAN.md — SCH-01 regression test in tests/test_tools.py (credential_type enum shape) — completed 2026-04-20
+- [ ] 32-05-PLAN.md — Gap closure: extend SSH-02 AST detector to catch d25c915 pre-fix Compare(Constant in X) form + D-10 note
 
 ## Progress
 
