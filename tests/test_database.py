@@ -432,3 +432,90 @@ class TestDriftBaselines:
         assert isinstance(result["baseline_config"], dict)
         assert result["baseline_config"]["cores"] == 4
         assert result["baseline_config"]["net0"] == "virtio,bridge=vmbr0"
+
+
+# Phase 33 regression tests — RED until implementation plans land
+
+
+def test_ssh_credentials_table_dropped():
+    """CRED-04 / D-01: ssh_credentials table must not exist after init_schema (v1.6)."""
+    from src.homelab_mcp.database import SQLiteAdapter
+    adapter = SQLiteAdapter(":memory:")
+    adapter.connect()
+    adapter.init_schema()
+    cursor = adapter.connection.cursor()
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'"
+    )
+    assert cursor.fetchone() is None, (
+        "ssh_credentials table must not exist after v1.6 migration (CRED-04)"
+    )
+    adapter.close()
+
+
+def test_no_credential_methods_on_adapter():
+    """CRED-04 / D-02: SQLiteAdapter must not expose credential CRUD methods after Phase 33."""
+    from src.homelab_mcp.database import SQLiteAdapter
+    adapter = SQLiteAdapter(":memory:")
+    for method_name in (
+        "add_credential",
+        "get_credential",
+        "get_credential_by_hostname",
+        "get_credential_by_id",
+        "update_credential",
+        "delete_credential",
+        "list_credentials",
+        "update_last_verified",
+    ):
+        assert not hasattr(adapter, method_name), (
+            f"SQLiteAdapter must not have {method_name!r} after Phase 33 credential DB removal (D-02)"
+        )
+
+
+def test_ssh_credentials_table_dropped_postgres(monkeypatch):
+    """CRED-04 / D-01: Postgres migration path executes DROP TABLE IF EXISTS ssh_credentials.
+
+    Uses unittest.mock to stub psycopg2.connect — no live Postgres server required.
+    The Postgres migration (run_postgres_migrations / init_schema, whichever Plan 33-02 wires)
+    must issue a DROP TABLE statement against the cursor.
+    """
+    from unittest.mock import Mock
+
+    executed: list[str] = []
+    mock_cursor = Mock()
+    mock_cursor.execute.side_effect = lambda sql, *a, **kw: executed.append(sql)
+    # Return a truthy row for the existence check so the DROP branch fires
+    mock_cursor.fetchone.return_value = (True,)
+
+    mock_conn = Mock()
+    # Support both `with conn.cursor() as cur:` and `cur = conn.cursor()` patterns
+    cursor_ctx = Mock()
+    cursor_ctx.__enter__ = Mock(return_value=mock_cursor)
+    cursor_ctx.__exit__ = Mock(return_value=None)
+    mock_conn.cursor.return_value = cursor_ctx
+    # Fallback: if adapter uses non-context cursor(), returning the ctx also works via attribute access,
+    # but if it accesses mock_cursor methods directly, expose them on the ctx via __getattr__ fallback:
+    cursor_ctx.execute = mock_cursor.execute
+    cursor_ctx.fetchone = mock_cursor.fetchone
+    mock_conn.commit = Mock()
+
+    monkeypatch.setattr(
+        "src.homelab_mcp.database.psycopg2.connect",
+        lambda *a, **kw: mock_conn,
+        raising=False,
+    )
+
+    from src.homelab_mcp.database import PostgreSQLAdapter
+    adapter = PostgreSQLAdapter(connection_params={"host": "fake", "database": "fake", "user": "fake", "password": "fake"})
+    adapter.connect()
+    # init_schema invokes run_postgres_migrations per Plan 33-02 wiring
+    adapter.init_schema()
+
+    dropped = [
+        s for s in executed
+        if "DROP TABLE IF EXISTS SSH_CREDENTIALS" in s.upper().replace("  ", " ")
+    ]
+    assert dropped, (
+        f"Expected DROP TABLE IF EXISTS ssh_credentials in Postgres migration; "
+        f"got executed SQL: {executed}"
+    )
