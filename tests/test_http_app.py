@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
 from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
-from homelab_mcp.http_app import OriginValidationMiddleware
+from homelab_mcp.http_app import OriginValidationMiddleware, handle_shell_websocket
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -291,3 +294,65 @@ class TestWebSocketReadOutput:
                     wait_for_calls.append(ast.unparse(node))
 
         assert wait_for_calls, "read_output must use asyncio.wait_for for non-blocking stdout reads; none found"
+
+
+# --- Regression guards (v1.5 / PR #39) ---
+
+
+def _make_shell_app() -> Starlette:
+    """Minimal Starlette app registering production handle_shell_websocket.
+
+    Used by WS-01 regression to drive the handler end-to-end via
+    TestClient.websocket_connect, not by reimplementing read_output locally.
+    """
+    return Starlette(
+        routes=[WebSocketRoute("/ws/shell/{session_id}", handle_shell_websocket)],
+    )
+
+
+def test_ws01_reader_closes_socket_on_pty_eof() -> None:
+    """WS-01 regression: PTY stdout EOF closes the websocket and cancels the paired task.
+
+    Drives production handle_shell_websocket end-to-end via TestClient.websocket_connect
+    (closes QUAL-02 deferred item — the local-copy EOF test at lines 183-239 is superseded
+    by this E2E driver).
+
+    Revert-proof: reverting commit b0a5f33 (which added the three websocket.close() calls
+    in read_output and the EOF-break branch) causes the receive_text() after
+    "[Connection closed]" to hang instead of raising WebSocketDisconnect, and the test
+    fails on the pytest.raises(WebSocketDisconnect) assertion.
+    """
+    read_calls = 0
+
+    async def fake_read(n: int) -> str:
+        nonlocal read_calls
+        read_calls += 1
+        if read_calls == 1:
+            return "hello"
+        return ""  # EOF
+
+    mock_session = MagicMock()
+    mock_session.initial_command = None
+    mock_session.process = MagicMock()
+    mock_session.process.stdout = AsyncMock()
+    mock_session.process.stdout.read = fake_read
+    mock_session.process.stdin = None
+
+    with patch("homelab_mcp.http_app.shell_session_manager") as mock_mgr:
+        mock_mgr.get_session.return_value = mock_session
+        mock_mgr.resize_terminal = AsyncMock()
+
+        app = _make_shell_app()
+        with TestClient(app) as client:
+            with client.websocket_connect("/ws/shell/test-session") as ws:
+                # First frame: the "hello" data written after the first read
+                first = ws.receive_text()
+                assert first == "hello", f"expected data frame 'hello'; got {first!r}"
+
+                # Second frame: the "[Connection closed]" marker emitted in the EOF branch
+                second = ws.receive_text()
+                assert "[Connection closed]" in second, f"expected disconnect marker; got {second!r}"
+
+                # Third receive: handler has called websocket.close() — next read raises
+                with pytest.raises(WebSocketDisconnect):
+                    ws.receive_text()
