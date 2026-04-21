@@ -74,7 +74,7 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 
 ### v1.5 Critical Bug Fixes
 
-- [ ] **Phase 31: Bug Fixes** - Close 5 critical/high bugs from CodeRabbit PR #39 review
+- [x] **Phase 31: Bug Fixes** - Close 5 critical/high bugs from CodeRabbit PR #39 review — completed 2026-04-19
 - [x] **Phase 32: Regression Tests** - Regression tests preventing recurrence of all 5 fixed bugs — completed 2026-04-20
 
 ## Phase Details
@@ -92,7 +92,7 @@ Full details: `.planning/milestones/v1.4.1-ROADMAP.md`
 **Plans:** 2 plans
 Plans:
 - [x] 31-01-PLAN.md — Fix timeout error message, test assertion, and credential_type schema (ERR-01, SSH-02, SCH-01) — completed 2026-04-19
-- [ ] 31-02-PLAN.md — Fix zombie WebSocket PTY sessions and extract _sudo_run helper (WS-01, SSH-01)
+- [x] 31-02-PLAN.md — Fix zombie WebSocket PTY sessions and extract _sudo_run helper (WS-01, SSH-01) — completed 2026-04-19
 
 ### Phase 32: Regression Tests
 **Goal**: All 5 fixed bugs have dedicated regression tests that will catch any recurrence before it ships
@@ -137,5 +137,5 @@ Plans:
 | 19. Credential Auto-Inject | v1.3 | 2/2 | Complete | 2026-03-15 |
 | 20. Release Automation + PRMT-02 | v1.3 | 3/3 | Complete | 2026-03-15 |
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
-| 31. Bug Fixes | v1.5 | 1/2 | In Progress | - |
+| 31. Bug Fixes | v1.5 | 2/2 | Complete | 2026-04-19 |
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
