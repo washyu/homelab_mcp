@@ -53,65 +53,6 @@ CREDENTIAL_TOOLS: dict[str, dict[str, Any]] = {
             "required": [],
         },
     },
-    "update_server_credentials": {
-        "description": "Update SSH credentials for an existing registered server",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "credential_id": {
-                    "type": "integer",
-                    "description": "ID of the credential to update (optional if hostname provided)",
-                },
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname to look up (optional if credential_id provided)",
-                },
-                "username": {
-                    "type": "string",
-                    "description": "New SSH username",
-                },
-                "key_path": {
-                    "type": "string",
-                    "description": "New path to SSH private key",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "New SSH port",
-                },
-                "display_name": {
-                    "type": "string",
-                    "description": "New friendly name for the server",
-                },
-                "is_active": {
-                    "type": "boolean",
-                    "description": "Set server active/inactive status",
-                },
-            },
-            "required": [],
-        },
-    },
-    "remove_server": {
-        "description": "Remove a server from the registered servers list",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "credential_id": {
-                    "type": "integer",
-                    "description": "ID of the credential to remove (optional if hostname provided)",
-                },
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname to look up (optional if credential_id provided)",
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "If true, return a preview of what would be affected without executing any changes.",
-                },
-            },
-            "required": [],
-        },
-    },
 }
 
 CREDENTIAL_TOOLS["list_keyring_credentials"] = {
@@ -134,23 +75,3 @@ CREDENTIAL_TOOLS["list_keyring_credentials"] = {
     },
 }
 
-CREDENTIAL_TOOLS["remove_server_preview"] = {
-    "description": (
-        "Preview what remove_server would affect without executing. "
-        "Returns a structured dry-run report. No credentials are removed."
-    ),
-    "inputSchema": {
-        "type": "object",
-        "properties": {
-            "credential_id": {
-                "type": "integer",
-                "description": "ID of the credential to remove (optional if hostname provided)",
-            },
-            "hostname": {
-                "type": "string",
-                "description": "Hostname to look up (optional if credential_id provided)",
-            },
-        },
-        "required": [],
-    },
-}

@@ -7,9 +7,6 @@ from .credential_handlers import (
     handle_list_keyring_credentials,
     handle_list_registered_servers,
     handle_register_server,
-    handle_remove_server,
-    handle_remove_server_preview,
-    handle_update_server_credentials,
 )
 from .drift_handlers import handle_scan_infrastructure_drift
 from .infrastructure_handlers import (
@@ -58,7 +55,6 @@ from .service_handlers import (
     handle_run_ansible_playbook,
 )
 from .ssh_handlers import (
-    handle_setup_mcp_admin,
     handle_ssh_discover,
     handle_ssh_execute_command,
     handle_start_interactive_shell,
@@ -82,7 +78,6 @@ ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     # SSH tools
     "ssh_discover": handle_ssh_discover,
-    "setup_mcp_admin": handle_setup_mcp_admin,
     "verify_mcp_admin": handle_verify_mcp_admin,
     "ssh_execute_command": handle_ssh_execute_command,
     "start_interactive_shell": handle_start_interactive_shell,
@@ -127,9 +122,6 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     # Credential tools
     "register_server": handle_register_server,
     "list_registered_servers": handle_list_registered_servers,
-    "update_server_credentials": handle_update_server_credentials,
-    "remove_server": handle_remove_server,
-    "remove_server_preview": handle_remove_server_preview,
     "list_keyring_credentials": handle_list_keyring_credentials,
     # Drift tools
     "scan_infrastructure_drift": handle_scan_infrastructure_drift,

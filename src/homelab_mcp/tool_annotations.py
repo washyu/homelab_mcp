@@ -48,7 +48,6 @@ _READ_ONLY_TOOLS = [
     "decommission_device_preview",
     "delete_proxmox_vm_preview",
     "remove_vm_preview",
-    "remove_server_preview",
     "destroy_terraform_service_preview",
     "rollback_infrastructure_changes_preview",
 ]
@@ -67,7 +66,6 @@ _DESTRUCTIVE = ToolAnnotations(
 _DESTRUCTIVE_TOOLS = [
     "decommission_device",
     "remove_vm",
-    "remove_server",
     "delete_proxmox_vm",
     "destroy_terraform_service",
     "rollback_infrastructure_changes",
@@ -85,11 +83,6 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         idempotentHint=True,
     ),
     "bulk_discover_and_map": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-    ),
-    "setup_mcp_admin": ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=True,
@@ -127,11 +120,6 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         idempotentHint=False,
     ),
     "update_device_config": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-    ),
-    "update_server_credentials": ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=False,

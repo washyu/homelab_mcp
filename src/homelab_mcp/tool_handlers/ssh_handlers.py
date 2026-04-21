@@ -6,7 +6,6 @@ from typing import Any
 
 from ..shell_session import session_manager
 from ..ssh_tools import (
-    setup_remote_mcp_admin,
     ssh_discover_system,
     ssh_execute_command,
     update_mcp_admin_groups,
@@ -18,12 +17,6 @@ from ..validation import validate_hostname, validate_port
 async def handle_ssh_discover(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle ssh_discover tool."""
     result = await ssh_discover_system(**arguments)
-    return {"content": [{"type": "text", "text": result}]}
-
-
-async def handle_setup_mcp_admin(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle setup_mcp_admin tool."""
-    result = await setup_remote_mcp_admin(**arguments)
     return {"content": [{"type": "text", "text": result}]}
 
 

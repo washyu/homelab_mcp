@@ -30,42 +30,6 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["hostname"],
         },
     },
-    "setup_mcp_admin": {
-        "description": "SSH into a remote system and setup mcp_admin user with admin permissions and SSH key access. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address of the target system",
-                },
-                "username": {
-                    "type": "string",
-                    "description": "Admin username to connect with (must have sudo access). Omit if credentials were stored with `credentials add` — they are auto-injected.",
-                },
-                "password": {
-                    "type": "string",
-                    "description": "Password for the admin user. Omit if credentials were stored with `credentials add` — they are auto-injected.",
-                },
-                "force_update_key": {
-                    "type": "boolean",
-                    "description": "Force update SSH key even if mcp_admin already has keys (default: true)",
-                    "default": True,
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
-                "timeout": {
-                    "type": "number",
-                    "description": "Timeout in seconds for the SSH operation. Setup can take 30-60s on slow hosts (default: 90)",
-                    "default": 90,
-                },
-            },
-            "required": ["hostname"],
-        },
-    },
     "verify_mcp_admin": {
         "description": "Verify SSH key access to mcp_admin account on a remote system. Checks sshd_config for PubkeyAuthentication and tests actual key auth.",
         "inputSchema": {

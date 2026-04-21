@@ -742,13 +742,8 @@ async def test_handle_list_keyring_credentials_passes_credential_type(mock_list_
     assert data["count"] == 0
 
 
-def test_setup_mcp_admin_schema_password_not_required():
-    """Regression: setup_mcp_admin must not require password (keyring auto-inject)."""
-    tools = get_available_tools()
-    schema = tools["setup_mcp_admin"]["inputSchema"]
-    assert "password" not in schema["required"], "password must not be required — keyring auto-injects"
-    assert "username" not in schema["required"], "username must not be required — keyring auto-injects"
-    assert "hostname" in schema["required"]
+# test_setup_mcp_admin_schema_password_not_required REMOVED in Phase 33 (D-10).
+# setup_mcp_admin MCP tool is intentionally deleted; replaced by test_tools.py::test_setup_mcp_admin_removed_from_tool_handlers.
 
 
 def test_update_mcp_admin_groups_schema_password_not_required():
@@ -803,12 +798,8 @@ def test_create_proxmox_lxc_schema_phase26_parameters():
     assert schema["unprivileged"]["default"] is True
 
 
-def test_setup_mcp_admin_schema_has_timeout():
-    """setup_mcp_admin schema exposes timeout with default 90 (Phase 26-02)."""
-    tools = get_available_tools()
-    schema = tools["setup_mcp_admin"]["inputSchema"]["properties"]
-    assert "timeout" in schema, "setup_mcp_admin missing timeout property"
-    assert schema["timeout"]["default"] == 90
+# test_setup_mcp_admin_schema_has_timeout REMOVED in Phase 33 (D-10).
+# setup_mcp_admin MCP tool is intentionally deleted.
 
 
 def test_verify_mcp_admin_schema_has_timeout():
