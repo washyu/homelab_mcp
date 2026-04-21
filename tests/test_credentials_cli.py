@@ -62,7 +62,7 @@ def test_credentials_add_ssh(
     )
     monkeypatch.setattr(
         "homelab_mcp.server.register_credential",
-        lambda hostname, username, credential_type="ssh": None,
+        lambda hostname, username, credential_type="ssh", auth_type="password": None,
     )
     args = argparse.Namespace(hostname="myhost", username="myuser", credential_type="ssh")
     _cmd_credentials_add(args)
@@ -84,7 +84,7 @@ def test_credentials_add_uses_getpass(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         "homelab_mcp.server.register_credential",
-        lambda hostname, username, credential_type="ssh": None,
+        lambda hostname, username, credential_type="ssh", auth_type="password": None,
     )
     args = argparse.Namespace(hostname="h", username="u", credential_type="ssh")
     _cmd_credentials_add(args)
@@ -214,7 +214,7 @@ def test_credentials_add_proxmox(
     )
     monkeypatch.setattr(
         "homelab_mcp.server.register_credential",
-        lambda hostname, username, credential_type="ssh": None,
+        lambda hostname, username, credential_type="ssh", auth_type="password": None,
     )
     args = argparse.Namespace(hostname="pxhost", username="pxuser", credential_type="proxmox")
     _cmd_credentials_add(args)

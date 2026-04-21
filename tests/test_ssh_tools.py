@@ -475,39 +475,11 @@ async def test_verify_mcp_admin_access_auth_failure(mock_connect, mock_key_path)
     assert "SSH key authentication failed" in result_data["error"]
 
 
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_ssh_discover_with_mcp_admin_auto_key(mock_connect, mock_key_path):
-    """Test SSH discovery auto-uses MCP key for mcp_admin user."""
-    # Mock SSH key exists
-    mock_key_path.return_value.exists.return_value = True
-    mock_key_path.return_value.__str__.return_value = "/home/user/.ssh/mcp_admin_rsa"
-
-    # Mock SSH connection
-    mock_conn = AsyncMock()
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    # Mock minimal command results
-    mock_result = MagicMock()
-    mock_result.exit_status = 1  # Commands fail
-    mock_result.stdout = None
-    mock_conn.run.return_value = mock_result
-
-    # Execute discovery as mcp_admin without password
-    result = await ssh_discover_system(hostname="test-host", username="mcp_admin")
-
-    # Verify result is valid JSON
-    result_data = json.loads(result)
-    assert "status" in result_data
-
-    # Verify ssh_connect was called with key_path parameter
-    mock_connect.assert_called_once()
-    call_kwargs = mock_connect.call_args.kwargs
-    assert call_kwargs["key_path"] == "/home/user/.ssh/mcp_admin_rsa"
+# test_ssh_discover_with_mcp_admin_auto_key REMOVED in Phase 33 (D-08/D-17).
+# This test exercised the Tier 4 "default mcp_admin key auto-fallback" path in
+# resolve_ssh_credentials, which has been intentionally deleted. The replacement
+# test is tests/test_ssh_credentials.py::TestResolveSSHCredentials::test_mcp_admin_no_fallback,
+# which proves the fallback no longer fires.
 
 
 @pytest.mark.asyncio
