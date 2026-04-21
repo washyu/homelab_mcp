@@ -87,7 +87,7 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 **Milestone Goal:** The OS keyring becomes the single source of truth for remote credentials. Parallel DB `ssh_credentials` storage, `mcp_admin` hardcoded fallbacks, and the `setup_mcp_admin` bootstrap tool are removed. Proxmox API tokens can be stored at cluster scope so one credential serves all nodes in a datacenter.
 
-- [ ] **Phase 33: Keyring Single Source of Truth** — Drop DB `ssh_credentials` table; remove `mcp_admin` defaults; remove `setup_mcp_admin` tool; fix `register_server` verify-bypass (CRED-04, CRED-05, CRED-06, CRED-07)
+- [x] **Phase 33: Keyring Single Source of Truth** — Drop DB `ssh_credentials` table; remove `mcp_admin` defaults; remove `setup_mcp_admin` tool; fix `register_server` verify-bypass (CRED-04, CRED-05, CRED-06, CRED-07) (completed 2026-04-21)
 - [ ] **Phase 34: Cluster-Scoped Proxmox Credentials** — Add cluster-scope credential storage and auto-inject; per-node tokens remain supported and take precedence (CRED-08)
 
 ## Phase Details
@@ -103,12 +103,12 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
   4. `register_server` calls `resolve_ssh_credentials()` and rejects registration with an actionable error if credentials are absent or invalid; there is no code path that accepts a registration without verified credentials
   5. All existing SSH tests pass with the DB path removed; new regression tests prove keyring-only behavior
 
-**Plans:** 3/5 plans executed
+**Plans:** 5/5 plans complete
   - [x] 33-01-PLAN.md � Wave 0: Land failing regression tests (AST meta-test, resolver + register_server TDD, prompt assertion flips)
   - [x] 33-02-PLAN.md � Wave 1: Drop ssh_credentials table + delete DB credential methods (CRED-04)
   - [x] 33-03-PLAN.md � Wave 2: Two-tier resolve_ssh_credentials + --key-path CLI + credentials remove subcommand (CRED-05)
-  - [ ] 33-04-PLAN.md � Wave 3: Tool-surface cleanup (setup_mcp_admin/update_server_credentials/remove_server removed; list_registered_servers rewritten) (CRED-06)
-  - [ ] 33-05-PLAN.md � Wave 4: register_server verify-only rewrite + connect_to_device prompt rewrite (CRED-07)
+  - [x] 33-04-PLAN.md � Wave 3: Tool-surface cleanup (setup_mcp_admin/update_server_credentials/remove_server removed; list_registered_servers rewritten) (CRED-06)
+  - [x] 33-05-PLAN.md � Wave 4: register_server verify-only rewrite + connect_to_device prompt rewrite (CRED-07)
 
 ### Phase 34: Cluster-Scoped Proxmox Credentials
 **Goal**: One Proxmox API token stored at cluster scope serves all nodes in the same datacenter; per-node tokens override when both exist
@@ -148,5 +148,5 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
 | 31. Bug Fixes | v1.5 | 2/2 | Complete | 2026-04-19 |
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
-| 33. Keyring Single Source of Truth | v1.6 | 3/5 | In Progress|  |
+| 33. Keyring Single Source of Truth | v1.6 | 5/5 | Complete   | 2026-04-21 |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 0/? | Not started | - |
