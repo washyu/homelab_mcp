@@ -103,6 +103,13 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
   4. `register_server` calls `resolve_ssh_credentials()` and rejects registration with an actionable error if credentials are absent or invalid; there is no code path that accepts a registration without verified credentials
   5. All existing SSH tests pass with the DB path removed; new regression tests prove keyring-only behavior
 
+**Plans:** 5 plans
+  - [ ] 33-01-PLAN.md — Wave 0: Land failing regression tests (AST meta-test, resolver + register_server TDD, prompt assertion flips)
+  - [ ] 33-02-PLAN.md — Wave 1: Drop ssh_credentials table + delete DB credential methods (CRED-04)
+  - [ ] 33-03-PLAN.md — Wave 2: Two-tier resolve_ssh_credentials + --key-path CLI + credentials remove subcommand (CRED-05)
+  - [ ] 33-04-PLAN.md — Wave 3: Tool-surface cleanup (setup_mcp_admin/update_server_credentials/remove_server removed; list_registered_servers rewritten) (CRED-06)
+  - [ ] 33-05-PLAN.md — Wave 4: register_server verify-only rewrite + connect_to_device prompt rewrite (CRED-07)
+
 ### Phase 34: Cluster-Scoped Proxmox Credentials
 **Goal**: One Proxmox API token stored at cluster scope serves all nodes in the same datacenter; per-node tokens override when both exist
 **Depends on**: Phase 33 (keyring-only foundation)
@@ -141,5 +148,5 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 | 30. Security Fixes | v1.4.1 | 2/2 | Complete | 2026-04-01 |
 | 31. Bug Fixes | v1.5 | 2/2 | Complete | 2026-04-19 |
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
-| 33. Keyring Single Source of Truth | v1.6 | 0/? | Not started | - |
+| 33. Keyring Single Source of Truth | v1.6 | 0/5 | In progress | - |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 0/? | Not started | - |
