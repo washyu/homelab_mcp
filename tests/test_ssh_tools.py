@@ -7,6 +7,7 @@ import asyncssh
 import pytest
 
 from src.homelab_mcp.ssh_tools import (
+    _sudo_run,
     ensure_mcp_ssh_key,
     setup_remote_mcp_admin,
     ssh_discover_system,
@@ -1050,3 +1051,115 @@ async def test_setup_mcp_admin_tmpfile_cleanup_on_error(mock_connect, mock_path,
     # Assert remote tmpfile cleanup ran (rm -f /tmp/mcp_key_...)
     rm_calls = [cmd for cmd in run_calls if "rm -f" in cmd and "mcp_key_" in cmd]
     assert rm_calls, f"Expected rm -f cleanup of remote tmpfile in conn.run calls. Got calls: {run_calls}"
+
+
+# --- Regression guards (v1.5 / PR #39) ---
+
+
+@pytest.mark.asyncio
+async def test_ssh01_sudo_run_check_raises_in_password_branch():
+    """SSH-01 regression: _sudo_run(password=..., check=True) forwards check= to conn.run.
+
+    Before commit 9f752c0 the password branch dropped `check=`, so a non-zero exit from
+    `sudo -S <command>` was silently ignored. This test proves the propagation path.
+
+    Revert-proof: reverting commit 9f752c0 (restoring the branch that calls
+    `conn.run(full_command)` without `check=check` in the password branch) causes
+    conn.run to return a result object rather than raise — the test's
+    `pytest.raises(asyncssh.ProcessError)` assertion fails.
+    """
+    mock_conn = AsyncMock()
+
+    # Raise ProcessError from conn.run (simulates check=True catching non-zero exit).
+    # asyncssh.ProcessError kwargs vary by version; use the minimal positional/kwarg
+    # combination that instantiates cleanly on the asyncssh pinned in pyproject.toml.
+    try:
+        err: Exception = asyncssh.ProcessError(
+            env=None,
+            command="sudo -S ls",
+            subsystem=None,
+            exit_status=1,
+            exit_signal=None,
+            returncode=1,
+            stdout="",
+            stderr="permission denied",
+        )
+    except TypeError:
+        # Fallback: if newer asyncssh changed the constructor, use RuntimeError so
+        # the propagation path is still exercised. The exact exception class is not
+        # what REG-01 guards — the propagation is. The executor MUST prefer the
+        # asyncssh.ProcessError form; this fallback is a version-compat safety net.
+        err = RuntimeError("simulated non-zero exit from sudo")
+
+    mock_conn.run.side_effect = err
+
+    with pytest.raises(type(err)):
+        await _sudo_run(mock_conn, "ls", password="pw", check=True)
+
+    # Prove check=True was forwarded to conn.run — guards the exact defect
+    # in commit 9f752c0's parent (the password branch that dropped check=).
+    mock_conn.run.assert_called_once()
+    assert mock_conn.run.call_args.kwargs.get("check") is True, (
+        f"check=True must be forwarded to conn.run; got kwargs={mock_conn.run.call_args.kwargs!r}"
+    )
+
+
+def test_ssh02_no_disjunctive_always_true_assertions() -> None:
+    """SSH-02 meta-guard: no `assert X or <structurally-always-true>` in this file.
+
+    Before commit d25c915 the assertion at test_ssh_discover_no_credentials (currently
+    line ~191) read:
+        assert "No credentials" in err or "other" in err
+    which is equivalent to `True or True` for any non-empty `err` — the test always
+    passed and never exercised the "No credentials" precondition it claimed to guard.
+
+    This AST meta-test parses tests/test_ssh_tools.py (itself) and fails if any
+    `ast.Assert(test=ast.BoolOp(op=ast.Or(), values=[_, <always_true>]))` pattern
+    is present. "Structurally always true" is defined conservatively:
+      - ast.Constant with a truthy value
+      - nested ast.BoolOp(op=ast.Or) with an always-true branch
+      - ast.Compare over two ast.Constant operands
+
+    Revert-proof (captured in this plan's commit message, per CONTEXT.md D-05):
+    temporarily mutate line ~191 to `assert "No credentials" in err or "other" in err`
+    (where `"other"` is a non-empty string Constant — structurally always true),
+    re-run this test, observe FAILED with offender line ~191. Do NOT commit the
+    mutation — the commit message captures the diagnostic output.
+    """
+    import ast
+    from pathlib import Path
+
+    source = Path(__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    def _is_structurally_always_true(node: ast.expr) -> bool:
+        """Conservative truthy-constant detector.
+
+        Flags ONLY shapes provably true at parse time. Dynamic expressions
+        (Name, Call, Attribute, Compare over non-constants) are NOT flagged.
+        """
+        if isinstance(node, ast.Constant):
+            # Non-empty string, non-zero number, True
+            return bool(node.value)
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+            return any(_is_structurally_always_true(v) for v in node.values)
+        if isinstance(node, ast.Compare):
+            # Compare over two Constants is evaluable at parse time
+            if isinstance(node.left, ast.Constant) and all(isinstance(c, ast.Constant) for c in node.comparators):
+                return True
+        return False
+
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assert) and isinstance(node.test, ast.BoolOp):
+            if isinstance(node.test.op, ast.Or):
+                # Flag if any operand beyond the first is structurally always true.
+                for operand in node.test.values[1:]:
+                    if _is_structurally_always_true(operand):
+                        offenders.append(f"line {node.lineno}: {ast.unparse(node)}")
+                        break
+
+    assert not offenders, (
+        "Found `assert X or <always-true>` anti-pattern(s) in test_ssh_tools.py.\n"
+        "Replace with explicit single-check asserts (see SSH-02 fix in commit d25c915):\n" + "\n".join(offenders)
+    )
