@@ -281,7 +281,7 @@ No new dependencies required for this phase.
 **How to avoid:** Use `asyncssh.SSHCompletedProcess[str]` or `asyncssh.SSHCompletedProcess[bytes]` — check asyncssh type stubs. Fallback: `Any` with a type ignore comment.
 
 ### Pitfall 5: bandit flag on `echo password | sudo -S`
-**What goes wrong:** The pattern `f"echo '{password}' | sudo -S {command}"` may trigger bandit B608 (possible SQL injection) or B602 (subprocess shell=True). 
+**What goes wrong:** The pattern `f"echo '{password}' | sudo -S {command}"` may trigger bandit B608 (possible SQL injection) or B602 (subprocess shell=True).
 **Why it happens:** bandit pattern-matches shell command construction with variables.
 **How to avoid:** Add `# nosec B602` or `# nosec B608` inline with a justification comment. Example: `# nosec B608 -- password is user-provided credential, not SQL; command is caller-supplied`.
 
