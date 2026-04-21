@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: planning
-stopped_at: v1.6 started — defining requirements and roadmap
-last_updated: "2026-04-20T00:00:00.000Z"
-last_activity: 2026-04-20 -- v1.6 milestone started; scope: keyring single source of truth + cluster-scoped Proxmox tokens
+status: Defining requirements and roadmap
+stopped_at: Phase 33 context gathered
+last_updated: "2026-04-21T05:51:51.917Z"
+last_activity: 2026-04-20 -- v1.6 milestone scope confirmed (Tier A — Phase 33 core from commit 8ac2270)
 progress:
   total_phases: 2
   completed_phases: 0
@@ -90,6 +90,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-20 (v1.6 milestone start)
-Stopped at: REQUIREMENTS.md + ROADMAP.md pending write
-Resume file: —
+Last session: 2026-04-21T05:51:51.915Z
+Stopped at: Phase 33 context gathered
+Resume file: .planning/phases/33-keyring-single-source-of-truth/33-CONTEXT.md
