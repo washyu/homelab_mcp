@@ -87,7 +87,8 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 **Milestone Goal:** The OS keyring becomes the single source of truth for remote credentials. Parallel DB `ssh_credentials` storage, `mcp_admin` hardcoded fallbacks, and the `setup_mcp_admin` bootstrap tool are removed. Proxmox API tokens can be stored at cluster scope so one credential serves all nodes in a datacenter.
 
-- [x] **Phase 33: Keyring Single Source of Truth** — Drop DB `ssh_credentials` table; remove `mcp_admin` defaults; remove `setup_mcp_admin` tool; fix `register_server` verify-bypass (CRED-04, CRED-05, CRED-06, CRED-07) (completed 2026-04-21)
+- [x] **Phase 33: Keyring Single Source of Truth** — Drop DB `ssh_credentials` table; remove `mcp_admin` defaults; remove `setup_mcp_admin` tool; fix `register_server` verify-bypass (CRED-04, CRED-05, CRED-06, CRED-07)
+ (completed 2026-04-21)
 - [ ] **Phase 34: Cluster-Scoped Proxmox Credentials** — Add cluster-scope credential storage and auto-inject; per-node tokens remain supported and take precedence (CRED-08)
 
 ## Phase Details
@@ -112,13 +113,17 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 ### Phase 33.1: SSH Tool Family Keyring Uniformity — drop hardcoded mcp_admin default in sitemap.discover_and_store and bulk_discover_and_store; route ssh_discover, ssh_execute_command, update_mcp_admin_groups, start_interactive_shell, bulk_discover_and_map through resolve_ssh_credentials uniformly; docstring sweep; bulk target schema cleanup. Gap from Phase 33 live testing 2026-04-21. (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Finish the Phase 33 keyring-only migration across the remaining SSH tool surface — no function or schema advertises a hardcoded mcp_admin default, no MCP tool schema exposes a password property, update_mcp_admin_groups and verify_mcp_admin_access are removed, and a caller providing only hostname resolves both username and password from the keyring registry (with an actionable error on ambiguous multi-user registration).
+**Requirements**: TBD (phase driven by CONTEXT.md decisions D-01..D-13; no REQ-IDs from REQUIREMENTS.md)
 **Depends on:** Phase 33
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 33.1 to break down)
+- [ ] 33.1-01-PLAN.md — Wave 1: Resolver registry-scan when username is None + positive test (D-04, D-04a, D-11)
+- [ ] 33.1-02-PLAN.md — Wave 1: Schema cleanup — drop password + mcp_admin default from discover_and_map/bulk_discover_and_map, drop password from update_mcp_admin_groups (D-01, D-02, D-03, D-12)
+- [ ] 33.1-03-PLAN.md — Wave 2: Lock-step delete update_mcp_admin_groups + verify_mcp_admin_access (schema/handler/dispatch/annotation/openapi/ssh_tools.py) + rewrite connect_to_device Step 6 (D-05, D-05a, D-05b, D-05c, D-13)
+- [ ] 33.1-04-PLAN.md — Wave 2: sitemap.discover_and_store + bulk_discover_and_store drop mcp_admin default (D-06, D-07, D-07a)
+- [ ] 33.1-05-PLAN.md — Wave 1: AST meta-test extensions — function-signature scan, TOOLS-dict scan with narrow-scope allowlist, forbidden-strings append (D-08, D-09, D-10)
 
 ### Phase 34: Cluster-Scoped Proxmox Credentials
 **Goal**: One Proxmox API token stored at cluster scope serves all nodes in the same datacenter; per-node tokens override when both exist
