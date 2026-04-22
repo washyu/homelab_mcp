@@ -110,6 +110,16 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
   - [x] 33-04-PLAN.md � Wave 3: Tool-surface cleanup (setup_mcp_admin/update_server_credentials/remove_server removed; list_registered_servers rewritten) (CRED-06)
   - [x] 33-05-PLAN.md � Wave 4: register_server verify-only rewrite + connect_to_device prompt rewrite (CRED-07)
 
+### Phase 33.1: SSH Tool Family Keyring Uniformity — drop hardcoded mcp_admin default in sitemap.discover_and_store and bulk_discover_and_store; route ssh_discover, ssh_execute_command, update_mcp_admin_groups, start_interactive_shell, bulk_discover_and_map through resolve_ssh_credentials uniformly; docstring sweep; bulk target schema cleanup. Gap from Phase 33 live testing 2026-04-21. (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 33
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 33.1 to break down)
+
 ### Phase 34: Cluster-Scoped Proxmox Credentials
 **Goal**: One Proxmox API token stored at cluster scope serves all nodes in the same datacenter; per-node tokens override when both exist
 **Depends on**: Phase 33 (keyring-only foundation)
@@ -150,3 +160,51 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
 | 33. Keyring Single Source of Truth | v1.6 | 5/5 | Complete   | 2026-04-21 |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 0/? | Not started | - |
+
+### Phase 35: Sitemap + Discovery Reliability — fix discover_and_map field-loss (cpu_cores, memory_free, disk_*, usb/pci/block devices missing from sitemap row despite being in ssh_discover output); upsert zombie sitemap rows on hostname/IP match; add per-subprocess SSH timeout so tool doesn't hang 4+ minutes; topology analyzer defensively skip devices with null threshold values. Surfaced by Phase 33 live testing 2026-04-21.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 34
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 35 to break down)
+
+## Backlog
+
+### Phase 999.1: MCP tool CRUD for registered servers (BACKLOG)
+
+**Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.2: Credential-mismatch warning on register_server (BACKLOG)
+
+**Goal:** [Captured for future planning] When `register_server(host, username=X)` is called but the keyring entry for `host` has username Y, emit a UX warning ("keyring says host's user is Y; you're registering as X — are you sure?"). Currently silent — the verify step either succeeds-incidentally or fails with a less helpful error. Minor UX nicety.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.3: discover_and_map accepts display_name (BACKLOG)
+
+**Goal:** [Captured for future planning] Add an optional `display_name` param to `discover_and_map` so fresh hosts get a sitemap row with a friendly label in one call. Today it's a two-step flow (`register_server` first, then `discover_and_map`) — works but clunky.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.4: Sitemap device tags / categories (BACKLOG)
+
+**Goal:** [Captured for future planning] Add a `tags` or `category` field to sitemap rows so `get_network_sitemap` is filterable (PVE hosts, NAS, routers, Pi endpoints, etc.). Parity with Proxmox's existing tag model (`community-script;docker` on LXC). Flat table is fine for a few hosts; pain grows with the homelab.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
