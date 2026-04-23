@@ -8,8 +8,6 @@ from ..shell_session import session_manager
 from ..ssh_tools import (
     ssh_discover_system,
     ssh_execute_command,
-    update_mcp_admin_groups,
-    verify_mcp_admin_access,
 )
 from ..validation import validate_hostname, validate_port
 
@@ -17,12 +15,6 @@ from ..validation import validate_hostname, validate_port
 async def handle_ssh_discover(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle ssh_discover tool."""
     result = await ssh_discover_system(**arguments)
-    return {"content": [{"type": "text", "text": result}]}
-
-
-async def handle_verify_mcp_admin(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle verify_mcp_admin tool."""
-    result = await verify_mcp_admin_access(**arguments)
     return {"content": [{"type": "text", "text": result}]}
 
 
@@ -92,9 +84,3 @@ async def handle_start_interactive_shell(arguments: dict[str, Any]) -> dict[str,
         "message": message,
     }
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-
-
-async def handle_update_mcp_admin_groups(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle update_mcp_admin_groups tool."""
-    result = await update_mcp_admin_groups(**arguments)
-    return {"content": [{"type": "text", "text": result}]}

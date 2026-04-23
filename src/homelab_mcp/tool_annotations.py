@@ -41,7 +41,6 @@ _READ_ONLY_TOOLS = [
     "list_proxmox_resources",
     "get_proxmox_node_status",
     "get_proxmox_vm_status",
-    "verify_mcp_admin",
     "check_ansible_service",
     "validate_infrastructure_changes",
     "list_keyring_credentials",
@@ -86,11 +85,6 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=True,
-    ),
-    "update_mcp_admin_groups": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
     ),
     "ssh_execute_command": ToolAnnotations(
         readOnlyHint=False,

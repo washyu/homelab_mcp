@@ -58,8 +58,6 @@ from .ssh_handlers import (
     handle_ssh_discover,
     handle_ssh_execute_command,
     handle_start_interactive_shell,
-    handle_update_mcp_admin_groups,
-    handle_verify_mcp_admin,
 )
 from .vm_handlers import (
     handle_control_vm,
@@ -78,10 +76,8 @@ ToolHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     # SSH tools
     "ssh_discover": handle_ssh_discover,
-    "verify_mcp_admin": handle_verify_mcp_admin,
     "ssh_execute_command": handle_ssh_execute_command,
     "start_interactive_shell": handle_start_interactive_shell,
-    "update_mcp_admin_groups": handle_update_mcp_admin_groups,
     # Network tools
     "discover_and_map": handle_discover_and_map,
     "bulk_discover_and_map": handle_bulk_discover_and_map,

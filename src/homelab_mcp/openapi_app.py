@@ -67,10 +67,8 @@ INFRA_REQUIREMENTS: dict[str, str] = {
 # source="env":  pull host from the environment variable named by `field`.
 _SSH_TOOLS_WITH_HOSTNAME = (
     "ssh_discover",
-    "verify_mcp_admin",
     "ssh_execute_command",
     "start_interactive_shell",
-    "update_mcp_admin_groups",
     "discover_and_map",
     "check_service_requirements",
     "install_service",
@@ -142,10 +140,8 @@ def _resolve_external_host(tool_name: str, body: dict[str, Any]) -> tuple[str, i
 TOOL_CATEGORIES: dict[str, list[str]] = {
     "SSH": [
         "ssh_discover",
-        "verify_mcp_admin",
         "ssh_execute_command",
         "start_interactive_shell",
-        "update_mcp_admin_groups",
     ],
     "Network Discovery": [
         "discover_and_map",
