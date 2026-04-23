@@ -7,14 +7,18 @@ Supports both password and API token authentication.
 
 import logging
 import os
-from typing import Any
+from typing import Any, Literal
 
 import aiohttp
 
 from .credential_store import get_credential, list_credentials
 from .log_filter import sanitize_error
+from .ssh_tools import CredentialNotFoundError  # noqa: F401 — re-exported for consumers
 
 logger = logging.getLogger(__name__)
+
+# D-05a: in-memory cache for successful host→cluster_name mappings. Process-lifetime only.
+_HOST_CLUSTER_CACHE: dict[str, str] = {}
 
 
 class ProxmoxAPIClient:
@@ -185,6 +189,144 @@ class ProxmoxAPIClient:
     async def delete(self, endpoint: str) -> Any:
         """Make a DELETE request."""
         return await self.request("DELETE", endpoint)
+
+
+async def resolve_proxmox_credentials(
+    host: str,
+    session: aiohttp.ClientSession | None = None,
+) -> tuple[str, Literal["node", "cluster"], str | None]:
+    """Resolve Proxmox API credentials for a host via per-node → cluster → error tiers.
+
+    Two-tier resolution (v1.6 Phase 34, D-09/D-10):
+      1. **Per-node registry entry exists for host** → return its token+scope="node"+None.
+         ``/cluster/status`` is NEVER called in this tier (D-10 bullet 1; Success Criterion 5).
+      2. **Cluster walk** — iterate registry entries with scope=="cluster", probing
+         ``GET /cluster/status`` on ``host`` with each candidate token; first entry whose
+         response contains a ``type=="cluster"`` row with ``name == entry["cluster_name"]`` wins.
+         Successful ``host → cluster_name`` mapping is cached in ``_HOST_CLUSTER_CACHE``
+         for the lifetime of the process (D-05a).
+
+    Returns:
+        (api_token, scope, cluster_name) — api_token is the full
+        ``"user@realm!tokenid=SECRET"`` form ProxmoxAPIClient expects. scope is
+        "node" or "cluster". cluster_name is the string cluster name for
+        cluster-scope results, None for node-scope results.
+
+    Raises:
+        CredentialNotFoundError: when neither tier matches. Message names every
+            cluster entry that was tried and includes the ``credentials add
+            --type proxmox`` CLI pointer (D-05, D-15).
+    """
+    entries = list_credentials(credential_type="proxmox")
+
+    # Tier 1: per-node short-circuit (D-10 bullet 1; SC-5 requires /cluster/status is never called here).
+    node_matches = [e for e in entries if e.get("scope", "node") == "node" and e["hostname"] == host]
+    logger.debug("proxmox resolve host=%s tier=node candidates=%d", host, len(node_matches))
+    if node_matches:
+        entry = node_matches[0]
+        secret = get_credential(entry["hostname"], entry["username"], credential_type="proxmox")
+        if secret is None:
+            logger.warning(
+                "Credential desync for %s (user: %s): registry entry exists but keyring "
+                "returned None — re-run 'homelab-mcp credentials add --type proxmox %s %s' to restore",
+                entry["hostname"],
+                entry["username"],
+                entry["hostname"],
+                entry["username"],
+            )
+        else:
+            api_token = f"{entry['username']}={secret}"
+            logger.debug("proxmox resolve host=%s source=node", host)
+            return (api_token, "node", None)
+    logger.debug("proxmox resolve host=%s tier=node MISS", host)
+
+    # Tier 2 cache hit (D-05a).
+    cluster_entries = [e for e in entries if e.get("scope", "node") == "cluster"]
+    cached_cluster = _HOST_CLUSTER_CACHE.get(host)
+    if cached_cluster is not None:
+        for entry in cluster_entries:
+            if entry.get("cluster_name", "") == cached_cluster:
+                secret = get_credential(
+                    "",
+                    entry["username"],
+                    credential_type="proxmox",
+                    scope="cluster",
+                    cluster_name=cached_cluster,
+                )
+                if secret is not None:
+                    api_token = f"{entry['username']}={secret}"
+                    logger.debug(
+                        "proxmox resolve host=%s source=cluster cache_hit cluster=%s",
+                        host,
+                        cached_cluster,
+                    )
+                    return (api_token, "cluster", cached_cluster)
+                # Desync on cached entry → fall through to re-walk.
+                break
+
+    # Tier 2 walk (D-04, D-05b).
+    cluster_names_tried = [e.get("cluster_name", "") for e in cluster_entries]
+    logger.debug(
+        "proxmox resolve host=%s tier=cluster entries=%s",
+        host,
+        cluster_names_tried,
+    )
+    for entry in cluster_entries:
+        cluster_name = entry.get("cluster_name", "")
+        if not cluster_name:
+            continue
+        secret = get_credential(
+            "",
+            entry["username"],
+            credential_type="proxmox",
+            scope="cluster",
+            cluster_name=cluster_name,
+        )
+        if secret is None:
+            logger.warning(
+                "Credential desync for cluster:%s (user: %s): registry entry exists but keyring "
+                "returned None — re-run 'homelab-mcp credentials add --type proxmox --scope cluster:%s %s' to restore",
+                cluster_name,
+                entry["username"],
+                cluster_name,
+                entry["username"],
+            )
+            continue
+        candidate_token = f"{entry['username']}={secret}"
+        # Throwaway client per candidate — reuses existing ProxmoxAPIClient session+auth logic.
+        probe_client = ProxmoxAPIClient(host=host, api_token=candidate_token, session=session)
+        try:
+            status = await probe_client.get("/cluster/status")
+        except (aiohttp.ClientError, ValueError) as exc:
+            logger.debug(
+                "proxmox resolve host=%s tier=cluster candidate=%s probe failed — skip: %s",
+                host,
+                cluster_name,
+                sanitize_error(exc),
+            )
+            continue
+        # ProxmoxAPIClient.get() strips the "data" wrapper — status is the list directly.
+        rows = status if isinstance(status, list) else []
+        cluster_row = next(
+            (r for r in rows if isinstance(r, dict) and r.get("type") == "cluster" and r.get("name") == cluster_name),
+            None,
+        )
+        if cluster_row is not None:
+            _HOST_CLUSTER_CACHE[host] = cluster_name
+            logger.debug("proxmox resolve host=%s tier=cluster MATCH cluster=%s", host, cluster_name)
+            logger.debug("proxmox resolve host=%s source=cluster", host)
+            return (candidate_token, "cluster", cluster_name)
+
+    # Terminal: no credential anywhere (D-05, D-15).
+    tried = ", ".join(c for c in cluster_names_tried if c) or "<none>"
+    raise CredentialNotFoundError(
+        f"No Proxmox credentials found for {host}. "
+        f"Cluster entries tried: {tried}. "
+        f"Run `homelab-mcp credentials add --type proxmox {host} <username>` "
+        "in your terminal to register this node explicitly, "
+        "or run `homelab-mcp credentials add --type proxmox --scope cluster:<name> <token_id>` "
+        "if this host belongs to a Proxmox cluster."
+    )
 
 
 def get_proxmox_client(
