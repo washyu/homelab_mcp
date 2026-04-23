@@ -256,6 +256,24 @@ def unregister_credential(hostname: str, credential_type: str = "ssh") -> None:
     _save_registry(entries)
 
 
+def unregister_cluster_credential(cluster_name: str, credential_type: str = "proxmox") -> None:
+    """Remove the cluster-scoped registry entry for (cluster_name, credential_type).
+
+    No-op when no matching row exists.
+    """
+    entries = _load_registry()
+    entries = [
+        e
+        for e in entries
+        if not (
+            e.get("scope") == "cluster"
+            and e.get("cluster_name", "") == cluster_name
+            and e["credential_type"] == credential_type
+        )
+    ]
+    _save_registry(entries)
+
+
 def list_credentials(credential_type: str = "ssh") -> list[dict[str, str]]:
     """Return all registry entries for the given credential type.
 

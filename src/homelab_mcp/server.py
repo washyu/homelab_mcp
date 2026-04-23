@@ -27,6 +27,7 @@ from .credential_store import (
     list_credentials,
     register_credential,
     store_credential,
+    unregister_cluster_credential,
     unregister_credential,
 )
 from .log_filter import CredentialFilter, sanitize_error
@@ -488,11 +489,35 @@ def _convert_result(
     return converted
 
 
-def _cmd_credentials_add(args: argparse.Namespace) -> None:
-    """Handle `homelab-mcp credentials add <hostname> <username> [--type ssh|proxmox] [--key-path PATH]`.
+def _parse_scope_arg(scope_arg: str | None) -> tuple[str, str]:
+    """Return (scope, cluster_name). scope_arg of None or empty → ("node", "").
 
-    When ``--key-path`` is given, the key file path (resolved absolute) is stored as the
-    "secret" in the OS keyring and the registry entry gets ``auth_type="key"``.
+    scope_arg of "cluster:<name>" → ("cluster", "<name>"). "<name>" must be non-empty.
+    Any other value raises ValueError for the caller to translate into stderr + exit.
+    """
+    if not scope_arg:
+        return ("node", "")
+    if scope_arg == "node":
+        return ("node", "")
+    if scope_arg.startswith("cluster:"):
+        cluster_name = scope_arg[len("cluster:") :]
+        if not cluster_name:
+            raise ValueError(
+                "--scope cluster: requires a cluster_name after the colon (e.g. --scope cluster:homelab-prod)"
+            )
+        return ("cluster", cluster_name)
+    raise ValueError(f"Unknown --scope value {scope_arg!r} — expected 'node' (default) or 'cluster:<name>'")
+
+
+def _cmd_credentials_add(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp credentials add ...`.
+
+    Supports two credential shapes:
+      1. Per-node SSH/Proxmox: ``add <hostname> <username> [--type ssh|proxmox] [--key-path PATH]``
+      2. Cluster-scoped Proxmox: ``add --type proxmox --scope cluster:<name> <username>`` (no hostname)
+
+    When ``--key-path`` is given (per-node SSH only), the key file path (resolved absolute)
+    is stored as the "secret" in the OS keyring and the registry entry gets ``auth_type="key"``.
     When absent, the user is prompted for a password via ``getpass`` (TTY echo suppressed)
     and the registry entry gets ``auth_type="password"``.
     """
@@ -502,6 +527,75 @@ def _cmd_credentials_add(args: argparse.Namespace) -> None:
 
     credential_type: str = args.credential_type
     key_path: str | None = getattr(args, "key_path", None)
+    scope_arg: str | None = getattr(args, "scope", None)
+    hostname: str | None = args.hostname
+
+    # Parse --scope.
+    try:
+        scope, cluster_name = _parse_scope_arg(scope_arg)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # Cluster-scope branch (D-06).
+    if scope == "cluster":
+        if credential_type != "proxmox":
+            print(
+                f"Error: --scope cluster:<name> requires --type proxmox (got {credential_type!r})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if hostname is not None:
+            print(
+                "Error: <hostname> positional must not be provided when --scope cluster:<name> is used",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if key_path is not None:
+            print(
+                "Error: --key-path is not valid with --scope cluster:<name>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        auth_type = "password"
+        prompt = "Token/Password: "
+        secret = getpass.getpass(prompt)
+        if not secret:
+            print("Error: empty password rejected", file=sys.stderr)
+            sys.exit(1)
+        ok = store_credential(
+            "",
+            args.username,
+            secret,
+            credential_type=credential_type,
+            scope="cluster",
+            cluster_name=cluster_name,
+        )
+        if ok:
+            register_credential(
+                "",
+                args.username,
+                credential_type=credential_type,
+                auth_type=auth_type,
+                scope="cluster",
+                cluster_name=cluster_name,
+            )
+            print(f"Stored {credential_type} credential for {args.username}@cluster:{cluster_name}")
+        else:
+            print(
+                f"Warning: OS keyring unavailable — credential not persisted for cluster:{cluster_name}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return
+
+    # Per-node path — hostname is required.
+    if hostname is None:
+        print(
+            "Error: <hostname> is required for per-node credentials (use --scope cluster:<name> for cluster-scoped)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if key_path is not None:
         # Key-path auth branch (D-09). Strict validation (Claude's Discretion).
@@ -528,55 +622,118 @@ def _cmd_credentials_add(args: argparse.Namespace) -> None:
             sys.exit(1)
         auth_type = "password"
 
-    ok = store_credential(args.hostname, args.username, secret, credential_type=credential_type)
+    ok = store_credential(hostname, args.username, secret, credential_type=credential_type)
     if ok:
         register_credential(
-            args.hostname,
+            hostname,
             args.username,
             credential_type=credential_type,
             auth_type=auth_type,
         )
         if auth_type == "key":
-            print(f"Stored {credential_type} credential (key-path) for {args.username}@{args.hostname}")
+            print(f"Stored {credential_type} credential (key-path) for {args.username}@{hostname}")
         else:
-            print(f"Stored {credential_type} credential for {args.username}@{args.hostname}")
+            print(f"Stored {credential_type} credential for {args.username}@{hostname}")
     else:
         print(
-            f"Warning: OS keyring unavailable — credential not persisted for {args.hostname}",
+            f"Warning: OS keyring unavailable — credential not persisted for {hostname}",
             file=sys.stderr,
         )
         sys.exit(1)
 
 
 def _cmd_credentials_list(args: argparse.Namespace) -> None:
-    """Handle `homelab-mcp credentials list [--type ssh|proxmox]`."""
+    """Handle `homelab-mcp credentials list [--type ssh|proxmox]`. Groups output by scope (D-08)."""
     credential_type: str = args.credential_type
     entries = list_credentials(credential_type=credential_type)
     if not entries:
         print(f"No stored {credential_type} credentials.")
         return
+    node_entries = [e for e in entries if e.get("scope", "node") == "node"]
+    cluster_entries = [e for e in entries if e.get("scope") == "cluster"]
     print(f"Stored {credential_type} credentials:")
-    for entry in entries:
-        print(f"  {entry['username']}@{entry['hostname']}")
+    if node_entries:
+        print("  Per-node:")
+        for e in node_entries:
+            print(f"    {e['username']}@{e['hostname']}")
+    if cluster_entries:
+        print("  Cluster-scoped:")
+        for e in cluster_entries:
+            print(f"    {e['username']}@cluster:{e.get('cluster_name', '')}")
 
 
 def _cmd_credentials_remove(args: argparse.Namespace) -> None:
-    """Handle `homelab-mcp credentials remove <hostname> [--type ssh|proxmox]`."""
+    """Handle `homelab-mcp credentials remove ...`.
+
+    Supports per-node and cluster-scoped removal. See --scope help for details.
+    """
     import sys  # noqa: PLC0415
 
     credential_type: str = args.credential_type
-    entries = [e for e in list_credentials(credential_type=credential_type) if e["hostname"] == args.hostname]
+    scope_arg: str | None = getattr(args, "scope", None)
+    hostname: str | None = args.hostname
+
+    try:
+        scope, cluster_name = _parse_scope_arg(scope_arg)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if scope == "cluster":
+        if credential_type != "proxmox":
+            print(
+                f"Error: --scope cluster:<name> requires --type proxmox (got {credential_type!r})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if hostname is not None:
+            print(
+                "Error: <hostname> positional must not be provided when --scope cluster:<name> is used",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        all_entries = list_credentials(credential_type=credential_type)
+        cluster_entries = [
+            e for e in all_entries if e.get("scope") == "cluster" and e.get("cluster_name", "") == cluster_name
+        ]
+        if not cluster_entries:
+            print(
+                f"No {credential_type} credential found for cluster:{cluster_name}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        for entry in cluster_entries:
+            delete_credential(
+                "",
+                entry["username"],
+                credential_type=credential_type,
+                scope="cluster",
+                cluster_name=cluster_name,
+            )
+        unregister_cluster_credential(cluster_name, credential_type=credential_type)
+        print(f"Removed {credential_type} credential for cluster:{cluster_name}")
+        return
+
+    # Per-node path — hostname is required.
+    if hostname is None:
+        print(
+            "Error: <hostname> is required for per-node credentials (use --scope cluster:<name> for cluster-scoped)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    entries = [e for e in list_credentials(credential_type=credential_type) if e["hostname"] == hostname]
     if not entries:
         print(
-            f"No {credential_type} credential found for {args.hostname}",
+            f"No {credential_type} credential found for {hostname}",
             file=sys.stderr,
         )
         sys.exit(1)
 
     for entry in entries:
         delete_credential(entry["hostname"], entry["username"], credential_type=credential_type)
-    unregister_credential(args.hostname, credential_type=credential_type)
-    print(f"Removed {credential_type} credential for {args.hostname}")
+    unregister_credential(hostname, credential_type=credential_type)
+    print(f"Removed {credential_type} credential for {hostname}")
 
 
 def _run_stdio_wrapper(args: argparse.Namespace) -> None:
@@ -624,13 +781,15 @@ Examples:
   uvx homelab-mcp --http --port 8080     # HTTP mode (OpenWebUI)
 
 Credential management (OS keyring):
-  uvx homelab-mcp credentials add <hostname> <username>                    # store SSH credential (prompts for password)
-  uvx homelab-mcp credentials add <hostname> <username> --key-path PATH    # store SSH key-path credential (D-09)
-  uvx homelab-mcp credentials add <hostname> <username> --type proxmox     # store Proxmox credential
-  uvx homelab-mcp credentials list                                         # list stored SSH credentials
-  uvx homelab-mcp credentials list --type proxmox                          # list stored Proxmox credentials
-  uvx homelab-mcp credentials remove <hostname>                            # remove SSH credential
-  uvx homelab-mcp credentials remove <hostname> --type proxmox             # remove Proxmox credential
+  uvx homelab-mcp credentials add <hostname> <username>                                     # store SSH credential (prompts for password)
+  uvx homelab-mcp credentials add <hostname> <username> --key-path PATH                     # store SSH key-path credential (D-09)
+  uvx homelab-mcp credentials add <hostname> <username> --type proxmox                      # store Proxmox credential
+  uvx homelab-mcp credentials add --type proxmox --scope cluster:<name> <username>          # store cluster-scoped Proxmox token
+  uvx homelab-mcp credentials list                                                          # list stored SSH credentials
+  uvx homelab-mcp credentials list --type proxmox                                           # (extended) shows Per-node + Cluster-scoped sections
+  uvx homelab-mcp credentials remove <hostname>                                             # remove SSH credential
+  uvx homelab-mcp credentials remove <hostname> --type proxmox                              # remove Proxmox credential
+  uvx homelab-mcp credentials remove --type proxmox --scope cluster:<name>                  # remove cluster-scoped Proxmox credential
 
   Note: `add` is upsert — re-running it for the same (hostname, username, type)
   replaces the existing credential (both the keyring secret and the registry
@@ -693,7 +852,7 @@ Credential management (OS keyring):
     cred_p = sub.add_parser("credentials", help="Manage stored credentials")
     cred_sub = cred_p.add_subparsers(dest="cred_action")
 
-    # credentials add <hostname> <username> [--type ssh|proxmox] [--key-path PATH]
+    # credentials add [<hostname>] <username> [--type ssh|proxmox] [--key-path PATH] [--scope SCOPE]
     add_p = cred_sub.add_parser(
         "add",
         help="Store a credential (upsert — re-run to replace an existing entry)",
@@ -703,8 +862,19 @@ Credential management (OS keyring):
             "and its auth_type. There is no separate `update` subcommand — `add` is it."
         ),
     )
-    add_p.add_argument("hostname")
-    add_p.add_argument("username")
+    add_p.add_argument(
+        "hostname",
+        nargs="?",
+        default=None,
+        help=(
+            "Target host DNS name (required for per-node credentials; "
+            "must be omitted when --scope cluster:<name> is used)"
+        ),
+    )
+    add_p.add_argument(
+        "username",
+        help="Username on the target host (proxmox: the Proxmox token ID in `user@realm!tokenname` form)",
+    )
     add_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
     add_p.add_argument(
         "--key-path",
@@ -718,6 +888,18 @@ Credential management (OS keyring):
             "not copied — only its filesystem path."
         ),
     )
+    add_p.add_argument(
+        "--scope",
+        dest="scope",
+        default=None,
+        metavar="SCOPE",
+        help=(
+            "Credential scope. Omit for per-node (default). "
+            "Use --scope cluster:<cluster_name> to store a Proxmox cluster-wide token "
+            "(requires --type proxmox). When --scope cluster:<name> is used, the positional "
+            "<hostname> is not allowed."
+        ),
+    )
     add_p.set_defaults(func=_cmd_credentials_add)
 
     # credentials list [--type ssh|proxmox]
@@ -725,10 +907,27 @@ Credential management (OS keyring):
     list_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
     list_p.set_defaults(func=_cmd_credentials_list)
 
-    # credentials remove <hostname> [--type ssh|proxmox]
+    # credentials remove [<hostname>] [--type ssh|proxmox] [--scope SCOPE]
     remove_p = cred_sub.add_parser("remove", help="Remove a stored credential")
-    remove_p.add_argument("hostname")
+    remove_p.add_argument(
+        "hostname",
+        nargs="?",
+        default=None,
+        help=(
+            "Target host DNS name (required for per-node removal; must be omitted when --scope cluster:<name> is used)"
+        ),
+    )
     remove_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
+    remove_p.add_argument(
+        "--scope",
+        dest="scope",
+        default=None,
+        metavar="SCOPE",
+        help=(
+            "Scope filter. Omit for per-node removal. "
+            "Use --scope cluster:<cluster_name> to remove a Proxmox cluster-wide credential."
+        ),
+    )
     remove_p.set_defaults(func=_cmd_credentials_remove)
 
     args = parser.parse_args()
