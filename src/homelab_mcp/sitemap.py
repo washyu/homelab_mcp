@@ -312,12 +312,18 @@ class NetworkSiteMap:
 async def discover_and_store(
     sitemap: NetworkSiteMap,
     hostname: str,
-    username: str = "mcp_admin",
+    username: str | None = None,
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
 ) -> str:
-    """Discover a device and store it in the site map."""
+    """Discover a device and store it in the site map.
+
+    Phase 33.1 D-06: ``username`` defaults to ``None``. When omitted, the
+    keyring-registered user for ``hostname`` is resolved inside
+    :func:`ssh_tools.resolve_ssh_credentials` via the Plan-01 registry-scan
+    helper — no hardcoded-default fallback.
+    """
     from .ssh_tools import ssh_discover_system
 
     # Perform discovery
@@ -354,7 +360,10 @@ async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[st
             result = await discover_and_store(
                 sitemap,
                 target["hostname"],
-                target.get("username", "mcp_admin"),
+                # Phase 33.1 D-07: no hardcoded-default fallback — None propagates
+                # to resolve_ssh_credentials, which scans the keyring registry
+                # by hostname (Plan 01) to pick the registered user.
+                target.get("username"),
                 target.get("password"),
                 target.get("key_path"),
                 target.get("port", 22),
