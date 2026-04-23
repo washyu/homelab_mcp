@@ -1298,6 +1298,92 @@ class AsyncContextManagerMock:
         pass
 
 
+# ---------------------------------------------------------------------------
+# Phase 34 Plan 03: async get_proxmox_client wiring tests (D-10, D-12, SC-5)
+# ---------------------------------------------------------------------------
+
+
+class TestGetProxmoxClientAsync:
+    """Tests for async get_proxmox_client after Plan 03 wiring (D-10, D-12, SC-5)."""
+
+    @pytest.mark.asyncio
+    @patch(
+        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        new_callable=AsyncMock,
+    )
+    async def test_get_proxmox_client_async_explicit_api_token_bypasses_resolver(
+        self,
+        mock_resolver: AsyncMock,
+    ) -> None:
+        """SC-5: explicit api_token bypasses the resolver entirely."""
+        mock_resolver.side_effect = AssertionError("resolver must NOT be called when api_token is explicit")
+
+        client = await get_proxmox_client(host="pve1", api_token="root@pam!t=s")
+
+        assert isinstance(client, ProxmoxAPIClient)
+        assert client.api_token == "root@pam!t=s"
+        mock_resolver.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch(
+        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        new_callable=AsyncMock,
+    )
+    async def test_get_proxmox_client_async_explicit_username_password_bypasses_resolver(
+        self,
+        mock_resolver: AsyncMock,
+    ) -> None:
+        """SC-5: explicit username+password bypasses the resolver entirely."""
+        mock_resolver.side_effect = AssertionError("resolver must NOT be called when username+password is explicit")
+
+        client = await get_proxmox_client(host="pve1", username="root@pam", password="pw")
+
+        assert isinstance(client, ProxmoxAPIClient)
+        assert client.username == "root@pam"
+        assert client.password == "pw"
+        mock_resolver.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch(
+        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        new_callable=AsyncMock,
+    )
+    async def test_get_proxmox_client_async_delegates_to_resolver_when_host_only(
+        self,
+        mock_resolver: AsyncMock,
+    ) -> None:
+        """D-10: when only host is provided, get_proxmox_client awaits resolve_proxmox_credentials."""
+        mock_resolver.return_value = ("root@pam!tok=uuid", "cluster", "homelab-prod")
+
+        client = await get_proxmox_client(host="pve1")
+
+        assert isinstance(client, ProxmoxAPIClient)
+        assert client.api_token == "root@pam!tok=uuid"
+        mock_resolver.assert_awaited_once_with("pve1", session=None)
+
+    @pytest.mark.asyncio
+    @patch(
+        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        new_callable=AsyncMock,
+    )
+    async def test_get_proxmox_client_no_host_raises_proxmox_host_valueerror(
+        self,
+        mock_resolver: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """D-12: when no host can be determined, ValueError names PROXMOX_HOST env var."""
+        monkeypatch.delenv("PROXMOX_HOST", raising=False)
+        monkeypatch.delenv("PROXMOX_API_TOKEN", raising=False)
+        monkeypatch.delenv("PROXMOX_USER", raising=False)
+        monkeypatch.delenv("PROXMOX_PASSWORD", raising=False)
+
+        with pytest.raises(ValueError) as exc_info:
+            await get_proxmox_client()
+
+        assert "PROXMOX_HOST" in str(exc_info.value)
+        mock_resolver.assert_not_called()
+
+
 class TestProxmoxSharedSession:
     """Test ProxmoxAPIClient shared session support."""
 
