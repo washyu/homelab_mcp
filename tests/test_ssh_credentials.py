@@ -128,6 +128,144 @@ class TestResolveSSHCredentials:
         assert "desync-host" in warning_records[0].message
         assert "alice" in warning_records[0].message
 
+    # ------------------------------------------------------------------
+    # Phase 33.1 Plan 01 — D-04 / D-04a / D-11
+    # Registry-scan-by-hostname when username is None, in BOTH tiers.
+    # ------------------------------------------------------------------
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    @patch("src.homelab_mcp.ssh_tools.get_credential")
+    def test_resolve_with_no_username_single_match(self, mock_get_cred, mock_list_creds):
+        """D-04 Tier-2: username=None + single registry match → resolves from registry."""
+        mock_list_creds.return_value = [
+            {
+                "hostname": "h.example.com",
+                "username": "alice",
+                "credential_type": "ssh",
+                "auth_type": "password",
+            }
+        ]
+        mock_get_cred.return_value = "secret"
+
+        creds = resolve_ssh_credentials(hostname="h.example.com", username=None)
+
+        assert isinstance(creds, SSHCredentials)
+        assert creds.username == "alice"
+        assert creds.password == "secret"
+        assert creds.hostname == "h.example.com"
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    def test_resolve_with_no_username_ambiguous_match(self, mock_list_creds):
+        """D-04/D-11 Tier-2: username=None + multi registry match → error names users + list tool."""
+        mock_list_creds.return_value = [
+            {
+                "hostname": "h.example.com",
+                "username": "alice",
+                "credential_type": "ssh",
+                "auth_type": "password",
+            },
+            {
+                "hostname": "h.example.com",
+                "username": "bob",
+                "credential_type": "ssh",
+                "auth_type": "password",
+            },
+        ]
+
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(hostname="h.example.com", username=None)
+
+        msg = str(exc_info.value)
+        assert "alice" in msg
+        assert "bob" in msg
+        # D-04a: must point the agent at a discovery tool so it can self-disambiguate.
+        assert ("list_keyring_credentials" in msg) or ("list_registered_servers" in msg)
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    def test_resolve_with_no_username_zero_match(self, mock_list_creds):
+        """D-04 Tier-2: username=None + zero registry match → CredentialNotFoundError."""
+        mock_list_creds.return_value = []
+
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(hostname="h.example.com", username=None)
+
+        msg = str(exc_info.value)
+        assert "homelab-mcp credentials add" in msg
+        assert "h.example.com" in msg
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    def test_resolve_tier1_no_username_single_match_injects_username(self, mock_list_creds):
+        """D-04 Tier-1: username=None + explicit password → registry username injected, explicit password honored."""
+        mock_list_creds.return_value = [
+            {
+                "hostname": "h.example.com",
+                "username": "alice",
+                "credential_type": "ssh",
+                "auth_type": "password",
+            }
+        ]
+
+        creds = resolve_ssh_credentials(
+            hostname="h.example.com", username=None, password="explicit-pw"
+        )
+
+        assert isinstance(creds, SSHCredentials)
+        # username comes from the registry (the only registered user for this host)
+        assert creds.username == "alice"
+        # explicit password wins over any keyring-looked-up value
+        assert creds.password == "explicit-pw"
+        # no accidental key-path leakage
+        assert creds.key_path is None
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    def test_resolve_tier1_no_username_ambiguous_match_raises(self, mock_list_creds):
+        """D-04 Tier-1: username=None + explicit password + multi registry → ambiguous error."""
+        mock_list_creds.return_value = [
+            {
+                "hostname": "h.example.com",
+                "username": "alice",
+                "credential_type": "ssh",
+                "auth_type": "password",
+            },
+            {
+                "hostname": "h.example.com",
+                "username": "bob",
+                "credential_type": "ssh",
+                "auth_type": "password",
+            },
+        ]
+
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(
+                hostname="h.example.com", username=None, password="p"
+            )
+
+        msg = str(exc_info.value)
+        assert "alice" in msg
+        assert "bob" in msg
+        assert ("list_keyring_credentials" in msg) or ("list_registered_servers" in msg)
+
+    @patch("src.homelab_mcp.ssh_tools.list_credentials")
+    def test_resolve_tier1_no_username_zero_match_raises(self, mock_list_creds):
+        """BLOCKER 1: Tier-1 branch with username=None + zero registry match MUST raise.
+
+        Previously line 63 silently substituted 'mcp_admin' — this test proves the
+        fallback is removed. The call now scans the registry and raises when empty.
+        """
+        mock_list_creds.return_value = []
+
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(
+                hostname="h.example.com", username=None, password="p"
+            )
+
+        msg = str(exc_info.value)
+        assert "homelab-mcp credentials add" in msg
+        assert "h.example.com" in msg
+        # Regression guard: the removed fallback username MUST NOT appear anywhere
+        # in a successful credential — if this test ever starts passing with an
+        # SSHCredentials return, the silent fallback was reintroduced.
+
 
 class TestCredentialNotFoundError:
     """Test that CredentialNotFoundError is raised when all credential tiers miss."""
