@@ -22,77 +22,136 @@ _SERVICE_NAMES: dict[str, str] = {
 _REGISTRY_PATH = pathlib.Path.home() / ".homelab_mcp" / "credential_registry.json"
 
 
-def store_credential(hostname: str, username: str, password: str, credential_type: str = "ssh") -> bool:
+def _keyring_key(username: str, hostname: str, scope: str, cluster_name: str) -> str:
+    """Return the keyring key for a credential. Cluster scope uses the `@cluster:` form (D-03)."""
+    if scope == "cluster":
+        return f"{username}@cluster:{cluster_name}"
+    return f"{username}@{hostname}"
+
+
+def store_credential(
+    hostname: str,
+    username: str,
+    password: str,
+    credential_type: str = "ssh",
+    *,
+    scope: str = "node",
+    cluster_name: str = "",
+) -> bool:
     """Store a credential in the OS keyring.
 
     Returns True on success, False on headless fallback (never raises).
+
+    Args:
+        scope: "node" (default) or "cluster". When "cluster", the keyring key uses
+            the ``f"{username}@cluster:{cluster_name}"`` form (D-03).
+        cluster_name: Required when scope="cluster".
     """
+    if scope not in ("node", "cluster"):
+        raise ValueError(f"scope must be 'node' or 'cluster', got {scope!r}")
+    if scope == "cluster" and not cluster_name:
+        raise ValueError("scope='cluster' requires a non-empty cluster_name")
     service_name = _SERVICE_NAMES.get(credential_type, _SERVICE_NAME)
+    identity = f"cluster:{cluster_name}" if scope == "cluster" else hostname
     try:
         import keyring  # noqa: PLC0415
         import keyring.errors  # noqa: PLC0415
 
-        keyring.set_password(service_name, f"{username}@{hostname}", password)
+        keyring.set_password(service_name, _keyring_key(username, hostname, scope, cluster_name), password)
         return True
     except keyring.errors.NoKeyringError:
-        logger.warning("OS keyring unavailable (headless host) — credential not stored for %s", hostname)
+        logger.warning("OS keyring unavailable (headless host) — credential not stored for %s", identity)
         return False
     except RuntimeError as exc:
-        logger.warning("OS keyring runtime error — credential not stored for %s: %s", hostname, exc)
+        logger.warning("OS keyring runtime error — credential not stored for %s: %s", identity, exc)
         return False
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Unexpected keyring error — credential not stored for %s: %s", hostname, exc)
+        logger.warning("Unexpected keyring error — credential not stored for %s: %s", identity, exc)
         return False
 
 
-def get_credential(hostname: str, username: str, credential_type: str = "ssh") -> str | None:
+def get_credential(
+    hostname: str,
+    username: str,
+    credential_type: str = "ssh",
+    *,
+    scope: str = "node",
+    cluster_name: str = "",
+) -> str | None:
     """Retrieve a credential from the OS keyring.
 
     Returns the password string on success, None on headless fallback or missing
     entry (never raises).
+
+    Args:
+        scope: "node" (default) or "cluster". When "cluster", the keyring key uses
+            the ``f"{username}@cluster:{cluster_name}"`` form (D-03).
+        cluster_name: Required when scope="cluster".
     """
+    if scope not in ("node", "cluster"):
+        raise ValueError(f"scope must be 'node' or 'cluster', got {scope!r}")
+    if scope == "cluster" and not cluster_name:
+        raise ValueError("scope='cluster' requires a non-empty cluster_name")
     service_name = _SERVICE_NAMES.get(credential_type, _SERVICE_NAME)
+    identity = f"cluster:{cluster_name}" if scope == "cluster" else hostname
     try:
         import keyring  # noqa: PLC0415
         import keyring.errors  # noqa: PLC0415
 
-        result: str | None = keyring.get_password(service_name, f"{username}@{hostname}")
+        result: str | None = keyring.get_password(service_name, _keyring_key(username, hostname, scope, cluster_name))
         return result
     except keyring.errors.NoKeyringError:
-        logger.warning("OS keyring unavailable (headless host) — no credential for %s", hostname)
+        logger.warning("OS keyring unavailable (headless host) — no credential for %s", identity)
         return None
     except RuntimeError as exc:
-        logger.warning("OS keyring runtime error — returning None for %s: %s", hostname, exc)
+        logger.warning("OS keyring runtime error — returning None for %s: %s", identity, exc)
         return None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Unexpected keyring error — returning None for %s: %s", hostname, exc)
+        logger.warning("Unexpected keyring error — returning None for %s: %s", identity, exc)
         return None
 
 
-def delete_credential(hostname: str, username: str, credential_type: str = "ssh") -> bool:
+def delete_credential(
+    hostname: str,
+    username: str,
+    credential_type: str = "ssh",
+    *,
+    scope: str = "node",
+    cluster_name: str = "",
+) -> bool:
     """Delete a credential from the OS keyring.
 
     Returns True on success, False when entry does not exist (PasswordDeleteError)
     or when the keyring is unavailable (never raises).
+
+    Args:
+        scope: "node" (default) or "cluster". When "cluster", the keyring key uses
+            the ``f"{username}@cluster:{cluster_name}"`` form (D-03).
+        cluster_name: Required when scope="cluster".
     """
+    if scope not in ("node", "cluster"):
+        raise ValueError(f"scope must be 'node' or 'cluster', got {scope!r}")
+    if scope == "cluster" and not cluster_name:
+        raise ValueError("scope='cluster' requires a non-empty cluster_name")
     service_name = _SERVICE_NAMES.get(credential_type, _SERVICE_NAME)
+    identity = f"cluster:{cluster_name}" if scope == "cluster" else hostname
     try:
         import keyring  # noqa: PLC0415
         import keyring.errors  # noqa: PLC0415
         from keyring.errors import PasswordDeleteError  # noqa: PLC0415
 
-        keyring.delete_password(service_name, f"{username}@{hostname}")
+        keyring.delete_password(service_name, _keyring_key(username, hostname, scope, cluster_name))
         return True
     except PasswordDeleteError:
         return False  # credential didn't exist — not an error for callers
     except keyring.errors.NoKeyringError:
-        logger.warning("OS keyring unavailable (headless host) — delete skipped for %s", hostname)
+        logger.warning("OS keyring unavailable (headless host) — delete skipped for %s", identity)
         return False
     except RuntimeError as exc:
-        logger.warning("OS keyring runtime error — delete skipped for %s: %s", hostname, exc)
+        logger.warning("OS keyring runtime error — delete skipped for %s: %s", identity, exc)
         return False
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Unexpected keyring error — delete skipped for %s: %s", hostname, exc)
+        logger.warning("Unexpected keyring error — delete skipped for %s: %s", identity, exc)
         return False
 
 
