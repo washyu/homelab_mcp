@@ -134,7 +134,16 @@ def test_register_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
     register_credential("host1", "user1", credential_type="ssh")
     entries = list_credentials(credential_type="ssh")
-    assert entries == [{"hostname": "host1", "username": "user1", "credential_type": "ssh", "auth_type": "password"}]
+    assert entries == [
+        {
+            "hostname": "host1",
+            "username": "user1",
+            "credential_type": "ssh",
+            "auth_type": "password",
+            "scope": "node",
+            "cluster_name": "",
+        }
+    ]
 
 
 def test_unregister_removes_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -118,33 +118,73 @@ def register_credential(
     username: str,
     credential_type: str = "ssh",
     auth_type: str = "password",
+    *,
+    scope: str = "node",
+    cluster_name: str = "",
 ) -> None:
     """Record credential metadata in the registry (no password stored here).
 
-    Upserts: replaces existing entry for same (hostname, username, credential_type).
+    Upserts: replaces existing entry for same (hostname, username, credential_type)
+    for per-node entries, or (cluster_name, username, credential_type) for cluster
+    entries (D-08a).
 
     Args:
-        hostname: Target host identifier.
+        hostname: Target host identifier. Set to "" for cluster-scoped entries (D-02).
         username: Account used on the target host.
         credential_type: "ssh" or "proxmox".
         auth_type: "password" (keyring stores password string) or "key"
             (keyring stores an SSH private-key filesystem path — D-09). Legacy
             entries without this field are treated as "password" by readers.
+        scope: "node" (default, per-node credential) or "cluster" (cluster-scoped
+            credential that serves all nodes in the named cluster). Legacy entries
+            without this field are treated as "node" by readers
+            (use ``.get("scope", "node")``).
+        cluster_name: Required when scope="cluster". Identifies the Proxmox cluster
+            this credential serves. Empty string for per-node entries. Legacy entries
+            without this field default to "" (use ``.get("cluster_name", "")``) — D-01.
     """
     if auth_type not in ("password", "key"):
         raise ValueError(f"auth_type must be 'password' or 'key', got {auth_type!r}")
+    if scope not in ("node", "cluster"):
+        raise ValueError(f"scope must be 'node' or 'cluster', got {scope!r}")
+    if scope == "cluster" and not cluster_name:
+        raise ValueError("scope='cluster' requires a non-empty cluster_name")
     entries = _load_registry()
-    entries = [
-        e
-        for e in entries
-        if not (e["hostname"] == hostname and e["username"] == username and e["credential_type"] == credential_type)
-    ]
+    if scope == "cluster":
+        # Cluster entries dedup by (cluster_name, username, credential_type) — D-08a.
+        # Do NOT compare hostname: a user may re-run with a different host arg (or none).
+        entries = [
+            e
+            for e in entries
+            if not (
+                e.get("scope", "node") == "cluster"
+                and e.get("cluster_name", "") == cluster_name
+                and e["username"] == username
+                and e["credential_type"] == credential_type
+            )
+        ]
+    else:
+        # Per-node entries dedup by (hostname, username, credential_type) — legacy behavior.
+        # Exclude cluster entries from the match so a per-node and cluster entry with the
+        # same username can coexist.
+        entries = [
+            e
+            for e in entries
+            if not (
+                e.get("scope", "node") == "node"
+                and e["hostname"] == hostname
+                and e["username"] == username
+                and e["credential_type"] == credential_type
+            )
+        ]
     entries.append(
         {
             "hostname": hostname,
             "username": username,
             "credential_type": credential_type,
             "auth_type": auth_type,
+            "scope": scope,
+            "cluster_name": cluster_name,
         }
     )
     _save_registry(entries)
@@ -165,6 +205,12 @@ def list_credentials(credential_type: str = "ssh") -> list[dict[str, str]]:
         and optionally ``auth_type`` (``"password"`` | ``"key"``) — entries
         written before v1.6 lack this field and should be treated as
         ``"password"`` (use ``.get("auth_type", "password")``).
+
+        Two additional optional fields follow the same back-compat pattern (D-01):
+        ``scope`` (``"node"`` | ``"cluster"``) — use ``.get("scope", "node")``
+        for legacy entries written before Phase 34 which lack this field.
+        ``cluster_name`` (``str``) — use ``.get("cluster_name", "")``; empty
+        string for per-node entries and for legacy rows.
 
         Returns empty list if registry file does not exist (fresh install).
     """
