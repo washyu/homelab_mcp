@@ -293,12 +293,31 @@ def test_sitemap_tool_schemas():
     assert "hostname" in discover_tool["inputSchema"]["properties"]
     assert "username" in discover_tool["inputSchema"]["properties"]
     assert discover_tool["inputSchema"]["required"] == ["hostname"]
-    assert discover_tool["inputSchema"]["properties"]["username"].get("default") == "mcp_admin"
 
     # Test bulk_discover_and_map schema
     bulk_tool = tools["bulk_discover_and_map"]
     assert "targets" in bulk_tool["inputSchema"]["properties"]
     assert bulk_tool["inputSchema"]["properties"]["targets"]["type"] == "array"
+
+
+def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
+    """D-01, D-03, D-12: network schema drops password property and mcp_admin default."""
+    from homelab_mcp.tool_schemas.network_tools_schema import NETWORK_TOOLS
+
+    discover = NETWORK_TOOLS["discover_and_map"]["inputSchema"]["properties"]
+    assert "password" not in discover, "D-01: discover_and_map must not expose password property"
+    assert "default" not in discover["username"], "D-03: username must have no default"
+    assert "Defaults to 'mcp_admin'" not in discover["username"]["description"], (
+        "D-12: description must not claim mcp_admin default"
+    )
+
+    bulk_target_props = NETWORK_TOOLS["bulk_discover_and_map"]["inputSchema"]["properties"]["targets"]["items"][
+        "properties"
+    ]
+    assert "password" not in bulk_target_props, (
+        "D-01: bulk_discover_and_map targets must not expose password property"
+    )
+    assert "default" not in bulk_target_props["username"], "D-03: bulk target username must have no default"
 
     # Test get_device_changes schema
     changes_tool = tools["get_device_changes"]
