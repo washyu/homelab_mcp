@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: executing
-stopped_at: Phase 33.1 complete (all 5 plans shipped) — Phase 34 next
-last_updated: "2026-04-23T03:45:45Z"
-last_activity: 2026-04-23 -- Phase 33.1 Plan 03 shipped (D-05 tool removal; Phase 33.1 close)
+status: "All Phase 33.1 D-decisions satisfied (D-01..D-13). Tool count 53 → 51; Plan 05 AST guards flipped GREEN. Next phase: 34 (Cluster-Scoped Proxmox Credentials)."
+stopped_at: Phase 34 context gathered
+last_updated: "2026-04-23T05:13:47.091Z"
+last_activity: "2026-04-23 03:45Z -- Phase 33.1 Plan 03 landed commits c24f4b5 (lock-step 5-surface) + 67c93d2 (ssh_tools.py + prompt + tests)"
 progress:
   total_phases: 8
   completed_phases: 2
@@ -103,6 +103,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-23T03:45:45Z
-Stopped at: Phase 33.1 complete — all 5 plans shipped (01 resolver, 02 schema, 03 D-05 tool removal, 04 sitemap default, 05 AST guards). Next phase: 34 (Cluster-Scoped Proxmox Credentials).
-Resume file: .planning/ROADMAP.md (pick up with Phase 34 context-gathering or phase close ceremony)
+Last session: 2026-04-23T05:13:47.088Z
+Stopped at: Phase 34 context gathered
+Resume file: .planning/phases/34-cluster-scoped-proxmox-credentials/34-CONTEXT.md
