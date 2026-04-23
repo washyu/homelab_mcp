@@ -321,3 +321,120 @@ def test_list_credentials_backward_readable_scope_defaults(
     # Readers use .get() — must not raise KeyError
     assert entries[0].get("scope", "node") == "node"
     assert entries[0].get("cluster_name", "") == ""
+
+
+# ---------------------------------------------------------------------------
+# Phase 34 — Plan 01 Task 2: cluster keyring key form in store/get/delete (D-03)
+# ---------------------------------------------------------------------------
+
+
+def test_store_credential_cluster_scope_key_form(mocker) -> None:
+    """store_credential with scope='cluster' calls keyring with '@cluster:' key form (D-03)."""
+    mock_set = mocker.patch("keyring.set_password", return_value=None)
+    from homelab_mcp.credential_store import store_credential  # noqa: PLC0415
+
+    store_credential(
+        "",
+        "root@pam!tok",
+        "secret_uuid",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    mock_set.assert_called_once()
+    call_args = mock_set.call_args[0]
+    assert call_args[0] == "homelab-mcp-proxmox"
+    assert call_args[1] == "root@pam!tok@cluster:homelab-prod"
+    assert call_args[2] == "secret_uuid"
+
+
+def test_get_credential_cluster_scope_key_form(mocker) -> None:
+    """get_credential with scope='cluster' calls keyring with '@cluster:' key form (D-03)."""
+    mock_get = mocker.patch("keyring.get_password", return_value="secret_uuid")
+    from homelab_mcp.credential_store import get_credential  # noqa: PLC0415
+
+    result = get_credential(
+        "",
+        "root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    mock_get.assert_called_once()
+    call_args = mock_get.call_args[0]
+    assert call_args[0] == "homelab-mcp-proxmox"
+    assert call_args[1] == "root@pam!tok@cluster:homelab-prod"
+    assert result == "secret_uuid"
+
+
+def test_delete_credential_cluster_scope_key_form(mocker) -> None:
+    """delete_credential with scope='cluster' calls keyring with '@cluster:' key form (D-03)."""
+    mock_del = mocker.patch("keyring.delete_password", return_value=None)
+    from homelab_mcp.credential_store import delete_credential  # noqa: PLC0415
+
+    delete_credential(
+        "",
+        "root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    mock_del.assert_called_once()
+    call_args = mock_del.call_args[0]
+    assert call_args[0] == "homelab-mcp-proxmox"
+    assert call_args[1] == "root@pam!tok@cluster:homelab-prod"
+
+
+def test_credential_helpers_legacy_key_form_unchanged(mocker) -> None:
+    """Default (no scope kwarg) still uses legacy '@hostname' key form — no regression."""
+    mock_set = mocker.patch("keyring.set_password", return_value=None)
+    mock_get = mocker.patch("keyring.get_password", return_value="pw")
+    mock_del = mocker.patch("keyring.delete_password", return_value=None)
+    from homelab_mcp.credential_store import delete_credential, get_credential, store_credential  # noqa: PLC0415
+
+    store_credential("pve1", "root@pam!tok", "s", credential_type="proxmox")
+    assert mock_set.call_args[0][1] == "root@pam!tok@pve1"
+
+    get_credential("pve1", "root@pam!tok", credential_type="proxmox")
+    assert mock_get.call_args[0][1] == "root@pam!tok@pve1"
+
+    delete_credential("pve1", "root@pam!tok", credential_type="proxmox")
+    assert mock_del.call_args[0][1] == "root@pam!tok@pve1"
+
+
+def test_credential_helpers_cluster_requires_cluster_name(mocker) -> None:
+    """store/get/delete_credential raise ValueError when scope='cluster' and cluster_name is empty."""
+    import pytest as _pytest  # noqa: PLC0415
+
+    mocker.patch("keyring.set_password", return_value=None)
+    mocker.patch("keyring.get_password", return_value=None)
+    mocker.patch("keyring.delete_password", return_value=None)
+
+    from homelab_mcp.credential_store import delete_credential, get_credential, store_credential  # noqa: PLC0415
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        store_credential("", "root@pam!tok", "s", credential_type="proxmox", scope="cluster", cluster_name="")
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        get_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="")
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        delete_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="")
+
+
+def test_store_credential_cluster_scope_headless_fallback(mocker) -> None:
+    """store_credential cluster scope returns False (not raises) on NoKeyringError."""
+    import keyring.errors  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import store_credential  # noqa: PLC0415
+
+    mocker.patch("keyring.set_password", side_effect=keyring.errors.NoKeyringError())
+    result = store_credential(
+        "",
+        "root@pam!tok",
+        "secret_uuid",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    assert result is False
