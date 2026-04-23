@@ -329,7 +329,7 @@ async def resolve_proxmox_credentials(
     )
 
 
-def get_proxmox_client(
+async def get_proxmox_client(
     host: str | None = None,
     port: int = 8006,
     verify_ssl: bool | None = None,
@@ -363,25 +363,19 @@ def get_proxmox_client(
     password = password or os.getenv("PROXMOX_PASSWORD")
     api_token = api_token or os.getenv("PROXMOX_API_TOKEN")
 
-    # Keyring fallback (INJECT-03): only when env vars are insufficient
-    # Single-homelab assumption: if PROXMOX_HOST is absent, take first registry entry.
-    # If PROXMOX_HOST is set but auth is missing, match by host (or skip if no match).
-    if not host or (not api_token and not (username and password)):
-        registry_entries = list_credentials(credential_type="proxmox")
-        if registry_entries:
-            entry = registry_entries[0]
-            keyring_host = entry["hostname"]
-            keyring_username = entry["username"]
-            # Only use this entry if: no host set, OR the env host matches the entry host
-            if not host or host == keyring_host:
-                keyring_secret = get_credential(keyring_host, keyring_username, credential_type="proxmox")
-                if keyring_secret:
-                    host = host or keyring_host
-                    # Proxmox API tokens use "user@realm!tokenid=secret" format.
-                    # The registry username holds the token ID (e.g. root@pam!mcp_test),
-                    # the keyring holds the secret UUID.
-                    api_token = api_token or f"{keyring_username}={keyring_secret}"
-                    logger.debug("Auto-injected Proxmox keyring credential for %s", host)
+    # D-10: resolver fires only when host is known AND no explicit auth was provided.
+    # Explicit api_token / username+password (from kwargs or env vars picked up above)
+    # bypasses the resolver entirely — preserves SC-5 back-compat for environments
+    # that have always configured Proxmox via PROXMOX_* env vars.
+    if host and not api_token and not (username and password):
+        resolved_token, scope, cluster_name = await resolve_proxmox_credentials(host, session=session)
+        api_token = resolved_token
+        logger.debug(
+            "Proxmox credential resolved for host=%s via source=%s cluster=%s",
+            host,
+            scope,
+            cluster_name,
+        )
 
     # Validation gates
     if not host:
@@ -418,7 +412,7 @@ async def list_proxmox_resources(
     Returns:
         List of resources with their details
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         resources = await client.get("/cluster/resources")
@@ -457,7 +451,7 @@ async def get_proxmox_node_status(
     Returns:
         Node status information
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         status = await client.get(f"/nodes/{node}/status")
@@ -496,7 +490,7 @@ async def get_proxmox_vm_status(
     Returns:
         VM/Container status information
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         status = await client.get(f"/nodes/{node}/{vm_type}/{vmid}/status/current")
@@ -540,7 +534,7 @@ async def get_proxmox_vm_config(
     Returns:
         VM/Container persistent configuration
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         config = await client.get(f"/nodes/{node}/{vm_type}/{vmid}/config")
@@ -583,7 +577,7 @@ async def manage_proxmox_vm(
     Returns:
         Operation result
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     valid_actions = [
         "start",
@@ -662,7 +656,7 @@ async def create_proxmox_lxc(
     Returns:
         Creation result
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         # Build container config
@@ -748,7 +742,7 @@ async def create_proxmox_vm(
     Returns:
         Creation result
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         # Build VM config
@@ -820,7 +814,7 @@ async def clone_proxmox_vm(
     Returns:
         Clone operation result
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         config: dict[str, Any] = {
@@ -872,7 +866,7 @@ async def delete_proxmox_vm(
     Returns:
         Deletion result
     """
-    client = get_proxmox_client(host=host, session=session)
+    client = await get_proxmox_client(host=host, session=session)
 
     try:
         # Stop VM first if running

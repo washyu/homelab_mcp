@@ -193,8 +193,14 @@ class TestProxmoxAuthentication:
 
 
 class TestGetProxmoxClient:
-    """Test the get_proxmox_client factory function."""
+    """Test the get_proxmox_client factory function.
 
+    All tests are async after Plan 03 converted get_proxmox_client to async def.
+    Tests that supply explicit username+password or api_token bypass the resolver
+    (SC-5 back-compat) so no resolver mock is needed for those paths.
+    """
+
+    @pytest.mark.asyncio
     @patch.dict(
         os.environ,
         {
@@ -203,33 +209,40 @@ class TestGetProxmoxClient:
             "PROXMOX_PASSWORD": "secret",
         },
     )
-    def test_client_from_env_vars(self):
-        """Test creating client from environment variables."""
-        # WHEN: Creating client without parameters
-        client = get_proxmox_client()
+    async def test_client_from_env_vars(self):
+        """Test creating client from environment variables (explicit auth via env bypasses resolver)."""
+        # WHEN: Creating client without parameters (env vars supply host+auth → resolver bypassed)
+        client = await get_proxmox_client()
 
         # THEN: Should use environment variables
         assert client.host == "192.168.1.100"
         assert client.username == "root@pam"
         assert client.password == "secret"
 
+    @pytest.mark.asyncio
+    @patch(
+        "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        new_callable=AsyncMock,
+    )
     @patch.dict(os.environ, {"PROXMOX_HOST": "192.168.1.100"}, clear=True)
-    def test_client_missing_credentials(self):
-        """Test client creation without credentials."""
-        # WHEN/THEN: Should raise ValueError if no credentials
-        with pytest.raises(
-            ValueError,
-            match="Must provide either PROXMOX_API_TOKEN or PROXMOX_USER\\+PROXMOX_PASSWORD",
-        ):
-            get_proxmox_client()
+    async def test_client_missing_credentials(self, mock_resolver):
+        """Test client creation with host but no auth — resolver is called, raises on miss."""
+        from src.homelab_mcp.ssh_tools import CredentialNotFoundError
 
+        mock_resolver.side_effect = CredentialNotFoundError("No credentials for 192.168.1.100")
+        # WHEN/THEN: Should raise CredentialNotFoundError (resolver finds nothing)
+        with pytest.raises(CredentialNotFoundError):
+            await get_proxmox_client()
+
+    @pytest.mark.asyncio
     @patch.dict(os.environ, {}, clear=True)
-    def test_client_missing_host(self):
+    async def test_client_missing_host(self):
         """Test client creation without host."""
-        # WHEN/THEN: Should raise ValueError if no host
+        # WHEN/THEN: Should raise ValueError if no host (resolver not called — no host to resolve)
         with pytest.raises(ValueError, match="Proxmox host must be provided or set in PROXMOX_HOST"):
-            get_proxmox_client()
+            await get_proxmox_client()
 
+    @pytest.mark.asyncio
     @patch.dict(
         os.environ,
         {
@@ -237,22 +250,23 @@ class TestGetProxmoxClient:
             "PROXMOX_API_TOKEN": "root@pam!token=secret",
         },
     )
-    def test_client_with_api_token_from_env(self):
-        """Test creating client with API token from environment."""
+    async def test_client_with_api_token_from_env(self):
+        """Test creating client with API token from environment (explicit token bypasses resolver)."""
         # WHEN: Creating client
-        client = get_proxmox_client()
+        client = await get_proxmox_client()
 
         # THEN: Should use API token
         assert client.api_token == "root@pam!token=secret"
         assert client.username is None
         assert client.password is None
 
-    def test_client_with_explicit_params_override_env(self):
+    @pytest.mark.asyncio
+    async def test_client_with_explicit_params_override_env(self):
         """Test that explicit parameters override environment variables."""
         # GIVEN: Environment has one host
         with patch.dict(os.environ, {"PROXMOX_HOST": "env-host.local"}):
-            # WHEN: Creating client with explicit host
-            client = get_proxmox_client(
+            # WHEN: Creating client with explicit host+auth (bypasses resolver)
+            client = await get_proxmox_client(
                 host="explicit-host.local",
                 username="admin@pam",
                 password="test",
@@ -266,7 +280,7 @@ class TestListProxmoxResources:
     """Test list_proxmox_resources function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_list_all_resources_success(self, mock_get_client):
         """Test listing all Proxmox resources."""
         # GIVEN: Mock Proxmox client
@@ -295,7 +309,7 @@ class TestListProxmoxResources:
         mock_client.get.assert_called_once_with("/cluster/resources")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_list_resources_filtered_by_type(self, mock_get_client):
         """Test listing resources filtered by type."""
         # GIVEN: Mock client with mixed resources
@@ -319,7 +333,7 @@ class TestListProxmoxResources:
         assert all(r["type"] == "qemu" for r in result["resources"])
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_list_resources_api_error(self, mock_get_client):
         """Test handling of API errors when listing resources."""
         # GIVEN: Mock client that raises an exception
@@ -339,7 +353,7 @@ class TestGetProxmoxNodeStatus:
     """Test get_proxmox_node_status function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_node_status_success(self, mock_get_client):
         """Test getting status for a node."""
         mock_client = AsyncMock()
@@ -364,7 +378,7 @@ class TestGetProxmoxNodeStatus:
         mock_client.get.assert_called_once_with("/nodes/pve/status")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_status_invalid_node(self, mock_get_client):
         """Test error handling with invalid node name."""
         mock_client = AsyncMock()
@@ -383,7 +397,7 @@ class TestGetProxmoxNodeStatus:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_node_status_api_error(self, mock_get_client):
         """Test API error handling."""
         mock_client = AsyncMock()
@@ -402,7 +416,7 @@ class TestGetProxmoxVMStatus:
     """Test get_proxmox_vm_status function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_status_qemu_success(self, mock_get_client):
         """Test getting status of a QEMU VM."""
         # GIVEN: Mock client with VM status
@@ -429,7 +443,7 @@ class TestGetProxmoxVMStatus:
         mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/status/current")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_status_lxc_success(self, mock_get_client):
         """Test getting status of an LXC container."""
         # GIVEN: Mock client with container status
@@ -453,7 +467,7 @@ class TestGetProxmoxVMStatus:
         mock_client.get.assert_called_once_with("/nodes/pve/lxc/101/status/current")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_status_vm_not_found(self, mock_get_client):
         """Test getting status of non-existent VM."""
         # GIVEN: Mock client that raises exception
@@ -469,7 +483,7 @@ class TestGetProxmoxVMStatus:
         assert "does not exist" in result["message"]
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_status_default_type_is_qemu(self, mock_get_client):
         """Test that default VM type is qemu."""
         # GIVEN: Mock client
@@ -489,7 +503,7 @@ class TestGetProxmoxVMConfig:
     """Test get_proxmox_vm_config function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_config_qemu_success(self, mock_get_client):
         """Test getting config of a QEMU VM."""
         # GIVEN: Mock client with VM config
@@ -517,7 +531,7 @@ class TestGetProxmoxVMConfig:
         mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/config")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_config_lxc_success(self, mock_get_client):
         """Test getting config of an LXC container."""
         # GIVEN: Mock client with container config
@@ -541,7 +555,7 @@ class TestGetProxmoxVMConfig:
         mock_client.get.assert_called_once_with("/nodes/pve/lxc/101/config")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_config_vm_not_found(self, mock_get_client):
         """Test getting config of non-existent VM returns error."""
         # GIVEN: Mock client that raises exception
@@ -557,7 +571,7 @@ class TestGetProxmoxVMConfig:
         assert "Failed to get VM config" in result["message"]
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_config_default_type_is_qemu(self, mock_get_client):
         """Test that default VM type is qemu."""
         # GIVEN: Mock client
@@ -573,7 +587,7 @@ class TestGetProxmoxVMConfig:
         mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/config")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_get_vm_config_value_error_returns_error(self, mock_get_client):
         """Test that ValueError is also caught and returned as error."""
         # GIVEN: Mock client that raises ValueError
@@ -593,7 +607,7 @@ class TestManageProxmoxVM:
     """Test manage_proxmox_vm function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_start_vm_success(self, mock_get_client):
         """Test starting a VM successfully."""
 
@@ -611,7 +625,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/start", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_stop_vm_success(self, mock_get_client):
         """Test stopping a VM successfully."""
         mock_client = AsyncMock()
@@ -628,7 +642,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/stop", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_shutdown_vm_success(self, mock_get_client):
         """Test shutting down a VM successfully."""
         mock_client = AsyncMock()
@@ -645,7 +659,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/shutdown", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_reboot_vm_success(self, mock_get_client):
         """Test rebooting a VM."""
         mock_client = AsyncMock()
@@ -662,7 +676,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/reboot", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_reset_vm_success(self, mock_get_client):
         """Test resetting a VM."""
         mock_client = AsyncMock()
@@ -679,7 +693,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/reset", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_suspend_vm_success(self, mock_get_client):
         """Test suspending a VM."""
         mock_client = AsyncMock()
@@ -696,7 +710,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/suspend", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_resume_vm_success(self, mock_get_client):
         """Test resuming a VM."""
         mock_client = AsyncMock()
@@ -713,7 +727,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_called_once_with("/nodes/pve/qemu/100/status/resume", {})
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_invalid_action(self, mock_get_client):
         """Test invalid action is handled properly."""
         mock_client = AsyncMock()
@@ -728,7 +742,7 @@ class TestManageProxmoxVM:
         mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_manage_lxc_container(self, mock_get_client):
         """Test managing an LXC container."""
         mock_client = AsyncMock()
@@ -749,7 +763,7 @@ class TestCreateProxmoxLXC:
     """Test create_proxmox_lxc function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_lxc_minimal_config(self, mock_get_client):
         """Test LXC creation with minimal configuration."""
         mock_client = AsyncMock()
@@ -779,7 +793,7 @@ class TestCreateProxmoxLXC:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_lxc_with_password(self, mock_get_client):
         """Test LXC creation with password."""
         mock_client = AsyncMock()
@@ -811,7 +825,7 @@ class TestCreateProxmoxLXC:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_lxc_with_ssh_keys(self, mock_get_client):
         """Test LXC creation with SSH keys."""
         mock_client = AsyncMock()
@@ -848,7 +862,7 @@ class TestCreateProxmoxLXC:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_lxc_and_start(self, mock_get_client):
         """Test LXC creation with auto-start."""
         mock_client = AsyncMock()
@@ -878,7 +892,7 @@ class TestCreateProxmoxLXC:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_lxc_custom_resources(self, mock_get_client):
         """Test LXC creation with custom resources."""
         mock_client = AsyncMock()
@@ -916,7 +930,7 @@ class TestCreateProxmoxLXC:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_lxc_privileged(self, mock_get_client):
         """Test privileged LXC creation."""
         mock_client = AsyncMock()
@@ -950,7 +964,7 @@ class TestCreateProxmoxVM:
     """Test create_proxmox_vm function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_vm_minimal_config(self, mock_get_client):
         """Test VM creation with minimal configuration."""
         mock_client = AsyncMock()
@@ -979,7 +993,7 @@ class TestCreateProxmoxVM:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_vm_with_iso(self, mock_get_client):
         """Test creating VM with ISO attached."""
         # GIVEN: Mock client
@@ -1008,7 +1022,7 @@ class TestCreateProxmoxVM:
         assert "media=cdrom" in config["ide2"]
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_create_vm_and_start(self, mock_manage_vm, mock_get_client):
         """Test creating VM with auto-start."""
@@ -1032,7 +1046,7 @@ class TestCreateProxmoxVM:
         mock_manage_vm.assert_called_once_with("pve", 100, "start", None, "qemu", session=None)
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_vm_custom_resources(self, mock_get_client):
         """Test creating VM with custom resource allocation."""
         # GIVEN: Mock client
@@ -1063,7 +1077,7 @@ class TestCreateProxmoxVM:
         assert "128" in config["scsi0"]
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_create_vm_api_error(self, mock_get_client):
         """Test VM creation API error handling."""
         # GIVEN: Mock client that fails
@@ -1088,7 +1102,7 @@ class TestCloneProxmoxVM:
     """Test clone_proxmox_vm function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_clone_vm_full_clone(self, mock_get_client):
         """Test full clone of a VM."""
         # GIVEN: Mock client
@@ -1117,7 +1131,7 @@ class TestCloneProxmoxVM:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_clone_vm_linked_clone(self, mock_get_client):
         """Test linked clone of a VM."""
         # GIVEN: Mock client
@@ -1142,7 +1156,7 @@ class TestCloneProxmoxVM:
         assert config["full"] == 0
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_clone_lxc_container(self, mock_get_client):
         """Test cloning an LXC container."""
         # GIVEN: Mock client
@@ -1168,7 +1182,7 @@ class TestCloneProxmoxVM:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     async def test_clone_with_new_name(self, mock_get_client):
         """Test cloning VM with a custom name."""
         # GIVEN: Mock client
@@ -1197,7 +1211,7 @@ class TestDeleteProxmoxVM:
     """Test delete_proxmox_vm function."""
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_delete_vm_success(self, mock_manage_vm, mock_get_client):
         """Test successful VM deletion."""
@@ -1222,7 +1236,7 @@ class TestDeleteProxmoxVM:
         mock_client.delete.assert_called_once_with("/nodes/pve/qemu/100")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_delete_vm_with_purge(self, mock_manage_vm, mock_get_client):
         """Test VM deletion with purge option."""
@@ -1242,7 +1256,7 @@ class TestDeleteProxmoxVM:
         mock_client.delete.assert_called_once_with("/nodes/pve/qemu/100?purge=1")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_delete_lxc_success(self, mock_manage_vm, mock_get_client):
         """Test successful LXC container deletion."""
@@ -1263,7 +1277,7 @@ class TestDeleteProxmoxVM:
         mock_client.delete.assert_called_once_with("/nodes/pve/lxc/101")
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_delete_running_vm(self, mock_manage_vm, mock_get_client):
         """Test that running VM is stopped before deletion."""
@@ -1308,7 +1322,7 @@ class TestGetProxmoxClientAsync:
 
     @pytest.mark.asyncio
     @patch(
-        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
     async def test_get_proxmox_client_async_explicit_api_token_bypasses_resolver(
@@ -1326,7 +1340,7 @@ class TestGetProxmoxClientAsync:
 
     @pytest.mark.asyncio
     @patch(
-        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
     async def test_get_proxmox_client_async_explicit_username_password_bypasses_resolver(
@@ -1345,7 +1359,7 @@ class TestGetProxmoxClientAsync:
 
     @pytest.mark.asyncio
     @patch(
-        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
     async def test_get_proxmox_client_async_delegates_to_resolver_when_host_only(
@@ -1363,7 +1377,7 @@ class TestGetProxmoxClientAsync:
 
     @pytest.mark.asyncio
     @patch(
-        "homelab_mcp.proxmox_api.resolve_proxmox_credentials",
+        "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
     async def test_get_proxmox_client_no_host_raises_proxmox_host_valueerror(
@@ -1496,13 +1510,14 @@ class TestProxmoxSharedSession:
         assert client._auth_cookie == "PVE-ticket"
         assert client._csrf_token == "csrf-123"
 
-    def test_get_proxmox_client_with_session(self):
+    @pytest.mark.asyncio
+    async def test_get_proxmox_client_with_session(self):
         """Test get_proxmox_client() accepts and passes through a session."""
         # GIVEN: An external session
         mock_session = AsyncMock()
 
-        # WHEN: Creating client via factory with session
-        client = get_proxmox_client(
+        # WHEN: Creating client via factory with session (explicit api_token bypasses resolver)
+        client = await get_proxmox_client(
             host="192.168.1.100",
             api_token="root@pam!token=secret",
             session=mock_session,
@@ -1592,7 +1607,8 @@ class TestProxmoxSSLVerification:
             # THEN: Should return False (disable verification)
             assert result is False
 
-    def test_ssl_verify_false_override_via_env(self):
+    @pytest.mark.asyncio
+    async def test_ssl_verify_false_override_via_env(self):
         """Test get_proxmox_client with PROXMOX_VERIFY_SSL=false sets verify_ssl=False."""
         with patch.dict(
             os.environ,
@@ -1602,12 +1618,14 @@ class TestProxmoxSSLVerification:
                 "PROXMOX_API_TOKEN": "root@pam!token=secret",
             },
         ):
-            client = get_proxmox_client()
+            # explicit api_token in env → resolver bypassed
+            client = await get_proxmox_client()
 
             # THEN: verify_ssl should be False
             assert client.verify_ssl is False
 
-    def test_get_proxmox_client_default_verify_ssl_true(self):
+    @pytest.mark.asyncio
+    async def test_get_proxmox_client_default_verify_ssl_true(self):
         """Test get_proxmox_client defaults to verify_ssl=True."""
         with patch.dict(
             os.environ,
@@ -1624,7 +1642,8 @@ class TestProxmoxSSLVerification:
                 # Also ensure our test vars are present
                 os.environ["PROXMOX_HOST"] = "pve.local"
                 os.environ["PROXMOX_API_TOKEN"] = "root@pam!token=secret"
-                client = get_proxmox_client()
+                # explicit api_token in env → resolver bypassed
+                client = await get_proxmox_client()
 
                 # THEN: verify_ssl should default to True
                 assert client.verify_ssl is True
@@ -1886,7 +1905,7 @@ class TestHandlerSessionThreading:
         )
 
     @pytest.mark.asyncio
-    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client")
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
     @patch("src.homelab_mcp.proxmox_api.manage_proxmox_vm")
     async def test_delete_proxmox_vm_threads_session_to_manage(self, mock_manage_vm, mock_get_client):
         """delete_proxmox_vm passes its session param to its internal manage_proxmox_vm call."""
@@ -1907,23 +1926,9 @@ class TestHandlerSessionThreading:
         )
 
 
-# --- Wave 0 RED test: INJECT-03 ---
-
-
-def test_get_proxmox_client_keyring_fallback(mocker, monkeypatch):
-    monkeypatch.delenv("PROXMOX_HOST", raising=False)
-    monkeypatch.delenv("PROXMOX_API_TOKEN", raising=False)
-    monkeypatch.delenv("PROXMOX_USER", raising=False)
-    monkeypatch.delenv("PROXMOX_PASSWORD", raising=False)
-    # Keyring contract (proxmox_api.py:239-241): registry username holds the token ID
-    # (user@realm!tokenid), secret holds the UUID. Final api_token = "{username}={secret}".
-    mocker.patch(
-        "homelab_mcp.proxmox_api.list_credentials",
-        return_value=[{"hostname": "proxmox.local", "username": "root@pam!mytoken", "credential_type": "proxmox"}],
-    )
-    mocker.patch("homelab_mcp.proxmox_api.get_credential", return_value="abc123")
-    from homelab_mcp.proxmox_api import get_proxmox_client
-
-    client = get_proxmox_client()
-    assert client.host == "proxmox.local"
-    assert client.api_token == "root@pam!mytoken=abc123"
+# --- Wave 0 RED test: INJECT-03 (deleted by Plan 03 D-12) ---
+# The test_get_proxmox_client_keyring_fallback test that verified the INJECT-03
+# "first registry entry" shortcut has been removed because D-12 intentionally
+# deletes that shortcut. The new behavior is: get_proxmox_client() with no host
+# raises ValueError naming PROXMOX_HOST (see test_client_missing_host above).
+# The resolver path is covered by TestGetProxmoxClientAsync.
