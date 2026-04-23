@@ -334,6 +334,14 @@ def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
     assert "default" not in bulk_target_props["username"], "D-03: bulk target username must have no default"
 
 
+def test_update_mcp_admin_groups_schema_no_password() -> None:
+    """D-02: update_mcp_admin_groups schema must not expose password property."""
+    from homelab_mcp.tool_schemas.ssh_tools_schema import SSH_TOOLS
+
+    props = SSH_TOOLS["update_mcp_admin_groups"]["inputSchema"]["properties"]
+    assert "password" not in props, "D-02: update_mcp_admin_groups must not expose password property"
+
+
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.tool_handlers.infrastructure_handlers.deploy_infrastructure_plan")
 async def test_execute_deploy_infrastructure(mock_deploy):
