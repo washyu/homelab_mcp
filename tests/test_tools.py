@@ -299,6 +299,20 @@ def test_sitemap_tool_schemas():
     assert "targets" in bulk_tool["inputSchema"]["properties"]
     assert bulk_tool["inputSchema"]["properties"]["targets"]["type"] == "array"
 
+    # Test get_device_changes schema
+    changes_tool = tools["get_device_changes"]
+    assert "device_id" in changes_tool["inputSchema"]["properties"]
+    assert changes_tool["inputSchema"]["required"] == ["device_id"]
+
+    # Test tools with no required parameters
+    for tool_name in [
+        "get_network_sitemap",
+        "analyze_network_topology",
+        "suggest_deployments",
+    ]:
+        tool = tools[tool_name]
+        assert tool["inputSchema"]["required"] == []
+
 
 def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
     """D-01, D-03, D-12: network schema drops password property and mcp_admin default."""
@@ -318,20 +332,6 @@ def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
         "D-01: bulk_discover_and_map targets must not expose password property"
     )
     assert "default" not in bulk_target_props["username"], "D-03: bulk target username must have no default"
-
-    # Test get_device_changes schema
-    changes_tool = tools["get_device_changes"]
-    assert "device_id" in changes_tool["inputSchema"]["properties"]
-    assert changes_tool["inputSchema"]["required"] == ["device_id"]
-
-    # Test tools with no required parameters
-    for tool_name in [
-        "get_network_sitemap",
-        "analyze_network_topology",
-        "suggest_deployments",
-    ]:
-        tool = tools[tool_name]
-        assert tool["inputSchema"]["required"] == []
 
 
 @pytest.mark.asyncio
