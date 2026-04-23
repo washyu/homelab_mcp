@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
 status: executing
-stopped_at: Phase 33.1 context gathered
-last_updated: "2026-04-22T00:00:00.000Z"
-last_activity: 2026-04-22 -- Phase 33.1 context gathered (CONTEXT.md + DISCUSSION-LOG.md written)
+stopped_at: Phase 33.1 Plan 04 complete (Plan 03 remaining)
+last_updated: "2026-04-23T03:15:29Z"
+last_activity: 2026-04-23 -- Phase 33.1 Plan 04 shipped (D-06, D-07 sitemap mcp_admin cleanup)
 progress:
-  total_phases: 2
-  completed_phases: 0
-  total_plans: 5
-  completed_plans: 0
-  percent: 0
+  total_phases: 8
+  completed_phases: 1
+  total_plans: 10
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 ## Current Position
 
-Phase: 33 (keyring-single-source-of-truth) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 33
-Last activity: 2026-04-21 -- Phase 33 execution started
+Phase: 33.1 (SSH Tool Family Keyring Uniformity) — EXECUTING
+Plan: 04 of 05 complete; Plan 03 (D-05 tool removal) remaining
+Status: Plan 04 shipped (D-06, D-07 sitemap mcp_admin cleanup); Plan 03 is the last gate before Phase 33.1 close
+Last activity: 2026-04-23 03:15Z -- Phase 33.1 Plan 04 GREEN commit 0e8e317
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████████░] 90% (9/10 plans)
 
 ## Milestone Origin
 
@@ -63,6 +63,12 @@ Active patterns established through v1.5:
 - Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
 - JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
 
+Phase 33.1 Plan 04 decisions (added 2026-04-23):
+
+- End-to-end unit-test keyring resolution proof: monkeypatch the KEYRING boundary (`list_credentials`/`get_credential`) and the NETWORK boundary (`ssh_connect`) — do NOT monkeypatch the resolver or the discovery helper. Full call stack executes, regressions in any intermediate layer surface as test failures.
+- Lazy-import monkeypatch target: when a module lazy-imports a name inside a function body (like `sitemap.py`'s `from .ssh_tools import ssh_discover_system`), tests must monkeypatch on the SOURCE module (`ssh_tools`), not the IMPORTING module (`sitemap`) — the name resolves against the source at call time.
+- Docstring `mcp_admin` cleanup: when removing a hardcoded default, also strip the quoted literal from explanatory docstrings/comments so grep-based audits (Phase 33 D-13 intent) stay clean. Future-proof against confusion in retroactive audits.
+
 Key constraints carried forward:
 
 - `credential_store.py` must have no homelab_mcp imports — circular import prevention
@@ -90,6 +96,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-21T05:51:51.915Z
-Stopped at: Phase 33 context gathered
-Resume file: .planning/phases/33-keyring-single-source-of-truth/33-CONTEXT.md
+Last session: 2026-04-23T03:15:29Z
+Stopped at: Phase 33.1 Plan 04 complete (D-06, D-07 sitemap cleanup shipped); Plan 03 (D-05 tool removal) is the only remaining Phase 33.1 plan
+Resume file: .planning/phases/33.1-ssh-tool-family-keyring-uniformity-drop-hardcoded-mcp-admin-/33.1-03-PLAN.md
