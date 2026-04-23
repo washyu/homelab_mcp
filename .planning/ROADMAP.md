@@ -135,13 +135,13 @@ Plans:
   3. A Proxmox cluster discovery step populates a `cluster_name` for each node registered to the same datacenter; cluster lookup uses that name
   4. Docs and `credentials list` output distinguish per-node from cluster-scoped credentials
   5. Per-node credentials from v1.3/v1.4 continue to work unchanged (backward-compatible precedence)
-**Plans:** 4 plans
+**Plans:** 3/4 plans executed
 
 Plans:
 - [x] 34-01-PLAN.md — Wave 1: credential_store extension — add scope/cluster_name fields to register_credential + list_credentials; add cluster keyring key form `{username}@cluster:{cluster_name}` to store/get/delete_credential (D-01, D-02, D-03, D-08a) — shipped 2026-04-23 (fc5dcae)
 - [x] 34-02-PLAN.md — Wave 2: Resolver — new `async resolve_proxmox_credentials(host, session)` in proxmox_api.py with per-node→cluster→error tiers, `/cluster/status` probe, `_HOST_CLUSTER_CACHE`, DEBUG log trace, desync WARNING (D-04, D-05, D-05a, D-05b, D-09, D-10, D-11, D-13, D-14, D-15, D-16) — shipped 2026-04-23 (f16f113)
 - [ ] 34-03-PLAN.md — Wave 3: `get_proxmox_client` sync→async conversion, delete INJECT-03 shortcut at lines 224-242, propagate `await` to 9 internal call sites, `PROXMOX_HOST`-pointer error on missing host (D-10, D-12)
-- [ ] 34-04-PLAN.md — Wave 2: CLI `--scope cluster:<name>` on credentials add/remove, grouped per-node/cluster-scoped output on credentials list, epilog help, `unregister_cluster_credential` helper, `handle_list_keyring_credentials` display tweak for cluster entries (D-06, D-07, D-08, D-17a)
+- [x] 34-04-PLAN.md — Wave 2: CLI `--scope cluster:<name>` on credentials add/remove, grouped per-node/cluster-scoped output on credentials list, epilog help, `unregister_cluster_credential` helper, `handle_list_keyring_credentials` display tweak for cluster entries (D-06, D-07, D-08, D-17a)
 
 ## Progress
 
@@ -172,7 +172,7 @@ Plans:
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
 | 33. Keyring Single Source of Truth | v1.6 | 5/5 | Complete   | 2026-04-21 |
 | 33.1 SSH Tool Family Keyring Uniformity | v1.6 | 5/5 | Complete | 2026-04-23 |
-| 34. Cluster-Scoped Proxmox Credentials | v1.6 | 1/4 | In Progress | - |
+| 34. Cluster-Scoped Proxmox Credentials | v1.6 | 3/4 | In Progress|  |
 
 ### Phase 35: Sitemap + Discovery Reliability — fix discover_and_map field-loss (cpu_cores, memory_free, disk_*, usb/pci/block devices missing from sitemap row despite being in ssh_discover output); upsert zombie sitemap rows on hostname/IP match; add per-subprocess SSH timeout so tool doesn't hang 4+ minutes; topology analyzer defensively skip devices with null threshold values. Surfaced by Phase 33 live testing 2026-04-21.
 

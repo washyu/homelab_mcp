@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: "Phase 34 executing — Plan 02 complete (2/4). resolve_proxmox_credentials added to proxmox_api.py."
-stopped_at: Phase 34 Plan 02 complete
-last_updated: "2026-04-23T19:32:00.000Z"
-last_activity: "2026-04-23 -- Phase 34 Plan 02 executed: resolve_proxmox_credentials + _HOST_CLUSTER_CACHE added to proxmox_api.py (commits 674843e, f16f113)"
+status: "Phase 34 executing — Plan 04 complete (4/4). CLI surface + D-17a handler tweak done."
+stopped_at: Phase 34 Plan 04 complete — CLI cluster-scope surface + credential handler display tweak
+last_updated: "2026-04-23T20:30:00.000Z"
+last_activity: "2026-04-23 -- Phase 34 Plan 04 executed: cluster-scope CLI (D-06, D-07, D-08) + D-17a handler tweak (commits f89125a, 1d1176f, 628c1ae, 8ddf087)"
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 14
-  completed_plans: 12
-  percent: 86
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 ## Current Position
 
 Phase: 34 (Cluster-Scoped Proxmox Credentials) — EXECUTING
-Plan: 2 of 4 complete; 2 remaining
-Status: Plan 02 complete — resolve_proxmox_credentials + _HOST_CLUSTER_CACHE added to proxmox_api.py. 7 new tests pass, ruff+mypy green.
-Last activity: 2026-04-23 -- Phase 34 Plan 02 executed (674843e, f16f113)
+Plan: 4 of 4 complete; 0 remaining (Plan 03 still outstanding — async get_proxmox_client wiring)
+Status: Plan 04 complete — cluster-scope CLI surface + D-17a handler display tweak. 13 new tests pass, ruff+mypy green.
+Last activity: 2026-04-23 -- Phase 34 Plan 04 executed (f89125a, 1d1176f, 628c1ae, 8ddf087)
 
-Progress: [███████▌  ] 79% (11/14 plans) — Phase 34 in progress
+Progress: [█████████░] 93% (13/14 plans) — Phase 34 Plan 04 done
 
 ## Milestone Origin
 
@@ -62,6 +62,15 @@ Active patterns established through v1.5:
 - AST meta-tests for lint-style regression guards — catches tautological-assertion bugs that no single positive regression test can catch
 - Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
 - JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
+
+Phase 34 Plan 04 decisions (added 2026-04-23):
+
+- post-parse validation chosen over subparsers for conditional-positional: hostname made nargs="?" on add/remove; _parse_scope_arg() rejects ill-formed combinations after argparse runs. Matches --key-path precedent.
+- _parse_scope_arg placed as module-level private def above _cmd_credentials_add; raises ValueError for callers to translate to stderr + exit(1).
+- unregister_cluster_credential added to credential_store.py (not inlined in server.py) to keep registry mutation logic encapsulated in the store module.
+- Per-node paths in all three handlers byte-for-byte equivalent to pre-Plan-04 behavior — SC-5 CLI back-compat maintained.
+- tests/test_credential_handlers.py created fresh (did not exist before Plan 04); 4 tests for D-17a handler display tweak.
+- tools.py / tool_schemas/ not touched — D-17 schema-unchanged proof: git diff 42151c5..HEAD shows empty diff for both schema files.
 
 Phase 34 Plan 02 decisions (added 2026-04-23):
 
@@ -119,6 +128,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-23T19:32:00.000Z
-Stopped at: Phase 34 Plan 02 complete — resolve_proxmox_credentials + _HOST_CLUSTER_CACHE added to proxmox_api.py
+Last session: 2026-04-23T20:30:00.000Z
+Stopped at: Phase 34 Plan 04 complete — CLI cluster-scope surface + D-17a credential handler display tweak
 Resume command: /gsd-execute-phase 34

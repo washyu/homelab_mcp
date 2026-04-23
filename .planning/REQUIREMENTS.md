@@ -19,7 +19,7 @@ Requirements for the **Credential Architecture Cleanup** milestone. Makes the OS
 
 ### Cluster-Scoped Credentials
 
-- [ ] **CRED-08**: Proxmox API tokens can be stored at cluster scope — one cluster credential automatically serves all N nodes in the same Proxmox datacenter; per-node tokens remain supported and take precedence when both exist
+- [x] **CRED-08**: Proxmox API tokens can be stored at cluster scope — one cluster credential automatically serves all N nodes in the same Proxmox datacenter; per-node tokens remain supported and take precedence when both exist
 
 ## Future Requirements
 
@@ -52,7 +52,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRED-05 | Phase 33 | Pending |
 | CRED-06 | Phase 33 | Pending |
 | CRED-07 | Phase 33 | Pending |
-| CRED-08 | Phase 34 | Pending |
+| CRED-08 | Phase 34 | Complete |
 
 **Coverage:**
 - v1.6 requirements: 5 total
