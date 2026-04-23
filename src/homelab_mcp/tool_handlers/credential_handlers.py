@@ -30,8 +30,12 @@ async def handle_list_keyring_credentials(arguments: dict[str, Any]) -> dict[str
         "status": "success",
         "credential_type": credential_type,
         "count": len(entries),
-        "credentials": [{"hostname": e["hostname"], "username": e["username"]} for e in entries],
+        "credentials": [
+            {
+                "hostname": (f"cluster:{e.get('cluster_name', '')}" if e.get("scope") == "cluster" else e["hostname"]),
+                "username": e["username"],
+            }
+            for e in entries
+        ],
     }
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-
-
