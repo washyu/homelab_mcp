@@ -195,9 +195,120 @@ def test_list_filters_by_type(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     register_credential("px-host", "px-user", credential_type="proxmox")
     ssh_entries = list_credentials(credential_type="ssh")
     assert ssh_entries == [
-        {"hostname": "ssh-host", "username": "ssh-user", "credential_type": "ssh", "auth_type": "password"}
+        {
+            "hostname": "ssh-host",
+            "username": "ssh-user",
+            "credential_type": "ssh",
+            "auth_type": "password",
+            "scope": "node",
+            "cluster_name": "",
+        }
     ]
     proxmox_entries = list_credentials(credential_type="proxmox")
     assert proxmox_entries == [
-        {"hostname": "px-host", "username": "px-user", "credential_type": "proxmox", "auth_type": "password"}
+        {
+            "hostname": "px-host",
+            "username": "px-user",
+            "credential_type": "proxmox",
+            "auth_type": "password",
+            "scope": "node",
+            "cluster_name": "",
+        }
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 34 — Plan 01: scope + cluster_name fields on register_credential (D-01, D-02, D-08a)
+# ---------------------------------------------------------------------------
+
+
+def test_register_credential_cluster_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """register_credential with scope='cluster' writes scope and cluster_name fields (D-01, D-02)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="homelab-prod")
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1
+    assert entries[0]["scope"] == "cluster"
+    assert entries[0]["cluster_name"] == "homelab-prod"
+    assert entries[0]["hostname"] == ""
+
+
+def test_register_credential_cluster_requires_cluster_name(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """register_credential with scope='cluster' and empty cluster_name raises ValueError (D-08a)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    import pytest as _pytest  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import register_credential  # noqa: PLC0415
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        register_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="")
+
+
+def test_register_credential_invalid_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """register_credential with an invalid scope value raises ValueError."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    import pytest as _pytest  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import register_credential  # noqa: PLC0415
+
+    with _pytest.raises(ValueError, match="scope"):
+        register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="bogus")
+
+
+def test_register_credential_cluster_upsert_ignores_hostname(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cluster entries upsert by (cluster_name, username, credential_type) — hostname is irrelevant (D-08a)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    # Register twice with same cluster_name/username/type but different hostnames (including "")
+    register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="homelab-prod")
+    register_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="homelab-prod")
+
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1, f"Expected 1 entry after cluster upsert, got {len(entries)}"
+    assert entries[0]["scope"] == "cluster"
+    assert entries[0]["cluster_name"] == "homelab-prod"
+
+
+def test_register_credential_node_scope_legacy_dedup_unchanged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-node entries still upsert by (hostname, username, credential_type) — legacy behavior unchanged."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="node")
+    register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="node")
+
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1, f"Expected 1 entry after per-node upsert, got {len(entries)}"
+    assert entries[0]["scope"] == "node"
+
+
+def test_list_credentials_backward_readable_scope_defaults(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy registry rows (without scope/cluster_name) load safely via .get() defaults (D-01)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    import json  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import list_credentials  # noqa: PLC0415
+
+    # Simulate a legacy row written before Phase 34 (no scope or cluster_name fields)
+    legacy_registry = [
+        {"hostname": "pve1", "username": "root@pam!tok", "credential_type": "proxmox", "auth_type": "password"}
+    ]
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(json.dumps(legacy_registry))
+
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1
+    # Readers use .get() — must not raise KeyError
+    assert entries[0].get("scope", "node") == "node"
+    assert entries[0].get("cluster_name", "") == ""
