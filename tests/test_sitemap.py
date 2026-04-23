@@ -354,6 +354,172 @@ class TestAsyncFunctions:
         assert result_data["results"][1]["status"] == "error"
         assert "Connection failed" in result_data["results"][1]["error"]
 
+    def test_sitemap_signature_has_no_mcp_admin_default(self) -> None:
+        """D-06: discover_and_store must not default username to 'mcp_admin'.
+
+        Phase 33.1 Plan 04 — signature introspection guard. The literal
+        ``"mcp_admin"`` default is gone; the parameter defaults to ``None`` so
+        the ssh_tools resolver's registry-scan branch (Plan 01) picks the
+        registered user from the keyring.
+        """
+        import inspect
+
+        from src.homelab_mcp.sitemap import discover_and_store
+
+        sig = inspect.signature(discover_and_store)
+        assert sig.parameters["username"].default is None, (
+            f"D-06: discover_and_store username default must be None, not {sig.parameters['username'].default!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_discover_and_store_passes_none_username_when_omitted(self, monkeypatch, temp_db) -> None:
+        """D-06/D-07: omitting username passes None through to ssh_discover_system.
+
+        sitemap.discover_and_store lazy-imports ssh_discover_system from the
+        ssh_tools module, so we monkeypatch the attribute on that module.
+        """
+        import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        captured: dict = {}
+
+        async def fake_ssh_discover(hostname, username, password, key_path, port):
+            captured["hostname"] = hostname
+            captured["username"] = username
+            captured["password"] = password
+            captured["key_path"] = key_path
+            captured["port"] = port
+            return json.dumps(
+                {
+                    "status": "success",
+                    "hostname": "h.example.com",
+                    "connection_ip": "10.0.0.5",
+                    "data": {},
+                }
+            )
+
+        monkeypatch.setattr(ssh_tools_mod, "ssh_discover_system", fake_ssh_discover)
+
+        sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+        await discover_and_store(sitemap, hostname="h.example.com")
+
+        assert captured["username"] is None, f"D-06: expected username=None when omitted; got {captured['username']!r}"
+        assert captured["hostname"] == "h.example.com"
+        assert captured["password"] is None
+        assert captured["key_path"] is None
+        assert captured["port"] == 22
+
+    @pytest.mark.asyncio
+    async def test_bulk_discover_and_store_passes_none_username_when_omitted(self, monkeypatch, temp_db) -> None:
+        """D-07: bulk target with no 'username' key flows None down to
+        ssh_discover_system — no silent 'mcp_admin' fallback from
+        ``target.get("username", "mcp_admin")``.
+        """
+        import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        captured_calls: list[dict] = []
+
+        async def fake_ssh_discover(hostname, username, password, key_path, port):
+            captured_calls.append(
+                {
+                    "hostname": hostname,
+                    "username": username,
+                    "password": password,
+                    "key_path": key_path,
+                    "port": port,
+                }
+            )
+            return json.dumps(
+                {
+                    "status": "success",
+                    "hostname": hostname,
+                    "connection_ip": "10.0.0.5",
+                    "data": {},
+                }
+            )
+
+        monkeypatch.setattr(ssh_tools_mod, "ssh_discover_system", fake_ssh_discover)
+
+        sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+        # Omit 'username' from target — bulk path must pass None, not 'mcp_admin'.
+        await bulk_discover_and_store(sitemap, [{"hostname": "h.example.com"}])
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["username"] is None, (
+            "D-07: bulk_discover_and_store must propagate target.get('username') "
+            f"as None when omitted; got {captured_calls[0]['username']!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_discover_and_store_resolves_username_from_keyring(self, monkeypatch, temp_db) -> None:
+        """End-to-end proof (WARNING 4): monkeypatches ONLY the keyring boundary
+        (list_credentials + get_credential) and the SSH boundary (ssh_connect).
+        The full stack ``discover_and_store -> ssh_discover_system ->
+        resolve_ssh_credentials -> _resolve_username_from_registry -> ssh_connect``
+        executes for real — proving the keyring-registered username reaches the
+        SSH connection layer without a literal ``mcp_admin`` intermediary.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        # 1. Register a single keyring entry for the hostname (D-04 single-match).
+        def fake_list_credentials(credential_type: str = "ssh"):
+            return [
+                {
+                    "hostname": "h.example.com",
+                    "username": "alice",
+                    "credential_type": "ssh",
+                    "auth_type": "password",
+                }
+            ]
+
+        def fake_get_credential(hostname, username, credential_type="ssh"):
+            if hostname == "h.example.com" and username == "alice":
+                return "keyring-password"
+            return None
+
+        monkeypatch.setattr(ssh_tools_mod, "list_credentials", fake_list_credentials)
+        monkeypatch.setattr(ssh_tools_mod, "get_credential", fake_get_credential)
+
+        # 2. Spy the SSH boundary — ssh_connect is imported into ssh_tools
+        # at module load; monkeypatch that attribute so no real network call.
+        captured_ssh_kwargs: dict = {}
+
+        async def fake_ssh_connect(*args, **kwargs):
+            captured_ssh_kwargs.update(kwargs)
+            # Return an async-context-manager-compatible mock connection.
+            conn = MagicMock()
+            conn.__aenter__ = AsyncMock(return_value=conn)
+            conn.__aexit__ = AsyncMock(return_value=False)
+            # ssh_discover_system only calls conn.run(...) and inspects
+            # .exit_status / .stdout. Return a benign non-zero so the
+            # discovery body short-circuits cleanly without demanding a
+            # full shape from every command.
+            benign = MagicMock()
+            benign.exit_status = 1
+            benign.stdout = ""
+            conn.run = AsyncMock(return_value=benign)
+            return conn
+
+        monkeypatch.setattr(ssh_tools_mod, "ssh_connect", fake_ssh_connect)
+
+        sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+
+        # 3. Act — call with hostname ONLY. The full resolver stack must
+        # execute and land the keyring-registered username at ssh_connect.
+        await discover_and_store(sitemap, hostname="h.example.com")
+
+        # 4. Assert the SSH boundary saw the keyring-registered credentials.
+        assert captured_ssh_kwargs.get("username") == "alice", (
+            "end-to-end: expected keyring-registered username 'alice' at "
+            f"ssh_connect; got {captured_ssh_kwargs.get('username')!r}"
+        )
+        assert captured_ssh_kwargs.get("password") == "keyring-password", (
+            "end-to-end: expected keyring-registered password at ssh_connect; "
+            f"got {captured_ssh_kwargs.get('password')!r}"
+        )
+        assert captured_ssh_kwargs.get("hostname") == "h.example.com"
+
 
 class TestDatabaseOperations:
     """Test database-specific operations."""
