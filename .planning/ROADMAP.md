@@ -89,7 +89,8 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 - [x] **Phase 33: Keyring Single Source of Truth** — Drop DB `ssh_credentials` table; remove `mcp_admin` defaults; remove `setup_mcp_admin` tool; fix `register_server` verify-bypass (CRED-04, CRED-05, CRED-06, CRED-07)
  (completed 2026-04-21)
-- [ ] **Phase 34: Cluster-Scoped Proxmox Credentials** — Add cluster-scope credential storage and auto-inject; per-node tokens remain supported and take precedence (CRED-08)
+- [x] **Phase 34: Cluster-Scoped Proxmox Credentials** — Add cluster-scope credential storage and auto-inject; per-node tokens remain supported and take precedence (CRED-08)
+ (completed 2026-04-23)
 
 ## Phase Details
 

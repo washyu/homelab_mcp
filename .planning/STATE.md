@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 33 — keyring-single-source-of-truth
+**Current focus:** Phase 34 complete (Cluster-Scoped Proxmox Credentials) — v1.6 milestone at 14/14 plans; next up Phase 35 when ready
 
 ## Current Position
 
