@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
 status: executing
-stopped_at: Phase 33.1 Plan 04 complete (Plan 03 remaining)
-last_updated: "2026-04-23T03:15:29Z"
-last_activity: 2026-04-23 -- Phase 33.1 Plan 04 shipped (D-06, D-07 sitemap mcp_admin cleanup)
+stopped_at: Phase 33.1 complete (all 5 plans shipped) — Phase 34 next
+last_updated: "2026-04-23T03:45:45Z"
+last_activity: 2026-04-23 -- Phase 33.1 Plan 03 shipped (D-05 tool removal; Phase 33.1 close)
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 ## Current Position
 
-Phase: 33.1 (SSH Tool Family Keyring Uniformity) — EXECUTING
-Plan: 04 of 05 complete; Plan 03 (D-05 tool removal) remaining
-Status: Plan 04 shipped (D-06, D-07 sitemap mcp_admin cleanup); Plan 03 is the last gate before Phase 33.1 close
-Last activity: 2026-04-23 03:15Z -- Phase 33.1 Plan 04 GREEN commit 0e8e317
+Phase: 33.1 (SSH Tool Family Keyring Uniformity) — COMPLETE
+Plan: 5 of 5 complete; Phase 33.1 shipped
+Status: All Phase 33.1 D-decisions satisfied (D-01..D-13). Tool count 53 → 51; Plan 05 AST guards flipped GREEN. Next phase: 34 (Cluster-Scoped Proxmox Credentials).
+Last activity: 2026-04-23 03:45Z -- Phase 33.1 Plan 03 landed commits c24f4b5 (lock-step 5-surface) + 67c93d2 (ssh_tools.py + prompt + tests)
 
-Progress: [█████████░] 90% (9/10 plans)
+Progress: [██████████] 100% (10/10 plans)
 
 ## Milestone Origin
 
@@ -69,6 +69,13 @@ Phase 33.1 Plan 04 decisions (added 2026-04-23):
 - Lazy-import monkeypatch target: when a module lazy-imports a name inside a function body (like `sitemap.py`'s `from .ssh_tools import ssh_discover_system`), tests must monkeypatch on the SOURCE module (`ssh_tools`), not the IMPORTING module (`sitemap`) — the name resolves against the source at call time.
 - Docstring `mcp_admin` cleanup: when removing a hardcoded default, also strip the quoted literal from explanatory docstrings/comments so grep-based audits (Phase 33 D-13 intent) stay clean. Future-proof against confusion in retroactive audits.
 
+Phase 33.1 Plan 03 decisions (added 2026-04-23):
+
+- Two-shape MCP tool-surface deletion: when removing a tool, `tool_annotations.py` needs BOTH a list-entry deletion (`_READ_ONLY_TOOLS`) AND a dict-entry deletion (`_MUTATING_ANNOTATIONS`) — the structural shape differs per mutating-hint profile. Import-time parity assertion must explicitly test `tool_name not in TOOL_ANNOTATIONS` to catch both shapes (extends Phase 33 5-way to 7-way parity: schema + handler + dispatch + annotation-list + annotation-dict + openapi allowlist + openapi category).
+- Orphan-test pruning scope: when deleting an MCP tool schema, ALL tests that key into the removed schema must be deleted alongside the explicit plan list — not just the ones the plan enumerates. Rule-3 blocking (KeyError prevents test sweep pass) forces the sweep. Phase-33 convention: delete tests, don't skip them, and replace with 1-3 line comment citing the removal decision (D-05).
+- `ssh_execute_command(command="sudo -n true")` as the generic "does this user have sudo" check replaces the removed `verify_mcp_admin` tool in the `connect_to_device` prompt. Exit code 0 = passwordless sudo available; non-zero = not configured. Works for any registered user, not just the literal mcp_admin account.
+- Scope-boundary finding for Phase 33.2: `infrastructure_crud.py:30` and `vm_operations.py:25` carry dict-literal `"username": "mcp_admin"` in `get_device_connection_info()` returns — pre-existing, not in Phase 33.1's `files_modified`, and bypasses the Phase 33.1 D-08 AST guard because they aren't function-signature defaults. Recommend Phase 33.2 either extend `DEFERRED_MCP_ADMIN_DEFAULT_FILES` to include them OR fix both sites during the service-tool + downstream-infrastructure sweep.
+
 Key constraints carried forward:
 
 - `credential_store.py` must have no homelab_mcp imports — circular import prevention
@@ -96,6 +103,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-23T03:15:29Z
-Stopped at: Phase 33.1 Plan 04 complete (D-06, D-07 sitemap cleanup shipped); Plan 03 (D-05 tool removal) is the only remaining Phase 33.1 plan
-Resume file: .planning/phases/33.1-ssh-tool-family-keyring-uniformity-drop-hardcoded-mcp-admin-/33.1-03-PLAN.md
+Last session: 2026-04-23T03:45:45Z
+Stopped at: Phase 33.1 complete — all 5 plans shipped (01 resolver, 02 schema, 03 D-05 tool removal, 04 sitemap default, 05 AST guards). Next phase: 34 (Cluster-Scoped Proxmox Credentials).
+Resume file: .planning/ROADMAP.md (pick up with Phase 34 context-gathering or phase close ceremony)

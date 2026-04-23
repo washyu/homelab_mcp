@@ -121,7 +121,7 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 Plans:
 - [x] 33.1-01-PLAN.md — Wave 1: Resolver registry-scan when username is None + positive test (D-04, D-04a, D-11) — shipped 2026-04-22 (56d7462)
 - [x] 33.1-02-PLAN.md — Wave 1: Schema cleanup — drop password + mcp_admin default from discover_and_map/bulk_discover_and_map, drop password from update_mcp_admin_groups (D-01, D-02, D-03, D-12) — shipped 2026-04-22 (5607fa8)
-- [ ] 33.1-03-PLAN.md — Wave 2: Lock-step delete update_mcp_admin_groups + verify_mcp_admin_access (schema/handler/dispatch/annotation/openapi/ssh_tools.py) + rewrite connect_to_device Step 6 (D-05, D-05a, D-05b, D-05c, D-13)
+- [x] 33.1-03-PLAN.md — Wave 2: Lock-step delete update_mcp_admin_groups + verify_mcp_admin_access (schema/handler/dispatch/annotation/openapi/ssh_tools.py) + rewrite connect_to_device Step 6 (D-05, D-05a, D-05b, D-05c, D-13) — shipped 2026-04-23 (c24f4b5, 67c93d2)
 - [x] 33.1-04-PLAN.md — Wave 2: sitemap.discover_and_store + bulk_discover_and_store drop mcp_admin default (D-06, D-07, D-07a) — shipped 2026-04-23 (0e8e317)
 - [x] 33.1-05-PLAN.md — Wave 1: AST meta-test extensions — function-signature scan, TOOLS-dict scan with narrow-scope allowlist, forbidden-strings append (D-08, D-09, D-10) — shipped 2026-04-22 (cd07987)
 
@@ -164,7 +164,7 @@ Plans:
 | 31. Bug Fixes | v1.5 | 2/2 | Complete | 2026-04-19 |
 | 32. Regression Tests | v1.5 | 5/5 | Complete | 2026-04-20 |
 | 33. Keyring Single Source of Truth | v1.6 | 5/5 | Complete   | 2026-04-21 |
-| 33.1 SSH Tool Family Keyring Uniformity | v1.6 | 4/5 | Executing | 2026-04-23 (04 shipped) |
+| 33.1 SSH Tool Family Keyring Uniformity | v1.6 | 5/5 | Complete | 2026-04-23 |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 0/? | Not started | - |
 
 ### Phase 35: Sitemap + Discovery Reliability — fix discover_and_map field-loss (cpu_cores, memory_free, disk_*, usb/pci/block devices missing from sitemap row despite being in ssh_discover output); upsert zombie sitemap rows on hostname/IP match; add per-subprocess SSH timeout so tool doesn't hang 4+ minutes; topology analyzer defensively skip devices with null threshold values. Surfaced by Phase 33 live testing 2026-04-21.
