@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: "Phase 34 executing — Plan 01 complete (1/4). credential_store.py extended with scope/cluster_name."
-stopped_at: Phase 34 Plan 01 complete
-last_updated: "2026-04-23T19:30:00.000Z"
-last_activity: "2026-04-23 -- Phase 34 Plan 01 executed: credential_store.py scope+cluster_name extension (commits 1b0c291, b12e483, 8fad307, fc5dcae)"
+status: "Phase 34 executing — Plan 02 complete (2/4). resolve_proxmox_credentials added to proxmox_api.py."
+stopped_at: Phase 34 Plan 02 complete
+last_updated: "2026-04-23T19:32:00.000Z"
+last_activity: "2026-04-23 -- Phase 34 Plan 02 executed: resolve_proxmox_credentials + _HOST_CLUSTER_CACHE added to proxmox_api.py (commits 674843e, f16f113)"
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 14
-  completed_plans: 11
-  percent: 79
+  completed_plans: 12
+  percent: 86
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 ## Current Position
 
 Phase: 34 (Cluster-Scoped Proxmox Credentials) — EXECUTING
-Plan: 1 of 4 complete; 3 remaining
-Status: Plan 01 complete — credential_store.py extended with scope/cluster_name fields and _keyring_key helper. 27 tests pass, ruff+mypy green.
-Last activity: 2026-04-23 -- Phase 34 Plan 01 executed (fc5dcae)
+Plan: 2 of 4 complete; 2 remaining
+Status: Plan 02 complete — resolve_proxmox_credentials + _HOST_CLUSTER_CACHE added to proxmox_api.py. 7 new tests pass, ruff+mypy green.
+Last activity: 2026-04-23 -- Phase 34 Plan 02 executed (674843e, f16f113)
 
 Progress: [███████▌  ] 79% (11/14 plans) — Phase 34 in progress
 
@@ -62,6 +62,14 @@ Active patterns established through v1.5:
 - AST meta-tests for lint-style regression guards — catches tautological-assertion bugs that no single positive regression test can catch
 - Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
 - JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
+
+Phase 34 Plan 02 decisions (added 2026-04-23):
+
+- Top-level import of CredentialNotFoundError from .ssh_tools used (no circular import — ssh_tools does not import proxmox_api). noqa: F401 suppresses "imported but unused" since the name is re-exported for consumers.
+- ProxmoxAPIClient.get() strips the "data" wrapper (returns list directly from line 175). Defensive rows = status if isinstance(status, list) else [] branch is sufficient; dict fallback not needed.
+- Throwaway ProxmoxAPIClient per candidate cluster entry for /cluster/status probe — reuses all auth header/session logic with zero new HTTP plumbing (PATTERNS.md §3 pattern).
+- Plain dict for _HOST_CLUSTER_CACHE — allows _HOST_CLUSTER_CACHE.clear() in test autouse fixture; functools.lru_cache not used (Claude's Discretion per CONTEXT.md).
+- resolve_proxmox_credentials placed at line 194, immediately above get_proxmox_client, for locality with the consumer.
 
 Phase 34 Plan 01 decisions (added 2026-04-23):
 
@@ -111,6 +119,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-23T19:30:00.000Z
-Stopped at: Phase 34 Plan 01 complete — credential_store.py scope/cluster_name extension done
+Last session: 2026-04-23T19:32:00.000Z
+Stopped at: Phase 34 Plan 02 complete — resolve_proxmox_credentials + _HOST_CLUSTER_CACHE added to proxmox_api.py
 Resume command: /gsd-execute-phase 34

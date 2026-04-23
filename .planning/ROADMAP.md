@@ -139,7 +139,7 @@ Plans:
 
 Plans:
 - [x] 34-01-PLAN.md — Wave 1: credential_store extension — add scope/cluster_name fields to register_credential + list_credentials; add cluster keyring key form `{username}@cluster:{cluster_name}` to store/get/delete_credential (D-01, D-02, D-03, D-08a) — shipped 2026-04-23 (fc5dcae)
-- [ ] 34-02-PLAN.md — Wave 2: Resolver — new `async resolve_proxmox_credentials(host, session)` in proxmox_api.py with per-node→cluster→error tiers, `/cluster/status` probe, `_HOST_CLUSTER_CACHE`, DEBUG log trace, desync WARNING (D-04, D-05, D-05a, D-05b, D-09, D-10, D-11, D-13, D-14, D-15, D-16)
+- [x] 34-02-PLAN.md — Wave 2: Resolver — new `async resolve_proxmox_credentials(host, session)` in proxmox_api.py with per-node→cluster→error tiers, `/cluster/status` probe, `_HOST_CLUSTER_CACHE`, DEBUG log trace, desync WARNING (D-04, D-05, D-05a, D-05b, D-09, D-10, D-11, D-13, D-14, D-15, D-16) — shipped 2026-04-23 (f16f113)
 - [ ] 34-03-PLAN.md — Wave 3: `get_proxmox_client` sync→async conversion, delete INJECT-03 shortcut at lines 224-242, propagate `await` to 9 internal call sites, `PROXMOX_HOST`-pointer error on missing host (D-10, D-12)
 - [ ] 34-04-PLAN.md — Wave 2: CLI `--scope cluster:<name>` on credentials add/remove, grouped per-node/cluster-scoped output on credentials list, epilog help, `unregister_cluster_credential` helper, `handle_list_keyring_credentials` display tweak for cluster entries (D-06, D-07, D-08, D-17a)
 
