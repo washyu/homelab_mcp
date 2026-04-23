@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: "Phase 34 executing — Plan 04 complete (4/4). CLI surface + D-17a handler tweak done."
-stopped_at: Phase 34 Plan 04 complete — CLI cluster-scope surface + credential handler display tweak
-last_updated: "2026-04-23T20:30:00.000Z"
-last_activity: "2026-04-23 -- Phase 34 Plan 04 executed: cluster-scope CLI (D-06, D-07, D-08) + D-17a handler tweak (commits f89125a, 1d1176f, 628c1ae, 8ddf087)"
+status: "Phase 34 complete — all 4/4 plans done. get_proxmox_client async + INJECT-03 deleted + resolver wired."
+stopped_at: Phase 34 Plan 03 complete — async get_proxmox_client wiring (D-10, D-12), INJECT-03 deleted, 9 await call sites propagated
+last_updated: "2026-04-23T21:00:00.000Z"
+last_activity: "2026-04-23 -- Phase 34 Plan 03 executed: async get_proxmox_client wiring (fd218e4, 708e5fb); Phase 34 all 4/4 plans complete"
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 14
-  completed_plans: 13
-  percent: 93
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 ## Current Position
 
-Phase: 34 (Cluster-Scoped Proxmox Credentials) — EXECUTING
-Plan: 4 of 4 complete; 0 remaining (Plan 03 still outstanding — async get_proxmox_client wiring)
-Status: Plan 04 complete — cluster-scope CLI surface + D-17a handler display tweak. 13 new tests pass, ruff+mypy green.
-Last activity: 2026-04-23 -- Phase 34 Plan 04 executed (f89125a, 1d1176f, 628c1ae, 8ddf087)
+Phase: 34 (Cluster-Scoped Proxmox Credentials) — COMPLETE
+Plan: 4 of 4 complete; 0 remaining
+Status: Plan 03 complete — async get_proxmox_client wired to resolver, INJECT-03 shortcut deleted (D-12), 9 await call sites propagated. Phase 34 all 4 plans done.
+Last activity: 2026-04-23 -- Phase 34 Plan 03 executed (fd218e4, 708e5fb)
 
 Progress: [█████████░] 93% (13/14 plans) — Phase 34 Plan 04 done
 
@@ -62,6 +62,16 @@ Active patterns established through v1.5:
 - AST meta-tests for lint-style regression guards — catches tautological-assertion bugs that no single positive regression test can catch
 - Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
 - JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
+
+Phase 34 Plan 03 decisions (added 2026-04-23):
+
+- get_proxmox_client converted to async def; INJECT-03 'first registry entry' shortcut block deleted entirely (D-12); resolver call inserted for host-known + no-auth path (D-10); explicit api_token or username+password bypasses resolver (SC-5).
+- All 9 internal call sites in proxmox_api.py updated to await get_proxmox_client(host=host, session=session) via replace_all edit.
+- Patch target for new TestGetProxmoxClientAsync tests is src.homelab_mcp.proxmox_api.resolve_proxmox_credentials (matches test file import convention); homelab_mcp.proxmox_api path does not intercept the call.
+- All @patch("src.homelab_mcp.proxmox_api.get_proxmox_client") decorators in consumer-function test classes changed to new_callable=AsyncMock — MagicMock cannot be awaited.
+- test_client_missing_credentials changed from ValueError('Must provide...') to CredentialNotFoundError raised by mocked resolver — behavior change is correct since host+no-auth now routes through resolver.
+- test_get_proxmox_client_keyring_fallback (INJECT-03 test) deleted; replaced with explanatory comment per D-16a (no AST meta-test for shortcut removal in greenfield phase).
+- CredentialNotFoundError imported via src.homelab_mcp.ssh_tools in test body to avoid headless home-dir RuntimeError from lazy module-level path expansion in credential_store.py.
 
 Phase 34 Plan 04 decisions (added 2026-04-23):
 
@@ -128,6 +138,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-23T20:30:00.000Z
-Stopped at: Phase 34 Plan 04 complete — CLI cluster-scope surface + D-17a credential handler display tweak
-Resume command: /gsd-execute-phase 34
+Last session: 2026-04-23T21:00:00.000Z
+Stopped at: Phase 34 Plan 03 complete — all 4/4 Phase 34 plans done. v1.6 milestone complete.
+Resume command: /gsd-execute-phase 35 (next phase when ready)
