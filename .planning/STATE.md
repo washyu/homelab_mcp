@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: "Phase 34 planned (4 plans, 3 waves). Ready to execute. Plans verified — zero blockers, zero warnings."
-stopped_at: Phase 34 planned, ready to execute
-last_updated: "2026-04-23T12:00:00.000Z"
-last_activity: "2026-04-23 -- Phase 34 PATTERNS.md (commit 8bd8919) + 4 plans + ROADMAP update (commit b5c1c44) landed"
+status: "Phase 34 executing — Plan 01 complete (1/4). credential_store.py extended with scope/cluster_name."
+stopped_at: Phase 34 Plan 01 complete
+last_updated: "2026-04-23T19:30:00.000Z"
+last_activity: "2026-04-23 -- Phase 34 Plan 01 executed: credential_store.py scope+cluster_name extension (commits 1b0c291, b12e483, 8fad307, fc5dcae)"
 progress:
   total_phases: 8
   completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
+  total_plans: 14
+  completed_plans: 11
+  percent: 79
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 ## Current Position
 
-Phase: 34 (Cluster-Scoped Proxmox Credentials) — PLANNED, READY TO EXECUTE
-Plan: 0 of 4 complete; 4 plans in 3 waves
-Status: 4 plans verified (0 blockers, 0 warnings). Plans commit b5c1c44; PATTERNS.md commit 8bd8919. Next: /gsd-execute-phase 34.
-Last activity: 2026-04-23 -- Phase 34 PATTERNS.md + 4 PLAN.md files landed
+Phase: 34 (Cluster-Scoped Proxmox Credentials) — EXECUTING
+Plan: 1 of 4 complete; 3 remaining
+Status: Plan 01 complete — credential_store.py extended with scope/cluster_name fields and _keyring_key helper. 27 tests pass, ruff+mypy green.
+Last activity: 2026-04-23 -- Phase 34 Plan 01 executed (fc5dcae)
 
-Progress: [██████████] 100% (10/10 plans) across completed phases 33 + 33.1
+Progress: [███████▌  ] 79% (11/14 plans) — Phase 34 in progress
 
 ## Milestone Origin
 
@@ -62,6 +62,14 @@ Active patterns established through v1.5:
 - AST meta-tests for lint-style regression guards — catches tautological-assertion bugs that no single positive regression test can catch
 - Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
 - JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
+
+Phase 34 Plan 01 decisions (added 2026-04-23):
+
+- scope/cluster_name added as keyword-only params (after `*`) to `register_credential`, `store_credential`, `get_credential`, `delete_credential` — preserves all existing positional call sites unchanged.
+- Cluster entry upsert dedup key is `(cluster_name, username, credential_type)` per D-08a — hostname intentionally not compared so re-running with a different host arg (or `""`) still upserts the same cluster row.
+- `_keyring_key(username, hostname, scope, cluster_name)` is a plain module-level private def inserted just above `store_credential` — single source of truth for the `@cluster:` key form (D-03).
+- `identity` variable used in all three keyring-helper fallback log messages so cluster calls log `cluster:<name>` instead of empty string.
+- Pre-existing failures in `test_database.py::test_ssh_credentials_table_dropped_postgres` and `test_proxmox_api.py::TestGetProxmoxClient::test_client_missing_host` confirmed pre-existing on baseline; out of scope for Plan 01 (scope-boundary rule).
 
 Phase 33.1 Plan 04 decisions (added 2026-04-23):
 
@@ -103,6 +111,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-23T12:00:00.000Z
-Stopped at: Phase 34 planned, ready to execute
+Last session: 2026-04-23T19:30:00.000Z
+Stopped at: Phase 34 Plan 01 complete — credential_store.py scope/cluster_name extension done
 Resume command: /gsd-execute-phase 34
