@@ -13,11 +13,12 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 53
-    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview
+        len(tools) == 51
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin
     assert "ssh_discover" in tools
     assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
-    assert "verify_mcp_admin" in tools
+    assert "verify_mcp_admin" not in tools  # D-05: removed in Phase 33.1
+    assert "update_mcp_admin_groups" not in tools  # D-05: removed in Phase 33.1
 
     # Server registration tools (Phase 33: update_server_credentials and remove_server removed)
     assert "register_server" in tools
@@ -334,12 +335,9 @@ def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
     assert "default" not in bulk_target_props["username"], "D-03: bulk target username must have no default"
 
 
-def test_update_mcp_admin_groups_schema_no_password() -> None:
-    """D-02: update_mcp_admin_groups schema must not expose password property."""
-    from homelab_mcp.tool_schemas.ssh_tools_schema import SSH_TOOLS
-
-    props = SSH_TOOLS["update_mcp_admin_groups"]["inputSchema"]["properties"]
-    assert "password" not in props, "D-02: update_mcp_admin_groups must not expose password property"
+# test_update_mcp_admin_groups_schema_no_password REMOVED in Phase 33.1 (D-05).
+# update_mcp_admin_groups schema deleted entirely — Phase 33.1 D-02 became moot
+# because the whole tool was removed, not just its password property.
 
 
 @pytest.mark.asyncio
@@ -773,13 +771,8 @@ async def test_handle_list_keyring_credentials_passes_credential_type(mock_list_
 # setup_mcp_admin MCP tool is intentionally deleted; replaced by test_tools.py::test_setup_mcp_admin_removed_from_tool_handlers.
 
 
-def test_update_mcp_admin_groups_schema_password_not_required():
-    """Regression: update_mcp_admin_groups must not require password (keyring auto-inject)."""
-    tools = get_available_tools()
-    schema = tools["update_mcp_admin_groups"]["inputSchema"]
-    assert "password" not in schema["required"], "password must not be required — keyring auto-injects"
-    assert "username" not in schema["required"], "username must not be required — keyring auto-injects"
-    assert "hostname" in schema["required"]
+# test_update_mcp_admin_groups_schema_password_not_required REMOVED in Phase 33.1 (D-05).
+# update_mcp_admin_groups tool deleted entirely; no schema to assert against.
 
 
 def test_no_tool_has_password_required():
@@ -829,12 +822,8 @@ def test_create_proxmox_lxc_schema_phase26_parameters():
 # setup_mcp_admin MCP tool is intentionally deleted.
 
 
-def test_verify_mcp_admin_schema_has_timeout():
-    """verify_mcp_admin schema exposes timeout with default 30 (Phase 26-02)."""
-    tools = get_available_tools()
-    schema = tools["verify_mcp_admin"]["inputSchema"]["properties"]
-    assert "timeout" in schema, "verify_mcp_admin missing timeout property"
-    assert schema["timeout"]["default"] == 30
+# test_verify_mcp_admin_schema_has_timeout REMOVED in Phase 33.1 (D-05).
+# verify_mcp_admin tool deleted entirely; Phase 26-02 timeout assertion is moot.
 
 
 def test_ssh_execute_command_schema_no_timeout():
@@ -844,11 +833,8 @@ def test_ssh_execute_command_schema_no_timeout():
     assert "timeout" not in schema, "ssh_execute_command should not expose timeout parameter"
 
 
-def test_update_mcp_admin_groups_schema_has_key_path():
-    """update_mcp_admin_groups schema exposes key_path (Phase 26-02)."""
-    tools = get_available_tools()
-    schema = tools["update_mcp_admin_groups"]["inputSchema"]["properties"]
-    assert "key_path" in schema, "update_mcp_admin_groups missing key_path property"
+# test_update_mcp_admin_groups_schema_has_key_path REMOVED in Phase 33.1 (D-05).
+# update_mcp_admin_groups tool deleted entirely; Phase 26-02 key_path assertion is moot.
 
 
 def test_no_service_tool_has_port_property():

@@ -143,8 +143,9 @@ and record it in the database.
 5. Call discover_and_map with hostname="{hostname}" to add the device to the network \
 sitemap.
 
-6. Call verify_mcp_admin with hostname="{hostname}" to confirm that the registered \
-user has sudo access.
+6. Call ssh_execute_command with hostname="{hostname}" and command="sudo -n true" to \
+confirm the registered user has passwordless sudo. A non-zero exit code means sudo \
+is not configured for the registered user.
 
 If any step fails, fix the issue before proceeding to the next step."""
     return types.GetPromptResult(

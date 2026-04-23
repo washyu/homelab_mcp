@@ -117,7 +117,17 @@ def test_connect_to_device_prompt() -> None:
     )
     assert "ssh_discover" in combined_text
     assert "discover_and_map" in combined_text
-    assert "verify_mcp_admin" in combined_text
+    # D-05/D-05b: verify_mcp_admin tool removed in Phase 33.1; prompt Step 6
+    # now calls ssh_execute_command with `sudo -n true` to verify sudo access.
+    assert "verify_mcp_admin" not in combined_text, (
+        "D-05: connect_to_device prompt must not reference removed verify_mcp_admin tool"
+    )
+    assert "ssh_execute_command" in combined_text, (
+        "D-05b: prompt Step 6 must use ssh_execute_command for sudo verification"
+    )
+    assert "sudo -n true" in combined_text, (
+        "D-05b: prompt Step 6 must use `sudo -n true` as the sudo verification command"
+    )
     assert "test-host" in combined_text
 
 
@@ -143,8 +153,9 @@ def test_connect_to_device_prompt_parameter_names() -> None:
     combined = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text"))
     # All tools in this prompt use hostname=, never host=
     assert "host=" not in combined, f"Prompt must use hostname= not host= for tool parameters. Found: {combined}"
-    # Each tool step must use hostname= with the interpolated value
-    for tool in ("register_server", "ssh_discover", "discover_and_map", "verify_mcp_admin"):
+    # Each tool step must use hostname= with the interpolated value.
+    # D-05/D-05b: verify_mcp_admin was removed; Step 6 now calls ssh_execute_command.
+    for tool in ("register_server", "ssh_discover", "discover_and_map", "ssh_execute_command"):
         assert f"{tool}" in combined, f"Missing tool reference: {tool}"
     assert 'hostname="myhost"' in combined, "hostname= must appear with interpolated value"
 

@@ -10,7 +10,6 @@ from src.homelab_mcp.ssh_tools import (
     _sudo_run,
     ensure_mcp_ssh_key,
     ssh_discover_system,
-    verify_mcp_admin_access,
 )
 
 
@@ -288,101 +287,12 @@ async def test_ensure_mcp_ssh_key_uses_existing(mock_get_path):
 
 # (Removed in Phase 33: setup_remote_mcp_admin deleted per D-11)
 
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_verify_mcp_admin_access_success(mock_connect, mock_key_path):
-    """Test successful mcp_admin access verification."""
-    # Mock SSH key exists
-    mock_key_path.return_value.exists.return_value = True
-
-    # Mock SSH connection and commands
-    mock_conn = AsyncMock()
-
-    # Mock command results
-    whoami_result = MagicMock()
-    whoami_result.exit_status = 0
-    whoami_result.stdout = "mcp_admin"
-
-    sudo_result = MagicMock()
-    sudo_result.exit_status = 0
-
-    hostname_result = MagicMock()
-    hostname_result.exit_status = 0
-    hostname_result.stdout = "test-server"
-
-    groups_result = MagicMock()
-    groups_result.exit_status = 0
-    groups_result.stdout = "mcp_admin : mcp_admin sudo"
-
-    mock_conn.run.side_effect = [
-        whoami_result,
-        sudo_result,
-        hostname_result,
-        groups_result,
-    ]
-
-    # ssh_connect returns a connection usable as async context manager
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
-
-    # Execute
-    result = await verify_mcp_admin_access("test-host")
-
-    # Parse result
-    result_data = json.loads(result)
-
-    # Verify success
-    assert result_data["status"] == "success"
-    assert result_data["hostname"] == "test-server"
-    assert result_data["connection_ip"] == "test-host"
-    assert result_data["mcp_admin"]["ssh_access"] == "Success: Connected with SSH key"
-    assert result_data["mcp_admin"]["sudo_access"] == "Success: Passwordless sudo working"
-    assert result_data["mcp_admin"]["username"] == "mcp_admin"
-    assert result_data["mcp_admin"]["groups"] == ["mcp_admin", "sudo"]
-    assert result_data["mcp_admin"]["service_groups"] == []
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-async def test_verify_mcp_admin_access_no_key(mock_key_path):
-    """Test verification when SSH key doesn't exist."""
-    # Mock SSH key doesn't exist
-    mock_key_path.return_value.exists.return_value = False
-
-    # Execute
-    result = await verify_mcp_admin_access("test-host")
-
-    # Parse result
-    result_data = json.loads(result)
-
-    # Verify error
-    assert result_data["status"] == "error"
-    assert "SSH key not found" in result_data["error"]
-
-
-@pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.get_mcp_ssh_key_path")
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_verify_mcp_admin_access_auth_failure(mock_connect, mock_key_path):
-    """Test verification with authentication failure."""
-    # Mock SSH key exists
-    mock_key_path.return_value.exists.return_value = True
-
-    # Mock connection failure
-    mock_connect.side_effect = asyncssh.misc.PermissionDenied("Authentication failed")
-
-    # Execute
-    result = await verify_mcp_admin_access("test-host")
-
-    # Parse result
-    result_data = json.loads(result)
-
-    # Verify error
-    assert result_data["status"] == "error"
-    assert "SSH key authentication failed" in result_data["error"]
+# test_verify_mcp_admin_access_* REMOVED in Phase 33.1 (D-05).
+# verify_mcp_admin_access function deleted from ssh_tools.py — tests that
+# invoke it must also be deleted, not skipped (Phase 33 precedent D-02).
+# Replacement onboarding check: connect_to_device prompt Step 6 calls
+# `ssh_execute_command(hostname=..., command="sudo -n true")` to verify sudo
+# availability of the registered user.
 
 
 # test_ssh_discover_with_mcp_admin_auto_key REMOVED in Phase 33 (D-08/D-17).
