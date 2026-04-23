@@ -128,10 +128,6 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Admin username to connect with (must have sudo access). Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
-                "password": {
-                    "type": "string",
-                    "description": "Password for the admin user. Omit if credentials were stored with `credentials add` — they are auto-injected.",
-                },
                 "key_path": {"type": "string", "description": "Path to SSH private key"},
                 "port": {
                     "type": "integer",
