@@ -1,7 +1,18 @@
-"""D-15 + D-25 AST meta-test: no source file re-introduces removed credential DB paths.
+"""AST meta-tests: regression guards against reintroduction of removed/forbidden patterns.
 
-Scans src/homelab_mcp/**/*.py for forbidden strings that indicate a regression.
-Test files are excluded (they may mention removed names in negative assertions).
+Phase 33 D-15 + D-25: forbidden credential-DB method names (see FORBIDDEN_SOURCE_STRINGS).
+
+Phase 33.1 additions:
+- D-08: username='mcp_admin' defaults are forbidden in function signatures under
+  src/homelab_mcp/, except for files in DEFERRED_MCP_ADMIN_DEFAULT_FILES. The
+  allowlist documents Phase 33.2 scope; see ROADMAP Phase 33.2 and
+  .planning/phases/33.1-*/33.1-CONTEXT.md deferred section.
+- D-09: password properties and username=mcp_admin defaults are forbidden in tool
+  schemas, except for tools in ALLOWED_PASSWORD_TOOLS / ALLOWED_MCP_ADMIN_DEFAULT_TOOLS.
+  Both allowlists document Phase 33.2 scope (SSH family tools retaining password +
+  9 service tools deferred for separate cleanup sweep).
+- D-10: forbidden identifiers extended with `update_mcp_admin_groups` and
+  `verify_mcp_admin_access` (removed by Plan 33.1-03).
 """
 
 from __future__ import annotations
@@ -21,6 +32,8 @@ FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "setup_mcp_admin",            # D-25: removed MCP tool name
     "update_server_credentials",  # D-25: removed MCP tool name
     "remove_server",              # D-25: removed MCP tool name (D-21)
+    "update_mcp_admin_groups",    # D-10: removed by Plan 33.1-03
+    "verify_mcp_admin_access",    # D-10: removed by Plan 33.1-03
 ]
 
 # Narrow allowlist: certain files may legitimately contain specific forbidden strings
@@ -30,6 +43,15 @@ ALLOWED_EXCEPTIONS: dict[str, set[str]] = {
     # (removing this reference would prevent the drop from firing — self-defeating).
     "ssh_credentials": {"migration.py"},
 }
+
+# Phase 33.2 scope — mcp_admin cleanup sweep extension. These files retain
+# username='mcp_admin' defaults pending Phase 33.2. Every entry is tracked in
+# ROADMAP Phase 33.2 and documented in
+# .planning/phases/33.1-*/33.1-CONTEXT.md deferred section.
+DEFERRED_MCP_ADMIN_DEFAULT_FILES: frozenset[str] = frozenset({
+    "src/homelab_mcp/ssh_connection.py",       # Phase 33.2 scope
+    "src/homelab_mcp/service_installer.py",    # Phase 33.2 scope
+})
 
 
 def _collect_string_literals(tree: ast.AST) -> list[str]:
@@ -115,4 +137,78 @@ def test_register_server_handler_no_verify_connection_param() -> None:
     )
     assert "password" not in sig.parameters, (
         "register_server must not accept password parameter after Phase 33 (D-06)"
+    )
+
+
+def test_no_username_mcp_admin_default_in_function_signatures() -> None:
+    """D-08: No function in src/homelab_mcp/ may default `username` to the literal 'mcp_admin'.
+
+    Narrow scope per Phase 33.1 CONTEXT + user's 'Narrow + defer' decision:
+    files listed in DEFERRED_MCP_ADMIN_DEFAULT_FILES are allowlisted pending
+    Phase 33.2's cleanup sweep. Every allowlist entry is tracked in ROADMAP
+    Phase 33.2.
+
+    Catches regression of Phase 33.1 Plan 04 (sitemap.py default cleanup).
+    Catches any future re-introduction of `username='mcp_admin'` anywhere outside
+    the narrow-scope allowlist.
+    """
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    repo_root = src_root.parent.parent
+    assert src_root.exists(), f"Source root not found: {src_root}"
+
+    violations: list[str] = []
+
+    for py_file in sorted(src_root.rglob("*.py")):
+        # File-level allowlist: compare via POSIX path for cross-platform consistency.
+        rel_posix = py_file.relative_to(repo_root).as_posix()
+        if rel_posix in DEFERRED_MCP_ADMIN_DEFAULT_FILES:
+            continue  # Phase 33.2 scope
+
+        source = py_file.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source, filename=str(py_file))
+        except SyntaxError as e:
+            violations.append(f"{py_file}: SyntaxError during AST parse: {e}")
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            args = node.args
+            # Positional args with defaults: defaults are right-aligned.
+            all_positional = args.args
+            pos_defaults = args.defaults
+            defaults_start = len(all_positional) - len(pos_defaults)
+            for idx, arg in enumerate(all_positional):
+                if arg.arg != "username":
+                    continue
+                default_idx = idx - defaults_start
+                if default_idx < 0:
+                    continue  # No default
+                default_node = pos_defaults[default_idx]
+                if isinstance(default_node, ast.Constant) and default_node.value == "mcp_admin":
+                    violations.append(
+                        f"{rel_posix}:{node.lineno} "
+                        f"function `{node.name}` has `username='mcp_admin'` default — "
+                        f"remove per Phase 33.1 D-08"
+                    )
+
+            # Keyword-only args: args.kwonlyargs parallel with args.kw_defaults (same-index).
+            for kw_arg, kw_default in zip(args.kwonlyargs, args.kw_defaults, strict=False):
+                if kw_arg.arg != "username":
+                    continue
+                if kw_default is None:
+                    continue
+                if isinstance(kw_default, ast.Constant) and kw_default.value == "mcp_admin":
+                    violations.append(
+                        f"{rel_posix}:{node.lineno} "
+                        f"function `{node.name}` has kw-only `username='mcp_admin'` default — "
+                        f"remove per Phase 33.1 D-08"
+                    )
+
+    assert not violations, (
+        "Phase 33.1 regression (D-08): found `username='mcp_admin'` defaults in source files "
+        "outside DEFERRED_MCP_ADMIN_DEFAULT_FILES allowlist.\n"
+        + "\n".join(f"  - {v}" for v in violations)
     )
