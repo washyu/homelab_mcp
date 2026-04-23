@@ -37,6 +37,43 @@ class SSHCredentials:
     credential_id: int | None = None  # Database ID if from stored credentials
 
 
+def _resolve_username_from_registry(hostname: str) -> tuple[str, list[dict[str, str]]]:
+    """Scan the keyring registry for ``hostname``; return (resolved_username, matched_entries).
+
+    Phase 33.1 D-04 / D-04a: when a caller omits ``username``, both the Tier-1
+    (explicit password/key) and Tier-2 (pure keyring) branches of
+    :func:`resolve_ssh_credentials` use this helper to resolve a username from
+    the registered SSH credential set — the literal ``"mcp_admin"`` fallback is
+    gone.
+
+    Behaviour:
+      * **Single match** → returns the one registered ``username`` plus the
+        matched entry list (for downstream ``auth_type`` branching).
+      * **Zero match** → raises :class:`CredentialNotFoundError` with the
+        standard ``homelab-mcp credentials add`` pointer.
+      * **Multiple matches** → raises :class:`CredentialNotFoundError` whose
+        message names every registered username and points the agent at
+        ``list_keyring_credentials`` / ``list_registered_servers`` so it can
+        self-disambiguate (D-04a).
+    """
+    registry_entries = list_credentials(credential_type="ssh")
+    matched = [e for e in registry_entries if e["hostname"] == hostname]
+    if len(matched) == 0:
+        raise CredentialNotFoundError(
+            f"No credentials found for {hostname}. "
+            f"Run `homelab-mcp credentials add {hostname} <username>` "
+            "in your terminal."
+        )
+    if len(matched) >= 2:
+        registered = ", ".join(sorted(e["username"] for e in matched))
+        raise CredentialNotFoundError(
+            f"Multiple credentials registered for {hostname}: {registered}. "
+            "Specify username explicitly, or call list_keyring_credentials "
+            "to inspect registered entries."
+        )
+    return matched[0]["username"], matched
+
+
 def resolve_ssh_credentials(
     hostname: str,
     username: str | None = None,
@@ -46,32 +83,60 @@ def resolve_ssh_credentials(
 ) -> SSHCredentials:
     """Resolve SSH credentials for a hostname.
 
-    Two-tier resolution (v1.6, Phase 33):
-      1. Explicit args (password or key_path passed in) — returned as-is.
-      2. Keyring registry — look up by hostname; return password or key_path
-         based on the registry entry's ``auth_type`` field (D-09).
+    Two-tier resolution (v1.6, Phase 33 / Phase 33.1):
+      1. **Explicit args** (``password`` or ``key_path`` supplied): returned
+         directly. When ``username`` is also ``None``, the keyring registry is
+         scanned by hostname to inject the username — no silent
+         ``"mcp_admin"`` fallback (Phase 33.1 D-04 / BLOCKER 1).
+      2. **Keyring registry**: look up by hostname; when ``username`` is
+         ``None`` the helper :func:`_resolve_username_from_registry` picks the
+         sole registered user (single-match) or raises with an actionable
+         message (zero/multi match). Returns password or key_path based on the
+         entry's ``auth_type`` (D-09).
 
     Raises:
-        CredentialNotFoundError: if neither tier resolves credentials. The error
-        message names ``homelab-mcp credentials add <hostname> <username>`` as the
-        remediation (D-05).
+        CredentialNotFoundError: if neither tier resolves credentials, or if
+            ``username`` is ``None`` and the registry has zero or multiple
+            entries for ``hostname``. The error message names
+            ``homelab-mcp credentials add <hostname> <username>`` (D-05) for
+            zero-match, or lists the registered usernames and references
+            ``list_keyring_credentials`` (D-04a) for multi-match.
     """
-    # Tier 1: explicit args (backward compatible with test-only callers)
+    # Tier 1: explicit args (backward compatible with test-only callers).
+    # When username is None, perform the same registry scan as Tier 2 —
+    # no "mcp_admin" silent fallback (D-04 contract: keyring is the only
+    # source of truth for username).
     if password or key_path:
+        resolved_username = username
+        if resolved_username is None:
+            resolved_username, _ = _resolve_username_from_registry(hostname)
         return SSHCredentials(
             hostname=hostname,
-            username=username or "mcp_admin",
+            username=resolved_username,
             port=port,
             key_path=key_path,
             password=password,
         )
 
     # Tier 2: Keyring — sole remaining fallback.
-    registry_entries = list_credentials(credential_type="ssh")
-    matched = [e for e in registry_entries if e["hostname"] == hostname]
+    if username is None:
+        # D-04: registry-scan by hostname. Zero-match / multi-match raise
+        # inside the helper. For single-match we continue with the matched
+        # entry's auth_type branching below.
+        resolved_username, matched = _resolve_username_from_registry(hostname)
+    else:
+        # Explicit username path: find the registry entry for this user
+        # (existing behaviour from Phase 33).
+        registry_entries = list_credentials(credential_type="ssh")
+        matched = [
+            e
+            for e in registry_entries
+            if e["hostname"] == hostname and e["username"] == username
+        ]
+        resolved_username = username
+
     if matched:
         stored_username = matched[0]["username"]
-        resolved_username = username or stored_username
         auth_type = matched[0].get("auth_type", "password")  # D-09 backward compat
 
         if auth_type == "key":
@@ -114,6 +179,9 @@ def resolve_ssh_credentials(
         )
 
     # Terminal: no credential anywhere. Actionable error (D-05).
+    # Reached only when an explicit username had no registry entry, or when
+    # a matched single entry had no keyring secret (desync). Zero/multi match
+    # with username=None already raised inside the helper above.
     raise CredentialNotFoundError(
         f"No credentials found for {hostname}. "
         f"Run `homelab-mcp credentials add {hostname} {username or '<username>'}` "
