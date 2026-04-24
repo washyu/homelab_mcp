@@ -91,6 +91,8 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
  (completed 2026-04-21)
 - [x] **Phase 34: Cluster-Scoped Proxmox Credentials** — Add cluster-scope credential storage and auto-inject; per-node tokens remain supported and take precedence (CRED-08)
  (completed 2026-04-23)
+- [x] **Phase 35: Sitemap + Discovery Reliability** — fix discover_and_map field-loss (cpu_cores/memory_*/disk_*/usb/pci/block devices), hostname-only upsert (no zombie rows on IP change), per-subprocess SSH timeout + parallel bulk discovery, null-defensive analyzers
+ (completed 2026-04-24)
 
 ## Phase Details
 
@@ -174,6 +176,7 @@ Plans:
 | 33. Keyring Single Source of Truth | v1.6 | 5/5 | Complete   | 2026-04-21 |
 | 33.1 SSH Tool Family Keyring Uniformity | v1.6 | 5/5 | Complete | 2026-04-23 |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 4/4 | Complete | 2026-04-23 |
+| 35. Sitemap + Discovery Reliability     | v1.6 | 4/4 | Complete | 2026-04-24 |
 
 ### Phase 35: Sitemap + Discovery Reliability — fix discover_and_map field-loss (cpu_cores, memory_free, disk_*, usb/pci/block devices missing from sitemap row despite being in ssh_discover output); upsert zombie sitemap rows on hostname/IP match; add per-subprocess SSH timeout so tool doesn't hang 4+ minutes; topology analyzer defensively skip devices with null threshold values. Surfaced by Phase 33 live testing 2026-04-21.
 

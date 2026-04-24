@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: executing
-stopped_at: Phase 35 context captured — ready for planning (CONTEXT.md with 6 upsert decisions + 4 timeout decisions + schema/null-threshold guidance)
-last_updated: "2026-04-24T21:16:00.671Z"
-last_activity: 2026-04-24 -- Phase 35 execution started
+status: ready
+stopped_at: Phase 35 complete — 4 plans shipped, 32/32 must-haves verified, VERIFICATION.md status=passed
+last_updated: "2026-04-24T23:45:00.000Z"
+last_activity: 2026-04-24 -- Phase 35 complete (4/4 plans + verification passed)
 progress:
   total_phases: 8
-  completed_phases: 3
-  total_plans: 18
-  completed_plans: 14
-  percent: 78
+  completed_phases: 4
+  total_plans: 22
+  completed_plans: 18
+  percent: 82
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 35 — sitemap-discovery-reliability-fix-discover-and-map-field-los
+**Current focus:** Phase 35 complete — sitemap + discovery reliability fixes (32/32 must-haves verified); v1.6 milestone at 18/22 plans
 
 ## Current Position
 
-Phase: 35 (sitemap-discovery-reliability-fix-discover-and-map-field-los) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 35
+Phase: 35 (sitemap-discovery-reliability-fix-discover-and-map-field-los) — COMPLETE
+Plan: 4 of 4 complete; 0 remaining
+Status: Phase 35 complete — ready to plan next phase or close v1.6
 Last activity: 2026-04-24 -- Phase 35 execution started
 
 Progress: [█████████░] 93% (13/14 plans) — Phase 34 Plan 04 done
