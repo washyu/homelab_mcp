@@ -1,5 +1,6 @@
 """SSH tools for system discovery and management."""
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -9,7 +10,9 @@ from typing import Any, cast
 import asyncssh
 
 from .credential_store import get_credential, list_credentials
-from .database import get_database_adapter  # noqa: F401 — module-level attr for test monkeypatch (tests assert not-called)
+from .database import (
+    get_database_adapter,  # noqa: F401 — module-level attr for test monkeypatch (tests assert not-called)
+)
 from .error_handling import retry_on_failure, ssh_connection_wrapper
 from .log_filter import sanitize_error
 from .ssh_connection import ssh_connect
@@ -221,7 +224,7 @@ async def ensure_mcp_ssh_key() -> str:
     return str(key_path)
 
 
-@ssh_connection_wrapper(timeout_seconds=30.0)
+@ssh_connection_wrapper(timeout_seconds=120.0)
 @retry_on_failure(max_retries=1, delay_seconds=1.0)
 async def ssh_discover_system(
     hostname: str,
@@ -255,187 +258,267 @@ async def ssh_discover_system(
         key_path=creds.key_path,
     ) as conn:
         system_info: dict[str, Any] = {}
+        timed_out_commands: list[str] = []
 
         # Get actual hostname from the remote system
-        hostname_result = await conn.run("hostname", check=False)
+        hostname_result = await _run_with_timeout(
+            conn, "hostname", cmd_name="hostname", timed_out=timed_out_commands
+        )
         actual_hostname = hostname  # Default to the IP/hostname we connected with
-        if hostname_result.exit_status == 0 and hostname_result.stdout:
+        if hostname_result and hostname_result.exit_status == 0 and hostname_result.stdout:
             actual_hostname = cast(str, hostname_result.stdout).strip()
 
-            # Get CPU info
-            cpu_info: dict[str, Any] = {}
-            cpu_result = await conn.run("nproc", check=False)
-            if cpu_result.exit_status == 0 and cpu_result.stdout:
-                cpu_info["count"] = int(cast(str, cpu_result.stdout).strip())
+        # Get CPU info
+        cpu_info: dict[str, Any] = {}
+        cpu_result = await _run_with_timeout(
+            conn, "nproc", cmd_name="nproc", timed_out=timed_out_commands
+        )
+        if cpu_result and cpu_result.exit_status == 0 and cpu_result.stdout:
+            cpu_info["cores"] = int(cast(str, cpu_result.stdout).strip())
 
-            cpu_model_result = await conn.run('grep "model name" /proc/cpuinfo | head -1', check=False)
-            if cpu_model_result.exit_status == 0 and cpu_model_result.stdout:
-                model_line = cast(str, cpu_model_result.stdout).strip()
-                if ":" in model_line:
-                    cpu_info["model"] = model_line.split(":", 1)[1].strip()
+        cpu_model_result = await _run_with_timeout(
+            conn,
+            'grep "model name" /proc/cpuinfo | head -1',
+            cmd_name="cpuinfo",
+            timed_out=timed_out_commands,
+        )
+        if cpu_model_result and cpu_model_result.exit_status == 0 and cpu_model_result.stdout:
+            model_line = cast(str, cpu_model_result.stdout).strip()
+            if ":" in model_line:
+                cpu_info["model"] = model_line.split(":", 1)[1].strip()
 
-            if cpu_info:
-                system_info["cpu"] = cpu_info
+        if cpu_info:
+            system_info["cpu"] = cpu_info
 
-            # Get memory info
-            mem_result = await conn.run("free -b", check=False)
-            if mem_result.exit_status == 0 and mem_result.stdout:
-                lines = cast(str, mem_result.stdout).strip().split("\n")
-                for line in lines:
-                    if line.startswith("Mem:"):
-                        parts = line.split()
-                        if len(parts) >= 3:
-                            system_info["memory"] = {
-                                "total": int(parts[1]),
-                                "used": int(parts[2]),
-                            }
-                            break
-
-            # Get disk usage
-            disk_result = await conn.run("df -B1 /", check=False)
-            if disk_result.exit_status == 0 and disk_result.stdout:
-                lines = cast(str, disk_result.stdout).strip().split("\n")
-                if len(lines) > 1:
-                    # Skip header, get data line
-                    parts = lines[1].split()
-                    if len(parts) >= 4:
-                        system_info["disk"] = {
-                            "total": int(parts[1]),
-                            "used": int(parts[2]),
-                            "available": int(parts[3]),
+        # Get memory info
+        mem_result = await _run_with_timeout(
+            conn, "free -b", cmd_name="free", timed_out=timed_out_commands
+        )
+        if mem_result and mem_result.exit_status == 0 and mem_result.stdout:
+            lines = cast(str, mem_result.stdout).strip().split("\n")
+            for line in lines:
+                if line.startswith("Mem:"):
+                    parts = line.split()
+                    if len(parts) >= 7:
+                        total_b = int(parts[1])
+                        used_b = int(parts[2])
+                        free_b = int(parts[3])
+                        available_b = int(parts[6])
+                        gib = 1024 ** 3
+                        system_info["memory"] = {
+                            "total": f"{total_b // gib}Gi",
+                            "used": f"{used_b // gib}Gi",
+                            "free": f"{free_b // gib}Gi",
+                            "available": f"{available_b // gib}Gi",
                         }
+                    break
 
-            # Get network interfaces
-            network_info: list[dict[str, Any]] = []
-            # Try modern ip command first
-            ip_result = await conn.run("ip -j addr show 2>/dev/null", check=False)
-            if ip_result.exit_status == 0 and ip_result.stdout:
-                try:
-                    interfaces = json.loads(cast(str, ip_result.stdout))
-                    for iface in interfaces:
-                        if iface.get("ifname") and iface["ifname"] != "lo":
-                            iface_info = {
-                                "name": iface["ifname"],
-                                "state": iface.get("operstate", "unknown"),
-                                "addresses": [],
+        # Get disk usage
+        disk_result = await _run_with_timeout(
+            conn, "df -B1 -T /", cmd_name="df", timed_out=timed_out_commands
+        )
+        if disk_result and disk_result.exit_status == 0 and disk_result.stdout:
+            lines = cast(str, disk_result.stdout).strip().split("\n")
+            if len(lines) > 1:
+                # Skip header, get data line. `df -B1 -T /` columns:
+                # filesystem, type, 1B-blocks(size), used, available, use%, mount
+                parts = lines[1].split()
+                if len(parts) >= 7:
+                    size_b = int(parts[2])
+                    used_b = int(parts[3])
+                    avail_b = int(parts[4])
+                    use_pct = f"{used_b * 100 // size_b}%" if size_b > 0 else "0%"
+                    gib = 1024 ** 3
+                    system_info["disk"] = {
+                        "filesystem": parts[0],
+                        "size": f"{size_b // gib}Gi",
+                        "used": f"{used_b // gib}Gi",
+                        "available": f"{avail_b // gib}Gi",
+                        "use_percent": use_pct,
+                        "mount": parts[6],
+                    }
+
+        # Get network interfaces
+        network_info: list[dict[str, Any]] = []
+        # Try modern ip command first
+        ip_result = await _run_with_timeout(
+            conn, "ip -j addr show 2>/dev/null", cmd_name="ip", timed_out=timed_out_commands
+        )
+        if ip_result and ip_result.exit_status == 0 and ip_result.stdout:
+            try:
+                interfaces = json.loads(cast(str, ip_result.stdout))
+                for iface in interfaces:
+                    if iface.get("ifname") and iface["ifname"] != "lo":
+                        iface_info = {
+                            "name": iface["ifname"],
+                            "state": iface.get("operstate", "unknown"),
+                            "addresses": [],
+                        }
+                        for addr_info in iface.get("addr_info", []):
+                            if addr_info.get("family") in ["inet", "inet6"]:
+                                iface_info["addresses"].append(addr_info.get("local"))
+                        if iface_info["addresses"]:
+                            network_info.append(iface_info)
+                system_info["network"] = network_info
+            except json.JSONDecodeError:
+                # Fallback to basic parsing if JSON output not supported
+                logger.debug(
+                    "JSON parsing failed for network interface data on %s, falling back to basic parsing", hostname
+                )
+
+        # Get system uptime
+        uptime_result = await _run_with_timeout(
+            conn, "uptime -p", cmd_name="uptime", timed_out=timed_out_commands
+        )
+        if uptime_result and uptime_result.exit_status == 0 and uptime_result.stdout:
+            system_info["uptime"] = cast(str, uptime_result.stdout).strip()
+
+        # Get OS information
+        os_result = await _run_with_timeout(
+            conn,
+            "cat /etc/os-release | grep PRETTY_NAME",
+            cmd_name="os-release",
+            timed_out=timed_out_commands,
+        )
+        if os_result and os_result.exit_status == 0 and os_result.stdout:
+            os_line = cast(str, os_result.stdout).strip()
+            if "=" in os_line:
+                system_info["os"] = os_line.split("=", 1)[1].strip('"')
+
+        # Get USB devices
+        usb_devices: list[dict[str, str]] = []
+        lsusb_result = await _run_with_timeout(
+            conn, "lsusb 2>/dev/null", cmd_name="lsusb", timed_out=timed_out_commands
+        )
+        if lsusb_result and lsusb_result.exit_status == 0 and lsusb_result.stdout:
+            for line in cast(str, lsusb_result.stdout).strip().split("\n"):
+                if line:
+                    # Parse lsusb output: Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+                    parts = line.split(" ", 6)
+                    if len(parts) >= 7:
+                        usb_device_info = {
+                            "bus": parts[1],
+                            "device": parts[3].rstrip(":"),
+                            "vendor_id": parts[5].split(":")[0],
+                            "product_id": parts[5].split(":")[1],
+                            "description": parts[6] if len(parts) > 6 else "Unknown",
+                        }
+                        usb_devices.append(usb_device_info)
+        if usb_devices:
+            system_info["usb_devices"] = usb_devices
+
+        # Get PCI devices
+        pci_devices: list[dict[str, str]] = []
+        lspci_result = await _run_with_timeout(
+            conn, "lspci 2>/dev/null", cmd_name="lspci", timed_out=timed_out_commands
+        )
+        if lspci_result and lspci_result.exit_status == 0 and lspci_result.stdout:
+            for line in cast(str, lspci_result.stdout).strip().split("\n"):
+                if line:
+                    # Parse lspci output: 00:00.0 Host bridge: Intel Corporation Device 4660 (rev 02)
+                    parts = line.split(" ", 2)
+                    if len(parts) >= 3:
+                        pci_device_info = {
+                            "slot": parts[0],
+                            "class": parts[1].rstrip(":"),
+                            "description": parts[2],
+                        }
+                        # Identify important device types
+                        if (
+                            "network" in parts[1].lower()
+                            or "ethernet" in parts[2].lower()
+                            or "wireless" in parts[2].lower()
+                        ):
+                            pci_device_info["type"] = "network"
+                        elif "vga" in parts[1].lower() or "display" in parts[1].lower():
+                            pci_device_info["type"] = "graphics"
+                        elif "usb" in parts[1].lower() or "usb" in parts[2].lower():
+                            pci_device_info["type"] = "usb_controller"
+                        elif "sata" in parts[1].lower() or "storage" in parts[1].lower():
+                            pci_device_info["type"] = "storage"
+                        pci_devices.append(pci_device_info)
+        if pci_devices:
+            system_info["pci_devices"] = pci_devices
+
+        # Get block devices (drives)
+        block_devices: list[dict[str, Any]] = []
+        lsblk_result = await _run_with_timeout(
+            conn,
+            "lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL 2>/dev/null",
+            cmd_name="lsblk",
+            timed_out=timed_out_commands,
+        )
+        if lsblk_result and lsblk_result.exit_status == 0 and lsblk_result.stdout:
+            try:
+                lsblk_data = json.loads(cast(str, lsblk_result.stdout))
+                if "blockdevices" in lsblk_data:
+                    for device in lsblk_data["blockdevices"]:
+                        if device.get("type") == "disk":
+                            block_device_info: dict[str, Any] = {
+                                "name": device.get("name"),
+                                "size": device.get("size"),
+                                "model": device.get("model", "Unknown"),
+                                "partitions": [],
                             }
-                            for addr_info in iface.get("addr_info", []):
-                                if addr_info.get("family") in ["inet", "inet6"]:
-                                    iface_info["addresses"].append(addr_info.get("local"))
-                            if iface_info["addresses"]:
-                                network_info.append(iface_info)
-                    system_info["network"] = network_info
-                except json.JSONDecodeError:
-                    # Fallback to basic parsing if JSON output not supported
-                    logger.debug(
-                        "JSON parsing failed for network interface data on %s, falling back to basic parsing", hostname
-                    )
+                            # Add partition info if available
+                            if "children" in device:
+                                for child in device["children"]:
+                                    if child.get("type") == "part":
+                                        partition_info = {
+                                            "name": child.get("name"),
+                                            "size": child.get("size"),
+                                            "mountpoint": child.get("mountpoint"),
+                                        }
+                                        partitions_list = block_device_info.get("partitions", [])
+                                        if isinstance(partitions_list, list):
+                                            partitions_list.append(partition_info)
+                            block_devices.append(block_device_info)
+            except json.JSONDecodeError:
+                logger.debug("JSON parsing failed for block device data on %s", hostname)
+        if block_devices:
+            system_info["block_devices"] = block_devices
 
-            # Get system uptime
-            uptime_result = await conn.run("uptime -p", check=False)
-            if uptime_result.exit_status == 0 and uptime_result.stdout:
-                system_info["uptime"] = cast(str, uptime_result.stdout).strip()
+    payload: dict[str, Any] = {
+        "status": "success",
+        "hostname": actual_hostname,
+        "connection_ip": hostname,
+        "data": system_info,
+    }
+    if timed_out_commands:
+        payload["partial"] = True
+        payload["timed_out_commands"] = list(timed_out_commands)
+    return json.dumps(payload, indent=2)
 
-            # Get OS information
-            os_result = await conn.run("cat /etc/os-release | grep PRETTY_NAME", check=False)
-            if os_result.exit_status == 0 and os_result.stdout:
-                os_line = cast(str, os_result.stdout).strip()
-                if "=" in os_line:
-                    system_info["os"] = os_line.split("=", 1)[1].strip('"')
 
-            # Get USB devices
-            usb_devices: list[dict[str, str]] = []
-            lsusb_result = await conn.run("lsusb 2>/dev/null", check=False)
-            if lsusb_result.exit_status == 0 and lsusb_result.stdout:
-                for line in cast(str, lsusb_result.stdout).strip().split("\n"):
-                    if line:
-                        # Parse lsusb output: Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
-                        parts = line.split(" ", 6)
-                        if len(parts) >= 7:
-                            usb_device_info = {
-                                "bus": parts[1],
-                                "device": parts[3].rstrip(":"),
-                                "vendor_id": parts[5].split(":")[0],
-                                "product_id": parts[5].split(":")[1],
-                                "description": parts[6] if len(parts) > 6 else "Unknown",
-                            }
-                            usb_devices.append(usb_device_info)
-            if usb_devices:
-                system_info["usb_devices"] = usb_devices
+async def _run_with_timeout(
+    conn: asyncssh.SSHClientConnection,
+    command: str,
+    *,
+    cmd_name: str,
+    timed_out: list[str],
+    timeout: float = 10.0,
+) -> "asyncssh.SSHCompletedProcess | None":
+    """Run a discovery probe with a per-command timeout (Phase 35 D-05).
 
-            # Get PCI devices
-            pci_devices: list[dict[str, str]] = []
-            lspci_result = await conn.run("lspci 2>/dev/null", check=False)
-            if lspci_result.exit_status == 0 and lspci_result.stdout:
-                for line in cast(str, lspci_result.stdout).strip().split("\n"):
-                    if line:
-                        # Parse lspci output: 00:00.0 Host bridge: Intel Corporation Device 4660 (rev 02)
-                        parts = line.split(" ", 2)
-                        if len(parts) >= 3:
-                            pci_device_info = {
-                                "slot": parts[0],
-                                "class": parts[1].rstrip(":"),
-                                "description": parts[2],
-                            }
-                            # Identify important device types
-                            if (
-                                "network" in parts[1].lower()
-                                or "ethernet" in parts[2].lower()
-                                or "wireless" in parts[2].lower()
-                            ):
-                                pci_device_info["type"] = "network"
-                            elif "vga" in parts[1].lower() or "display" in parts[1].lower():
-                                pci_device_info["type"] = "graphics"
-                            elif "usb" in parts[1].lower() or "usb" in parts[2].lower():
-                                pci_device_info["type"] = "usb_controller"
-                            elif "sata" in parts[1].lower() or "storage" in parts[1].lower():
-                                pci_device_info["type"] = "storage"
-                            pci_devices.append(pci_device_info)
-            if pci_devices:
-                system_info["pci_devices"] = pci_devices
-
-            # Get block devices (drives)
-            block_devices: list[dict[str, Any]] = []
-            lsblk_result = await conn.run("lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,MODEL 2>/dev/null", check=False)
-            if lsblk_result.exit_status == 0 and lsblk_result.stdout:
-                try:
-                    lsblk_data = json.loads(cast(str, lsblk_result.stdout))
-                    if "blockdevices" in lsblk_data:
-                        for device in lsblk_data["blockdevices"]:
-                            if device.get("type") == "disk":
-                                block_device_info: dict[str, Any] = {
-                                    "name": device.get("name"),
-                                    "size": device.get("size"),
-                                    "model": device.get("model", "Unknown"),
-                                    "partitions": [],
-                                }
-                                # Add partition info if available
-                                if "children" in device:
-                                    for child in device["children"]:
-                                        if child.get("type") == "part":
-                                            partition_info = {
-                                                "name": child.get("name"),
-                                                "size": child.get("size"),
-                                                "mountpoint": child.get("mountpoint"),
-                                            }
-                                            partitions_list = block_device_info.get("partitions", [])
-                                            if isinstance(partitions_list, list):
-                                                partitions_list.append(partition_info)
-                                block_devices.append(block_device_info)
-                except json.JSONDecodeError:
-                    logger.debug("JSON parsing failed for block device data on %s", hostname)
-            if block_devices:
-                system_info["block_devices"] = block_devices
-
-    return json.dumps(
-        {
-            "status": "success",
-            "hostname": actual_hostname,
-            "connection_ip": hostname,
-            "data": system_info,
-        },
-        indent=2,
-    )
+    Wraps ``asyncio.wait_for(conn.run(command, check=False), timeout=...)``.
+    On :class:`TimeoutError`, logs at DEBUG, appends ``cmd_name`` to
+    ``timed_out`` (D-06 accumulator), and returns ``None`` so the caller
+    can leave the corresponding probed field unset — the final JSON lands
+    a ``None`` at that position.
+    """
+    try:
+        return await asyncio.wait_for(
+            conn.run(command, check=False), timeout=timeout
+        )
+    except TimeoutError:
+        logger.debug(
+            "SSH discovery probe %r exceeded %.1fs on %s; field skipped",
+            cmd_name,
+            timeout,
+            conn._host if hasattr(conn, "_host") else "?",
+        )
+        timed_out.append(cmd_name)
+        return None
 
 
 async def _sudo_run(
