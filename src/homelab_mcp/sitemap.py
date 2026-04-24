@@ -34,6 +34,9 @@ class NetworkDevice:
     disk_use_percent: str | None = None
     disk_mount: str | None = None
     network_interfaces: str | None = None  # JSON string
+    usb_devices: str | None = None  # JSON string (Phase 35 D-09b)
+    pci_devices: str | None = None  # JSON string (Phase 35 D-09b)
+    block_devices: str | None = None  # JSON string (Phase 35 D-09b)
     uptime: str | None = None
     os_info: str | None = None
     error_message: str | None = None
@@ -96,6 +99,14 @@ class NetworkSiteMap:
                 # Network interfaces (store as JSON)
                 if "network" in discovery_data:
                     device.network_interfaces = json.dumps(discovery_data["network"])
+
+                # USB / PCI / block devices (Phase 35 D-09b: store as JSON)
+                if "usb_devices" in discovery_data:
+                    device.usb_devices = json.dumps(discovery_data["usb_devices"])
+                if "pci_devices" in discovery_data:
+                    device.pci_devices = json.dumps(discovery_data["pci_devices"])
+                if "block_devices" in discovery_data:
+                    device.block_devices = json.dumps(discovery_data["block_devices"])
 
                 # System information
                 device.uptime = discovery_data.get("uptime")
