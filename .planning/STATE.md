@@ -73,6 +73,15 @@ Phase 34 Plan 03 decisions (added 2026-04-23):
 - test_get_proxmox_client_keyring_fallback (INJECT-03 test) deleted; replaced with explanatory comment per D-16a (no AST meta-test for shortcut removal in greenfield phase).
 - CredentialNotFoundError imported via src.homelab_mcp.ssh_tools in test body to avoid headless home-dir RuntimeError from lazy module-level path expansion in credential_store.py.
 
+Phase 35 Plan 04 decisions (added 2026-04-24):
+
+- 3 AST meta-tests (D-14 hostname-only store_device match, D-15 wrapped conn.run, D-16 no threshold coercion) + 5 functional tests (D-17a/D-01a/D-17b DB + D-17c/D-06/W4 SSH + D-17d parallelism + D-17e analyzer null-skip) = 11 Phase 35 tests total, all pass.
+- D-14 scanner filters the abstract base class `DatabaseAdapter.store_device` (which has a `pass` body, no SQL) by only counting functions whose bodies contain a `SELECT id FROM devices` string constant.
+- D-15 scanner uses parent-pointer annotation (`setattr(child, "_parent", parent)` on ast.walk) + upward-walk to detect enclosing `asyncio.wait_for` OR `_run_with_timeout` wrappers — standard ast idiom since ast does not wire parents by default.
+- D-16 scanner narrows by pattern: BoolOp(Or) + 2 operands + device.get() on left + Constant(0/"") on right + left.args[0].value in PHASE35_FORBIDDEN_COERCION_FIELDS frozenset (`cpu_cores`, `memory_total`, `disk_use_percent`). Correct `is not None` guards and the `_has_threshold_data` helper naturally do not match.
+- Two pre-existing tests updated in Plan 04 scope (not silently deleted or skipped): `test_ssh_discover_success` for Plan 01 field renames (`count`→`cores`, df -B1→-T, Gi memory strings), and `test_database_schema_creation` for Plan 03 index rename (`idx_devices_hostname_ip`→`idx_devices_hostname`). Each update documented in the 35-04-SUMMARY Deviations section.
+- Plan executed inline by orchestrator — subagents remained sandbox-blocked on Edit/Write (same as Plan 03).
+
 Phase 35 Plan 03 decisions (added 2026-04-24):
 
 - Hostname-only upsert with degenerate-hostname fallback (`None` / `""` / `'unknown'`) in both SQLiteAdapter.store_device and PostgreSQLAdapter.store_device — closes bug #2 (zombie rows on IP change) while preserving Phase-33 distinct-error rows.
