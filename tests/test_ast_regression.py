@@ -22,18 +22,18 @@ from pathlib import Path
 
 # Strings whose presence in source AST (as Name, Attribute, or string literals) indicates regression
 FORBIDDEN_SOURCE_STRINGS: list[str] = [
-    "ssh_credentials",            # D-15: DB table name
-    "add_credential",             # D-15: removed DB method
-    "get_credential_by_hostname", # D-15: removed DB method
-    "get_credential_by_id",       # D-15/D-02: removed DB method (NOTE: do NOT add "get_credential"/"delete_credential"/"list_credentials" — those are legit credential_store.py method names)
-    "update_credential",          # D-15: removed DB method (distinct from update_server_credentials MCP tool name below)
-    "update_last_verified",       # D-15: removed DB method
-    "setup_remote_mcp_admin",     # D-25: deleted function
-    "setup_mcp_admin",            # D-25: removed MCP tool name
+    "ssh_credentials",  # D-15: DB table name
+    "add_credential",  # D-15: removed DB method
+    "get_credential_by_hostname",  # D-15: removed DB method
+    "get_credential_by_id",  # D-15/D-02: removed DB method (NOTE: do NOT add "get_credential"/"delete_credential"/"list_credentials" — those are legit credential_store.py method names)
+    "update_credential",  # D-15: removed DB method (distinct from update_server_credentials MCP tool name below)
+    "update_last_verified",  # D-15: removed DB method
+    "setup_remote_mcp_admin",  # D-25: deleted function
+    "setup_mcp_admin",  # D-25: removed MCP tool name
     "update_server_credentials",  # D-25: removed MCP tool name
-    "remove_server",              # D-25: removed MCP tool name (D-21)
-    "update_mcp_admin_groups",    # D-10: removed by Plan 33.1-03
-    "verify_mcp_admin_access",    # D-10: removed by Plan 33.1-03
+    "remove_server",  # D-25: removed MCP tool name (D-21)
+    "update_mcp_admin_groups",  # D-10: removed by Plan 33.1-03
+    "verify_mcp_admin_access",  # D-10: removed by Plan 33.1-03
 ]
 
 # Narrow allowlist: certain files may legitimately contain specific forbidden strings
@@ -48,10 +48,12 @@ ALLOWED_EXCEPTIONS: dict[str, set[str]] = {
 # username='mcp_admin' defaults pending Phase 33.2. Every entry is tracked in
 # ROADMAP Phase 33.2 and documented in
 # .planning/phases/33.1-*/33.1-CONTEXT.md deferred section.
-DEFERRED_MCP_ADMIN_DEFAULT_FILES: frozenset[str] = frozenset({
-    "src/homelab_mcp/ssh_connection.py",       # Phase 33.2 scope
-    "src/homelab_mcp/service_installer.py",    # Phase 33.2 scope
-})
+DEFERRED_MCP_ADMIN_DEFAULT_FILES: frozenset[str] = frozenset(
+    {
+        "src/homelab_mcp/ssh_connection.py",  # Phase 33.2 scope
+        "src/homelab_mcp/service_installer.py",  # Phase 33.2 scope
+    }
+)
 
 # Phase 33.2 scope — service-tool + SSH-family surface deferred for separate cleanup sweep.
 # Every entry here is tracked in ROADMAP Phase 33.2 and documented in
@@ -73,25 +75,27 @@ DEFERRED_MCP_ADMIN_DEFAULT_FILES: frozenset[str] = frozenset({
 #     that Phase 33.2 (or a later phase) can revisit if/when a new keyring-storage
 #     model for container-creation secrets is defined. Not currently on ROADMAP 33.2
 #     but documented here so the entry is visible to any future refactor.
-ALLOWED_PASSWORD_TOOLS: frozenset[str] = frozenset({
-    # SSH family (out-of-scope for Phase 33.1 CONTEXT D-01/D-02 enumeration)
-    "ssh_discover",                           # Phase 33.2 scope
-    "ssh_execute_command",                    # Phase 33.2 scope
-    "start_interactive_shell",                # Phase 33.2 scope
-    # Service family (deferred to Phase 33.2) — each of the 9 tools has a password property
-    "check_service_requirements",             # Phase 33.2 scope
-    "install_service",                        # Phase 33.2 scope
-    "get_service_status",                     # Phase 33.2 scope
-    "plan_terraform_service",                 # Phase 33.2 scope
-    "destroy_terraform_service",              # Phase 33.2 scope
-    "refresh_terraform_service",              # Phase 33.2 scope
-    "check_ansible_service",                  # Phase 33.2 scope
-    "run_ansible_playbook",                   # Phase 33.2 scope
-    "destroy_terraform_service_preview",      # Phase 33.2 scope
-    # Proxmox provisioning surface (semantically distinct: container-root-password
-    # at creation, not an SSH login credential). See module-level comment above.
-    "create_proxmox_lxc",                     # Phase 33.2 scope (semantic-exception — container root password)
-})
+ALLOWED_PASSWORD_TOOLS: frozenset[str] = frozenset(
+    {
+        # SSH family (out-of-scope for Phase 33.1 CONTEXT D-01/D-02 enumeration)
+        "ssh_discover",  # Phase 33.2 scope
+        "ssh_execute_command",  # Phase 33.2 scope
+        "start_interactive_shell",  # Phase 33.2 scope
+        # Service family (deferred to Phase 33.2) — each of the 9 tools has a password property
+        "check_service_requirements",  # Phase 33.2 scope
+        "install_service",  # Phase 33.2 scope
+        "get_service_status",  # Phase 33.2 scope
+        "plan_terraform_service",  # Phase 33.2 scope
+        "destroy_terraform_service",  # Phase 33.2 scope
+        "refresh_terraform_service",  # Phase 33.2 scope
+        "check_ansible_service",  # Phase 33.2 scope
+        "run_ansible_playbook",  # Phase 33.2 scope
+        "destroy_terraform_service_preview",  # Phase 33.2 scope
+        # Proxmox provisioning surface (semantically distinct: container-root-password
+        # at creation, not an SSH login credential). See module-level comment above.
+        "create_proxmox_lxc",  # Phase 33.2 scope (semantic-exception — container root password)
+    }
+)
 
 # Phase 33.2 scope — username=mcp_admin default retention.
 #
@@ -103,27 +107,25 @@ ALLOWED_PASSWORD_TOOLS: frozenset[str] = frozenset({
 #     `"default": "mcp_admin"` on username — so they are the only entries here.
 #   - If a future refactor reintroduces the default to an SSH tool's schema, adding it
 #     here should be an explicit scope decision (not a silent widening).
-ALLOWED_MCP_ADMIN_DEFAULT_TOOLS: frozenset[str] = frozenset({
-    # Service family (deferred to Phase 33.2) — all 9 carry "default": "mcp_admin"
-    "check_service_requirements",             # Phase 33.2 scope
-    "install_service",                        # Phase 33.2 scope
-    "get_service_status",                     # Phase 33.2 scope
-    "plan_terraform_service",                 # Phase 33.2 scope
-    "destroy_terraform_service",              # Phase 33.2 scope
-    "refresh_terraform_service",              # Phase 33.2 scope
-    "check_ansible_service",                  # Phase 33.2 scope
-    "run_ansible_playbook",                   # Phase 33.2 scope
-    "destroy_terraform_service_preview",      # Phase 33.2 scope
-})
+ALLOWED_MCP_ADMIN_DEFAULT_TOOLS: frozenset[str] = frozenset(
+    {
+        # Service family (deferred to Phase 33.2) — all 9 carry "default": "mcp_admin"
+        "check_service_requirements",  # Phase 33.2 scope
+        "install_service",  # Phase 33.2 scope
+        "get_service_status",  # Phase 33.2 scope
+        "plan_terraform_service",  # Phase 33.2 scope
+        "destroy_terraform_service",  # Phase 33.2 scope
+        "refresh_terraform_service",  # Phase 33.2 scope
+        "check_ansible_service",  # Phase 33.2 scope
+        "run_ansible_playbook",  # Phase 33.2 scope
+        "destroy_terraform_service_preview",  # Phase 33.2 scope
+    }
+)
 
 
 def _collect_string_literals(tree: ast.AST) -> list[str]:
     """Walk AST and collect all string constant values."""
-    return [
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    ]
+    return [node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)]
 
 
 def _collect_name_and_attr_ids(tree: ast.AST) -> list[str]:
@@ -167,14 +169,12 @@ def test_no_forbidden_strings_in_source() -> None:
                 if py_file.name in allowed_files:
                     continue
                 violations.append(
-                    f"{py_file.relative_to(src_root.parent.parent)}: "
-                    f"contains forbidden identifier/string {forbidden!r}"
+                    f"{py_file.relative_to(src_root.parent.parent)}: contains forbidden identifier/string {forbidden!r}"
                 )
 
     assert not violations, (
         "Phase 33 regression: found removed DB/tool references in source files.\n"
-        "These strings must not appear outside test files:\n"
-        + "\n".join(f"  - {v}" for v in violations)
+        "These strings must not appear outside test files:\n" + "\n".join(f"  - {v}" for v in violations)
     )
 
 
@@ -195,12 +195,8 @@ def test_register_server_handler_no_verify_connection_param() -> None:
     assert "verify_connection" not in sig.parameters, (
         "register_server must not accept verify_connection parameter after Phase 33 (D-07)"
     )
-    assert "key_path" not in sig.parameters, (
-        "register_server must not accept key_path parameter after Phase 33 (D-03)"
-    )
-    assert "password" not in sig.parameters, (
-        "register_server must not accept password parameter after Phase 33 (D-06)"
-    )
+    assert "key_path" not in sig.parameters, "register_server must not accept key_path parameter after Phase 33 (D-03)"
+    assert "password" not in sig.parameters, "register_server must not accept password parameter after Phase 33 (D-06)"
 
 
 def test_no_username_mcp_admin_default_in_function_signatures() -> None:
@@ -272,8 +268,7 @@ def test_no_username_mcp_admin_default_in_function_signatures() -> None:
 
     assert not violations, (
         "Phase 33.1 regression (D-08): found `username='mcp_admin'` defaults in source files "
-        "outside DEFERRED_MCP_ADMIN_DEFAULT_FILES allowlist.\n"
-        + "\n".join(f"  - {v}" for v in violations)
+        "outside DEFERRED_MCP_ADMIN_DEFAULT_FILES allowlist.\n" + "\n".join(f"  - {v}" for v in violations)
     )
 
 
@@ -333,14 +328,8 @@ def test_no_password_or_mcp_admin_default_in_tool_registries() -> None:
             if not isinstance(prop_schema, dict):
                 continue
             # username=mcp_admin default check — gated by per-tool allowlist
-            if (
-                check_mcp_admin_default
-                and prop_name == "username"
-                and prop_schema.get("default") == "mcp_admin"
-            ):
-                violations.append(
-                    f"{path}.{prop_name} — D-09: username must not default to 'mcp_admin'"
-                )
+            if check_mcp_admin_default and prop_name == "username" and prop_schema.get("default") == "mcp_admin":
+                violations.append(f"{path}.{prop_name} — D-09: username must not default to 'mcp_admin'")
             # password property check — gated by per-tool allowlist
             if check_password and prop_name == "password":
                 violations.append(f"{path}.{prop_name} — D-09: password property forbidden")
@@ -383,4 +372,182 @@ def test_no_password_or_mcp_admin_default_in_tool_registries() -> None:
         "Phase 33.1 regression (D-09): found forbidden `password` property or "
         "`username` default of 'mcp_admin' in tool schemas (outside allowlists).\n"
         + "\n".join(f"  - {v}" for v in violations)
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 35 AST regression guards (D-14, D-15, D-16)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_store_device_matches_on_hostname_alone_phase35() -> None:
+    """Phase 35 D-14: store_device in BOTH adapters must have a hostname-only
+    match clause. The degenerate-hostname fallback branch (``hostname = ? AND
+    connection_ip = ?`` / ``hostname = %s AND connection_ip = %s``) is
+    permitted and expected — but a hostname-only branch MUST also exist in
+    each function body.
+
+    Prevents regression of Plan 03: if a future commit reverts the match
+    clause to the Phase-33-era ``(hostname, connection_ip)`` composite match,
+    this test fails and names the line.
+    """
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    db_source = (src_root / "database.py").read_text(encoding="utf-8")
+
+    tree = ast.parse(db_source, filename="database.py")
+    # Filter out the abstract-base method — it has no SQL strings, only `pass`.
+    store_device_funcs = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name == "store_device"
+        and any(
+            isinstance(c, ast.Constant) and isinstance(c.value, str) and "SELECT id FROM devices" in c.value
+            for c in ast.walk(node)
+        )
+    ]
+    assert len(store_device_funcs) == 2, (
+        f"Phase 35 D-14: expected 2 concrete store_device functions (SQLite + Postgres), "
+        f"found {len(store_device_funcs)}"
+    )
+
+    violations: list[str] = []
+    for func in store_device_funcs:
+        body_strings = [
+            node.value for node in ast.walk(func) if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        ]
+        hostname_only_found = any(
+            (
+                "SELECT id FROM devices" in s
+                and ("WHERE hostname = ?" in s or "WHERE hostname = %s" in s)
+                and "AND connection_ip" not in s
+            )
+            for s in body_strings
+        )
+        if not hostname_only_found:
+            violations.append(
+                f"store_device at line {func.lineno}: no hostname-only SELECT "
+                f"found — Phase 35 D-14 regression (zombie-row fix reverted?)"
+            )
+
+    assert not violations, "Phase 35 D-14 regression — store_device must match hostname alone:\n" + "\n".join(
+        f"  - {v}" for v in violations
+    )
+
+
+def test_ssh_discover_system_wraps_every_conn_run_phase35() -> None:
+    """Phase 35 D-15: every ``conn.run(...)`` call inside ``ssh_discover_system``
+    MUST be enclosed by either ``asyncio.wait_for(...)`` or the
+    ``_run_with_timeout(...)`` helper. A bare ``await conn.run(...)`` inside
+    ssh_discover_system is a regression of Plan 01.
+    """
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    source = (src_root / "ssh_tools.py").read_text(encoding="utf-8")
+    tree = ast.parse(source, filename="ssh_tools.py")
+
+    # Annotate parent pointers for upward-walk.
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            setattr(child, "_parent", parent)  # noqa: B010
+
+    target = next(
+        (
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "ssh_discover_system"
+        ),
+        None,
+    )
+    assert target is not None, "Phase 35 D-15: ssh_discover_system not found in ssh_tools.py"
+
+    def _enclosing_allowed_call(call_node: ast.AST) -> bool:
+        current = getattr(call_node, "_parent", None)
+        while current is not None:
+            if isinstance(current, ast.Call):
+                func = current.func
+                if isinstance(func, ast.Attribute) and func.attr == "wait_for":
+                    return True
+                if isinstance(func, ast.Name) and func.id == "_run_with_timeout":
+                    return True
+            current = getattr(current, "_parent", None)
+        return False
+
+    violations: list[int] = []
+    for node in ast.walk(target):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "run"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "conn"
+        ):
+            continue
+        if not _enclosing_allowed_call(node):
+            violations.append(node.lineno)
+
+    assert not violations, (
+        "Phase 35 D-15 regression — bare `conn.run()` calls inside "
+        "ssh_discover_system at line(s): "
+        + ", ".join(map(str, violations))
+        + ". Wrap each in `_run_with_timeout(...)` or `asyncio.wait_for(conn.run(...), ...)`."
+    )
+
+
+PHASE35_FORBIDDEN_COERCION_FIELDS: frozenset[str] = frozenset(
+    {
+        "cpu_cores",
+        "memory_total",
+        "disk_use_percent",
+    }
+)
+
+
+def test_no_threshold_coercion_in_analyzer_bodies_phase35() -> None:
+    """Phase 35 D-16: ``device.get("<field>") or 0`` and
+    ``device.get("<field>") or ""`` coercion patterns are forbidden on
+    threshold fields (cpu_cores, memory_total, disk_use_percent) inside
+    ``analyze_network_topology`` or ``suggest_deployments``.
+    """
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    source = (src_root / "sitemap.py").read_text(encoding="utf-8")
+    tree = ast.parse(source, filename="sitemap.py")
+
+    analyzers = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        and n.name in ("analyze_network_topology", "suggest_deployments")
+    ]
+    assert len(analyzers) == 2, f"Phase 35 D-16: expected 2 analyzer functions, found {len(analyzers)}"
+
+    violations: list[str] = []
+    for func in analyzers:
+        for node in ast.walk(func):
+            if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
+                continue
+            if len(node.values) != 2:
+                continue
+            left, right = node.values
+            if not (isinstance(right, ast.Constant) and right.value in (0, "")):
+                continue
+            if not (
+                isinstance(left, ast.Call)
+                and isinstance(left.func, ast.Attribute)
+                and left.func.attr == "get"
+                and left.args
+                and isinstance(left.args[0], ast.Constant)
+                and isinstance(left.args[0].value, str)
+                and left.args[0].value in PHASE35_FORBIDDEN_COERCION_FIELDS
+            ):
+                continue
+            violations.append(
+                f"{func.name}:{node.lineno} — "
+                f'`device.get("{left.args[0].value}") or {right.value!r}` '
+                f"coercion forbidden (D-16)"
+            )
+
+    assert not violations, (
+        "Phase 35 D-16 regression — threshold-field coercion reappeared in "
+        "analyzer bodies. Use explicit `is not None` guards or "
+        "`_has_threshold_data(device, ...)`:\n" + "\n".join(f"  - {v}" for v in violations)
     )
