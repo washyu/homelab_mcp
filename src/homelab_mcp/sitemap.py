@@ -1,5 +1,6 @@
 """Network site mapping and device tracking functionality."""
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -358,36 +359,72 @@ async def discover_and_store(
 
 
 async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[str, Any]]) -> str:
-    """Discover multiple devices and store them in the site map."""
-    results = []
-    total = len(targets)
+    """Discover multiple devices and store them in the site map.
 
-    for i, target in enumerate(targets):
-        await emit_progress(
-            "info",
-            f"Discovering {target.get('hostname', 'unknown')} ({i + 1}/{total})",
-        )
-        try:
-            result = await discover_and_store(
-                sitemap,
-                target["hostname"],
-                # Phase 33.1 D-07: no hardcoded-default fallback — None propagates
-                # to resolve_ssh_credentials, which scans the keyring registry
-                # by hostname (Plan 01) to pick the registered user.
-                target.get("username"),
-                target.get("password"),
-                target.get("key_path"),
-                target.get("port", 22),
+    Phase 35 D-07: parallelized with ``asyncio.gather`` gated by
+    ``asyncio.Semaphore(10)`` so N unreachable hosts do not stack serially
+    against the ``ssh_discover_system`` outer timeout. The concurrency cap
+    (10) prevents FD exhaustion / SSH-session flood on larger inventories.
+
+    Phase 35 D-07a: progress emits are per-completion (not per-position in
+    ``targets``), so the counter increments by completion order — this is
+    interleaved but acceptable for the homelab UX.
+    """
+    total = len(targets)
+    semaphore = asyncio.Semaphore(10)
+    completed = 0
+    counter_lock = asyncio.Lock()
+
+    async def _discover_one(target: dict[str, Any]) -> dict[str, Any]:
+        nonlocal completed
+        hostname_label = target.get("hostname", "unknown")
+        async with semaphore:
+            async with counter_lock:
+                completed += 1
+                local_i = completed
+            await emit_progress(
+                "info",
+                f"Discovering {hostname_label} ({local_i}/{total})",
             )
-            results.append(json.loads(result))
-        except Exception as e:
-            results.append(
-                {
+            try:
+                result = await discover_and_store(
+                    sitemap,
+                    target["hostname"],
+                    # Phase 33.1 D-07: no hardcoded-default fallback — None propagates
+                    # to resolve_ssh_credentials, which scans the keyring registry
+                    # by hostname (Plan 01) to pick the registered user.
+                    target.get("username"),
+                    target.get("password"),
+                    target.get("key_path"),
+                    target.get("port", 22),
+                )
+                await emit_progress(
+                    "info",
+                    f"Completed {hostname_label} ({local_i}/{total})",
+                )
+                return json.loads(result)  # type: ignore[no-any-return]
+            except Exception as e:
+                return {
                     "status": "error",
-                    "hostname": target.get("hostname", "unknown"),
+                    "hostname": hostname_label,
                     "error": sanitize_error(e),
                 }
-            )
+
+    # Phase 35 D-07: return_exceptions=True matches CONTEXT D-07 verbatim —
+    # any coroutine-setup or surprise raise (outside the _discover_one try)
+    # lands as an exception object in `raw_results` rather than aborting the
+    # whole gather. Coerce any stray exception object back into an
+    # error-shaped dict so the downstream json.dumps(results) sees a
+    # homogeneous list[dict[str, Any]].
+    raw_results = await asyncio.gather(
+        *[_discover_one(t) for t in targets],
+        return_exceptions=True,
+    )
+    results: list[dict[str, Any]] = [
+        r if isinstance(r, dict)
+        else {"status": "error", "message": str(r)}
+        for r in raw_results
+    ]
 
     await emit_progress("info", f"Bulk discovery complete: {total} targets processed")
 
