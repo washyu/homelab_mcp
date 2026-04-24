@@ -1,5 +1,6 @@
 """Network site mapping and device tracking functionality."""
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -11,6 +12,23 @@ from .log_filter import sanitize_error
 from .progress import emit_progress
 
 logger = logging.getLogger(__name__)
+
+
+def _has_threshold_data(device: dict[str, Any], *fields: str) -> bool:
+    """Phase 35 D-11: gate a threshold comparison on required fields being non-None/non-empty.
+
+    Truthy-empty-string is treated as missing (consistent with existing
+    ``if device.get("disk_use_percent"):`` truthy guards at sitemap.py:179, 269).
+    ``None`` is treated as missing. ``0`` is NOT treated as missing — a device
+    with ``cpu_cores=0`` is a valid (albeit unusual) low-resource device and
+    should be included in the comparison (the comparison itself is what
+    determines the classification).
+    """
+    for field_name in fields:
+        value = device.get(field_name)
+        if value is None or value == "":
+            return False
+    return True
 
 
 @dataclass
@@ -34,6 +52,9 @@ class NetworkDevice:
     disk_use_percent: str | None = None
     disk_mount: str | None = None
     network_interfaces: str | None = None  # JSON string
+    usb_devices: str | None = None  # JSON string (Phase 35 D-09b)
+    pci_devices: str | None = None  # JSON string (Phase 35 D-09b)
+    block_devices: str | None = None  # JSON string (Phase 35 D-09b)
     uptime: str | None = None
     os_info: str | None = None
     error_message: str | None = None
@@ -96,6 +117,14 @@ class NetworkSiteMap:
                 # Network interfaces (store as JSON)
                 if "network" in discovery_data:
                     device.network_interfaces = json.dumps(discovery_data["network"])
+
+                # USB / PCI / block devices (Phase 35 D-09b: store as JSON)
+                if "usb_devices" in discovery_data:
+                    device.usb_devices = json.dumps(discovery_data["usb_devices"])
+                if "pci_devices" in discovery_data:
+                    device.pci_devices = json.dumps(discovery_data["pci_devices"])
+                if "block_devices" in discovery_data:
+                    device.block_devices = json.dumps(discovery_data["block_devices"])
 
                 # System information
                 device.uptime = discovery_data.get("uptime")
@@ -252,18 +281,25 @@ class NetworkSiteMap:
             hostname = device["hostname"]
 
             # Load balancer candidates (high CPU, good memory)
-            cpu_cores = device.get("cpu_cores") or 0
-            if cpu_cores >= 4:
-                memory_total = device.get("memory_total")
-                memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
-
-                if memory_gb >= 4:
-                    suggestions["load_balancer_candidates"].append(
-                        {
-                            "hostname": hostname,
-                            "reason": f"{cpu_cores} cores, {device['memory_total']} RAM",
-                        }
-                    )
+            # Phase 35 D-10/D-13: skip devices with null cpu_cores or memory_total
+            # rather than coercing to 0/"" (which produces false negatives here and
+            # false positives in the upgrade_recommendations path below).
+            if not _has_threshold_data(device, "cpu_cores", "memory_total"):
+                logger.debug(
+                    "Skipping device %s in deployment suggestion: missing cpu_cores or memory_total",
+                    hostname,
+                )
+            else:
+                cpu_cores = device["cpu_cores"]
+                if cpu_cores >= 4:
+                    memory_gb = self._parse_memory_gb(str(device["memory_total"]))
+                    if memory_gb >= 4:
+                        suggestions["load_balancer_candidates"].append(
+                            {
+                                "hostname": hostname,
+                                "reason": f"{cpu_cores} cores, {device['memory_total']} RAM",
+                            }
+                        )
 
             # Database candidates (good disk space, memory)
             if device.get("disk_use_percent"):
@@ -293,18 +329,25 @@ class NetworkSiteMap:
             )
 
             # Upgrade recommendations
-            cpu_cores = device.get("cpu_cores") or 0
-            if cpu_cores <= 2:
-                memory_total = device.get("memory_total")
-                memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
-
-                if memory_gb <= 4:
-                    suggestions["upgrade_recommendations"].append(
-                        {
-                            "hostname": hostname,
-                            "reason": f"Limited resources: {cpu_cores} cores, {device.get('memory_total', 'Unknown')} RAM",
-                        }
-                    )
+            # Phase 35 D-10/D-13: skip devices with null cpu_cores or memory_total;
+            # prior behavior coerced None -> 0 and flagged every null-cpu device as a
+            # low-resource upgrade candidate (false positive).
+            if not _has_threshold_data(device, "cpu_cores", "memory_total"):
+                logger.debug(
+                    "Skipping device %s in upgrade recommendation: missing cpu_cores or memory_total",
+                    hostname,
+                )
+            else:
+                cpu_cores = device["cpu_cores"]
+                if cpu_cores <= 2:
+                    memory_gb = self._parse_memory_gb(str(device["memory_total"]))
+                    if memory_gb <= 4:
+                        suggestions["upgrade_recommendations"].append(
+                            {
+                                "hostname": hostname,
+                                "reason": f"Limited resources: {cpu_cores} cores, {device['memory_total']} RAM",
+                            }
+                        )
 
         return suggestions
 
@@ -347,36 +390,72 @@ async def discover_and_store(
 
 
 async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[str, Any]]) -> str:
-    """Discover multiple devices and store them in the site map."""
-    results = []
-    total = len(targets)
+    """Discover multiple devices and store them in the site map.
 
-    for i, target in enumerate(targets):
-        await emit_progress(
-            "info",
-            f"Discovering {target.get('hostname', 'unknown')} ({i + 1}/{total})",
-        )
-        try:
-            result = await discover_and_store(
-                sitemap,
-                target["hostname"],
-                # Phase 33.1 D-07: no hardcoded-default fallback — None propagates
-                # to resolve_ssh_credentials, which scans the keyring registry
-                # by hostname (Plan 01) to pick the registered user.
-                target.get("username"),
-                target.get("password"),
-                target.get("key_path"),
-                target.get("port", 22),
+    Phase 35 D-07: parallelized with ``asyncio.gather`` gated by
+    ``asyncio.Semaphore(10)`` so N unreachable hosts do not stack serially
+    against the ``ssh_discover_system`` outer timeout. The concurrency cap
+    (10) prevents FD exhaustion / SSH-session flood on larger inventories.
+
+    Phase 35 D-07a: progress emits are per-completion (not per-position in
+    ``targets``), so the counter increments by completion order — this is
+    interleaved but acceptable for the homelab UX.
+    """
+    total = len(targets)
+    semaphore = asyncio.Semaphore(10)
+    completed = 0
+    counter_lock = asyncio.Lock()
+
+    async def _discover_one(target: dict[str, Any]) -> dict[str, Any]:
+        nonlocal completed
+        hostname_label = target.get("hostname", "unknown")
+        async with semaphore:
+            async with counter_lock:
+                completed += 1
+                local_i = completed
+            await emit_progress(
+                "info",
+                f"Discovering {hostname_label} ({local_i}/{total})",
             )
-            results.append(json.loads(result))
-        except Exception as e:
-            results.append(
-                {
+            try:
+                result = await discover_and_store(
+                    sitemap,
+                    target["hostname"],
+                    # Phase 33.1 D-07: no hardcoded-default fallback — None propagates
+                    # to resolve_ssh_credentials, which scans the keyring registry
+                    # by hostname (Plan 01) to pick the registered user.
+                    target.get("username"),
+                    target.get("password"),
+                    target.get("key_path"),
+                    target.get("port", 22),
+                )
+                await emit_progress(
+                    "info",
+                    f"Completed {hostname_label} ({local_i}/{total})",
+                )
+                return json.loads(result)  # type: ignore[no-any-return]
+            except Exception as e:
+                return {
                     "status": "error",
-                    "hostname": target.get("hostname", "unknown"),
+                    "hostname": hostname_label,
                     "error": sanitize_error(e),
                 }
-            )
+
+    # Phase 35 D-07: return_exceptions=True matches CONTEXT D-07 verbatim —
+    # any coroutine-setup or surprise raise (outside the _discover_one try)
+    # lands as an exception object in `raw_results` rather than aborting the
+    # whole gather. Coerce any stray exception object back into an
+    # error-shaped dict so the downstream json.dumps(results) sees a
+    # homogeneous list[dict[str, Any]].
+    raw_results = await asyncio.gather(
+        *[_discover_one(t) for t in targets],
+        return_exceptions=True,
+    )
+    results: list[dict[str, Any]] = [
+        r if isinstance(r, dict)
+        else {"status": "error", "message": str(r)}
+        for r in raw_results
+    ]
 
     await emit_progress("info", f"Bulk discovery complete: {total} targets processed")
 
