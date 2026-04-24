@@ -154,12 +154,14 @@ class SQLiteAdapter(DatabaseAdapter):
                 disk_use_percent TEXT,
                 disk_mount TEXT,
                 network_interfaces TEXT,
+                usb_devices TEXT,
+                pci_devices TEXT,
+                block_devices TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, connection_ip)
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -176,9 +178,12 @@ class SQLiteAdapter(DatabaseAdapter):
         """)
 
         # Create indexes
+        # Phase 35 D-01: hostname is the natural key for upsert; composite
+        # (hostname, connection_ip) index dropped in favor of a non-unique
+        # hostname-alone index for the new match clause.
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
-            ON devices (hostname, connection_ip)
+            CREATE INDEX IF NOT EXISTS idx_devices_hostname
+            ON devices (hostname)
         """)
 
         cursor.execute("""
@@ -216,13 +221,20 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor = self.connection.cursor()
 
         # Check if device exists
-        cursor.execute(
-            """
-            SELECT id FROM devices
-            WHERE hostname = ? AND connection_ip = ?
-        """,
-            (device_data["hostname"], device_data["connection_ip"]),
-        )
+        # Phase 35 D-01: hostname is the natural key. D-01a: fall back to
+        # (hostname, connection_ip) when hostname is degenerate ('', 'unknown', None)
+        # so distinct error rows (Phase 33 behavior) are preserved.
+        hostname_key = device_data["hostname"]
+        if hostname_key in (None, "", "unknown"):
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = ? AND connection_ip = ?",
+                (hostname_key, device_data["connection_ip"]),
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = ?",
+                (hostname_key,),
+            )
 
         existing = cursor.fetchone()
 
@@ -236,7 +248,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     memory_total = ?, memory_used = ?, memory_free = ?, memory_available = ?,
                     disk_filesystem = ?, disk_size = ?, disk_used = ?, disk_available = ?,
                     disk_use_percent = ?, disk_mount = ?, network_interfaces = ?,
-                    uptime = ?, os_info = ?, error_message = ?, updated_at = ?
+                    usb_devices = ?, pci_devices = ?, block_devices = ?,
+                    uptime = ?, os_info = ?, error_message = ?, updated_at = ?,
+                    connection_ip = ?
                 WHERE id = ?
             """,
                 (
@@ -255,10 +269,14 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("disk_use_percent"),
                     device_data.get("disk_mount"),
                     device_data.get("network_interfaces"),
+                    device_data.get("usb_devices"),
+                    device_data.get("pci_devices"),
+                    device_data.get("block_devices"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
                     datetime.now().isoformat(),
+                    device_data["connection_ip"],
                     device_id,
                 ),
             )
@@ -271,8 +289,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     memory_total, memory_used, memory_free, memory_available,
                     disk_filesystem, disk_size, disk_used, disk_available,
                     disk_use_percent, disk_mount, network_interfaces,
+                    usb_devices, pci_devices, block_devices,
                     uptime, os_info, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     device_data["hostname"],
@@ -292,6 +311,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("disk_use_percent"),
                     device_data.get("disk_mount"),
                     device_data.get("network_interfaces"),
+                    device_data.get("usb_devices"),
+                    device_data.get("pci_devices"),
+                    device_data.get("block_devices"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
@@ -322,6 +344,14 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_dict["network_interfaces"] = json.loads(device_dict["network_interfaces"])
                 except json.JSONDecodeError:
                     device_dict["network_interfaces"] = []
+
+            # Phase 35 D-09b: parse usb_devices / pci_devices / block_devices JSON
+            for _json_col in ("usb_devices", "pci_devices", "block_devices"):
+                if device_dict.get(_json_col):
+                    try:
+                        device_dict[_json_col] = json.loads(device_dict[_json_col])
+                    except json.JSONDecodeError:
+                        device_dict[_json_col] = []
 
             devices.append(device_dict)
 
