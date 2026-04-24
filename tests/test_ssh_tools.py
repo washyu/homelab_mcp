@@ -39,11 +39,12 @@ async def test_ssh_discover_success(mock_connect):
     mem_result.stdout = """              total        used        free      shared  buff/cache   available
 Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"""
 
-    # Disk command - df -B1 returns bytes
+    # Disk command — Phase 35 D-09a.3: `df -B1 -T /` (adds Type column)
+    # Columns: filesystem, type, 1B-blocks(size), used, available, use%, mount
     disk_result = MagicMock()
     disk_result.exit_status = 0
-    disk_result.stdout = """Filesystem      1B-blocks        Used    Available Use% Mounted on
-/dev/sda1     21474836480  5905580032  14970068992  30% /"""
+    disk_result.stdout = """Filesystem     Type  1B-blocks        Used    Available Use% Mounted on
+/dev/sda1      ext4  21474836480  5905580032  14970068992  30% /"""
 
     # Network command
     net_result = MagicMock()
@@ -116,22 +117,28 @@ Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"
     assert result_data["connection_ip"] == "test-host"  # IP used to connect
     assert "data" in result_data
 
-    # Verify CPU info
+    # Verify CPU info (Phase 35 D-09a: `cores` not `count`)
     assert "cpu" in result_data["data"]
     assert result_data["data"]["cpu"]["model"] == "Intel Core i5"
-    assert result_data["data"]["cpu"]["count"] == 4
+    assert result_data["data"]["cpu"]["cores"] == 4
 
-    # Verify memory info - free command returns values in bytes when using -b flag
+    # Verify memory info — Phase 35 D-09a emits 4 Gi-suffixed string fields
+    # (total, used, free, available) per the sitemap consumer contract.
     assert "memory" in result_data["data"]
-    # The test mock needs to return bytes, not human-readable format
     assert "total" in result_data["data"]["memory"]
     assert "used" in result_data["data"]["memory"]
+    assert "free" in result_data["data"]["memory"]
+    assert "available" in result_data["data"]["memory"]
 
-    # Verify disk info - df -B1 returns values in bytes
+    # Verify disk info — Phase 35 D-09a emits 6 fields matching sitemap.py:88-94
+    # (filesystem, size, used, available, use_percent, mount).
     assert "disk" in result_data["data"]
-    assert "total" in result_data["data"]["disk"]
+    assert "filesystem" in result_data["data"]["disk"]
+    assert "size" in result_data["data"]["disk"]
     assert "used" in result_data["data"]["disk"]
     assert "available" in result_data["data"]["disk"]
+    assert "use_percent" in result_data["data"]["disk"]
+    assert "mount" in result_data["data"]["disk"]
 
     # Verify network info
     assert "network" in result_data["data"]
@@ -310,6 +317,7 @@ async def test_ensure_mcp_ssh_key_uses_existing(mock_get_path):
 
 # (Removed in Phase 33: setup_remote_mcp_admin deleted per D-11)
 
+
 @pytest.mark.asyncio
 async def test_ssh01_sudo_run_check_raises_in_password_branch():
     """SSH-01 regression: _sudo_run(password=..., check=True) forwards check= to conn.run.
@@ -445,6 +453,234 @@ def test_ssh02_no_disjunctive_always_true_assertions() -> None:
 def test_setup_remote_mcp_admin_absent() -> None:
     """D-11: setup_remote_mcp_admin function must be removed from ssh_tools."""
     from src.homelab_mcp import ssh_tools
+
     assert not hasattr(ssh_tools, "setup_remote_mcp_admin"), (
         "setup_remote_mcp_admin must be deleted from ssh_tools.py (D-11)"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 35 functional tests (D-17c + D-06 back-compat + W4 B1 dedent guard)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_system_partial_mode_on_probe_timeout_phase35(monkeypatch):
+    """Phase 35 D-17c: when a per-subprocess timeout fires, the response
+    must gain ``partial: true`` and ``timed_out_commands: [<cmd_name>]``;
+    ``status`` stays ``"success"``; other probed fields continue to populate.
+    """
+    import json as _json
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from src.homelab_mcp import ssh_tools
+
+    fake_conn = MagicMock()
+
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
+    )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    STDOUT_BY_CMD = {
+        "hostname": "pve1\n",
+        "nproc": "4\n",
+        "cpuinfo": "model name : CPU Model Z9\n",
+        "free": "              total        used        free      shared  buff/cache   available\nMem:    8589934592  2147483648  4294967296           0  2147483648  5368709120\n",
+        "df": "Filesystem     Type  1B-blocks       Used   Available Use% Mounted on\n/dev/sda1      ext4  100000000000  40000000000  60000000000  40% /\n",
+        "ip": '[{"ifname":"eth0","operstate":"UP","addr_info":[{"family":"inet","local":"10.0.0.5"}]}]\n',
+        "uptime": "up 2 days, 3 hours\n",
+        "os-release": 'PRETTY_NAME="Debian 12"\n',
+        "lsusb": "Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub\n",
+        "lspci": "00:00.0 Host bridge: Intel Corporation Device 4660 (rev 02)\n",
+        "lsblk": "",
+    }
+
+    async def _mock_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        if cmd_name == "lsblk":
+            timed_out.append("lsblk")
+            return None
+        return _fake_cp(STDOUT_BY_CMD.get(cmd_name, ""))
+
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", _mock_run_with_timeout)
+
+    result_str = await ssh_tools.ssh_discover_system(
+        hostname="10.0.0.5",
+        username="testuser",
+        password="x",
+    )
+    result = _json.loads(result_str)
+    assert result["status"] == "success", result
+    assert result.get("partial") is True, "Phase 35 D-17c: expected `partial: true` when a probe times out"
+    assert result.get("timed_out_commands") == ["lsblk"], result.get("timed_out_commands")
+    assert result["data"].get("cpu", {}).get("cores") == 4
+    assert "block_devices" not in result["data"]
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_system_omits_partial_keys_on_clean_run_phase35(monkeypatch):
+    """Phase 35 D-06 back-compat: when NO per-cmd timeouts fire, the
+    response JSON MUST NOT contain ``partial`` or ``timed_out_commands``
+    keys — byte-for-byte equivalent to pre-Phase-35 shape.
+    """
+    import json as _json
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from src.homelab_mcp import ssh_tools
+
+    fake_conn = MagicMock()
+
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
+    )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    async def _mock_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        return _fake_cp("pve1\n" if cmd_name == "hostname" else "")
+
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", _mock_run_with_timeout)
+
+    result_str = await ssh_tools.ssh_discover_system(hostname="10.0.0.5", username="u", password="p")
+    result = _json.loads(result_str)
+    assert result["status"] == "success"
+    assert "partial" not in result, "Phase 35 D-06 back-compat regression: `partial` key present on clean run"
+    assert "timed_out_commands" not in result, (
+        "Phase 35 D-06 back-compat regression: `timed_out_commands` present on clean run"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_system_hostname_timeout_does_not_suppress_probes_phase35(monkeypatch):
+    """Phase 35 D-17c (W4) — B1 dedent functional guard.
+
+    Prior pre-Phase-35 defect: every probe block was nested inside the
+    ``if hostname_result.exit_status == 0 and hostname_result.stdout:``
+    branch. Once Phase 35 wrapped the hostname probe with
+    ``_run_with_timeout``, a hostname probe timeout would produce
+    ``hostname_result = None`` → the `if` guard falsey → EVERY subsequent
+    probe skipped → ``system_info == {}``. Plan 01 Task 1 dedents all
+    probe blocks so the hostname-success ``if`` gates ONLY the
+    ``actual_hostname = ...`` overwrite. This test proves the fix.
+    """
+    import json as _json
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from src.homelab_mcp import ssh_tools
+
+    fake_conn = MagicMock()
+
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
+    )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    STDOUT_BY_CMD = {
+        "nproc": "8\n",
+        "cpuinfo": "model name : Intel Xeon E5\n",
+        "free": "              total        used        free      shared  buff/cache   available\nMem:    16777216000  4194304000  8388608000           0  4194304000  10485760000\n",
+        "df": "Filesystem     Type  1B-blocks       Used   Available Use% Mounted on\n/dev/sda1      ext4  200000000000  80000000000  120000000000  40% /\n",
+        "ip": '[{"ifname":"eth0","operstate":"UP","addr_info":[{"family":"inet","local":"10.0.0.5"}]}]\n',
+        "uptime": "up 5 days\n",
+        "os-release": 'PRETTY_NAME="Debian 12"\n',
+        "lsusb": "Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub\n",
+        "lspci": "00:00.0 Host bridge: Intel Corporation Device 4660 (rev 02)\n",
+        "lsblk": "",
+    }
+
+    async def _mock_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        if cmd_name == "hostname":
+            timed_out.append("hostname")
+            return None
+        return _fake_cp(STDOUT_BY_CMD.get(cmd_name, ""))
+
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", _mock_run_with_timeout)
+
+    result_str = await ssh_tools.ssh_discover_system(
+        hostname="10.0.0.5",
+        username="testuser",
+        password="x",
+    )
+    result = _json.loads(result_str)
+
+    assert result["status"] == "success", result
+    assert result.get("partial") is True, "Phase 35 D-17c (W4): expected `partial: true` when hostname probe times out"
+    assert "hostname" in result.get("timed_out_commands", []), (
+        f"Phase 35 D-17c (W4): expected 'hostname' in timed_out_commands, got {result.get('timed_out_commands')!r}"
+    )
+
+    # B1 dedent proof: subsequent probes populated data despite hostname timeout.
+    assert "cpu" in result["data"], (
+        "Phase 35 B1 regression (W4): hostname probe timeout suppressed "
+        "every subsequent probe — probe blocks are still nested inside the "
+        "hostname-success `if` branch. Plan 01 Task 1 dedent not applied."
+    )
+    assert result["data"]["cpu"].get("cores") == 8, result["data"]
+    # hostname field falls back to the connection-IP argument since the hostname
+    # probe produced no stdout to overwrite actual_hostname.
+    assert result["hostname"] == "10.0.0.5", result["hostname"]

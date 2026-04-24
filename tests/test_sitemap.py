@@ -540,9 +540,12 @@ class TestDatabaseOperations:
         assert cursor.fetchone() is not None
 
         # Check that indexes exist
+        # Phase 35 D-01: composite idx_devices_hostname_ip was replaced by the
+        # non-unique hostname-alone idx_devices_hostname (store_device now
+        # matches on hostname alone — see Plan 03).
         cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
         indexes = [row[0] for row in cursor.fetchall()]
-        assert any("idx_devices_hostname_ip" in idx for idx in indexes)
+        assert any("idx_devices_hostname" in idx for idx in indexes)
         assert any("idx_history_device_id" in idx for idx in indexes)
 
     def test_device_unique_constraint(self, sitemap, sample_ssh_discovery_success):
@@ -576,3 +579,96 @@ class TestDatabaseOperations:
         # Test default limit
         changes = sitemap.get_device_changes(device_id)
         assert len(changes) <= 10
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 35 functional tests (D-17d parallelism + D-17e analyzer null-skip)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_bulk_discover_and_store_runs_in_parallel_phase35(tmp_path, monkeypatch):
+    """D-17d: bulk_discover_and_store completes in ~1.5x single-host timeout (CONTEXT D-17d).
+
+    Per CONTEXT D-17d, parallelism with Semaphore(10) means 10 unreachable hosts complete
+    in ~1.5x single-host timeout, not 10x. We bound at 4.0s (4x ideal 1.0s) to absorb
+    Windows CI noise and emit_progress stdout overhead while still proving parallel execution.
+    """
+    import asyncio as _asyncio
+    import json as _json
+    import time
+
+    from src.homelab_mcp import sitemap as _sitemap
+
+    async def _slow_discover(sitemap, hostname, username, password, key_path, port):
+        await _asyncio.sleep(1.0)
+        return _json.dumps({"status": "error", "hostname": hostname, "error": "unreachable"})
+
+    monkeypatch.setattr(_sitemap, "discover_and_store", _slow_discover)
+
+    targets = [{"hostname": f"unreachable-{i}.example"} for i in range(10)]
+    sitemap_instance = _sitemap.NetworkSiteMap(db_path=str(tmp_path / "p35_d17d.db"), db_type="sqlite")
+
+    start = time.monotonic()
+    result_str = await _sitemap.bulk_discover_and_store(sitemap_instance, targets)
+    elapsed = time.monotonic() - start
+
+    result = _json.loads(result_str)
+    assert result["total_targets"] == 10
+    assert len(result["results"]) == 10
+    # W3: 4.0s bound absorbs Windows CI noise (emit_progress stdout + asyncio.Lock
+    # contention + scheduler jitter). Serial execution would take 10.0s.
+    assert elapsed < 4.0, (
+        f"Phase 35 D-17d regression: bulk_discover_and_store took {elapsed:.2f}s "
+        f"for 10 × 1s sleeps — parallelism (Semaphore(10) + gather) appears broken"
+    )
+
+
+def test_analyzers_skip_null_cpu_cores_device_phase35(tmp_path):
+    """Phase 35 D-17e: a device with cpu_cores=None MUST NOT appear in
+    analyze_network_topology's low_resources list NOR in suggest_deployments's
+    upgrade_recommendations list (false-positive fix via D-11 helper).
+    """
+    from src.homelab_mcp import sitemap as _sitemap
+
+    sm = _sitemap.NetworkSiteMap(db_path=str(tmp_path / "p35_d17e.db"), db_type="sqlite")
+
+    sm.store_device(
+        _sitemap.NetworkDevice(
+            hostname="full-device",
+            connection_ip="10.0.0.10",
+            last_seen="2026-01-01T00:00:00",
+            status="success",
+            cpu_cores=1,
+            memory_total="2Gi",
+            os_info="Debian 12",
+        )
+    )
+    sm.store_device(
+        _sitemap.NetworkDevice(
+            hostname="null-cpu-device",
+            connection_ip="10.0.0.11",
+            last_seen="2026-01-01T00:00:00",
+            status="success",
+            cpu_cores=None,
+            memory_total=None,
+            os_info="Debian 12",
+        )
+    )
+
+    topology = sm.analyze_network_topology()
+    suggestions = sm.suggest_deployments()
+
+    low_resource_hostnames = {entry["hostname"] for entry in topology["resource_utilization"]["low_resources"]}
+    upgrade_hostnames = {entry["hostname"] for entry in suggestions["upgrade_recommendations"]}
+
+    assert "null-cpu-device" not in low_resource_hostnames, (
+        "Phase 35 D-17e regression: analyze_network_topology included a "
+        "device with cpu_cores=None in low_resources (false positive — "
+        "D-10/D-13 coercion still happening somewhere)"
+    )
+    assert "null-cpu-device" not in upgrade_hostnames, (
+        "Phase 35 D-17e regression: suggest_deployments recommended upgrading "
+        "a device with cpu_cores=None (false positive — the None → 0 "
+        "coercion pattern must have returned)"
+    )
