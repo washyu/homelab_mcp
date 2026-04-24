@@ -224,7 +224,7 @@ async def ensure_mcp_ssh_key() -> str:
     return str(key_path)
 
 
-@ssh_connection_wrapper(timeout_seconds=30.0)
+@ssh_connection_wrapper(timeout_seconds=120.0)
 @retry_on_failure(max_retries=1, delay_seconds=1.0)
 async def ssh_discover_system(
     hostname: str,
@@ -274,7 +274,7 @@ async def ssh_discover_system(
             conn, "nproc", cmd_name="nproc", timed_out=timed_out_commands
         )
         if cpu_result and cpu_result.exit_status == 0 and cpu_result.stdout:
-            cpu_info["count"] = int(cast(str, cpu_result.stdout).strip())
+            cpu_info["cores"] = int(cast(str, cpu_result.stdout).strip())
 
         cpu_model_result = await _run_with_timeout(
             conn,
@@ -299,27 +299,43 @@ async def ssh_discover_system(
             for line in lines:
                 if line.startswith("Mem:"):
                     parts = line.split()
-                    if len(parts) >= 3:
+                    if len(parts) >= 7:
+                        total_b = int(parts[1])
+                        used_b = int(parts[2])
+                        free_b = int(parts[3])
+                        available_b = int(parts[6])
+                        gib = 1024 ** 3
                         system_info["memory"] = {
-                            "total": int(parts[1]),
-                            "used": int(parts[2]),
+                            "total": f"{total_b // gib}Gi",
+                            "used": f"{used_b // gib}Gi",
+                            "free": f"{free_b // gib}Gi",
+                            "available": f"{available_b // gib}Gi",
                         }
-                        break
+                    break
 
         # Get disk usage
         disk_result = await _run_with_timeout(
-            conn, "df -B1 /", cmd_name="df", timed_out=timed_out_commands
+            conn, "df -B1 -T /", cmd_name="df", timed_out=timed_out_commands
         )
         if disk_result and disk_result.exit_status == 0 and disk_result.stdout:
             lines = cast(str, disk_result.stdout).strip().split("\n")
             if len(lines) > 1:
-                # Skip header, get data line
+                # Skip header, get data line. `df -B1 -T /` columns:
+                # filesystem, type, 1B-blocks(size), used, available, use%, mount
                 parts = lines[1].split()
-                if len(parts) >= 4:
+                if len(parts) >= 7:
+                    size_b = int(parts[2])
+                    used_b = int(parts[3])
+                    avail_b = int(parts[4])
+                    use_pct = f"{used_b * 100 // size_b}%" if size_b > 0 else "0%"
+                    gib = 1024 ** 3
                     system_info["disk"] = {
-                        "total": int(parts[1]),
-                        "used": int(parts[2]),
-                        "available": int(parts[3]),
+                        "filesystem": parts[0],
+                        "size": f"{size_b // gib}Gi",
+                        "used": f"{used_b // gib}Gi",
+                        "available": f"{avail_b // gib}Gi",
+                        "use_percent": use_pct,
+                        "mount": parts[6],
                     }
 
         # Get network interfaces
