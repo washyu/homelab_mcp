@@ -14,6 +14,23 @@ from .progress import emit_progress
 logger = logging.getLogger(__name__)
 
 
+def _has_threshold_data(device: dict[str, Any], *fields: str) -> bool:
+    """Phase 35 D-11: gate a threshold comparison on required fields being non-None/non-empty.
+
+    Truthy-empty-string is treated as missing (consistent with existing
+    ``if device.get("disk_use_percent"):`` truthy guards at sitemap.py:179, 269).
+    ``None`` is treated as missing. ``0`` is NOT treated as missing — a device
+    with ``cpu_cores=0`` is a valid (albeit unusual) low-resource device and
+    should be included in the comparison (the comparison itself is what
+    determines the classification).
+    """
+    for field_name in fields:
+        value = device.get(field_name)
+        if value is None or value == "":
+            return False
+    return True
+
+
 @dataclass
 class NetworkDevice:
     """Represents a discovered network device."""
@@ -264,18 +281,25 @@ class NetworkSiteMap:
             hostname = device["hostname"]
 
             # Load balancer candidates (high CPU, good memory)
-            cpu_cores = device.get("cpu_cores") or 0
-            if cpu_cores >= 4:
-                memory_total = device.get("memory_total")
-                memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
-
-                if memory_gb >= 4:
-                    suggestions["load_balancer_candidates"].append(
-                        {
-                            "hostname": hostname,
-                            "reason": f"{cpu_cores} cores, {device['memory_total']} RAM",
-                        }
-                    )
+            # Phase 35 D-10/D-13: skip devices with null cpu_cores or memory_total
+            # rather than coercing to 0/"" (which produces false negatives here and
+            # false positives in the upgrade_recommendations path below).
+            if not _has_threshold_data(device, "cpu_cores", "memory_total"):
+                logger.debug(
+                    "Skipping device %s in deployment suggestion: missing cpu_cores or memory_total",
+                    hostname,
+                )
+            else:
+                cpu_cores = device["cpu_cores"]
+                if cpu_cores >= 4:
+                    memory_gb = self._parse_memory_gb(str(device["memory_total"]))
+                    if memory_gb >= 4:
+                        suggestions["load_balancer_candidates"].append(
+                            {
+                                "hostname": hostname,
+                                "reason": f"{cpu_cores} cores, {device['memory_total']} RAM",
+                            }
+                        )
 
             # Database candidates (good disk space, memory)
             if device.get("disk_use_percent"):
@@ -305,18 +329,25 @@ class NetworkSiteMap:
             )
 
             # Upgrade recommendations
-            cpu_cores = device.get("cpu_cores") or 0
-            if cpu_cores <= 2:
-                memory_total = device.get("memory_total")
-                memory_gb = self._parse_memory_gb(str(memory_total) if memory_total else "")
-
-                if memory_gb <= 4:
-                    suggestions["upgrade_recommendations"].append(
-                        {
-                            "hostname": hostname,
-                            "reason": f"Limited resources: {cpu_cores} cores, {device.get('memory_total', 'Unknown')} RAM",
-                        }
-                    )
+            # Phase 35 D-10/D-13: skip devices with null cpu_cores or memory_total;
+            # prior behavior coerced None -> 0 and flagged every null-cpu device as a
+            # low-resource upgrade candidate (false positive).
+            if not _has_threshold_data(device, "cpu_cores", "memory_total"):
+                logger.debug(
+                    "Skipping device %s in upgrade recommendation: missing cpu_cores or memory_total",
+                    hostname,
+                )
+            else:
+                cpu_cores = device["cpu_cores"]
+                if cpu_cores <= 2:
+                    memory_gb = self._parse_memory_gb(str(device["memory_total"]))
+                    if memory_gb <= 4:
+                        suggestions["upgrade_recommendations"].append(
+                            {
+                                "hostname": hostname,
+                                "reason": f"Limited resources: {cpu_cores} cores, {device['memory_total']} RAM",
+                            }
+                        )
 
         return suggestions
 
