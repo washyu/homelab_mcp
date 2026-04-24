@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: completed
+status: executing
 stopped_at: Phase 35 context captured — ready for planning (CONTEXT.md with 6 upsert decisions + 4 timeout decisions + schema/null-threshold guidance)
-last_updated: "2026-04-24T06:19:08.200Z"
-last_activity: 2026-04-23 -- Phase 34 Plan 03 executed (fd218e4, 708e5fb)
+last_updated: "2026-04-24T21:09:57.924Z"
+last_activity: 2026-04-24 -- Phase 35 planning complete
 progress:
   total_phases: 8
   completed_phases: 3
-  total_plans: 14
+  total_plans: 18
   completed_plans: 14
-  percent: 100
+  percent: 78
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
 
 Phase: 34 (Cluster-Scoped Proxmox Credentials) — COMPLETE
 Plan: 4 of 4 complete; 0 remaining
-Status: Plan 03 complete — async get_proxmox_client wired to resolver, INJECT-03 shortcut deleted (D-12), 9 await call sites propagated. Phase 34 all 4 plans done.
-Last activity: 2026-04-23 -- Phase 34 Plan 03 executed (fd218e4, 708e5fb)
+Status: Ready to execute
+Last activity: 2026-04-24 -- Phase 35 planning complete
 
 Progress: [█████████░] 93% (13/14 plans) — Phase 34 Plan 04 done
 
