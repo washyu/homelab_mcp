@@ -73,6 +73,17 @@ Phase 34 Plan 03 decisions (added 2026-04-23):
 - test_get_proxmox_client_keyring_fallback (INJECT-03 test) deleted; replaced with explanatory comment per D-16a (no AST meta-test for shortcut removal in greenfield phase).
 - CredentialNotFoundError imported via src.homelab_mcp.ssh_tools in test body to avoid headless home-dir RuntimeError from lazy module-level path expansion in credential_store.py.
 
+Phase 35 Plan 03 decisions (added 2026-04-24):
+
+- Hostname-only upsert with degenerate-hostname fallback (`None` / `""` / `'unknown'`) in both SQLiteAdapter.store_device and PostgreSQLAdapter.store_device — closes bug #2 (zombie rows on IP change) while preserving Phase-33 distinct-error rows.
+- `connection_ip` moved from match clause into UPDATE SET in both adapters — re-discovery with new IP overwrites the existing row's connection_ip instead of creating a duplicate.
+- SQLite: usb/pci/block added as separate TEXT columns via ALTER TABLE (idempotent PRAGMA-guarded); threaded through UPDATE/INSERT (23 placeholders); JSON-decoded in get_all_devices via a loop.
+- Postgres: JSONB-extend chosen over schema column add — usb/pci/block land inside existing system_info JSONB through new `_maybe_json_load` helper; flattened back to top-level keys in get_all_devices for reader symmetry with SQLite.
+- SQLite rebuild pattern used to drop stale UNIQUE (no native DROP CONSTRAINT): DROP INDEX + DROP TABLE IF EXISTS devices_new (I8 orphan-recovery) + CREATE + dynamic-column-copy INSERT + DROP + RENAME + CREATE INDEX.
+- Migration rebuild uses **dynamic column copy** (PRAGMA table_info + NULL AS fallback) — strictly more correct than the plan's literal column list, which crashed on the plan's own minimal-schema acceptance test.
+- Postgres dedup uses `DELETE ... WHERE id = ANY(%s)` (psycopg2-native array param) rather than a constructed placeholder list.
+- Plan executed inline by orchestrator: both subagent attempts were sandbox-blocked (worktree agent was created from wrong base and could not `git reset --hard`; sequential agent had every Edit call denied). Subagent sandbox is stricter than orchestrator.
+
 Phase 34 Plan 04 decisions (added 2026-04-23):
 
 - post-parse validation chosen over subparsers for conditional-positional: hostname made nargs="?" on add/remove; _parse_scope_arg() rejects ill-formed combinations after argparse runs. Matches --key-path precedent.

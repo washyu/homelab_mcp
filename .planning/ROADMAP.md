@@ -183,9 +183,9 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 35-01-PLAN.md — Wave 1: ssh_tools.py — `_run_with_timeout` helper + every `conn.run(...)` probe wrapped + producer field-name alignment (cpu.cores, memory.*, disk.*) + `@ssh_connection_wrapper(timeout_seconds=120.0)` bump (D-05, D-06, D-08, D-09a)
-- [ ] 35-02-PLAN.md — Wave 1: sitemap.py — NetworkDevice extension (usb/pci/block JSON fields) + parse_discovery_output reader extension + bulk_discover_and_store parallelization with Semaphore(10) + gather + null-threshold defensiveness in analyzers via `_has_threshold_data` helper (D-07, D-07a, D-09b, D-10, D-11, D-12, D-13)
-- [ ] 35-03-PLAN.md — Wave 2: database.py + migration.py — both-adapters hostname-only upsert with degenerate-hostname fallback + SQLite column threading + Postgres JSONB extension + one-time Phase 35 migration step (dedup zombie rows + ALTER TABLE for new columns + drop stale UNIQUE(hostname, connection_ip) constraint and idx_devices_hostname_ip composite index, both adapters, idempotent) (D-01, D-01a, D-02, D-02a, D-09c)
+- [x] 35-01-PLAN.md — Wave 1: ssh_tools.py — `_run_with_timeout` helper + every `conn.run(...)` probe wrapped + producer field-name alignment (cpu.cores, memory.*, disk.*) + `@ssh_connection_wrapper(timeout_seconds=120.0)` bump (D-05, D-06, D-08, D-09a) ✓ 2026-04-24
+- [x] 35-02-PLAN.md — Wave 1: sitemap.py — NetworkDevice extension (usb/pci/block JSON fields) + parse_discovery_output reader extension + bulk_discover_and_store parallelization with Semaphore(10) + gather + null-threshold defensiveness in analyzers via `_has_threshold_data` helper (D-07, D-07a, D-09b, D-10, D-11, D-12, D-13) ✓ 2026-04-24
+- [x] 35-03-PLAN.md — Wave 2: database.py + migration.py — both-adapters hostname-only upsert with degenerate-hostname fallback + SQLite column threading + Postgres JSONB extension + one-time Phase 35 migration step (dedup zombie rows + ALTER TABLE for new columns + drop stale UNIQUE(hostname, connection_ip) constraint and idx_devices_hostname_ip composite index, both adapters, idempotent) (D-01, D-01a, D-02, D-02a, D-09c) ✓ 2026-04-24
 - [ ] 35-04-PLAN.md — Wave 3: tests — AST meta-tests (D-14 store_device hostname-only match, D-15 ssh_discover_system wraps every conn.run, D-16 no threshold-coercion in analyzer bodies) extending tests/test_ast_regression.py + functional tests (D-17a hostname-only upsert, D-17b dedup idempotency, D-17c partial-mode timeout response, D-17d parallelism proof, D-17e analyzer null-skip)
 
 ## Backlog
