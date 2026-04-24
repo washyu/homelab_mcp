@@ -547,6 +547,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor = self.connection.cursor()
 
         # Create devices table with JSONB columns
+        # Phase 35 D-01: composite UNIQUE dropped — hostname alone is the natural
+        # upsert key (migration.py drops the stale composite for pre-existing DBs).
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS devices (
                 id SERIAL PRIMARY KEY,
@@ -558,8 +560,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 network_interfaces JSONB DEFAULT '[]',
                 error_message TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, connection_ip)
+                updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
 
@@ -575,9 +576,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """)
 
         # Create indexes including JSONB indexes
+        # Phase 35 D-01: composite (hostname, connection_ip) index dropped in
+        # favor of a non-unique hostname-alone index for the new match clause.
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
-            ON devices (hostname, connection_ip)
+            CREATE INDEX IF NOT EXISTS idx_devices_hostname
+            ON devices (hostname)
         """)
 
         cursor.execute("""
@@ -637,6 +640,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
             },
             "uptime": device_data.get("uptime"),
             "os": device_data.get("os_info"),
+            # Phase 35 D-09b: usb/pci/block device inventories land inside the
+            # existing system_info JSONB column (no schema change on Postgres).
+            "usb_devices": _maybe_json_load(device_data.get("usb_devices")),
+            "pci_devices": _maybe_json_load(device_data.get("pci_devices")),
+            "block_devices": _maybe_json_load(device_data.get("block_devices")),
         }
 
         # Parse network interfaces
@@ -651,24 +659,34 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 network_interfaces = device_data["network_interfaces"]
 
         # Check if device exists
-        cursor.execute(
-            """
-            SELECT id FROM devices
-            WHERE hostname = %s AND connection_ip = %s
-        """,
-            (device_data["hostname"], device_data["connection_ip"]),
-        )
+        # Phase 35 D-01: hostname is the natural key. D-01a: fall back to
+        # (hostname, connection_ip) when hostname is degenerate.
+        hostname_key = device_data["hostname"]
+        if hostname_key in (None, "", "unknown"):
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = %s AND connection_ip = %s",
+                (hostname_key, device_data["connection_ip"]),
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = %s",
+                (hostname_key,),
+            )
 
         existing = cursor.fetchone()
 
         if existing:
             # Update existing device
+            # Phase 35 D-01: connection_ip becomes an UPDATE field (was part of
+            # the match clause pre-Phase-35) so re-discovery with a new IP
+            # rewrites the row instead of creating a zombie.
             device_id: int = existing[0]
             cursor.execute(
                 """
                 UPDATE devices SET
                     last_seen = %s, status = %s, system_info = %s,
-                    network_interfaces = %s, error_message = %s, updated_at = NOW()
+                    network_interfaces = %s, error_message = %s, connection_ip = %s,
+                    updated_at = NOW()
                 WHERE id = %s
             """,
                 (
@@ -677,6 +695,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     json.dumps(system_info),
                     json.dumps(network_interfaces),
                     device_data.get("error_message"),
+                    device_data["connection_ip"],
                     device_id,
                 ),
             )
@@ -745,6 +764,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         "disk_mount": system_info.get("disk", {}).get("mount"),
                         "uptime": system_info.get("uptime"),
                         "os_info": system_info.get("os"),
+                        # Phase 35 D-09b: flatten usb/pci/block device inventories
+                        # so downstream consumers see the same top-level keys as
+                        # the SQLite path.
+                        "usb_devices": system_info.get("usb_devices"),
+                        "pci_devices": system_info.get("pci_devices"),
+                        "block_devices": system_info.get("block_devices"),
                     }
                 )
 
@@ -872,3 +897,24 @@ def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseA
 def calculate_data_hash(discovery_data: str) -> str:
     """Calculate hash of discovery data for change detection."""
     return hashlib.sha256(discovery_data.encode()).hexdigest()
+
+
+def _maybe_json_load(value: Any) -> Any:
+    """Decode a JSON-string into native Python if it looks like one; else pass through.
+
+    Phase 35 D-09b helper — ``NetworkDevice.usb_devices`` / ``pci_devices`` /
+    ``block_devices`` are JSON-encoded strings per the sitemap dataclass
+    contract; the Postgres JSONB path prefers structured values, so we
+    round-trip the string through ``json.loads`` before dumping the enclosing
+    ``system_info`` dict. Passes ``None``, empty string, decode error, or
+    non-string values through as ``None`` (except non-string which pass through
+    unchanged).
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return None
