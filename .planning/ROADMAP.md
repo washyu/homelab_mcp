@@ -116,7 +116,13 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. A user calling `scan_infrastructure_drift` with no Proxmox env vars set sees a successful scan that resolves credentials through `resolve_proxmox_credentials` (per-node → cluster → actionable error), identical to how every other Proxmox tool resolves
   3. A user can grep the production code path for `drift_baselines` reads/writes and find none — the only references that remain are the migration step that drops the table
   4. An AST meta-test fails CI if any future code path on the drift-scan call chain reads from a parallel baseline table instead of sitemap rows
-**Plans**: TBD
+**Plans**: 6 plans
+  - [ ] 36-01-PLAN.md — Database adapter cleanup (remove drift_baseline ABC + SQLite/Postgres methods + CREATE block)
+  - [ ] 36-02-PLAN.md — Migration drop step (idempotent DROP TABLE on both adapters; delete auto-create block)
+  - [ ] 36-03-PLAN.md — AST regression guards (extend test_ast_regression.py for Phase 36 D-12/D-13)
+  - [ ] 36-04-PLAN.md — Drift detection refactor (rewrite scan_drift for 2-bucket sitemap iteration; remove update_baseline_after_mutation)
+  - [ ] 36-05-PLAN.md — Test suite realignment (rewrite drift tests; delete TestDriftBaselines + test_proxmox_baseline_hooks.py; surgical patch-line removal)
+  - [ ] 36-06-PLAN.md — Documentation sweep (update scan_infrastructure_drift entry in docs/tool-reference.md)
 
 ### Phase 37: Drift Output Shape & Error Hygiene
 **Goal**: A user calling `scan_infrastructure_drift` gets the same response shape regardless of filter scope, can see at a glance which hosts were probed and which weren't, and never sees an error message pointing to a deprecated env var or a non-existent baseline tool.
@@ -194,7 +200,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 33.1 SSH Tool Family Keyring Uniformity | v1.6 | 5/5 | Complete | 2026-04-23 |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 4/4 | Complete | 2026-04-23 |
 | 35. Sitemap + Discovery Reliability | v1.6 | 4/4 | Complete | 2026-04-24 |
-| 36. Drift ↔ Sitemap Foundation | v1.7 | 0/0 | Not started | - |
+| 36. Drift ↔ Sitemap Foundation | v1.7 | 0/6 | Planning complete | - |
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
 | 38. Sitemap Fingerprint Schema | v1.7 | 0/0 | Not started | - |
 | 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
