@@ -3,9 +3,9 @@
 DRIFT_TOOLS: dict[str, dict] = {
     "scan_infrastructure_drift": {
         "description": (
-            "Scan for infrastructure drift: config drift (CPU/memory/network changed outside MCP) "
-            "and state drift (VMs offline that should be running). "
-            "Returns structured report with drift_type, expected, actual, and scan_timestamp per finding."
+            "Scan for infrastructure drift against the sitemap. Returns 2-bucket coverage report "
+            "(probed_ok, unreachable) per resolved Proxmox host. "
+            "Filter semantics under Phase 37 redesign — node/vm_type currently inert."
         ),
         "inputSchema": {
             "type": "object",

@@ -148,7 +148,7 @@ HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
     },
     "homelab://drift/latest": {
         "name": "Drift Report",
-        "description": "Latest infrastructure drift scan result from scan_infrastructure_drift",
+        "description": "Latest infrastructure drift scan result (2-bucket interim — shape stabilizes in Phase 37)",
     },
 }
 
