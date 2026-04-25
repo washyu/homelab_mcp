@@ -80,4 +80,22 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["device_id"],
         },
     },
+    "purge_failed_discoveries": {
+        "description": (
+            "Remove sitemap rows for devices where discovery failed (status='error' "
+            "or empty/null/'unknown' hostname). Pass dry_run=true to preview the "
+            "removal candidates without deleting them."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, return removal candidates without deleting (default: false)",
+                    "default": False,
+                },
+            },
+            "required": [],
+        },
+    },
 }

@@ -92,6 +92,17 @@ class DatabaseAdapter(ABC):
         """Return all stored drift baselines ordered by node, vmid."""
         pass
 
+    @abstractmethod
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """Remove devices where discovery failed.
+
+        Failed = ``status='error'`` OR ``hostname`` is empty/null/'unknown'.
+        Returns the list of removed rows (preview only when ``dry_run=True``).
+        Also deletes the corresponding ``discovery_history`` rows to avoid
+        orphan foreign keys.
+        """
+        pass
+
 
 class SQLiteAdapter(DatabaseAdapter):
     """SQLite database adapter."""
@@ -515,6 +526,40 @@ class SQLiteAdapter(DatabaseAdapter):
             results.append(entry)
         return results
 
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT id, hostname, connection_ip, status, error_message, last_seen
+            FROM devices
+            WHERE status = 'error'
+               OR hostname IS NULL
+               OR hostname = ''
+               OR hostname = 'unknown'
+            ORDER BY id
+            """
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+        if dry_run or not candidates:
+            return candidates
+        ids = [row["id"] for row in candidates]
+        placeholders = ",".join("?" * len(ids))
+        # Delete history first (no ON DELETE CASCADE); then devices.
+        cursor.execute(
+            f"DELETE FROM discovery_history WHERE device_id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+        cursor.execute(
+            f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+        self.connection.commit()
+        return candidates
+
 
 class PostgreSQLAdapter(DatabaseAdapter):
     """PostgreSQL database adapter with JSONB support."""
@@ -892,6 +937,33 @@ class PostgreSQLAdapter(DatabaseAdapter):
     def get_all_drift_baselines(self) -> list[dict[str, Any]]:
         """Not implemented for PostgreSQL in Phase 11 scope."""
         raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
+
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            """
+            SELECT id, hostname, connection_ip::text AS connection_ip,
+                   status, error_message, last_seen::text AS last_seen
+            FROM devices
+            WHERE status = 'error'
+               OR hostname IS NULL
+               OR hostname = ''
+               OR hostname = 'unknown'
+            ORDER BY id
+            """
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+        if dry_run or not candidates:
+            return candidates
+        ids = [row["id"] for row in candidates]
+        cursor.execute("DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,))
+        cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
+        self.connection.commit()
+        return candidates
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:

@@ -758,3 +758,115 @@ def test_analyzer_renders_null_cpu_model_as_unknown(tmp_path):
     arches = topology["cpu_architectures"]
     assert "null" not in arches, f"Bug #16 regression: 'null' key in cpu_architectures: {arches}"
     assert arches.get("Unknown") == 1, f"Expected one Unknown CPU; got {arches}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# purge_failed_discoveries — sitemap CRUD completion (v1.6.x)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_purge_failed_discoveries_removes_error_and_zombie_rows(tmp_path):
+    """purge_failed_devices must remove status='error' rows AND degenerate-hostname
+    rows, leave successful rows untouched, and clean up corresponding history rows.
+    """
+    sm = NetworkSiteMap(db_path=str(tmp_path / "purge.db"), db_type="sqlite")
+
+    # Healthy row — must survive
+    healthy_id = sm.store_device(
+        NetworkDevice(
+            hostname="pve",
+            connection_ip="10.0.0.20",
+            last_seen="2026-04-25T00:00:00",
+            status="success",
+            cpu_cores=64,
+        )
+    )
+    sm.store_discovery_history(healthy_id, '{"hello":"world"}')
+
+    # Error row — must be purged
+    error_id = sm.store_device(
+        NetworkDevice(
+            hostname="bad-host",
+            connection_ip="10.0.0.99",
+            last_seen="2026-04-25T00:00:00",
+            status="error",
+            error_message="Connection refused",
+        )
+    )
+    sm.store_discovery_history(error_id, '{"err":"refused"}')
+
+    # Zombie row — empty hostname, status='error', no IP. Classic id=1 case.
+    zombie_id = sm.store_device(
+        NetworkDevice(
+            hostname="",
+            connection_ip="unknown",
+            last_seen="2026-04-25T00:00:00",
+            status="error",
+            error_message="No hostname resolved",
+        )
+    )
+
+    # Dry run — return candidates without modifying
+    candidates = sm.purge_failed_devices(dry_run=True)
+    candidate_ids = {row["id"] for row in candidates}
+    assert candidate_ids == {error_id, zombie_id}, candidates
+    assert len(sm.get_all_devices()) == 3, "dry_run must not delete"
+
+    # Live run — actual delete
+    purged = sm.purge_failed_devices(dry_run=False)
+    purged_ids = {row["id"] for row in purged}
+    assert purged_ids == {error_id, zombie_id}, purged
+
+    surviving = sm.get_all_devices()
+    assert len(surviving) == 1, surviving
+    assert surviving[0]["id"] == healthy_id
+
+    # History for the deleted devices must also be gone (no orphan FK)
+    assert sm.get_device_changes(error_id) == []
+    # Healthy device's history is preserved
+    assert len(sm.get_device_changes(healthy_id)) == 1
+
+    # Idempotent: re-running on a clean state returns []
+    assert sm.purge_failed_devices(dry_run=False) == []
+
+
+def test_purge_failed_discoveries_handler_dry_run_default_false(tmp_path, monkeypatch):
+    """Tool handler defaults dry_run to false and returns the expected JSON shape."""
+    import asyncio
+    import json
+
+    from src.homelab_mcp.tool_handlers.network_handlers import handle_purge_failed_discoveries
+
+    # Force the handler's NetworkSiteMap() to use our temp DB instead of ~/.mcp/sitemap.db
+    db_path = str(tmp_path / "handler.db")
+    sm_init = NetworkSiteMap(db_path=db_path, db_type="sqlite")
+    sm_init.store_device(
+        NetworkDevice(
+            hostname="",
+            connection_ip="unknown",
+            last_seen="2026-04-25T00:00:00",
+            status="error",
+            error_message="probe failed",
+        )
+    )
+
+    # Patch NetworkSiteMap inside the handler module to point at our temp DB
+    monkeypatch.setattr(
+        "src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap",
+        lambda: NetworkSiteMap(db_path=db_path, db_type="sqlite"),
+    )
+
+    # Default args (no dry_run kwarg) → dry_run=false → actually deletes
+    result = asyncio.run(handle_purge_failed_discoveries({}))
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "success"
+    assert payload["dry_run"] is False
+    assert payload["purged_count"] == 1
+    assert len(payload["purged_devices"]) == 1
+    assert payload["purged_devices"][0]["status"] == "error"
+
+    # Subsequent call returns 0 — idempotent
+    result2 = asyncio.run(handle_purge_failed_discoveries({"dry_run": True}))
+    payload2 = json.loads(result2["content"][0]["text"])
+    assert payload2["purged_count"] == 0
+    assert payload2["dry_run"] is True

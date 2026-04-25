@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 51 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, four workflow prompt templates, and a keyring-backed credential store as the single source of truth (with cluster-scoped Proxmox API tokens). Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
+A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 52 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, four workflow prompt templates, and a keyring-backed credential store as the single source of truth (with cluster-scoped Proxmox API tokens). Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
 
 ## Core Value
 
@@ -120,7 +120,7 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - v1.6 stats: 108 commits, 100 files changed, +23,042 / -3,368 lines; active work 2026-04-20 → 2026-04-24 (4 days). 4 phases (33, 33.1, 34, 35), 18 plans
 - v1.6 codebase: ~15,887 LOC Python (src/) + ~19,554 LOC tests
 - Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite + optional PostgreSQL adapter
-- **51 tools** across 7 categories (down from 56 — v1.6 removed `setup_mcp_admin`, `update_server_credentials`, `remove_server`, `update_mcp_admin_groups`, `verify_mcp_admin_access`)
+- **52 tools** across 7 categories (was 56 → v1.6 removed 5 → v1.6.x added `purge_failed_discoveries` for sitemap CRUD completion)
 - Available on PyPI as `homelab-mcp` 1.4.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`. Next release tag will be cut on the v1.6 codebase
 - MCP protocol surface complete: Tools + Resources + Prompts + Notifications
 - 4 workflow prompts: `connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`

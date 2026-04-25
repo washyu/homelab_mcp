@@ -26,6 +26,7 @@ from .network_handlers import (
     handle_discover_and_map,
     handle_get_device_changes,
     handle_get_network_sitemap,
+    handle_purge_failed_discoveries,
     handle_suggest_deployments,
 )
 from .proxmox_handlers import (
@@ -85,6 +86,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "analyze_network_topology": handle_analyze_network_topology,
     "suggest_deployments": handle_suggest_deployments,
     "get_device_changes": handle_get_device_changes,
+    "purge_failed_discoveries": handle_purge_failed_discoveries,
     # Infrastructure tools
     "deploy_infrastructure": handle_deploy_infrastructure,
     "update_device_config": handle_update_device_config,

@@ -13,9 +13,10 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 51
-    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin
+        len(tools) == 52
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries
     assert "ssh_discover" in tools
+    assert "purge_failed_discoveries" in tools  # v1.6.x: sitemap CRUD completion
     assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
     assert "verify_mcp_admin" not in tools  # D-05: removed in Phase 33.1
     assert "update_mcp_admin_groups" not in tools  # D-05: removed in Phase 33.1

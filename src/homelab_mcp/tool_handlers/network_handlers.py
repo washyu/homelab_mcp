@@ -64,3 +64,21 @@ async def handle_get_device_changes(arguments: dict[str, Any]) -> dict[str, Any]
         indent=2,
     )
     return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_purge_failed_discoveries(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle purge_failed_discoveries tool."""
+    dry_run = bool(arguments.get("dry_run", False))
+    sitemap = NetworkSiteMap()
+    removed = sitemap.purge_failed_devices(dry_run=dry_run)
+    result = json.dumps(
+        {
+            "status": "success",
+            "dry_run": dry_run,
+            "purged_count": len(removed),
+            "purged_devices": removed,
+        },
+        indent=2,
+        default=str,
+    )
+    return {"content": [{"type": "text", "text": result}]}

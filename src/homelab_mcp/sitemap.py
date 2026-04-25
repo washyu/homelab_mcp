@@ -163,6 +163,16 @@ class NetworkSiteMap:
         """Get change history for a specific device."""
         return self.db_adapter.get_device_changes(device_id, limit)
 
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """Remove sitemap rows for devices where discovery failed.
+
+        A device is considered failed if its ``status`` is ``'error'`` or its
+        ``hostname`` is empty/null/'unknown' (zombie rows from gather attempts
+        that never resolved a hostname). Returns the list of removed rows.
+        Pass ``dry_run=True`` to preview without deleting.
+        """
+        return self.db_adapter.purge_failed_devices(dry_run=dry_run)
+
     def analyze_network_topology(self) -> dict[str, Any]:
         """Analyze the network topology and provide insights."""
         devices = self.get_all_devices()

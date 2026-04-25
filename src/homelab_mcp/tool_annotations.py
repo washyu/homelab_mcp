@@ -68,6 +68,7 @@ _DESTRUCTIVE_TOOLS = [
     "delete_proxmox_vm",
     "destroy_terraform_service",
     "rollback_infrastructure_changes",
+    "purge_failed_discoveries",
 ]
 
 # ---------------------------------------------------------------------------
