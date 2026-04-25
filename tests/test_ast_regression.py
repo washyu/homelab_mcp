@@ -34,6 +34,11 @@ FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "remove_server",  # D-25: removed MCP tool name (D-21)
     "update_mcp_admin_groups",  # D-10: removed by Plan 33.1-03
     "verify_mcp_admin_access",  # D-10: removed by Plan 33.1-03
+    # ─── Phase 36 D-12 additions ───
+    "drift_baselines",  # Phase 36 D-12: dropped table name
+    "upsert_drift_baseline",  # Phase 36 D-12: removed adapter method
+    "get_drift_baseline",  # Phase 36 D-12: removed adapter method
+    "get_all_drift_baselines",  # Phase 36 D-12: removed adapter method
 ]
 
 # Narrow allowlist: certain files may legitimately contain specific forbidden strings
@@ -42,6 +47,10 @@ ALLOWED_EXCEPTIONS: dict[str, set[str]] = {
     # migration.py legitimately names `ssh_credentials` inside the DROP statement
     # (removing this reference would prevent the drop from firing — self-defeating).
     "ssh_credentials": {"migration.py"},
+    # ─── Phase 36 D-12 addition ───
+    # migration.py legitimately names `drift_baselines` inside the DROP statement
+    # (D-05 drop step references the literal table name).
+    "drift_baselines": {"migration.py"},
 }
 
 # Phase 33.2 scope — mcp_admin cleanup sweep extension. These files retain
@@ -173,7 +182,7 @@ def test_no_forbidden_strings_in_source() -> None:
                 )
 
     assert not violations, (
-        "Phase 33 regression: found removed DB/tool references in source files.\n"
+        "Phase 33+36 regression: found removed DB/tool references in source files.\n"
         "These strings must not appear outside test files:\n" + "\n".join(f"  - {v}" for v in violations)
     )
 
