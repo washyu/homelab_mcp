@@ -156,9 +156,9 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.4: Sitemap device tags / categories (BACKLOG)
+### Phase 999.4: Sitemap device tags / categories (LOCKED FOR v1.7.2)
 
-**Goal:** [Captured for future planning] Add a `tags` or `category` field to sitemap rows so `get_network_sitemap` is filterable (PVE hosts, NAS, routers, Pi endpoints, etc.). Parity with Proxmox's existing tag model (`community-script;docker` on LXC). Flat table is fine for a few hosts; pain grows with the homelab.
+**Goal:** [Captured for future planning, **locked for v1.7.2 Role-Aware Drift** as of 2026-04-25] Add a `tags` or `category` field to sitemap rows so `get_network_sitemap` is filterable (PVE hosts, NAS, routers, Pi endpoints, etc.). Parity with Proxmox's existing tag model (`community-script;docker` on LXC). Flat table is fine for a few hosts; pain grows with the homelab. Promoted into v1.7.2 milestone scope as the prerequisite for role-aware drift checks (gateway routing/NAT profile, NAS service-health profile).
 **Requirements:** TBD
 **Plans:** 0 plans
 
@@ -195,6 +195,15 @@ Plans:
 ### Phase 999.8: Rename docker-adjacent tools to `docker_*` (BACKLOG)
 
 **Goal:** [Captured during v1.7 scoping 2026-04-25] Several tools that operate on Docker containers/images are not named with a `docker_` prefix, hiding the family from users browsing the tool list. Audit the tool registry, identify all Docker-adjacent tools, and rename them with the `docker_*` convention (matching the `proxmox_*` and `ssh_*` family naming). Naming-only refactor — no behavior changes. Leave deprecation aliases for one minor version. Out of scope for v1.7 (drift integration only).
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.9: `probe_pending_updates` advisory family (BACKLOG)
+
+**Goal:** [Captured during v1.7 scoping 2026-04-25] Sibling concept to drift, not part of it. Advisory probes that surface "this system needs attention" signals that don't fit the sitemap-vs-live-state divergence model: pending OS updates (apt/dnf/zypper), self-hosted-app update notifications (Nextcloud admin API, Plex, etc.), kernel-update-required-for-running-modules state, certificate expiry, etc. Asymmetric across distros — Nextcloud surfaces nag messages because it has an update channel; Ubuntu silently sits with `apt list --upgradable` available only when SSH'd in. Goal is a normalized advisory output across the homelab. Likely a separate top-level tool (`probe_homelab_advisories` or similar) or its own MCP Resource. Could fold into a future "Homelab Health Check" entry point alongside drift output. Out of v1.7/v1.7.1/v1.7.2 scope.
 **Requirements:** TBD
 **Plans:** 0 plans
 

@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.7
-milestone_name: Drift Integration & Polish
+milestone_name: Drift Architectural Fix
 status: defining_requirements
 stopped_at: v1.7 opened — defining requirements
 last_updated: "2026-04-25T00:00:00.000Z"
@@ -35,7 +35,16 @@ Progress: [          ] 0% — requirements not yet defined
 
 ## Milestone Origin
 
-v1.7 surfaced during a 2026-04-25 retest of the v1.6 codebase. Live testing of the drift detection family produced 10 distinct bugs (A-J) of which 9 trace to a single architectural gap: the drift module maintains its own baseline data layer that was never integrated with the sitemap or keyring. `discover_and_map`, `create_proxmox_vm`, and `delete_proxmox_vm` all touch the sitemap; the drift module reads from a separate baseline table and doesn't know about either. v1.7 closes that integration gap and extends the principle to every infrastructure-mutating tool family (Proxmox VM/LXC, Terraform, Ansible, community scripts, docker-adjacent tools, services catalog). Bug I (`get_proxmox_vm_status` HTTP 500 leak) is bundled as adjacent polish.
+v1.7 surfaced during a 2026-04-25 retest of the v1.6 codebase. Live testing of the drift detection family produced 10 distinct bugs (A-J) of which 9 trace to a single architectural gap: the drift module maintains its own baseline data layer that was never integrated with the sitemap or keyring.
+
+**Architectural decision (2026-04-25):** Sitemap is the single source of truth for drift detection. The parallel `drift_baselines` table is dropped — sitemap rows are the baseline. This dissolves Bug J at its root rather than integrating two data layers. Drift becomes "stored sitemap state ≠ current live-probe state" with three buckets: unknown (manually-created infra not in sitemap), missing (sitemap rows that no longer probe-respond), changed (probe values differ from stored).
+
+**Scope split:** Originally scoped 32 requirements across drift unification, lifecycle hooks across 7 tool families, and role-aware drift. Split into v1.7 / v1.7.1 / v1.7.2 for shippability:
+- **v1.7 Drift Architectural Fix** (this milestone) — DRFT-11..21 + POL-01..03 (14 reqs). Drop parallel baseline table, wire scan_infrastructure_drift to sitemap, detect unknown/missing/changed buckets, capture kernel/package/capability fingerprints, polish Bug I + G. Estimated 5-7 phases.
+- **v1.7.1 Infrastructure Lifecycle Hooks** — LIFE-01..12 (12 reqs). Every infra-mutating tool family updates sitemap on create/destroy. Estimated 5-7 phases.
+- **v1.7.2 Role-Aware Drift** — TAGS-01..03 + ROLE-01..03 (6 reqs); promotes backlog 999.4. Gateway routing/NAT drift, NAS service-health drift. Estimated 3-5 phases.
+
+Bug I (`get_proxmox_vm_status` HTTP 500 leak) bundled into v1.7 as adjacent polish. Pending OS / app update advisories captured as 999.9 backlog (sibling to drift, not part of it).
 
 ## Deferred Items (carried from v1.6 close)
 

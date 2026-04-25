@@ -8,27 +8,28 @@ A production-ready Python MCP (Model Context Protocol) server that gives AI assi
 
 Every tool in the server actually works when a user calls it — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
 
-## Current Milestone: v1.7 Drift Integration & Polish
+## Current Milestone: v1.7 Drift Architectural Fix
 
-**Goal:** Wire the drift detection module into the sitemap + keyring so it's a first-class part of the infrastructure-tracking flow rather than a parallel data layer; expose missing baseline CRUD tools; ensure every infrastructure-mutating tool family registers in sitemap + populates a baseline (and cleans up on destroy).
+**Goal:** Make the sitemap the single source of truth for drift detection — drop the parallel `drift_baselines` table, wire `scan_infrastructure_drift` to iterate sitemap rows, and bring drift output up to a usable shape (consistent across filter scopes, transparent about coverage, with proper detection of unknown / missing / changed infrastructure). Bundle adjacent Proxmox VM error-hygiene polish.
 
 **Target features:**
-- Drift ↔ sitemap integration (architectural root cause from v1.6 retest — Bug J)
-- Drift baseline CRUD tools (`register_drift_baseline`, `list_drift_baselines`, `delete_drift_baseline`)
-- Infrastructure-mutating tool families register sitemap row + drift baseline on create, clean up on destroy. Affected families:
-  - Proxmox VM (qemu) lifecycle
-  - Proxmox LXC lifecycle
-  - Terraform service installs
-  - Ansible service installs
-  - Proxmox community scripts
-  - Docker-adjacent tools (audit + identify during phase planning)
-  - Services catalog (if it mutates state)
-- `get_proxmox_vm_status` error hygiene — clean "VM not found" instead of raw HTTP 500 leak
+- Drift ↔ sitemap unification (architectural root cause from v1.6 retest — Bug J): drift iterates sitemap, no parallel baseline table
+- Detects three drift cases: **unknown** infrastructure (manually-created VMs not in sitemap), **missing** infrastructure (sitemap rows that no longer probe-respond), **changed** infrastructure (kernel/package/capability fingerprint differs from stored)
+- Sitemap schema captures kernel version + package fingerprint + capability probes (GPU passthrough, ML library availability) so OS updates surface as meaningful drift
+- Drop parallel `drift_baselines` SQLite table on both adapters (mirrors v1.6 CRED-04 keyring migration)
+- Bug C dissolves architecturally — no new register/list/delete drift baseline tools; existing sitemap CRUD tools (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`) cover the lifecycle. Docs and error messages updated to reference them.
+- Polish: `get_proxmox_vm_status` clean "VM not found" error (Bug I); `create_proxmox_vm` schema accuracy + error guidance pointing to `credentials add` not `PROXMOX_HOST` (Bug G)
 
 **Key context:**
 - Surfaced during v1.6 retest session 2026-04-25. 9 of 10 bugs trace to one architectural gap (drift module has its own data layer, never integrated with sitemap/keyring). Polish item (Bug I) bundled because it's adjacent.
-- v1.6 carryforwards (cross-cutting `mcp_admin`, SSH-04 handshake timeout, QUAL-01, HTTP-01, ERR-02) **deferred to v1.8** to keep this a clean architectural milestone.
+- v1.7 was originally scoped to include lifecycle hooks across 7 tool families and role-aware drift (gateway routing, NAS service health). Split for shippability: see Upcoming Milestones below.
+- Carryforwards from v1.6 (cross-cutting `mcp_admin`, SSH-04, QUAL-01, HTTP-01, ERR-02) **deferred to v1.8** to keep this a clean architectural milestone.
 - Phase numbering continues from v1.6 → v1.7 starts at **Phase 36**.
+
+**Upcoming Milestones** (locked, defined when ready to start):
+
+- **v1.7.1 Infrastructure Lifecycle Hooks** — every infrastructure-mutating tool family updates sitemap on create/destroy: Proxmox VM, Proxmox LXC, Terraform service install/destroy, Ansible service install/uninstall, Proxmox community-script execution (with completion-callback wrap and onboarding workflow prompt), docker-adjacent tools, AST meta-test guard. ~12 requirements.
+- **v1.7.2 Role-Aware Drift** — promote backlog 999.4 (sitemap tags/categories) into milestone scope; drift checks role-scoped via tags; gateway profile tracks routing + NAT; NAS profile tracks expected-running services per host (TrueNAS smb-killing-Plex case). ~6 requirements.
 
 ## Requirements
 
