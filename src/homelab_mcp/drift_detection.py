@@ -9,7 +9,6 @@ expand to 4 buckets (DRFT-13/14); Phase 39 will add unknown / missing / changed
 detection (DRFT-17/18/19).
 """
 
-import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -68,7 +67,7 @@ async def scan_drift(
     for row in rows:
         hostname = row.get("hostname")
         # D-10a: skip degenerate Phase-35 fallback rows (zombies, errors, empty hostnames)
-        if hostname in ("", "unknown", None) or row.get("status") == "error":
+        if hostname is None or hostname in ("", "unknown") or row.get("status") == "error":
             continue
 
         try:
@@ -76,7 +75,7 @@ async def scan_drift(
         except CredentialNotFoundError:
             # D-10: row is not a registered Proxmox host -> silently skip
             continue
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             # Resolver-during-cluster-walk failure
             unreachable.append({
                 "hostname": hostname,
@@ -114,7 +113,7 @@ async def scan_drift(
                 "error": None,
                 "scan_timestamp": scan_timestamp,
             })
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
             unreachable.append({
                 "hostname": hostname,
                 "connection_ip": row.get("connection_ip", ""),
