@@ -111,6 +111,35 @@ TOOLS["new_tool"] = {
 - Pre-commit hooks configured in `.pre-commit-config.yaml`
 - CI runs on GitHub Actions (`.github/workflows/main.yml`)
 
+## Release & Tagging Workflow
+
+**PyPI publishing is auto-triggered by `git tag v*` push** via OIDC trusted publishing. The workflow runs test-and-quality + cross-platform + security + release jobs and only publishes if all pass — but the trigger fires on the **tag commit**, regardless of which branch it's on.
+
+**Standard release flow — always follow this order:**
+
+1. Work on a feature/milestone branch (e.g. `credential-cleanup`, `feature/foo`)
+2. Bump `pyproject.toml` version in a dedicated commit on the branch
+3. Push branch + open PR against `main` (`gh pr create --base main`)
+4. Let CI run on the PR; address any failures
+5. Merge PR to `main` via GitHub UI (squash or merge-commit per project preference)
+6. **Tag from `main`, not from the feature branch:**
+   ```bash
+   git checkout main && git pull origin main
+   git tag -a v1.X -m "<release notes>"
+   git push origin v1.X
+   ```
+7. Tag push triggers the publish workflow → PyPI
+
+**Why this matters:**
+- Tagging from a non-main branch publishes code that doesn't match what `main` shows on GitHub — confusing for anyone reading the repo
+- The PR creates a discoverable review point for "what shipped in vX.Y"
+- Skipping the merge step leaves `main` stale while PyPI is current
+
+**Never:**
+- Tag a non-main branch and push the tag (publishes code that isn't in main)
+- Force-push tags or push tags before the underlying commits are pushed
+- Skip the PR step "to save time" — the PyPI publish is irreversible (PyPI rejects re-uploads of the same version)
+
 ## TestSprite Rules
 - DO NOT run TestSprite unless explicitly told to do so
 - DO NOT modify any files in `testsprite_tests/`
