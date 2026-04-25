@@ -395,6 +395,33 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None, *, _c
     )
     conn.commit()
 
+    # Phase 36 D-05: Drop legacy drift_baselines table from Postgres if it still exists (v1.7 cleanup).
+    # Sitemap is now the single source of truth for drift detection (DRFT-11).
+    cursor.execute(
+        """
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_name = 'drift_baselines'
+        )
+        """
+    )
+    if cursor.fetchone()[0]:
+        cursor.execute("DROP INDEX IF EXISTS idx_drift_baselines_node_vmid")
+        cursor.execute("DROP TABLE IF EXISTS drift_baselines")
+        conn.commit()
+        applied_migrations.append("drop_drift_baselines_table")
+        import sys  # noqa: PLC0415
+
+        print(
+            "Dropped legacy drift_baselines table from Postgres (v1.7: sitemap is now the single source of truth for drift)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Pre-existing baseline rows are not preserved (per DRFT-21 architectural decision).\n"
+            "      Drift now reports against the live sitemap; no manual baseline registration is needed.",
+            file=sys.stderr,
+        )
+
     if own_connection:
         assert adapter is not None
         adapter.close()
