@@ -1776,12 +1776,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 100, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_vm", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_vm(
                 {
@@ -1817,12 +1815,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 100, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_vm", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_vm({"node": "pve", "vmid": 100, "name": "test-vm"})
 
@@ -1846,12 +1842,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 200, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_lxc", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_lxc(
                 {
@@ -1885,12 +1879,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 200, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_lxc", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_lxc({"node": "pve", "vmid": 200, "hostname": "test-ct"})
 
