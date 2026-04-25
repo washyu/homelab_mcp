@@ -665,3 +665,94 @@ class TestMigrationIntegration:
         mock_source.get_all_devices.assert_called()
         assert mock_target.store_device.call_count == 2
         assert mock_target.store_discovery_history.call_count == 2
+
+
+# Phase 36 D-15: drift_baselines DROP TABLE migration idempotency tests
+
+
+class TestDriftBaselinesDrop:
+    """Phase 36 D-15: drift_baselines DROP TABLE migration idempotency."""
+
+    def test_drift_baselines_drop_idempotent_phase36(self, tmp_path):
+        """Pre-populated DB -> first run drops + applied_migrations entry; second run no-op."""
+        import sqlite3
+
+        from src.homelab_mcp.database import SQLiteAdapter
+        from src.homelab_mcp.migration import run_sqlite_migrations
+
+        db_path = str(tmp_path / "phase36_d15_idempotent.db")
+
+        # Initialize schema (devices etc.) so migration prerequisites are met
+        adapter = SQLiteAdapter(db_path=db_path)
+        adapter.connect()
+        adapter.init_schema()
+        adapter.close()
+
+        # Seed legacy drift_baselines table on top of initialized schema
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE drift_baselines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                node TEXT NOT NULL,
+                vmid INTEGER NOT NULL,
+                vm_type TEXT NOT NULL DEFAULT 'qemu',
+                baseline_config TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                recorded_by TEXT NOT NULL,
+                UNIQUE(node, vmid, vm_type)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX idx_drift_baselines_node_vmid ON drift_baselines (node, vmid, vm_type)"
+        )
+        conn.execute(
+            "INSERT INTO drift_baselines (node, vmid, vm_type, baseline_config, recorded_at, recorded_by) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("pve", 100, "qemu", "{}", "2026-01-01T00:00:00Z", "test"),
+        )
+        conn.commit()
+        conn.close()
+
+        # First run: drop step fires
+        applied1 = run_sqlite_migrations(db_path=db_path)
+        assert "drop_drift_baselines_table" in applied1, applied1
+
+        # Verify table is gone
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='drift_baselines'"
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 0, f"drift_baselines still exists after migration: {rows}"
+
+        # Second run: no-op
+        applied2 = run_sqlite_migrations(db_path=db_path)
+        assert "drop_drift_baselines_table" not in applied2, applied2
+
+    def test_drift_baselines_drop_fresh_db_phase36(self, tmp_path):
+        """Fresh DB (no drift_baselines table) -> migration runs; drop step is silent no-op."""
+        import sqlite3
+
+        from src.homelab_mcp.database import SQLiteAdapter
+        from src.homelab_mcp.migration import run_sqlite_migrations
+
+        db_path = str(tmp_path / "phase36_d15_fresh.db")
+
+        # Initialize schema only (no drift_baselines seed). After Plan 01, init_schema
+        # never creates drift_baselines, so this represents a true fresh-install state.
+        adapter = SQLiteAdapter(db_path=db_path)
+        adapter.connect()
+        adapter.init_schema()
+        adapter.close()
+
+        applied1 = run_sqlite_migrations(db_path=db_path)
+        # The drop step is silent on fresh installs
+        assert "drop_drift_baselines_table" not in applied1, applied1
+
+        # Verify drift_baselines was NEVER created (init_schema no longer creates it post-Plan 01)
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='drift_baselines'"
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 0
