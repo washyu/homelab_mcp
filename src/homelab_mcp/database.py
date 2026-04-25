@@ -64,34 +64,6 @@ class DatabaseAdapter(ABC):
         """Execute a query and return results."""
         pass
 
-    # Drift baseline CRUD methods
-    @abstractmethod
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
-        pass
-
-    @abstractmethod
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
-        pass
-
-    @abstractmethod
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Return all stored drift baselines ordered by node, vmid."""
-        pass
-
     @abstractmethod
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
         """Remove devices where discovery failed.
@@ -200,25 +172,6 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_history_device_id
             ON discovery_history (device_id)
-        """)
-
-        # Create drift_baselines table for VM configuration baseline storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS drift_baselines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node TEXT NOT NULL,
-                vmid INTEGER NOT NULL,
-                vm_type TEXT NOT NULL DEFAULT 'qemu',
-                baseline_config TEXT NOT NULL,
-                recorded_at TEXT NOT NULL,
-                recorded_by TEXT NOT NULL,
-                UNIQUE(node, vmid, vm_type)
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
-            ON drift_baselines (node, vmid, vm_type)
         """)
 
         self.connection.commit()
@@ -446,85 +399,6 @@ class SQLiteAdapter(DatabaseAdapter):
             cursor.execute(query)
 
         return [dict(row) for row in cursor.fetchall()]
-
-    # Drift baseline CRUD methods
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO drift_baselines
-                (node, vmid, vm_type, baseline_config, recorded_at, recorded_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                node,
-                vmid,
-                vm_type,
-                json.dumps(baseline_config),
-                datetime.now().isoformat(),
-                recorded_by,
-            ),
-        )
-        self.connection.commit()
-
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
-            FROM drift_baselines
-            WHERE node = ? AND vmid = ? AND vm_type = ?
-            """,
-            (node, vmid, vm_type),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return None
-        result = dict(row)
-        result["baseline_config"] = json.loads(result["baseline_config"])
-        return result
-
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Return all stored drift baselines ordered by node, vmid."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
-            FROM drift_baselines ORDER BY node, vmid
-            """
-        )
-        results = []
-        for row in cursor.fetchall():
-            entry = dict(row)
-            entry["baseline_config"] = json.loads(entry["baseline_config"])
-            results.append(entry)
-        return results
 
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
         """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``."""
@@ -912,31 +786,6 @@ class PostgreSQLAdapter(DatabaseAdapter):
             cursor.execute(query)
 
         return [dict(row) for row in cursor.fetchall()]
-
-    # Drift baseline CRUD methods (Phase 11 scope: SQLite only — stubs for ABC compliance)
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
 
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
         """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``."""
