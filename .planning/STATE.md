@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
-status: roadmap_complete
-stopped_at: v1.7 ROADMAP written — 5 phases (36-40) mapped to 14 requirements
+status: phase_36_context_captured
+stopped_at: Phase 36 context captured — scan_drift 2-bucket interim shape locked; ready for /gsd-plan-phase 36 --research
 last_updated: "2026-04-25T00:00:00.000Z"
-last_activity: 2026-04-25 -- v1.7 ROADMAP written, phase planning next
+last_activity: 2026-04-25 -- Phase 36 CONTEXT.md committed; planning next
 progress:
   total_phases: 5
   completed_phases: 0
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: Not started (next: Phase 36)
+Phase: 36 (Drift ↔ Sitemap Foundation) — context captured
 Plan: —
-Status: Roadmap complete; phase planning next
-Last activity: 2026-04-25 -- v1.7 ROADMAP written, 5 phases mapped to 14 requirements
+Status: Phase 36 CONTEXT.md committed; ready for /gsd-plan-phase 36 --research
+Last activity: 2026-04-25 -- Phase 36 context captured (scan_drift 2-bucket interim shape locked)
 
 Progress: [          ] 0% — 0 / 5 phases complete
 
@@ -126,5 +126,5 @@ None at v1.7 ROADMAP-complete. Will be populated as phase planning progresses.
 ## Session Continuity
 
 Last session: 2026-04-25T00:00:00.000Z
-Stopped at: v1.7 ROADMAP written — 5 phases (36-40) mapped to 14 requirements
-Resume command: `/gsd-plan-phase 36` to begin Phase 36 (Drift ↔ Sitemap Foundation)
+Stopped at: Phase 36 context captured — scan_drift 2-bucket interim shape locked
+Resume command: `/gsd-plan-phase 36 --research` to research and plan Phase 36 (Drift ↔ Sitemap Foundation)
