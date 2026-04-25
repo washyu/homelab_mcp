@@ -1,7 +1,7 @@
 """Infrastructure drift detection for homelab MCP server.
 
 Phase 36 (v1.7) — sitemap is the single source of truth for drift detection.
-The parallel drift_baselines table has been dropped; scan_drift iterates sitemap
+The parallel baseline cache table has been dropped; scan_drift iterates sitemap
 rows directly and resolves Proxmox credentials via the get_proxmox_client funnel.
 
 Phase 36 ships a 2-bucket interim shape (probed_ok / unreachable). Phase 37 will
