@@ -164,3 +164,30 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.5: Generalized purge_devices(filter=...) (BACKLOG)
+
+**Goal:** [Captured for future planning, surfaced during v1.6 retest] Generalize the `purge_failed_discoveries` tool added in v1.6.x into a `purge_devices(filter=...)` superset. Filters to support: by hostname (decommissioned host removal), by `last_seen < N days ago` (stale-device sweep), by `status='error'` (current behavior — keep as a named alias), by IP range. The focused `purge_failed_discoveries` shipped in v1.6.0 should remain as a named alias / convenience wrapper so existing flows don't break.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.6: ZFS ARC memory accounting on TrueNAS / ZFS hosts (BACKLOG)
+
+**Goal:** [Captured during v1.6 live validation] TrueNAS and other ZFS hosts show high `memory_used` because the ARC fills available RAM by design — that's not memory pressure, it's healthy caching. Two options to evaluate: (a) detect ZFS via `/proc/spl/kstat/zfs/arcstats` and subtract ARC size from used (like `htop -ZFS` does), or (b) keep the raw number but label the device as ZFS-aware in the analyzer so high-memory-usage flags become advisory rather than alerting. Same problem may apply to other cache-heavy systems (BSD's UBC, macOS purgeable memory, etc.). Also revisit the `df /` design choice — for NAS hosts the boot pool is uninformative; consider gathering all mounted filesystems or surfacing the data pool separately.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.7: Discover tool error-path guidance consistency (BACKLOG)
+
+**Goal:** [Captured during v1.6 retest] The `ssh_discover` and `ssh_execute_command` tool descriptions include actionable guidance ("If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>`"). The `discover_and_map` and `bulk_discover_and_map` descriptions only mention auto-injection ("omit if credentials were stored with `credentials add`") without telling the user what to do when resolution fails. Propagate the same error-path pointer to both schemas so the AI client surfaces consistent recovery guidance regardless of which discovery tool was invoked. Pure docstring change; no code path touched.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
