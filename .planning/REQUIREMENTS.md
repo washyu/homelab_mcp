@@ -9,13 +9,13 @@ Requirements for the **Credential Architecture Cleanup** milestone. Makes the OS
 
 ### Credential Storage
 
-- [ ] **CRED-04**: SSH credentials are stored exclusively in the OS keyring — the database `ssh_credentials` table is removed; no parallel credential storage exists in the server
-- [ ] **CRED-05**: SSH tools no longer fall back to `mcp_admin` hardcoded defaults — when keyring returns no credential for a host, the tool raises an actionable error naming `credentials add`, not a silent default login
+- [x] **CRED-04**: SSH credentials are stored exclusively in the OS keyring — the database `ssh_credentials` table is removed; no parallel credential storage exists in the server
+- [x] **CRED-05**: SSH tools no longer fall back to `mcp_admin` hardcoded defaults — when keyring returns no credential for a host, the tool raises an actionable error naming `credentials add`, not a silent default login
 
 ### Onboarding Surfaces
 
-- [ ] **CRED-06**: The `setup_mcp_admin` MCP tool is removed from the server — device onboarding routes through the `credentials add` CLI and the existing `connect_to_device` prompt; no MCP tool writes credentials
-- [ ] **CRED-07**: `register_server` validates credentials via the standard `resolve_ssh_credentials()` path before accepting registration — no verify-bypass path exists; registrations with missing/invalid credentials are rejected with an actionable error
+- [x] **CRED-06**: The `setup_mcp_admin` MCP tool is removed from the server — device onboarding routes through the `credentials add` CLI and the existing `connect_to_device` prompt; no MCP tool writes credentials
+- [x] **CRED-07**: `register_server` validates credentials via the standard `resolve_ssh_credentials()` path before accepting registration — no verify-bypass path exists; registrations with missing/invalid credentials are rejected with an actionable error
 
 ### Cluster-Scoped Credentials
 
@@ -48,10 +48,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CRED-04 | Phase 33 | Pending |
-| CRED-05 | Phase 33 | Pending |
-| CRED-06 | Phase 33 | Pending |
-| CRED-07 | Phase 33 | Pending |
+| CRED-04 | Phase 33 | Complete |
+| CRED-05 | Phase 33 | Complete |
+| CRED-06 | Phase 33 | Complete |
+| CRED-07 | Phase 33 | Complete |
 | CRED-08 | Phase 34 | Complete |
 
 **Coverage:**

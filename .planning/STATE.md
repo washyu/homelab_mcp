@@ -2,35 +2,36 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Credential Architecture Cleanup
-status: ready
-stopped_at: Phase 35 complete — 4 plans shipped, 32/32 must-haves verified, VERIFICATION.md status=passed
-last_updated: "2026-04-24T23:45:00.000Z"
-last_activity: 2026-04-24 -- Phase 35 complete (4/4 plans + verification passed)
+status: shipped
+stopped_at: v1.6 closed — milestone archived, tag v1.6 cut. Ready for /gsd-new-milestone.
+last_updated: "2026-04-24T17:30:00.000Z"
+last_activity: 2026-04-24 -- v1.6 milestone closed (4 phases / 18 plans / 5 reqs satisfied)
 progress:
-  total_phases: 8
+  total_phases: 4
   completed_phases: 4
-  total_plans: 22
+  total_plans: 18
   completed_plans: 18
-  percent: 82
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-20 after v1.6 start)
+See: .planning/PROJECT.md (updated 2026-04-24 after v1.6 milestone close)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 35 complete — sitemap + discovery reliability fixes (32/32 must-haves verified); v1.6 milestone at 18/22 plans
+**Current focus:** Between milestones — v1.6 shipped 2026-04-24; v1.7 scope to be defined via `/gsd-new-milestone`
 
 ## Current Position
 
-Phase: 35 (sitemap-discovery-reliability-fix-discover-and-map-field-los) — COMPLETE
-Plan: 4 of 4 complete; 0 remaining
-Status: Phase 35 complete — ready to plan next phase or close v1.6
-Last activity: 2026-04-24 -- Phase 35 execution started
+Milestone: v1.6 Credential Architecture Cleanup — SHIPPED 2026-04-24
+Phases: 4/4 complete (33, 33.1, 34, 35)
+Plans: 18/18 complete
+Status: Milestone closed. Run `/gsd-new-milestone` to define v1.7 scope.
+Last activity: 2026-04-24 -- v1.6 milestone close (archives written, tag cut)
 
-Progress: [█████████░] 93% (13/14 plans) — Phase 34 Plan 04 done
+Progress: [██████████] 100% — v1.6 complete
 
 ## Milestone Origin
 
@@ -158,6 +159,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-24T06:19:08.197Z
-Stopped at: Phase 35 context captured — ready for planning (CONTEXT.md with 6 upsert decisions + 4 timeout decisions + schema/null-threshold guidance)
-Resume command: /gsd-execute-phase 35 (next phase when ready)
+Last session: 2026-04-24T17:30:00.000Z
+Stopped at: v1.6 milestone closed — archives written, tag v1.6 cut, REQUIREMENTS.md removed
+Resume command: /gsd-new-milestone (to define v1.7 scope) — or operate in maintenance mode

@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 56 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, four workflow prompt templates, and a secure credential store with OS keyring integration. Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
+A production-ready Python MCP (Model Context Protocol) server that gives AI assistants the ability to manage homelab infrastructure — discovering devices via SSH, managing VMs and containers, installing services, tracking network topology, and interacting with Proxmox. Ships with 51 tools across 7 categories, comprehensive documentation, security hardening, safe preview variants for all destructive operations, infrastructure drift detection, live infrastructure state via MCP Resources, four workflow prompt templates, and a keyring-backed credential store as the single source of truth (with cluster-scoped Proxmox API tokens). Available via `uvx homelab-mcp` or `pip install homelab-mcp`. Targets homelabbers running Proxmox VE who want AI-powered infrastructure management through any MCP-compatible client.
 
 ## Core Value
 
@@ -75,18 +75,21 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 - ✓ `test_ssh_tools.py` password-propagation assertion fixed — broken disjunctive ternary replaced with explicit check, AST meta-guard added to catch reintroduction — v1.5
 - ✓ `credential_type` parameter constrained to `enum: ["ssh", "proxmox"]` in `list_keyring_credentials` schema — v1.5
 - ✓ Revert-proof regression tests guard all 5 v1.5 fixes; integration checker verified 0 broken / 0 weak wirings — v1.5
+- ✓ SSH credentials stored exclusively in OS keyring — DB `ssh_credentials` table removed (CRED-04) — v1.6
+- ✓ SSH tools raise `CredentialNotFoundError` with `credentials add <hostname>` pointer instead of `mcp_admin` fallback (CRED-05) — v1.6
+- ✓ `setup_mcp_admin` MCP tool removed; device onboarding via `credentials add` CLI + `connect_to_device` prompt (CRED-06) — v1.6
+- ✓ `register_server` is verify-only — calls `resolve_ssh_credentials` then `asyncssh.connect`; no DB writes, no verify-bypass (CRED-07) — v1.6
+- ✓ Cluster-scoped Proxmox API tokens — `credentials add --type proxmox --scope cluster:<name>`; resolver walks node→cluster→error (CRED-08) — v1.6
+- ✓ SSH tool family uniformity — `update_mcp_admin_groups` and `verify_mcp_admin_access` deleted; sitemap.discover_and_store and bulk_discover_and_store route through `resolve_ssh_credentials`; AST meta-tests guard against mcp_admin defaults reintroducing — v1.6 (Phase 33.1)
+- ✓ Discovery field-name alignment — `ssh_discover_system` emits cpu.cores / memory.* / disk.* / usb/pci/block; `sitemap.parse_discovery_output` reads same; bulk discovery uses `Semaphore(10)` + `asyncio.gather` for parallelism — v1.6 (Phase 35)
+- ✓ Hostname-only sitemap upsert with degenerate-hostname fallback; `connection_ip` in UPDATE SET so re-discovery with new IP overwrites (no zombie rows); migration dedups + drops stale `UNIQUE(hostname, connection_ip)` index — v1.6 (Phase 35)
+- ✓ Per-subprocess SSH timeout via `_run_with_timeout(10s)` on every `conn.run` probe; `partial: True` payload tag when probes time out — v1.6 (Phase 35)
+- ✓ Null-defensive analyzers — `_has_threshold_data` helper guards `suggest_deployments`; AST meta-test bans `device.get(field) or 0` coercion in analyzer bodies — v1.6 (Phase 35)
 
 ### Active
 
-<!-- v1.6 Credential Architecture Cleanup -->
-- [ ] SSH credentials stored exclusively in OS keyring — DB `ssh_credentials` table removed
-- [ ] SSH tools no longer fall back to `mcp_admin` hardcoded defaults — explicit keyring entries required
-- [ ] `setup_mcp_admin` MCP tool removed; device onboarding via `credentials add` CLI + `connect_to_device` prompt
-- [ ] `register_server` validates credentials through standard resolve path — no verify-bypass
-- [ ] Cluster-scoped Proxmox API tokens — one datacenter-wide token serves N cluster nodes
-
 <!-- Deferred to future milestone -->
-- [ ] SSH-03: Keyring auto-injection disambiguates multiple usernames per hostname
+- [ ] SSH-03: Keyring auto-injection disambiguates multiple usernames per hostname (NOTE: partially shipped in 33.1 D-04a — verify scope before promoting)
 - [ ] SSH-04: SSH timeout propagated to `ssh_connect()` — per-call timeout covers handshake, not just outer `wait_for`
 - [ ] SSH-05: `verify_mcp_admin_access()` uses resolved port/credentials from `resolve_ssh_credentials()`
 - [ ] ERR-02: `resolve_ssh_credentials()` wrapped in error handler — raises return JSON error payloads, not raw exceptions
@@ -113,17 +116,16 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 ## Context
 
-- Shipped v1.5 Critical Bug Fixes — 5 CodeRabbit PR #39 findings closed (WS-01, SSH-01, SSH-02, ERR-01, SCH-01) with 5 revert-proof regression tests
-- v1.5 audit verdict: `tech_debt` — functional coverage sound (6/6 requirements satisfied, 5/5 integrations WIRED); 4 process-level bookkeeping items deferred (missing Phase-31 VERIFICATION.md, both VALIDATION.md files incomplete, SUMMARY frontmatter shape inconsistency)
-- v1.5 stats: 43 commits, 82 files changed, +11,987 / -87 lines; active work Apr 19-20 on top of scope defined Apr 2
-- v1.4 baseline: ~15,554 LOC Python (src/) + ~17,569 LOC tests
-- Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite
-- 56 tools: 50 original + 6 `*_preview` variants, organized into 7 categories
-- Available on PyPI as `homelab-mcp` 1.4.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`
+- Shipped v1.6 Credential Architecture Cleanup — 5/5 requirements satisfied (CRED-04..08); audit verdict: `passed`. OS keyring is the single source of truth for remote credentials; parallel DB layer removed; cluster-scoped Proxmox API tokens added
+- v1.6 stats: 108 commits, 100 files changed, +23,042 / -3,368 lines; active work 2026-04-20 → 2026-04-24 (4 days). 4 phases (33, 33.1, 34, 35), 18 plans
+- v1.6 codebase: ~15,887 LOC Python (src/) + ~19,554 LOC tests
+- Tech stack: Python 3.12+, uv, asyncssh, mcp[cli], aiohttp, keyring, SQLite + optional PostgreSQL adapter
+- **51 tools** across 7 categories (down from 56 — v1.6 removed `setup_mcp_admin`, `update_server_credentials`, `remove_server`, `update_mcp_admin_groups`, `verify_mcp_admin_access`)
+- Available on PyPI as `homelab-mcp` 1.4.0 — install via `uvx homelab-mcp` or `pip install homelab-mcp`. Next release tag will be cut on the v1.6 codebase
 - MCP protocol surface complete: Tools + Resources + Prompts + Notifications
 - 4 workflow prompts: `connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`
 - All prompts use correct parameter names (`hostname=`) with regression tests guarding against regressions
-- Key patterns now in production: `_sudo_run` helper for all sudo calls with consistent `check=` forwarding, `asyncio.wait_for` for non-blocking PTY reads, `threading.Lock` for TOFU host key validation, `contextlib.suppress(Exception)` for idempotent websocket cleanup, AST meta-tests for lint-style regression guards
+- Key patterns now in production: keyring-only credential resolution (`resolve_ssh_credentials` Tier 1 explicit / Tier 2 keyring; `resolve_proxmox_credentials` node→cluster→error), AST meta-tests for lint-style regression guards (mcp_admin defaults, threshold coercion, missing await wrappers, hostname-only upserts), `_sudo_run` for sudo calls, `_run_with_timeout(10s)` per-subprocess SSH probe wrapping, `Semaphore(10) + asyncio.gather` for bulk discovery, `contextlib.suppress(Exception)` for idempotent cleanup, `_HOST_CLUSTER_CACHE` short-circuit for Proxmox cluster lookups
 
 ## Constraints
 
@@ -172,28 +174,26 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 | Report computed/derived values in error messages, not raw decorator parameters (v1.5 ERR-01) | Users see the actual number they were subject to (`effective_timeout`), not the unrelated input constant | ✓ Good — single-variable substitution, no helper refactor needed |
 | JSON Schema `enum` for fixed-choice MCP tool parameters (v1.5 SCH-01) | MCP framework validates JSON Schema before handler runs; cheaper than handler-side validation and self-documenting | ✓ Good — `credential_type` rejects arbitrary strings at protocol boundary |
 | Closed v1.5 with `tech_debt` verdict (not blocking) after inline ROADMAP reconcile | Revert-proof Phase-32 regressions make missing Phase-31 VERIFICATION.md a paperwork gap, not a risk gap | ⚠️ Revisit — if a future milestone repeats this pattern, consider building a retroactive verifier skill |
+| Keyring as single source of truth for remote credentials (v1.6 CRED-04) | Parallel DB + keyring storage caused desync; users edited one and not the other, leading to silent wrong-user logins | ✓ Good — DB `ssh_credentials` table dropped on both adapters; integration check #1 PASS (zero DB credential method calls in `src/`) |
+| `CredentialNotFoundError` with `credentials add <host>` pointer instead of `mcp_admin` fallback (v1.6 CRED-05) | Silent default login is worse than a clear error — users couldn't tell why connections appeared to succeed but acted wrong | ✓ Good — actionable miss path; AST meta-test guards against `mcp_admin` reintroduction in function signatures and TOOLS dict |
+| `register_server` verify-only schema (v1.6 CRED-07) | Verify-bypass path accepted registrations with no credentials, then silently fell back to mcp_admin | ✓ Good — schema reduced to hostname/username/port/display_name; calls `resolve_ssh_credentials` then `asyncssh.connect`; no DB writes |
+| Lock-step tool deletion across 7 surfaces (v1.6 33.1 D-05) | Deleting an MCP tool requires schema + handler + dispatch + 2 annotation shapes + openapi allowlist + openapi category — list-vs-dict shape difference broke 5-way parity assertion | ✓ Good — 7-way parity now enforced at import time; orphaned tests deleted (not skipped) per D-05 convention |
+| Cluster-scope keyring key form `{username}@cluster:{cluster_name}` (v1.6 CRED-08) | Per-node tokens didn't scale: 10-node cluster needed 10 separate credentials. Distinct keyring service name would have split the namespace; using `@cluster:` token in username slot keeps cluster credentials co-resident with per-node | ✓ Good — `credentials add --type proxmox --scope cluster:home` works; precedence per-node→cluster→error |
+| Async `get_proxmox_client` with `_HOST_CLUSTER_CACHE` (v1.6 34-03) | Resolver needs `await` to probe `/cluster/status`; sync caller had no path. INJECT-03 "first registry entry" shortcut deleted entirely as a hidden bypass | ✓ Good — 9 internal call sites updated to `await`; cache short-circuits second resolution; plain dict (not `lru_cache`) so test fixtures can `.clear()` |
+| Hostname-only upsert with degenerate-hostname fallback (v1.6 35-03) | `UNIQUE(hostname, connection_ip)` created zombie rows on IP changes; degenerate hostnames (`""`, `"unknown"`, `None`) needed a fallback to avoid collapsing distinct error rows | ✓ Good — `connection_ip` moved to UPDATE SET; migration drops stale UNIQUE + composite index; both adapters; idempotent |
+| Per-subprocess SSH timeout via `_run_with_timeout` (v1.6 35-01) | Bulk discovery hung 4+ minutes when one host was unresponsive — outer `wait_for` covers handshake but not per-probe blocking | ✓ Good — every `conn.run` probe wrapped at 10s; `partial: True` payload tag and `timed_out_commands` list when probes time out; outer wrapper bumped to 120s |
+| Parallel bulk discovery via `Semaphore(10) + asyncio.gather` (v1.6 35-02) | Serial bulk discovery scaled linearly with host count; 10 hosts at 30s each = 5 minutes | ✓ Good — 10-host fleet now completes in 30-40s; semaphore caps fanout to avoid SSH connection storms |
+| Null-defensive analyzers via `_has_threshold_data` helper (v1.6 35-02) | `device.get("cpu_cores") or 0` style coercion produced false-positive deployment recommendations on devices with null fields | ✓ Good — explicit `is not None` guards; AST meta-test bans coercion pattern in analyzer bodies (D-16) |
+| AST meta-tests as regression guards (v1.6 33.1 D-08, 35 D-14/D-15/D-16) | Class of bugs (always-passing ternaries, missing `await` wrappers, wrong upsert key, threshold coercion) can't be caught by a single positive regression test — parse production source AST and walk for forbidden patterns | ✓ Good — 4 v1.6 AST guards added; 33.1 scanner uses parent-pointer annotation idiom (`setattr(child, "_parent", parent)`) since `ast.walk` doesn't wire parents by default |
+| Closed v1.6 with `passed` verdict — 4 missing/partial Nyquist VALIDATION.md gaps accepted as non-blocking (v1.6 close) | Revert-proof regression pattern + AST meta-tests provide equivalent coverage per CLAUDE.md regression-test scope policy | ⚠️ Revisit — if Nyquist artifacts become important for compliance, run `/gsd-validate-phase` retroactively |
 
 ## Current State
 
-**Shipped:** v1.5 Critical Bug Fixes (2026-04-20) — all 5 CodeRabbit PR #39 findings closed with revert-proof regression tests. Audit verdict: `tech_debt` (functional coverage sound; 4 process-level bookkeeping items deferred).
+**Shipped:** v1.6 Credential Architecture Cleanup (2026-04-24) — OS keyring is the single source of truth for remote credentials; parallel DB `ssh_credentials` table dropped; all `mcp_admin` defaults on the credential path removed; `setup_mcp_admin` / `update_server_credentials` / `remove_server` / `update_mcp_admin_groups` / `verify_mcp_admin_access` deleted; `register_server` is verify-only; cluster-scoped Proxmox API tokens with node→cluster→error precedence; sitemap field-loss + zombie-row + bulk-discovery hang + null-threshold reliability fixes (Phase 35). Audit verdict: `passed` (5/5 requirements; 7/7 wirings; 4/4 E2E flows).
 
-**Latest PyPI:** `homelab-mcp` 1.4.0 (v1.5 did not bump the PyPI version — v1.5 scope was bug fixes inside the 1.4.x line; next release tag will be cut when a future milestone ships).
+**Latest PyPI:** `homelab-mcp` 1.4.0 (no PyPI bump for v1.5 or v1.6 — both shipped inside the 1.4.x line; next release tag will be cut on the v1.6 codebase).
 
-## Current Milestone: v1.6 Credential Architecture Cleanup
-
-**Goal:** The OS keyring becomes the single source of truth for remote credentials. The parallel DB `ssh_credentials` table, `mcp_admin` hardcoded defaults, and `setup_mcp_admin` bootstrap tool are removed. Proxmox API tokens can be stored at cluster scope so one credential serves all nodes in a datacenter.
-
-**Target features:**
-- Keyring-only SSH credential storage — drop the DB `ssh_credentials` table; no parallel store
-- Remove `mcp_admin` hardcoded fallback — explicit keyring entries required (actionable error otherwise)
-- Remove `setup_mcp_admin` MCP tool — device onboarding flows through `credentials add` CLI and the existing `connect_to_device` prompt
-- Fix `register_server` verify-path bypass — registration validates credentials via the standard resolve path
-- Cluster-scoped Proxmox API tokens — one datacenter-wide token shared across N nodes; per-node tokens remain supported
-
-**Why this milestone:**
-- v1.3 shipped keyring (`credential_store.py`) as a parallel layer next to the DB table for a fast, non-breaking rollout
-- v1.4/v1.4.1 added keyring auto-inject to specific tools but kept the DB fallback
-- v1.6 finishes the migration — keyring primary, DB removed, hardcoded fallbacks gone, Proxmox cluster model corrected
+**Next Milestone:** Planning. Strong v1.7 candidates: cross-cutting `mcp_admin` cleanup in non-resolver code paths (`infrastructure_crud.py`, `vm_operations.py`, `ssh_connection.py`, `service_installer.py`, schemas), SSH-04 per-call timeout to `ssh_connect()` handshake, QUAL-01 Proxmox iso/cdrom mutual exclusivity, HTTP-01 truthy variants, ERR-02 `resolve_ssh_credentials` error wrapping. See `.planning/milestones/v1.6-REQUIREMENTS.md` for full carryforward list.
 
 ## Evolution
 
@@ -213,4 +213,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-20 after v1.6 milestone start*
+*Last updated: 2026-04-24 after v1.6 milestone close*

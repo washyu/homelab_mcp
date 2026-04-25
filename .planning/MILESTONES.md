@@ -1,5 +1,37 @@
 # Milestones
 
+## v1.6 Credential Architecture Cleanup (Shipped: 2026-04-24)
+
+**Phases completed:** 4 phases (33, 33.1 INSERTED, 34, 35 INSERTED), 18 plans
+**Timeline:** 4 days active (Apr 20 - Apr 24, 2026)
+**Stats:** 108 commits, 100 files changed, +23,042 / -3,368 lines | 15,887 LOC src + 19,554 LOC tests
+**Tools:** 51 (down from 56 — removed `setup_mcp_admin`, `update_server_credentials`, `remove_server`, `update_mcp_admin_groups`, `verify_mcp_admin_access`)
+**Audit verdict:** `passed` — 5/5 requirements satisfied, 7/7 wirings PASS, 4/4 E2E flows WIRED
+
+**Key accomplishments:**
+1. **CRED-04** — Dropped DB `ssh_credentials` table on both adapters; deleted all DB credential read/write methods. Keyring is the only remaining credential storage layer
+2. **CRED-05** — `resolve_ssh_credentials` raises `CredentialNotFoundError` with `homelab-mcp credentials add <hostname>` pointer instead of falling back to `mcp_admin`. Two-tier resolution: explicit args → keyring → actionable miss
+3. **CRED-06** — Removed `setup_mcp_admin`, `update_server_credentials`, `remove_server` MCP tools. Device onboarding routes through the `credentials add` CLI and the existing `connect_to_device` prompt; no MCP tool writes credentials
+4. **CRED-07** — `register_server` reduced to a verify-only schema (hostname/username/port/display_name); calls `resolve_ssh_credentials` then `asyncssh.connect`. No code path accepts a registration without verified credentials
+5. **CRED-08** — Cluster-scoped Proxmox tokens via `credentials add --type proxmox --scope cluster:<name>`; new async `resolve_proxmox_credentials` walks node→cluster→error with `_HOST_CLUSTER_CACHE` short-circuit; per-node tokens take precedence
+6. **Phase 33.1 (INSERTED)** — SSH tool family uniformity: deleted `update_mcp_admin_groups` + `verify_mcp_admin_access` lock-step across 7 surfaces (schema/handler/dispatch/2 annotation shapes/openapi allowlist/openapi category); `sitemap.discover_and_store` and `bulk_discover_and_store` route through `resolve_ssh_credentials`; AST meta-tests guard against `mcp_admin` defaults reintroducing
+7. **Phase 35 (INSERTED)** — Sitemap + discovery reliability: `discover_and_map` field-loss closed (cpu.cores/memory.*/disk.*/usb/pci/block reach the row); hostname-only upsert with degenerate-hostname fallback (no zombie rows on IP change); per-subprocess SSH timeout via `_run_with_timeout(10s)` on every `conn.run` probe (eliminates 4+ minute hangs); `bulk_discover_and_store` parallelized with `Semaphore(10)` + `asyncio.gather`; null-defensive analyzers via `_has_threshold_data` helper
+8. **AST meta-tests as v1.6's regression guard pattern** — 4 new AST guards (33.1 D-08 mcp_admin defaults; 35 D-14 hostname-only upsert; 35 D-15 every `conn.run` is timeout-wrapped; 35 D-16 no `device.get(field) or 0` coercion in analyzer bodies). Class of bugs that no positive regression test catches
+
+**Scope-expansion phases (no original v1.6 REQ-ID):**
+- Phase 33.1 SSH Tool Family Keyring Uniformity — surfaced by Phase 33 live testing 2026-04-21; 5 plans, VERIFICATION 13/13
+- Phase 35 Sitemap + Discovery Reliability — surfaced by Phase 33 live testing 2026-04-21; 4 plans, VERIFICATION 32/32
+
+**Known gaps (deferred tech_debt — non-blocking):**
+- `33-VERIFICATION.md` missing — phase merged on plan-SUMMARY evidence (same pattern as Phase 31). Goal-backward verification supplied retroactively by milestone integration checker (all CRED-04..07 wiring PASS)
+- 4 missing/partial Nyquist VALIDATION.md files (33 draft, 33.1/34/35 missing) — non-blocking; revert-proof regression pattern + AST meta-tests provide equivalent coverage per CLAUDE.md regression-test scope policy
+- Cross-cutting `mcp_admin` hardcodes in non-resolver code paths (~20 sites across 6 files: `infrastructure_crud.py`, `vm_operations.py`, `ssh_connection.py`, `ssh_tools.py:565/583`, `service_installer.py`, `tool_schemas/service_tools_schema.py`). NONE on the credential-resolution path; downstream consumers. Strong v1.7 candidate
+- Carried from v1.5 close: 31-VERIFICATION.md missing, 31/32-VALIDATION.md gaps, SUMMARY frontmatter shape inconsistency
+
+**v1.7 candidates (deferred):** SSH-04 per-call timeout to handshake, QUAL-01 Proxmox iso/cdrom mutual exclusivity, HTTP-01 truthy variants, SSH-03 disambiguation (partially shipped — verify scope), SSH-05 (NOTE: `verify_mcp_admin_access` was deleted in 33.1; revisit), ERR-02 resolver error wrapping, cross-cutting mcp_admin cleanup
+
+---
+
 ## v1.5 Critical Bug Fixes (Shipped: 2026-04-20)
 
 **Phases completed:** 2 phases, 7 plans
