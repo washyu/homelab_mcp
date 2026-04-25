@@ -191,3 +191,12 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.8: Rename docker-adjacent tools to `docker_*` (BACKLOG)
+
+**Goal:** [Captured during v1.7 scoping 2026-04-25] Several tools that operate on Docker containers/images are not named with a `docker_` prefix, hiding the family from users browsing the tool list. Audit the tool registry, identify all Docker-adjacent tools, and rename them with the `docker_*` convention (matching the `proxmox_*` and `ssh_*` family naming). Naming-only refactor — no behavior changes. Leave deprecation aliases for one minor version. Out of scope for v1.7 (drift integration only).
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)

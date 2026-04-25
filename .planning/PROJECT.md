@@ -8,6 +8,28 @@ A production-ready Python MCP (Model Context Protocol) server that gives AI assi
 
 Every tool in the server actually works when a user calls it — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
 
+## Current Milestone: v1.7 Drift Integration & Polish
+
+**Goal:** Wire the drift detection module into the sitemap + keyring so it's a first-class part of the infrastructure-tracking flow rather than a parallel data layer; expose missing baseline CRUD tools; ensure every infrastructure-mutating tool family registers in sitemap + populates a baseline (and cleans up on destroy).
+
+**Target features:**
+- Drift ↔ sitemap integration (architectural root cause from v1.6 retest — Bug J)
+- Drift baseline CRUD tools (`register_drift_baseline`, `list_drift_baselines`, `delete_drift_baseline`)
+- Infrastructure-mutating tool families register sitemap row + drift baseline on create, clean up on destroy. Affected families:
+  - Proxmox VM (qemu) lifecycle
+  - Proxmox LXC lifecycle
+  - Terraform service installs
+  - Ansible service installs
+  - Proxmox community scripts
+  - Docker-adjacent tools (audit + identify during phase planning)
+  - Services catalog (if it mutates state)
+- `get_proxmox_vm_status` error hygiene — clean "VM not found" instead of raw HTTP 500 leak
+
+**Key context:**
+- Surfaced during v1.6 retest session 2026-04-25. 9 of 10 bugs trace to one architectural gap (drift module has its own data layer, never integrated with sitemap/keyring). Polish item (Bug I) bundled because it's adjacent.
+- v1.6 carryforwards (cross-cutting `mcp_admin`, SSH-04 handshake timeout, QUAL-01, HTTP-01, ERR-02) **deferred to v1.8** to keep this a clean architectural milestone.
+- Phase numbering continues from v1.6 → v1.7 starts at **Phase 36**.
+
 ## Requirements
 
 ### Validated
@@ -193,7 +215,7 @@ Every tool in the server actually works when a user calls it — a Proxmox homel
 
 **Latest PyPI:** `homelab-mcp` 1.4.0 (no PyPI bump for v1.5 or v1.6 — both shipped inside the 1.4.x line; next release tag will be cut on the v1.6 codebase).
 
-**Next Milestone:** Planning. Strong v1.7 candidates: cross-cutting `mcp_admin` cleanup in non-resolver code paths (`infrastructure_crud.py`, `vm_operations.py`, `ssh_connection.py`, `service_installer.py`, schemas), SSH-04 per-call timeout to `ssh_connect()` handshake, QUAL-01 Proxmox iso/cdrom mutual exclusivity, HTTP-01 truthy variants, ERR-02 `resolve_ssh_credentials` error wrapping. See `.planning/milestones/v1.6-REQUIREMENTS.md` for full carryforward list.
+**Active Milestone:** v1.7 Drift Integration & Polish — see `## Current Milestone` section above. v1.6 carryforwards (cross-cutting `mcp_admin`, SSH-04, QUAL-01, HTTP-01, ERR-02) deferred to v1.8. See `.planning/milestones/v1.6-REQUIREMENTS.md` for the full carryforward list.
 
 ## Evolution
 
@@ -213,4 +235,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-24 after v1.6 milestone close*
+*Last updated: 2026-04-25 — v1.7 Drift Integration & Polish milestone opened*
