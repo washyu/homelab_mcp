@@ -511,7 +511,12 @@ def test_ssh_credentials_table_dropped_postgres(monkeypatch):
     The Postgres migration (run_postgres_migrations / init_schema, whichever Plan 33-02 wires)
     must issue a DROP TABLE statement against the cursor.
     """
+    pytest.importorskip("psycopg2")
+
     from unittest.mock import Mock
+
+    from src.homelab_mcp import database as db_module
+    from src.homelab_mcp.database import PostgreSQLAdapter
 
     executed: list[str] = []
     mock_cursor = Mock()
@@ -531,13 +536,10 @@ def test_ssh_credentials_table_dropped_postgres(monkeypatch):
     cursor_ctx.fetchone = mock_cursor.fetchone
     mock_conn.commit = Mock()
 
-    monkeypatch.setattr(
-        "src.homelab_mcp.database.psycopg2.connect",
-        lambda *a, **kw: mock_conn,
-        raising=False,
-    )
-
-    from src.homelab_mcp.database import PostgreSQLAdapter
+    # Object-form monkeypatch — the dotted-string form would attempt to import
+    # `src.homelab_mcp.database.psycopg2` as a submodule, but `database` is a
+    # single-file module that lazy-imports psycopg2 as an attribute.
+    monkeypatch.setattr(db_module.psycopg2, "connect", lambda *a, **kw: mock_conn)
 
     adapter = PostgreSQLAdapter(
         connection_params={"host": "fake", "database": "fake", "user": "fake", "password": "fake"}
