@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
-status: phase_36_context_captured
-stopped_at: Phase 36 context captured — scan_drift 2-bucket interim shape locked; ready for /gsd-plan-phase 36 --research
-last_updated: "2026-04-25T00:00:00.000Z"
-last_activity: 2026-04-25 -- Phase 36 CONTEXT.md committed; planning next
+status: executing
+stopped_at: Phase 36 context captured — scan_drift 2-bucket interim shape locked
+last_updated: "2026-04-25T19:36:16.333Z"
+last_activity: 2026-04-25 -- Phase 36 planning complete
 progress:
-  total_phases: 5
+  total_phases: 9
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 Milestone: v1.7 Drift Architectural Fix
 Phase: 36 (Drift ↔ Sitemap Foundation) — context captured
 Plan: —
-Status: Phase 36 CONTEXT.md committed; ready for /gsd-plan-phase 36 --research
-Last activity: 2026-04-25 -- Phase 36 context captured (scan_drift 2-bucket interim shape locked)
+Status: Ready to execute
+Last activity: 2026-04-25 -- Phase 36 planning complete
 
 Progress: [          ] 0% — 0 / 5 phases complete
 
@@ -52,6 +52,7 @@ v1.7 surfaced during a 2026-04-25 retest of the v1.6 codebase. Live testing of t
 **Architectural decision (2026-04-25):** Sitemap is the single source of truth for drift detection. The parallel `drift_baselines` table is dropped — sitemap rows are the baseline. This dissolves Bug J at its root rather than integrating two data layers. Drift becomes "stored sitemap state ≠ current live-probe state" with three buckets: unknown (manually-created infra not in sitemap), missing (sitemap rows that no longer probe-respond), changed (probe values differ from stored).
 
 **Scope split:** Originally scoped 32 requirements across drift unification, lifecycle hooks across 7 tool families, and role-aware drift. Split into v1.7 / v1.7.1 / v1.7.2 for shippability:
+
 - **v1.7 Drift Architectural Fix** (this milestone) — DRFT-11..21 + POL-01..03 (14 reqs). Drop parallel baseline table, wire scan_infrastructure_drift to sitemap, detect unknown/missing/changed buckets, capture kernel/package/capability fingerprints, polish Bug I + G. 5 phases (36-40).
 - **v1.7.1 Infrastructure Lifecycle Hooks** — LIFE-01..12 (12 reqs). Every infra-mutating tool family updates sitemap on create/destroy. Estimated 5-7 phases.
 - **v1.7.2 Role-Aware Drift** — TAGS-01..03 + ROLE-01..03 (6 reqs); promotes backlog 999.4. Gateway routing/NAT drift, NAS service-health drift. Estimated 3-5 phases.
