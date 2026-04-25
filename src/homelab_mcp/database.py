@@ -64,50 +64,6 @@ class DatabaseAdapter(ABC):
         """Execute a query and return results."""
         pass
 
-    # SSH Credentials CRUD methods
-    @abstractmethod
-    def add_credential(
-        self,
-        hostname: str,
-        username: str = "mcp_admin",
-        key_path: str | None = None,
-        port: int = 22,
-        display_name: str | None = None,
-        device_id: int | None = None,
-    ) -> int:
-        """Add a new SSH credential record."""
-        pass
-
-    @abstractmethod
-    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
-        """Get a credential by its ID."""
-        pass
-
-    @abstractmethod
-    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
-        """Get credential by hostname and optionally username."""
-        pass
-
-    @abstractmethod
-    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
-        """Update a credential record."""
-        pass
-
-    @abstractmethod
-    def delete_credential(self, credential_id: int) -> bool:
-        """Delete a credential record."""
-        pass
-
-    @abstractmethod
-    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
-        """List all credentials."""
-        pass
-
-    @abstractmethod
-    def update_last_verified(self, credential_id: int) -> bool:
-        """Update the last_verified timestamp for a credential."""
-        pass
-
     # Drift baseline CRUD methods
     @abstractmethod
     def upsert_drift_baseline(
@@ -134,6 +90,17 @@ class DatabaseAdapter(ABC):
     @abstractmethod
     def get_all_drift_baselines(self) -> list[dict[str, Any]]:
         """Return all stored drift baselines ordered by node, vmid."""
+        pass
+
+    @abstractmethod
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """Remove devices where discovery failed.
+
+        Failed = ``status='error'`` OR ``hostname`` is empty/null/'unknown'.
+        Returns the list of removed rows (preview only when ``dry_run=True``).
+        Also deletes the corresponding ``discovery_history`` rows to avoid
+        orphan foreign keys.
+        """
         pass
 
 
@@ -198,12 +165,14 @@ class SQLiteAdapter(DatabaseAdapter):
                 disk_use_percent TEXT,
                 disk_mount TEXT,
                 network_interfaces TEXT,
+                usb_devices TEXT,
+                pci_devices TEXT,
+                block_devices TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, connection_ip)
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -219,44 +188,18 @@ class SQLiteAdapter(DatabaseAdapter):
             )
         """)
 
-        # Create ssh_credentials table for persistent credential storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER,
-                hostname TEXT NOT NULL,
-                username TEXT NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name TEXT,
-                is_active INTEGER DEFAULT 1,
-                last_verified TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, username),
-                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
-            )
-        """)
-
         # Create indexes
+        # Phase 35 D-01: hostname is the natural key for upsert; composite
+        # (hostname, connection_ip) index dropped in favor of a non-unique
+        # hostname-alone index for the new match clause.
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
-            ON devices (hostname, connection_ip)
+            CREATE INDEX IF NOT EXISTS idx_devices_hostname
+            ON devices (hostname)
         """)
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_history_device_id
             ON discovery_history (device_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
         """)
 
         # Create drift_baselines table for VM configuration baseline storage
@@ -280,6 +223,15 @@ class SQLiteAdapter(DatabaseAdapter):
 
         self.connection.commit()
 
+        # Phase 33/35 migrations: CREATE TABLE IF NOT EXISTS is a no-op on
+        # pre-existing DBs, so ALTER-TABLE migrations (Phase 35 usb/pci/block
+        # columns, stale UNIQUE drop, zombie-row dedup, Phase 33 ssh_credentials
+        # drop) must run separately. Pass our live connection so ``:memory:``
+        # databases (which are per-connection) stay on the same DB.
+        from .migration import run_sqlite_migrations  # noqa: PLC0415
+
+        run_sqlite_migrations(_connection=self.connection)
+
     def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device in SQLite."""
         if not self.connection:
@@ -289,13 +241,20 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor = self.connection.cursor()
 
         # Check if device exists
-        cursor.execute(
-            """
-            SELECT id FROM devices
-            WHERE hostname = ? AND connection_ip = ?
-        """,
-            (device_data["hostname"], device_data["connection_ip"]),
-        )
+        # Phase 35 D-01: hostname is the natural key. D-01a: fall back to
+        # (hostname, connection_ip) when hostname is degenerate ('', 'unknown', None)
+        # so distinct error rows (Phase 33 behavior) are preserved.
+        hostname_key = device_data["hostname"]
+        if hostname_key in (None, "", "unknown"):
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = ? AND connection_ip = ?",
+                (hostname_key, device_data["connection_ip"]),
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = ?",
+                (hostname_key,),
+            )
 
         existing = cursor.fetchone()
 
@@ -309,7 +268,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     memory_total = ?, memory_used = ?, memory_free = ?, memory_available = ?,
                     disk_filesystem = ?, disk_size = ?, disk_used = ?, disk_available = ?,
                     disk_use_percent = ?, disk_mount = ?, network_interfaces = ?,
-                    uptime = ?, os_info = ?, error_message = ?, updated_at = ?
+                    usb_devices = ?, pci_devices = ?, block_devices = ?,
+                    uptime = ?, os_info = ?, error_message = ?, updated_at = ?,
+                    connection_ip = ?
                 WHERE id = ?
             """,
                 (
@@ -328,10 +289,14 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("disk_use_percent"),
                     device_data.get("disk_mount"),
                     device_data.get("network_interfaces"),
+                    device_data.get("usb_devices"),
+                    device_data.get("pci_devices"),
+                    device_data.get("block_devices"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
                     datetime.now().isoformat(),
+                    device_data["connection_ip"],
                     device_id,
                 ),
             )
@@ -344,8 +309,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     memory_total, memory_used, memory_free, memory_available,
                     disk_filesystem, disk_size, disk_used, disk_available,
                     disk_use_percent, disk_mount, network_interfaces,
+                    usb_devices, pci_devices, block_devices,
                     uptime, os_info, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     device_data["hostname"],
@@ -365,6 +331,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("disk_use_percent"),
                     device_data.get("disk_mount"),
                     device_data.get("network_interfaces"),
+                    device_data.get("usb_devices"),
+                    device_data.get("pci_devices"),
+                    device_data.get("block_devices"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
@@ -395,6 +364,14 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_dict["network_interfaces"] = json.loads(device_dict["network_interfaces"])
                 except json.JSONDecodeError:
                     device_dict["network_interfaces"] = []
+
+            # Phase 35 D-09b: parse usb_devices / pci_devices / block_devices JSON
+            for _json_col in ("usb_devices", "pci_devices", "block_devices"):
+                if device_dict.get(_json_col):
+                    try:
+                        device_dict[_json_col] = json.loads(device_dict[_json_col])
+                    except json.JSONDecodeError:
+                        device_dict[_json_col] = []
 
             devices.append(device_dict)
 
@@ -469,170 +446,6 @@ class SQLiteAdapter(DatabaseAdapter):
             cursor.execute(query)
 
         return [dict(row) for row in cursor.fetchall()]
-
-    # SSH Credentials CRUD methods
-    def add_credential(
-        self,
-        hostname: str,
-        username: str = "mcp_admin",
-        key_path: str | None = None,
-        port: int = 22,
-        display_name: str | None = None,
-        device_id: int | None = None,
-    ) -> int:
-        """Add a new SSH credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO ssh_credentials
-            (hostname, username, key_path, port, display_name, device_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (hostname, username, key_path, port, display_name, device_id),
-        )
-
-        self.connection.commit()
-        lastrowid = cursor.lastrowid
-        assert lastrowid is not None
-        return lastrowid
-
-    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
-        """Get a credential by its ID."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "SELECT * FROM ssh_credentials WHERE id = ?",
-            (credential_id,),
-        )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
-
-    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
-        """Get credential by hostname and optionally username."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        if username:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = ? AND username = ? AND is_active = 1
-            """,
-                (hostname, username),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = ? AND is_active = 1
-                ORDER BY id DESC LIMIT 1
-            """,
-                (hostname,),
-            )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
-
-    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
-        """Update a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-
-        # Build update query dynamically based on provided kwargs
-        allowed_fields = {
-            "hostname",
-            "username",
-            "key_path",
-            "port",
-            "display_name",
-            "device_id",
-            "is_active",
-        }
-        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
-
-        if not update_fields:
-            return False
-
-        # Add updated_at timestamp
-        set_clause = ", ".join(f"{k} = ?" for k in update_fields)
-        set_clause += ", updated_at = CURRENT_TIMESTAMP"
-        values = list(update_fields.values()) + [credential_id]
-
-        cursor = self.connection.cursor()
-        cursor.execute(
-            f"UPDATE ssh_credentials SET {set_clause} WHERE id = ?",  # nosec B608 — set_clause built from validated column names, not user input; values are parameterized
-            values,
-        )
-
-        self.connection.commit()
-        return cursor.rowcount > 0
-
-    def delete_credential(self, credential_id: int) -> bool:
-        """Delete a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "DELETE FROM ssh_credentials WHERE id = ?",
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        return cursor.rowcount > 0
-
-    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
-        """List all credentials."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        if active_only:
-            cursor.execute("SELECT * FROM ssh_credentials WHERE is_active = 1 ORDER BY hostname")
-        else:
-            cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
-
-        return [dict(row) for row in cursor.fetchall()]
-
-    def update_last_verified(self, credential_id: int) -> bool:
-        """Update the last_verified timestamp for a credential."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            UPDATE ssh_credentials
-            SET last_verified = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """,
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        return cursor.rowcount > 0
 
     # Drift baseline CRUD methods
     def upsert_drift_baseline(
@@ -713,6 +526,40 @@ class SQLiteAdapter(DatabaseAdapter):
             results.append(entry)
         return results
 
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT id, hostname, connection_ip, status, error_message, last_seen
+            FROM devices
+            WHERE status = 'error'
+               OR hostname IS NULL
+               OR hostname = ''
+               OR hostname = 'unknown'
+            ORDER BY id
+            """
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+        if dry_run or not candidates:
+            return candidates
+        ids = [row["id"] for row in candidates]
+        placeholders = ",".join("?" * len(ids))
+        # Delete history first (no ON DELETE CASCADE); then devices.
+        cursor.execute(
+            f"DELETE FROM discovery_history WHERE device_id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+        cursor.execute(
+            f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+        self.connection.commit()
+        return candidates
+
 
 class PostgreSQLAdapter(DatabaseAdapter):
     """PostgreSQL database adapter with JSONB support."""
@@ -754,6 +601,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor = self.connection.cursor()
 
         # Create devices table with JSONB columns
+        # Phase 35 D-01: composite UNIQUE dropped — hostname alone is the natural
+        # upsert key (migration.py drops the stale composite for pre-existing DBs).
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS devices (
                 id SERIAL PRIMARY KEY,
@@ -765,8 +614,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 network_interfaces JSONB DEFAULT '[]',
                 error_message TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, connection_ip)
+                updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
 
@@ -781,28 +629,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
             )
         """)
 
-        # Create ssh_credentials table for persistent credential storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name VARCHAR(255),
-                is_active BOOLEAN DEFAULT TRUE,
-                last_verified TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, username)
-            )
-        """)
-
         # Create indexes including JSONB indexes
+        # Phase 35 D-01: composite (hostname, connection_ip) index dropped in
+        # favor of a non-unique hostname-alone index for the new match clause.
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
-            ON devices (hostname, connection_ip)
+            CREATE INDEX IF NOT EXISTS idx_devices_hostname
+            ON devices (hostname)
         """)
 
         cursor.execute("""
@@ -830,17 +662,14 @@ class PostgreSQLAdapter(DatabaseAdapter):
             ON discovery_history USING GIN (discovery_data)
         """)
 
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
         self.connection.commit()
+
+        # Phase 33/35 migrations on pre-existing Postgres DBs: drop legacy
+        # ssh_credentials table, dedup zombie hostname rows, drop stale UNIQUE
+        # (hostname, connection_ip). Pass our live connection to reuse it.
+        from .migration import run_postgres_migrations  # noqa: PLC0415
+
+        run_postgres_migrations(_connection=self.connection)
 
     def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device in PostgreSQL with JSONB."""
@@ -872,6 +701,11 @@ class PostgreSQLAdapter(DatabaseAdapter):
             },
             "uptime": device_data.get("uptime"),
             "os": device_data.get("os_info"),
+            # Phase 35 D-09b: usb/pci/block device inventories land inside the
+            # existing system_info JSONB column (no schema change on Postgres).
+            "usb_devices": _maybe_json_load(device_data.get("usb_devices")),
+            "pci_devices": _maybe_json_load(device_data.get("pci_devices")),
+            "block_devices": _maybe_json_load(device_data.get("block_devices")),
         }
 
         # Parse network interfaces
@@ -886,24 +720,34 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 network_interfaces = device_data["network_interfaces"]
 
         # Check if device exists
-        cursor.execute(
-            """
-            SELECT id FROM devices
-            WHERE hostname = %s AND connection_ip = %s
-        """,
-            (device_data["hostname"], device_data["connection_ip"]),
-        )
+        # Phase 35 D-01: hostname is the natural key. D-01a: fall back to
+        # (hostname, connection_ip) when hostname is degenerate.
+        hostname_key = device_data["hostname"]
+        if hostname_key in (None, "", "unknown"):
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = %s AND connection_ip = %s",
+                (hostname_key, device_data["connection_ip"]),
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM devices WHERE hostname = %s",
+                (hostname_key,),
+            )
 
         existing = cursor.fetchone()
 
         if existing:
             # Update existing device
+            # Phase 35 D-01: connection_ip becomes an UPDATE field (was part of
+            # the match clause pre-Phase-35) so re-discovery with a new IP
+            # rewrites the row instead of creating a zombie.
             device_id: int = existing[0]
             cursor.execute(
                 """
                 UPDATE devices SET
                     last_seen = %s, status = %s, system_info = %s,
-                    network_interfaces = %s, error_message = %s, updated_at = NOW()
+                    network_interfaces = %s, error_message = %s, connection_ip = %s,
+                    updated_at = NOW()
                 WHERE id = %s
             """,
                 (
@@ -912,6 +756,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
                     json.dumps(system_info),
                     json.dumps(network_interfaces),
                     device_data.get("error_message"),
+                    device_data["connection_ip"],
                     device_id,
                 ),
             )
@@ -980,6 +825,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         "disk_mount": system_info.get("disk", {}).get("mount"),
                         "uptime": system_info.get("uptime"),
                         "os_info": system_info.get("os"),
+                        # Phase 35 D-09b: flatten usb/pci/block device inventories
+                        # so downstream consumers see the same top-level keys as
+                        # the SQLite path.
+                        "usb_devices": system_info.get("usb_devices"),
+                        "pci_devices": system_info.get("pci_devices"),
+                        "block_devices": system_info.get("block_devices"),
                     }
                 )
 
@@ -1062,175 +913,6 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         return [dict(row) for row in cursor.fetchall()]
 
-    # SSH Credentials CRUD methods
-    def add_credential(
-        self,
-        hostname: str,
-        username: str = "mcp_admin",
-        key_path: str | None = None,
-        port: int = 22,
-        display_name: str | None = None,
-        device_id: int | None = None,
-    ) -> int:
-        """Add a new SSH credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO ssh_credentials
-            (hostname, username, key_path, port, display_name, device_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """,
-            (hostname, username, key_path, port, display_name, device_id),
-        )
-
-        result = cursor.fetchone()
-        assert result is not None
-        self.connection.commit()
-        credential_id_result: int = result[0]
-        return credential_id_result
-
-    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
-        """Get a credential by its ID."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(
-            "SELECT * FROM ssh_credentials WHERE id = %s",
-            (credential_id,),
-        )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
-
-    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
-        """Get credential by hostname and optionally username."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        if username:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = %s AND username = %s AND is_active = TRUE
-            """,
-                (hostname, username),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = %s AND is_active = TRUE
-                ORDER BY id DESC LIMIT 1
-            """,
-                (hostname,),
-            )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
-
-    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
-        """Update a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-
-        # Build update query dynamically based on provided kwargs
-        allowed_fields = {
-            "hostname",
-            "username",
-            "key_path",
-            "port",
-            "display_name",
-            "device_id",
-            "is_active",
-        }
-        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
-
-        if not update_fields:
-            return False
-
-        # Add updated_at timestamp
-        set_clause = ", ".join(f"{k} = %s" for k in update_fields)
-        set_clause += ", updated_at = NOW()"
-        values = list(update_fields.values()) + [credential_id]
-
-        cursor = self.connection.cursor()
-        cursor.execute(
-            f"UPDATE ssh_credentials SET {set_clause} WHERE id = %s",  # nosec B608 — set_clause built from validated column names, not user input; values are parameterized
-            values,
-        )
-
-        self.connection.commit()
-        rowcount: int = cursor.rowcount
-        return rowcount > 0
-
-    def delete_credential(self, credential_id: int) -> bool:
-        """Delete a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "DELETE FROM ssh_credentials WHERE id = %s",
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        rowcount: int = cursor.rowcount
-        return rowcount > 0
-
-    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
-        """List all credentials."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        if active_only:
-            cursor.execute("SELECT * FROM ssh_credentials WHERE is_active = TRUE ORDER BY hostname")
-        else:
-            cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
-
-        return [dict(row) for row in cursor.fetchall()]
-
-    def update_last_verified(self, credential_id: int) -> bool:
-        """Update the last_verified timestamp for a credential."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            UPDATE ssh_credentials
-            SET last_verified = NOW(), updated_at = NOW()
-            WHERE id = %s
-        """,
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        rowcount: int = cursor.rowcount
-        return rowcount > 0
-
     # Drift baseline CRUD methods (Phase 11 scope: SQLite only — stubs for ABC compliance)
     def upsert_drift_baseline(
         self,
@@ -1256,6 +938,33 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """Not implemented for PostgreSQL in Phase 11 scope."""
         raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
 
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            """
+            SELECT id, hostname, connection_ip::text AS connection_ip,
+                   status, error_message, last_seen::text AS last_seen
+            FROM devices
+            WHERE status = 'error'
+               OR hostname IS NULL
+               OR hostname = ''
+               OR hostname = 'unknown'
+            ORDER BY id
+            """
+        )
+        candidates = [dict(row) for row in cursor.fetchall()]
+        if dry_run or not candidates:
+            return candidates
+        ids = [row["id"] for row in candidates]
+        cursor.execute("DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,))
+        cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
+        self.connection.commit()
+        return candidates
+
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
     """Factory function to get the appropriate database adapter."""
@@ -1276,3 +985,24 @@ def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseA
 def calculate_data_hash(discovery_data: str) -> str:
     """Calculate hash of discovery data for change detection."""
     return hashlib.sha256(discovery_data.encode()).hexdigest()
+
+
+def _maybe_json_load(value: Any) -> Any:
+    """Decode a JSON-string into native Python if it looks like one; else pass through.
+
+    Phase 35 D-09b helper — ``NetworkDevice.usb_devices`` / ``pci_devices`` /
+    ``block_devices`` are JSON-encoded strings per the sitemap dataclass
+    contract; the Postgres JSONB path prefers structured values, so we
+    round-trip the string through ``json.loads`` before dumping the enclosing
+    ``system_info`` dict. Passes ``None``, empty string, decode error, or
+    non-string values through as ``None`` (except non-string which pass through
+    unchanged).
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return None

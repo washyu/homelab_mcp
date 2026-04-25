@@ -6,6 +6,7 @@ while preserving non-MCP routes (/health, /shell, /ws/shell).
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -169,8 +170,6 @@ async def handle_shell_page(request: Request) -> Response:
 
 async def handle_shell_websocket(websocket: WebSocket) -> None:
     """Handle WebSocket connection for interactive shell."""
-    import asyncio
-
     session_id = websocket.path_params["session_id"]
     session = shell_session_manager.get_session(session_id)
     if not session:
@@ -190,16 +189,34 @@ async def handle_shell_websocket(websocket: WebSocket) -> None:
             while True:
                 try:
                     if session.process.stdout:
-                        data = await session.process.stdout.read(4096)
+                        data = await asyncio.wait_for(
+                            session.process.stdout.read(4096),
+                            timeout=0.05,
+                        )
                         if data:
                             text = data if isinstance(data, str) else data.decode("utf-8")
                             await websocket.send_text(text)
                         else:
+                            # EOF — process exited; close websocket to unblock outer loop
+                            await websocket.send_text("\r\n\x1b[31m[Connection closed]\x1b[0m\r\n")
+                            with contextlib.suppress(Exception):
+                                await websocket.close()
                             break
+                    else:
+                        with contextlib.suppress(Exception):
+                            await websocket.close()
+                        break
+                except TimeoutError:
+                    logger.debug("No PTY data within timeout — retrying")
                 except Exception as e:
                     logger.error(f"Error reading output: {e}")
+                    try:
+                        await websocket.send_text(f"\r\n\x1b[31m[Read error: {e}]\x1b[0m\r\n")
+                    except Exception as send_err:
+                        logger.debug(f"Could not send error to websocket: {send_err}")
+                    with contextlib.suppress(Exception):
+                        await websocket.close()
                     break
-                await asyncio.sleep(0.01)
 
         output_task = asyncio.create_task(read_output())
 

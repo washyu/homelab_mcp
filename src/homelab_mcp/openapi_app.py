@@ -40,6 +40,7 @@ STANDALONE_TOOLS: set[str] = {
     "get_network_sitemap",
     "analyze_network_topology",
     "suggest_deployments",
+    "purge_failed_discoveries",
     # Credential listing (reads local keyring, may be empty)
     "list_registered_servers",
     # Proxmox script search (queries GitHub API, no Proxmox needed)
@@ -67,11 +68,8 @@ INFRA_REQUIREMENTS: dict[str, str] = {
 # source="env":  pull host from the environment variable named by `field`.
 _SSH_TOOLS_WITH_HOSTNAME = (
     "ssh_discover",
-    "setup_mcp_admin",
-    "verify_mcp_admin",
     "ssh_execute_command",
     "start_interactive_shell",
-    "update_mcp_admin_groups",
     "discover_and_map",
     "check_service_requirements",
     "install_service",
@@ -143,11 +141,8 @@ def _resolve_external_host(tool_name: str, body: dict[str, Any]) -> tuple[str, i
 TOOL_CATEGORIES: dict[str, list[str]] = {
     "SSH": [
         "ssh_discover",
-        "setup_mcp_admin",
-        "verify_mcp_admin",
         "ssh_execute_command",
         "start_interactive_shell",
-        "update_mcp_admin_groups",
     ],
     "Network Discovery": [
         "discover_and_map",
@@ -156,6 +151,7 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "analyze_network_topology",
         "suggest_deployments",
         "get_device_changes",
+        "purge_failed_discoveries",
     ],
     "VM & Containers": [
         "deploy_vm",
@@ -182,9 +178,6 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
     "Credentials": [
         "register_server",
         "list_registered_servers",
-        "update_server_credentials",
-        "remove_server",
-        "remove_server_preview",
     ],
     "Infrastructure": [
         "deploy_infrastructure",

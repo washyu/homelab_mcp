@@ -104,9 +104,10 @@ class ShellSessionManager:
         )
 
         # Start interactive shell with PTY
+        # term_size=(cols, rows): width=80 columns, height=24 rows
         process = await connection.create_process(
             term_type="xterm-256color",
-            term_size=(24, 80),  # Default size, will be updated by client
+            term_size=(80, 24),
         )
 
         # Generate session ID

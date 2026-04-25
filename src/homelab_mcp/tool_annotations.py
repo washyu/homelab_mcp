@@ -1,6 +1,6 @@
 """Tool annotations for MCP spec compliance.
 
-Maps all 56 tool names to ToolAnnotations instances with readOnlyHint,
+Maps all 57 tool names to ToolAnnotations instances with readOnlyHint,
 destructiveHint, and idempotentHint set. MCP clients use these hints
 to distinguish read-only from destructive tools and provide safety warnings.
 """
@@ -34,19 +34,19 @@ _READ_ONLY_TOOLS = [
     "get_vm_status",
     "get_vm_logs",
     "list_registered_servers",
+    "list_keyring_credentials",
     "scan_infrastructure_drift",
     "search_proxmox_scripts",
     "get_proxmox_script_info",
     "list_proxmox_resources",
     "get_proxmox_node_status",
     "get_proxmox_vm_status",
-    "verify_mcp_admin",
     "check_ansible_service",
     "validate_infrastructure_changes",
+    "list_keyring_credentials",
     "decommission_device_preview",
     "delete_proxmox_vm_preview",
     "remove_vm_preview",
-    "remove_server_preview",
     "destroy_terraform_service_preview",
     "rollback_infrastructure_changes_preview",
 ]
@@ -65,10 +65,10 @@ _DESTRUCTIVE = ToolAnnotations(
 _DESTRUCTIVE_TOOLS = [
     "decommission_device",
     "remove_vm",
-    "remove_server",
     "delete_proxmox_vm",
     "destroy_terraform_service",
     "rollback_infrastructure_changes",
+    "purge_failed_discoveries",
 ]
 
 # ---------------------------------------------------------------------------
@@ -86,16 +86,6 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=True,
-    ),
-    "setup_mcp_admin": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-    ),
-    "update_mcp_admin_groups": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
     ),
     "ssh_execute_command": ToolAnnotations(
         readOnlyHint=False,
@@ -125,11 +115,6 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         idempotentHint=False,
     ),
     "update_device_config": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-    ),
-    "update_server_credentials": ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=False,

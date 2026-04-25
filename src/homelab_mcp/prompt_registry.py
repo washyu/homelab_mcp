@@ -49,6 +49,17 @@ HOMELAB_PROMPTS: dict[str, types.Prompt] = {
         description="Read all infrastructure resources and summarize homelab state",
         arguments=[],
     ),
+    "connect_to_device": types.Prompt(
+        name="connect_to_device",
+        description="Step-by-step onboarding workflow for connecting a new device to the homelab",
+        arguments=[
+            types.PromptArgument(
+                name="hostname",
+                description="Hostname or IP address of the new device to onboard",
+                required=True,
+            )
+        ],
+    ),
 }
 
 
@@ -99,14 +110,46 @@ def _build_deploy_service_result(args: dict[str, str]) -> types.GetPromptResult:
     text = f"""Follow these steps to deploy {service_name} on {target_host}:
 
 Pre-flight checks:
-1. Call ssh_discover with host="{target_host}" to verify SSH connectivity.
-2. Call list_installed_services with host="{target_host}" to check for conflicts with {service_name}.
+1. Call ssh_discover with hostname="{target_host}" to verify SSH connectivity.
+2. Call get_service_status with service_name="{service_name}" and hostname="{target_host}" to check whether {service_name} is already installed.
 
 If pre-flight checks pass:
-3. Call install_service with service_name="{service_name}" and host="{target_host}".
+3. Call install_service with service_name="{service_name}" and hostname="{target_host}".
 4. Report the installation result to the user."""
     return types.GetPromptResult(
         description="Service deployment with pre-flight checks",
+        messages=[_make_user_message(text)],
+    )
+
+
+def _build_connect_to_device_result(args: dict[str, str]) -> types.GetPromptResult:
+    """Build the connect_to_device prompt result (TOFU-03, Phase 33 D-13/D-18/D-22)."""
+    hostname = args.get("hostname", "<hostname>")
+    text = f"""Follow these steps to onboard {hostname} into your homelab:
+
+1. Ensure you have an SSH-accessible user on {hostname} with sudo privileges. \
+The username can be anything — you will specify it in the next step.
+
+2. Run the CLI command in your terminal: homelab-mcp credentials add {hostname} \
+<username> — this stores the SSH credential in your OS keyring. For key-based auth: \
+homelab-mcp credentials add {hostname} <username> --key-path <path>.
+
+3. Call register_server with hostname="{hostname}" and username="<username>" to \
+verify the stored credential end-to-end.
+
+4. Call ssh_discover with hostname="{hostname}" to collect hardware and system info \
+and record it in the database.
+
+5. Call discover_and_map with hostname="{hostname}" to add the device to the network \
+sitemap.
+
+6. Call ssh_execute_command with hostname="{hostname}" and command="sudo -n true" to \
+confirm the registered user has passwordless sudo. A non-zero exit code means sudo \
+is not configured for the registered user.
+
+If any step fails, fix the issue before proceeding to the next step."""
+    return types.GetPromptResult(
+        description="Full device onboarding workflow",
         messages=[_make_user_message(text)],
     )
 
@@ -153,6 +196,8 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
         return _build_deploy_service_result(args)
     elif name == "homelab_health_check":
         return _build_health_check_result(args)
+    elif name == "connect_to_device":
+        return _build_connect_to_device_result(args)
     else:
         raise McpError(
             types.ErrorData(

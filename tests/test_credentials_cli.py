@@ -62,7 +62,7 @@ def test_credentials_add_ssh(
     )
     monkeypatch.setattr(
         "homelab_mcp.server.register_credential",
-        lambda hostname, username, credential_type="ssh": None,
+        lambda hostname, username, credential_type="ssh", auth_type="password": None,
     )
     args = argparse.Namespace(hostname="myhost", username="myuser", credential_type="ssh")
     _cmd_credentials_add(args)
@@ -84,7 +84,7 @@ def test_credentials_add_uses_getpass(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         "homelab_mcp.server.register_credential",
-        lambda hostname, username, credential_type="ssh": None,
+        lambda hostname, username, credential_type="ssh", auth_type="password": None,
     )
     args = argparse.Namespace(hostname="h", username="u", credential_type="ssh")
     _cmd_credentials_add(args)
@@ -214,7 +214,7 @@ def test_credentials_add_proxmox(
     )
     monkeypatch.setattr(
         "homelab_mcp.server.register_credential",
-        lambda hostname, username, credential_type="ssh": None,
+        lambda hostname, username, credential_type="ssh", auth_type="password": None,
     )
     args = argparse.Namespace(hostname="pxhost", username="pxuser", credential_type="proxmox")
     _cmd_credentials_add(args)
@@ -278,3 +278,363 @@ def test_help_output_includes_credentials(monkeypatch: pytest.MonkeyPatch, capsy
     assert exc_info.value.code == 0
     combined = capsys.readouterr().out + capsys.readouterr().err
     assert "credentials" in combined, "Expected 'credentials' in --help output"
+
+
+# ---------------------------------------------------------------------------
+# Phase 34 — cluster-scoped credential CLI tests (D-06, D-07, D-08, D-08a)
+# ---------------------------------------------------------------------------
+
+
+def test_credentials_add_cluster_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 1 (D-06): add --scope cluster:<name> calls store/register with cluster kwargs, prints success."""
+    import getpass  # noqa: PLC0415
+
+    from homelab_mcp.server import _cmd_credentials_add  # noqa: PLC0415
+
+    store_calls: list[dict[str, object]] = []
+    register_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "secret_uuid")
+    monkeypatch.setattr(
+        "homelab_mcp.server.store_credential",
+        lambda hostname, username, password, credential_type="ssh", *, scope="node", cluster_name="": (
+            store_calls.append(
+                {
+                    "hostname": hostname,
+                    "username": username,
+                    "password": password,
+                    "credential_type": credential_type,
+                    "scope": scope,
+                    "cluster_name": cluster_name,
+                }
+            )
+            or True
+        ),
+    )
+    monkeypatch.setattr(
+        "homelab_mcp.server.register_credential",
+        lambda hostname, username, credential_type="ssh", auth_type="password", *, scope="node", cluster_name="": (
+            register_calls.append(
+                {
+                    "hostname": hostname,
+                    "username": username,
+                    "credential_type": credential_type,
+                    "auth_type": auth_type,
+                    "scope": scope,
+                    "cluster_name": cluster_name,
+                }
+            )
+        ),
+    )
+
+    args = argparse.Namespace(
+        hostname=None,
+        username="root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster:homelab-prod",
+        key_path=None,
+    )
+    _cmd_credentials_add(args)
+
+    captured = capsys.readouterr()
+    # store_credential called with cluster kwargs
+    assert len(store_calls) == 1
+    assert store_calls[0]["hostname"] == ""
+    assert store_calls[0]["scope"] == "cluster"
+    assert store_calls[0]["cluster_name"] == "homelab-prod"
+    assert store_calls[0]["username"] == "root@pam!tok"
+    # register_credential called with cluster kwargs
+    assert len(register_calls) == 1
+    assert register_calls[0]["scope"] == "cluster"
+    assert register_calls[0]["cluster_name"] == "homelab-prod"
+    # stdout references cluster address form
+    assert "cluster:homelab-prod" in captured.out
+
+
+def test_credentials_add_proxmox_per_node_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 2 (SC-5): add --type proxmox <hostname> <username> (no --scope) behaves as before."""
+    import getpass  # noqa: PLC0415
+
+    from homelab_mcp.server import _cmd_credentials_add  # noqa: PLC0415
+
+    store_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "pw")
+    monkeypatch.setattr(
+        "homelab_mcp.server.store_credential",
+        lambda hostname, username, password, credential_type="ssh", *, scope="node", cluster_name="": (
+            store_calls.append({"hostname": hostname, "scope": scope, "cluster_name": cluster_name}) or True
+        ),
+    )
+    monkeypatch.setattr(
+        "homelab_mcp.server.register_credential",
+        lambda hostname, username, credential_type="ssh", auth_type="password", *, scope="node", cluster_name="": None,
+    )
+
+    args = argparse.Namespace(
+        hostname="pve1.home",
+        username="root@pam!tok",
+        credential_type="proxmox",
+        scope=None,
+        key_path=None,
+    )
+    _cmd_credentials_add(args)
+
+    captured = capsys.readouterr()
+    # per-node path: hostname used, scope stays "node"
+    assert len(store_calls) == 1
+    assert store_calls[0]["hostname"] == "pve1.home"
+    assert store_calls[0]["scope"] == "node"
+    assert store_calls[0]["cluster_name"] == ""
+    assert "pve1.home" in captured.out
+
+
+def test_credentials_add_rejects_hostname_with_cluster_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 3 (D-06): hostname positional must not be provided when --scope cluster:<name> is used."""
+    import getpass  # noqa: PLC0415
+
+    from homelab_mcp.server import _cmd_credentials_add  # noqa: PLC0415
+
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "pw")
+
+    args = argparse.Namespace(
+        hostname="pve1.home",
+        username="root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster:homelab-prod",
+        key_path=None,
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        _cmd_credentials_add(args)
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "hostname" in captured.err.lower() or "must not be provided" in captured.err
+
+
+def test_credentials_add_rejects_empty_cluster_name(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 4 (D-06): --scope cluster: with empty name after colon exits 1."""
+    import getpass  # noqa: PLC0415
+
+    from homelab_mcp.server import _cmd_credentials_add  # noqa: PLC0415
+
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "pw")
+
+    args = argparse.Namespace(
+        hostname=None,
+        username="root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster:",
+        key_path=None,
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        _cmd_credentials_add(args)
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "cluster_name" in captured.err or "cluster name" in captured.err.lower()
+
+
+def test_credentials_add_rejects_cluster_scope_with_ssh_type(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 5 (D-06): --scope cluster:<name> with --type ssh exits 1."""
+    import getpass  # noqa: PLC0415
+
+    from homelab_mcp.server import _cmd_credentials_add  # noqa: PLC0415
+
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "pw")
+
+    args = argparse.Namespace(
+        hostname=None,
+        username="admin",
+        credential_type="ssh",
+        scope="cluster:homelab-prod",
+        key_path=None,
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        _cmd_credentials_add(args)
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "--scope cluster" in captured.err
+    assert "--type proxmox" in captured.err or "proxmox" in captured.err
+
+
+def test_credentials_remove_cluster_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 6 (D-07): remove --scope cluster:<name> deletes cluster entry and prints success."""
+    from homelab_mcp.server import _cmd_credentials_remove  # noqa: PLC0415
+
+    delete_calls: list[dict[str, object]] = []
+    unregister_cluster_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "homelab_mcp.server.list_credentials",
+        lambda credential_type="ssh": [
+            {
+                "hostname": "",
+                "username": "root@pam!tok",
+                "credential_type": "proxmox",
+                "scope": "cluster",
+                "cluster_name": "homelab-prod",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "homelab_mcp.server.delete_credential",
+        lambda hostname, username, credential_type="ssh", *, scope="node", cluster_name="": (
+            delete_calls.append(
+                {
+                    "hostname": hostname,
+                    "username": username,
+                    "credential_type": credential_type,
+                    "scope": scope,
+                    "cluster_name": cluster_name,
+                }
+            )
+            or True
+        ),
+    )
+    monkeypatch.setattr(
+        "homelab_mcp.server.unregister_cluster_credential",
+        lambda cluster_name, credential_type="proxmox": (
+            unregister_cluster_calls.append({"cluster_name": cluster_name, "credential_type": credential_type})
+        ),
+    )
+
+    args = argparse.Namespace(hostname=None, credential_type="proxmox", scope="cluster:homelab-prod")
+    _cmd_credentials_remove(args)
+
+    captured = capsys.readouterr()
+    assert len(delete_calls) == 1
+    assert delete_calls[0]["scope"] == "cluster"
+    assert delete_calls[0]["cluster_name"] == "homelab-prod"
+    assert len(unregister_cluster_calls) == 1
+    assert unregister_cluster_calls[0]["cluster_name"] == "homelab-prod"
+    assert "cluster:homelab-prod" in captured.out
+
+
+def test_credentials_remove_per_node_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 7 (SC-5): remove <hostname> --type proxmox without --scope behaves as before."""
+    from homelab_mcp.server import _cmd_credentials_remove  # noqa: PLC0415
+
+    delete_calls: list[dict[str, object]] = []
+    unregister_calls: list[str] = []
+
+    monkeypatch.setattr(
+        "homelab_mcp.server.list_credentials",
+        lambda credential_type="ssh": [
+            {
+                "hostname": "pve1.home",
+                "username": "root@pam!tok",
+                "credential_type": "proxmox",
+                "scope": "node",
+                "cluster_name": "",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "homelab_mcp.server.delete_credential",
+        lambda hostname, username, credential_type="ssh", *, scope="node", cluster_name="": (
+            delete_calls.append({"hostname": hostname, "username": username}) or True
+        ),
+    )
+    monkeypatch.setattr(
+        "homelab_mcp.server.unregister_credential",
+        lambda hostname, credential_type="ssh": unregister_calls.append(hostname),
+    )
+
+    args = argparse.Namespace(hostname="pve1.home", credential_type="proxmox", scope=None)
+    _cmd_credentials_remove(args)
+
+    captured = capsys.readouterr()
+    assert len(delete_calls) == 1
+    assert delete_calls[0]["hostname"] == "pve1.home"
+    assert "pve1.home" in captured.out
+    assert len(unregister_calls) == 1
+    assert unregister_calls[0] == "pve1.home"
+
+
+def test_credentials_list_groups_per_node_and_cluster_sections(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 8 (D-08): list renders Per-node and Cluster-scoped sections when both exist."""
+    from homelab_mcp.server import _cmd_credentials_list  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        "homelab_mcp.server.list_credentials",
+        lambda credential_type="ssh": [
+            {
+                "hostname": "pve1.home",
+                "username": "root@pam!tok1",
+                "credential_type": "proxmox",
+                "scope": "node",
+                "cluster_name": "",
+            },
+            {
+                "hostname": "",
+                "username": "root@pam!cluster_tok",
+                "credential_type": "proxmox",
+                "scope": "cluster",
+                "cluster_name": "homelab-prod",
+            },
+        ],
+    )
+
+    args = argparse.Namespace(credential_type="proxmox")
+    _cmd_credentials_list(args)
+
+    captured = capsys.readouterr()
+    assert "Per-node:" in captured.out
+    assert "Cluster-scoped:" in captured.out
+    assert "root@pam!tok1@pve1.home" in captured.out
+    assert "root@pam!cluster_tok@cluster:homelab-prod" in captured.out
+
+
+def test_credentials_list_single_section_when_only_one_scope_has_entries(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test 9 (D-08): when only cluster entries exist, only Cluster-scoped section renders."""
+    from homelab_mcp.server import _cmd_credentials_list  # noqa: PLC0415
+
+    monkeypatch.setattr(
+        "homelab_mcp.server.list_credentials",
+        lambda credential_type="ssh": [
+            {
+                "hostname": "",
+                "username": "root@pam!cluster_tok",
+                "credential_type": "proxmox",
+                "scope": "cluster",
+                "cluster_name": "homelab-prod",
+            },
+        ],
+    )
+
+    args = argparse.Namespace(credential_type="proxmox")
+    _cmd_credentials_list(args)
+
+    captured = capsys.readouterr()
+    assert "Per-node:" not in captured.out
+    assert "Cluster-scoped:" in captured.out
+    assert "root@pam!cluster_tok@cluster:homelab-prod" in captured.out

@@ -4,7 +4,7 @@ from typing import Any
 
 SSH_TOOLS: dict[str, dict[str, Any]] = {
     "ssh_discover": {
-        "description": "SSH into a system and gather hardware/system information. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them.",
+        "description": "SSH into a system and gather hardware/system information. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -30,57 +30,8 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["hostname"],
         },
     },
-    "setup_mcp_admin": {
-        "description": "SSH into a remote system and setup mcp_admin user with admin permissions and SSH key access",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address of the target system",
-                },
-                "username": {
-                    "type": "string",
-                    "description": "Admin username to connect with (must have sudo access)",
-                },
-                "password": {
-                    "type": "string",
-                    "description": "Password for the admin user",
-                },
-                "force_update_key": {
-                    "type": "boolean",
-                    "description": "Force update SSH key even if mcp_admin already has keys (default: true)",
-                    "default": True,
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
-            },
-            "required": ["hostname", "username", "password"],
-        },
-    },
-    "verify_mcp_admin": {
-        "description": "Verify SSH key access to mcp_admin account on a remote system",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address of the target system",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
-            },
-            "required": ["hostname"],
-        },
-    },
     "ssh_execute_command": {
-        "description": "Execute a command on a remote system via SSH. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them.",
+        "description": "Execute a command on a remote system via SSH. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -112,7 +63,7 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "start_interactive_shell": {
-        "description": "Start an interactive web-based shell session on a remote system. Opens a browser-based terminal with full TTY support for running interactive commands and scripts. Perfect for Proxmox community scripts or any interactive command-line tools.",
+        "description": "Start an interactive web-based shell session on a remote system. Opens a browser-based terminal with full TTY support for running interactive commands and scripts. Perfect for Proxmox community scripts or any interactive command-line tools. Requires HTTP server mode (--http flag). In stdio mode, this tool returns an error with setup instructions.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -139,32 +90,6 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["hostname"],
-        },
-    },
-    "update_mcp_admin_groups": {
-        "description": "Update mcp_admin group memberships to include groups for installed services (docker, lxd, libvirt, kvm)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname or IP address of the target system",
-                },
-                "username": {
-                    "type": "string",
-                    "description": "Admin username to connect with (must have sudo access)",
-                },
-                "password": {
-                    "type": "string",
-                    "description": "Password for the admin user",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
-            },
-            "required": ["hostname", "username", "password"],
         },
     },
 }

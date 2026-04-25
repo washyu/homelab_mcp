@@ -6,11 +6,8 @@ from typing import Any
 
 from ..shell_session import session_manager
 from ..ssh_tools import (
-    setup_remote_mcp_admin,
     ssh_discover_system,
     ssh_execute_command,
-    update_mcp_admin_groups,
-    verify_mcp_admin_access,
 )
 from ..validation import validate_hostname, validate_port
 
@@ -18,18 +15,6 @@ from ..validation import validate_hostname, validate_port
 async def handle_ssh_discover(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle ssh_discover tool."""
     result = await ssh_discover_system(**arguments)
-    return {"content": [{"type": "text", "text": result}]}
-
-
-async def handle_setup_mcp_admin(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle setup_mcp_admin tool."""
-    result = await setup_remote_mcp_admin(**arguments)
-    return {"content": [{"type": "text", "text": result}]}
-
-
-async def handle_verify_mcp_admin(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle verify_mcp_admin tool."""
-    result = await verify_mcp_admin_access(**arguments)
     return {"content": [{"type": "text", "text": result}]}
 
 
@@ -44,6 +29,28 @@ async def handle_start_interactive_shell(arguments: dict[str, Any]) -> dict[str,
     validate_hostname(arguments["hostname"])
     if "port" in arguments:
         validate_port(arguments.get("port", 22))
+
+    # SHELL-04: Guard against stdio mode — interactive shell requires HTTP server mode
+    if os.getenv("MCP_HTTP_ENABLED", "false").lower() != "true":
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "status": "error",
+                            "error": (
+                                "start_interactive_shell only works in HTTP server mode. "
+                                "Restart the server with: uvx homelab-mcp --http --port 8080\n"
+                                "Then open the returned shell URL in your browser."
+                            ),
+                            "error_type": "stdio_mode_unsupported",
+                        },
+                        indent=2,
+                    ),
+                }
+            ]
+        }
 
     # Get initial command if provided
     initial_command = arguments.get("initial_command")
@@ -77,9 +84,3 @@ async def handle_start_interactive_shell(arguments: dict[str, Any]) -> dict[str,
         "message": message,
     }
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
-
-
-async def handle_update_mcp_admin_groups(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle update_mcp_admin_groups tool."""
-    result = await update_mcp_admin_groups(**arguments)
-    return {"content": [{"type": "text", "text": result}]}

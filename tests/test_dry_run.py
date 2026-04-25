@@ -200,52 +200,9 @@ class TestRemoveVmDryRun:
 # ---------------------------------------------------------------------------
 
 
-class TestRemoveServerDryRun:
-    """Dry-run tests for remove_server handler (DRY-03).
-
-    remove_server is SYNC; handle_remove_server is async but calls sync remove_server.
-    These are RED stubs until Wave 2.
-    """
-
-    @pytest.mark.asyncio
-    @patch(
-        "homelab_mcp.tool_handlers.credential_handlers.remove_server",
-        new_callable=MagicMock,
-    )
-    async def test_remove_server_dry_run_returns_preview(self, mock_remove_server: MagicMock) -> None:
-        """handle_remove_server with dry_run=True must return mode='dry_run'."""
-        from homelab_mcp.tool_handlers.credential_handlers import handle_remove_server
-
-        arguments = {"credential_id": 5, "dry_run": True}
-        result = await handle_remove_server(arguments)
-        assert result.get("mode") == "dry_run"
-
-    @pytest.mark.asyncio
-    @patch(
-        "homelab_mcp.tool_handlers.credential_handlers.remove_server",
-        new_callable=MagicMock,
-    )
-    async def test_remove_server_dry_run_no_delete(self, mock_remove_server: MagicMock) -> None:
-        """remove_server (DB delete) must NOT be called when dry_run=True."""
-        from homelab_mcp.tool_handlers.credential_handlers import handle_remove_server
-
-        arguments = {"credential_id": 5, "dry_run": True}
-        await handle_remove_server(arguments)
-        mock_remove_server.assert_not_called()
-
-    @pytest.mark.asyncio
-    @patch(
-        "homelab_mcp.tool_handlers.credential_handlers.remove_server",
-        new_callable=MagicMock,
-    )
-    async def test_remove_server_real_execution(self, mock_remove_server: MagicMock) -> None:
-        """Without dry_run, remove_server must be called."""
-        from homelab_mcp.tool_handlers.credential_handlers import handle_remove_server
-
-        mock_remove_server.return_value = "removed"
-        arguments = {"credential_id": 5}
-        await handle_remove_server(arguments)
-        mock_remove_server.assert_called_once()
+# TestRemoveServerDryRun REMOVED in Phase 33 (D-21).
+# remove_server MCP tool was deleted; dry-run tests no longer apply.
+# Replacement: CLI `homelab-mcp credentials remove <host>` (no dry-run support needed).
 
 
 # ---------------------------------------------------------------------------

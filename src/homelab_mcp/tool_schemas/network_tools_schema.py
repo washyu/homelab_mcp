@@ -11,11 +11,7 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                 "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
                     "type": "string",
-                    "description": "SSH username (use 'mcp_admin' for passwordless access after setup)",
-                },
-                "password": {
-                    "type": "string",
-                    "description": "SSH password (not needed for mcp_admin after setup)",
+                    "description": "SSH username. Omit if credentials were stored with `credentials add` — they are auto-injected.",
                 },
                 "key_path": {
                     "type": "string",
@@ -27,7 +23,7 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                     "default": 22,
                 },
             },
-            "required": ["hostname", "username"],
+            "required": ["hostname"],
         },
     },
     "bulk_discover_and_map": {
@@ -44,11 +40,10 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                         "properties": {
                             "hostname": {"type": "string"},
                             "username": {"type": "string"},
-                            "password": {"type": "string"},
                             "key_path": {"type": "string"},
                             "port": {"type": "integer", "default": 22},
                         },
-                        "required": ["hostname", "username"],
+                        "required": ["hostname"],
                     },
                 }
             },
@@ -83,6 +78,24 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": ["device_id"],
+        },
+    },
+    "purge_failed_discoveries": {
+        "description": (
+            "Remove sitemap rows for devices where discovery failed (status='error' "
+            "or empty/null/'unknown' hostname). Pass dry_run=true to preview the "
+            "removal candidates without deleting them."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, return removal candidates without deleting (default: false)",
+                    "default": False,
+                },
+            },
+            "required": [],
         },
     },
 }

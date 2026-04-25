@@ -320,6 +320,40 @@ class TestUtilityFunctions:
         assert len(hash1) == 64  # SHA256 produces 64-character hex string
 
 
+class TestCredentialDBRemoval:
+    """CRED-04: ssh_credentials table and CRUD methods must not exist after v1.6 migration."""
+
+    @pytest.fixture
+    def temp_db(self):
+        """Create an in-memory database."""
+        yield ":memory:"
+
+    def test_ssh_credentials_table_dropped(self, temp_db):
+        """CRED-04 D-01: ssh_credentials table must not exist after init_schema (v1.6)."""
+        adapter = SQLiteAdapter(temp_db)
+        adapter.init_schema()
+        cursor = adapter.connection.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'")
+        assert cursor.fetchone() is None, (
+            "ssh_credentials table must not be created by init_schema after v1.6 migration"
+        )
+        adapter.close()
+
+    def test_no_credential_methods_on_adapter(self, temp_db):
+        """CRED-04 D-02: SQLiteAdapter must not expose credential CRUD methods after Phase 33."""
+        adapter = SQLiteAdapter(temp_db)
+        for method_name in (
+            "add_credential",
+            "get_credential_by_hostname",
+            "update_credential",
+            "delete_credential",
+            "update_last_verified",
+        ):
+            assert not hasattr(adapter, method_name), (
+                f"SQLiteAdapter must not have {method_name!r} after Phase 33 credential DB removal"
+            )
+
+
 class TestDriftBaselines:
     """Tests for DRFT-04: SQLiteAdapter drift baseline CRUD methods.
 
@@ -432,3 +466,327 @@ class TestDriftBaselines:
         assert isinstance(result["baseline_config"], dict)
         assert result["baseline_config"]["cores"] == 4
         assert result["baseline_config"]["net0"] == "virtio,bridge=vmbr0"
+
+
+# Phase 33 regression tests — RED until implementation plans land
+
+
+def test_ssh_credentials_table_dropped():
+    """CRED-04 / D-01: ssh_credentials table must not exist after init_schema (v1.6)."""
+    from src.homelab_mcp.database import SQLiteAdapter
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.connect()
+    adapter.init_schema()
+    cursor = adapter.connection.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'")
+    assert cursor.fetchone() is None, "ssh_credentials table must not exist after v1.6 migration (CRED-04)"
+    adapter.close()
+
+
+def test_no_credential_methods_on_adapter():
+    """CRED-04 / D-02: SQLiteAdapter must not expose credential CRUD methods after Phase 33."""
+    from src.homelab_mcp.database import SQLiteAdapter
+
+    adapter = SQLiteAdapter(":memory:")
+    for method_name in (
+        "add_credential",
+        "get_credential",
+        "get_credential_by_hostname",
+        "get_credential_by_id",
+        "update_credential",
+        "delete_credential",
+        "list_credentials",
+        "update_last_verified",
+    ):
+        assert not hasattr(adapter, method_name), (
+            f"SQLiteAdapter must not have {method_name!r} after Phase 33 credential DB removal (D-02)"
+        )
+
+
+def test_ssh_credentials_table_dropped_postgres(monkeypatch):
+    """CRED-04 / D-01: Postgres migration path executes DROP TABLE IF EXISTS ssh_credentials.
+
+    Uses unittest.mock to stub psycopg2.connect — no live Postgres server required.
+    The Postgres migration (run_postgres_migrations / init_schema, whichever Plan 33-02 wires)
+    must issue a DROP TABLE statement against the cursor.
+    """
+    pytest.importorskip("psycopg2")
+
+    from unittest.mock import Mock
+
+    from src.homelab_mcp import database as db_module
+    from src.homelab_mcp.database import PostgreSQLAdapter
+
+    executed: list[str] = []
+    mock_cursor = Mock()
+    mock_cursor.execute.side_effect = lambda sql, *a, **kw: executed.append(sql)
+    # Return a truthy row for the existence check so the DROP branch fires
+    mock_cursor.fetchone.return_value = (True,)
+
+    mock_conn = Mock()
+    # Support both `with conn.cursor() as cur:` and `cur = conn.cursor()` patterns
+    cursor_ctx = Mock()
+    cursor_ctx.__enter__ = Mock(return_value=mock_cursor)
+    cursor_ctx.__exit__ = Mock(return_value=None)
+    mock_conn.cursor.return_value = cursor_ctx
+    # Fallback: if adapter uses non-context cursor(), returning the ctx also works via attribute access,
+    # but if it accesses mock_cursor methods directly, expose them on the ctx via __getattr__ fallback:
+    cursor_ctx.execute = mock_cursor.execute
+    cursor_ctx.fetchone = mock_cursor.fetchone
+    mock_conn.commit = Mock()
+
+    # Object-form monkeypatch — the dotted-string form would attempt to import
+    # `src.homelab_mcp.database.psycopg2` as a submodule, but `database` is a
+    # single-file module that lazy-imports psycopg2 as an attribute.
+    monkeypatch.setattr(db_module.psycopg2, "connect", lambda *a, **kw: mock_conn)
+
+    adapter = PostgreSQLAdapter(
+        connection_params={"host": "fake", "database": "fake", "user": "fake", "password": "fake"}
+    )
+    adapter.connect()
+    # init_schema invokes run_postgres_migrations per Plan 33-02 wiring
+    adapter.init_schema()
+
+    dropped = [s for s in executed if "DROP TABLE IF EXISTS SSH_CREDENTIALS" in s.upper().replace("  ", " ")]
+    assert dropped, f"Expected DROP TABLE IF EXISTS ssh_credentials in Postgres migration; got executed SQL: {executed}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 35 functional regression tests (D-17a + D-01a + D-17b)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_store_device_updates_in_place_on_ip_change_phase35(tmp_path):
+    """Phase 35 D-17a: same hostname re-discovered with a different
+    connection_ip MUST update the existing row in place (same id), with
+    connection_ip overwritten — no zombie second row is produced.
+    """
+    from src.homelab_mcp.database import SQLiteAdapter
+
+    db_path = str(tmp_path / "phase35_d17a.db")
+    adapter = SQLiteAdapter(db_path)
+    adapter.connect()
+    adapter.init_schema()
+
+    try:
+        id1 = adapter.store_device(
+            {
+                "hostname": "pve1",
+                "connection_ip": "10.0.0.10",
+                "last_seen": "2026-01-01T00:00:00",
+                "status": "success",
+                "cpu_cores": 4,
+            }
+        )
+        id2 = adapter.store_device(
+            {
+                "hostname": "pve1",
+                "connection_ip": "10.0.0.99",
+                "last_seen": "2026-01-02T00:00:00",
+                "status": "success",
+                "cpu_cores": 4,
+            }
+        )
+        assert id1 == id2, (
+            f"Phase 35 D-17a regression: hostname-only upsert failed "
+            f"(id1={id1}, id2={id2}) — check store_device match clause"
+        )
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1, f"Phase 35 D-17a: expected 1 row, got {len(devices)} (zombie-row regression)"
+        assert devices[0]["connection_ip"] == "10.0.0.99", (
+            f"Phase 35 D-17a: expected IP overwrite to '10.0.0.99', got {devices[0]['connection_ip']!r}"
+        )
+    finally:
+        adapter.close()
+
+
+def test_store_device_preserves_degenerate_hostnames_phase35(tmp_path):
+    """Phase 35 D-01a: degenerate-hostname rows ('', 'unknown', None) MUST
+    fall back to (hostname, connection_ip) match so distinct error rows do
+    not collapse into one poisoned bucket.
+    """
+    from src.homelab_mcp.database import SQLiteAdapter
+
+    db_path = str(tmp_path / "phase35_d01a.db")
+    adapter = SQLiteAdapter(db_path)
+    adapter.connect()
+    adapter.init_schema()
+
+    try:
+        id1 = adapter.store_device(
+            {
+                "hostname": "unknown",
+                "connection_ip": "10.0.0.10",
+                "last_seen": "2026-01-01T00:00:00",
+                "status": "error",
+                "error_message": "ssh timeout",
+            }
+        )
+        id2 = adapter.store_device(
+            {
+                "hostname": "unknown",
+                "connection_ip": "10.0.0.11",
+                "last_seen": "2026-01-01T00:00:00",
+                "status": "error",
+                "error_message": "ssh timeout",
+            }
+        )
+        assert id1 != id2, "Phase 35 D-01a regression: degenerate-hostname fallback collapsed distinct error rows"
+        devices = adapter.get_all_devices()
+        assert len(devices) == 2
+    finally:
+        adapter.close()
+
+
+def test_migration_dedup_collapses_duplicates_and_is_idempotent_phase35(tmp_path):
+    """Phase 35 D-17b: seeded pre-migration DB with two rows sharing a hostname
+    but different IPs — first migration run collapses them into one (merging
+    non-null sibling fields); second run is a no-op. Degenerate-hostname rows
+    preserved distinct.
+    """
+    import sqlite3
+
+    from src.homelab_mcp.migration import run_sqlite_migrations
+
+    db_path = str(tmp_path / "phase35_d17b.db")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hostname TEXT NOT NULL,
+            connection_ip TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            status TEXT NOT NULL,
+            cpu_model TEXT,
+            cpu_cores INTEGER,
+            memory_total TEXT,
+            network_interfaces TEXT,
+            error_message TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(hostname, connection_ip)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_devices_hostname_ip ON devices (hostname, connection_ip)")
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, cpu_cores) VALUES (?, ?, ?, ?, ?)",
+        ("pve1", "10.0.0.10", "2026-01-01T00:00:00", "success", 4),
+    )
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, memory_total) VALUES (?, ?, ?, ?, ?)",
+        ("pve1", "10.0.0.11", "2026-01-02T00:00:00", "success", "16Gi"),
+    )
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, error_message) VALUES (?, ?, ?, ?, ?)",
+        ("unknown", "10.0.0.20", "2026-01-01T00:00:00", "error", "ssh timeout"),
+    )
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, error_message) VALUES (?, ?, ?, ?, ?)",
+        ("unknown", "10.0.0.21", "2026-01-01T00:00:00", "error", "ssh timeout"),
+    )
+    conn.commit()
+    conn.close()
+
+    applied1 = run_sqlite_migrations(db_path=db_path)
+    assert "dedupe_zombie_device_rows" in applied1, applied1
+    assert any(a.startswith("add_column_") for a in applied1), applied1
+    assert "drop_stale_hostname_ip_unique" in applied1, applied1
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT hostname, connection_ip, cpu_cores, memory_total FROM devices WHERE hostname = 'pve1'"
+        ).fetchall()
+    ]
+    assert len(rows) == 1, f"Phase 35 D-17b: expected 1 pve1 row after dedup, got {len(rows)}: {rows}"
+    keeper = rows[0]
+    assert keeper["connection_ip"] == "10.0.0.11", (
+        f"Phase 35 D-17b: keeper should be the row with greatest last_seen; "
+        f"got connection_ip={keeper['connection_ip']!r}"
+    )
+    assert keeper["cpu_cores"] == 4, (
+        f"Phase 35 D-17b: non-null-wins merge should have pulled cpu_cores=4 from sibling; got {keeper['cpu_cores']!r}"
+    )
+    assert keeper["memory_total"] == "16Gi"
+
+    unknown_rows = conn.execute("SELECT connection_ip FROM devices WHERE hostname = 'unknown'").fetchall()
+    assert len(unknown_rows) == 2, (
+        f"Phase 35 D-02a regression: degenerate-hostname rows collapsed ({len(unknown_rows)} remaining)"
+    )
+    conn.close()
+
+    applied2 = run_sqlite_migrations(db_path=db_path)
+    assert "dedupe_zombie_device_rows" not in applied2, applied2
+    assert not any(a.startswith("add_column_") for a in applied2), applied2
+    assert "drop_stale_hostname_ip_unique" not in applied2, applied2
+
+
+def test_init_schema_triggers_phase35_migrations_on_legacy_db(tmp_path):
+    """Regression: ``SQLiteAdapter.init_schema`` must run Phase 33/35 migrations
+    on pre-existing databases.
+
+    Without this wiring, ``CREATE TABLE IF NOT EXISTS devices`` is a no-op on
+    a legacy DB, so the new ``usb_devices`` / ``pci_devices`` / ``block_devices``
+    columns are never added — causing ``store_device`` to fail with
+    ``no such column: usb_devices``. The zombie-row dedup and stale UNIQUE drop
+    similarly skip. This test simulates a pre-Phase-35 DB and verifies that
+    instantiating ``NetworkSiteMap`` alone triggers all three migrations.
+    """
+    import sqlite3
+
+    from src.homelab_mcp.sitemap import NetworkSiteMap
+
+    db_path = str(tmp_path / "legacy_pre_phase35.db")
+
+    # Pre-Phase-35 schema: no usb/pci/block columns, with stale UNIQUE
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hostname TEXT NOT NULL,
+            connection_ip TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            status TEXT NOT NULL,
+            cpu_cores INTEGER,
+            UNIQUE(hostname, connection_ip)
+        )
+        """
+    )
+    # Two rows with same hostname — Phase 35 dedup target
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, cpu_cores) "
+        "VALUES ('pve1', '10.0.0.1', '2026-01-01', 'success', 4)"
+    )
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, cpu_cores) "
+        "VALUES ('pve1', '10.0.0.2', '2026-01-02', 'success', 4)"
+    )
+    conn.commit()
+    conn.close()
+
+    # Instantiating NetworkSiteMap must be sufficient to run migrations
+    NetworkSiteMap(db_path=db_path, db_type="sqlite")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        assert "usb_devices" in cols, "Phase 35 usb_devices column not added by init_schema migrations"
+        assert "pci_devices" in cols, "Phase 35 pci_devices column not added by init_schema migrations"
+        assert "block_devices" in cols, "Phase 35 block_devices column not added by init_schema migrations"
+
+        rows = conn.execute("SELECT hostname, connection_ip FROM devices").fetchall()
+        assert len(rows) == 1, f"Zombie row dedup did not run on init_schema; got {rows}"
+        assert rows[0] == ("pve1", "10.0.0.2"), f"Keeper should have latest last_seen; got {rows[0]}"
+
+        table_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'").fetchone()[0]
+        assert "UNIQUE(hostname, connection_ip)" not in table_sql, "Stale composite UNIQUE not dropped on init_schema"
+        assert "UNIQUE (hostname, connection_ip)" not in table_sql, "Stale composite UNIQUE not dropped on init_schema"
+    finally:
+        conn.close()

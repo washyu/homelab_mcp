@@ -12,58 +12,214 @@ from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
 logger = logging.getLogger(__name__)
 
 
-def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
-    """Run pending migrations on SQLite database."""
-    config = get_config()
-    if db_path is None:
-        db_path = config.database.sqlite_path
+def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None) -> list[str]:
+    """Run pending migrations on SQLite database.
 
-    adapter = SQLiteAdapter(db_path)
-    adapter.connect()
-    assert adapter.connection is not None
+    Pass ``_connection`` to migrate on an existing open connection (used by
+    ``SQLiteAdapter.init_schema`` to avoid the close/reopen dance that breaks
+    ``:memory:`` databases). Without it, opens/closes its own connection.
+    """
+    own_connection = _connection is None
+    adapter: SQLiteAdapter | None = None
+    if own_connection:
+        config = get_config()
+        if db_path is None:
+            db_path = config.database.sqlite_path
+        adapter = SQLiteAdapter(db_path)
+        adapter.connect()
+        assert adapter.connection is not None
+        conn = adapter.connection
+    else:
+        conn = _connection
 
     applied_migrations: list[str] = []
 
-    # Check if ssh_credentials table exists
-    cursor = adapter.connection.cursor()
-    cursor.execute("""
+    # D-01: Drop legacy ssh_credentials table if it still exists (v1.6 cleanup).
+    # Keyring is now the single source of truth for remote credentials (CRED-04).
+    cursor = conn.cursor()
+    cursor.execute(
+        """
         SELECT name FROM sqlite_master
         WHERE type='table' AND name='ssh_credentials'
-    """)
+        """
+    )
+    if cursor.fetchone():
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_hostname")
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_device_id")
+        cursor.execute("DROP TABLE IF EXISTS ssh_credentials")
+        conn.commit()
+        applied_migrations.append("drop_ssh_credentials_table")
+        import sys  # noqa: PLC0415
 
-    if not cursor.fetchone():
-        # Create ssh_credentials table
+        print(
+            "Dropped legacy ssh_credentials table (v1.6: keyring is now the sole credential store)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Any credentials previously stored in the database have been removed.\n"
+            "Re-add them with: homelab-mcp credentials add <hostname> <username>",
+            file=sys.stderr,
+        )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 35 D-09c: ADD COLUMN for usb_devices / pci_devices / block_devices.
+    # Legacy rows get NULL defaults; get_all_devices returns None for these on
+    # pre-existing devices until re-discovered.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(devices)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    newly_added: list[str] = []
+    for new_col in ("usb_devices", "pci_devices", "block_devices"):
+        if new_col not in existing_columns:
+            cursor.execute(f"ALTER TABLE devices ADD COLUMN {new_col} TEXT")  # noqa: S608
+            newly_added.append(new_col)
+    if newly_added:
+        conn.commit()
+        for col in newly_added:
+            applied_migrations.append(f"add_column_{col}")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 35 D-02: Collapse duplicate hostnames into a single row. Keep row
+    # with greatest last_seen; merge non-null values from siblings (non-null
+    # wins); delete siblings. Skip degenerate hostnames ('', 'unknown', NULL)
+    # — those are Phase-33-pre-existing distinct-error rows and must not
+    # collapse.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute(
+        """
+        SELECT hostname, COUNT(*) AS n
+        FROM devices
+        WHERE hostname NOT IN ('', 'unknown') AND hostname IS NOT NULL
+        GROUP BY hostname
+        HAVING n > 1
+        """
+    )
+    duplicate_hostnames = [row[0] for row in cursor.fetchall()]
+    if duplicate_hostnames:
+        cursor.execute("PRAGMA table_info(devices)")
+        all_cols = [row[1] for row in cursor.fetchall()]
+        merge_cols = [c for c in all_cols if c not in ("id", "hostname", "created_at")]
+
+        for hostname in duplicate_hostnames:
+            cursor.execute(
+                "SELECT * FROM devices WHERE hostname = ? ORDER BY last_seen DESC",
+                (hostname,),
+            )
+            rows = cursor.fetchall()
+            keeper = dict(zip(all_cols, rows[0], strict=True))
+            siblings = [dict(zip(all_cols, r, strict=True)) for r in rows[1:]]
+
+            for sibling in siblings:
+                for col in merge_cols:
+                    if keeper.get(col) is None and sibling.get(col) is not None:
+                        keeper[col] = sibling[col]
+
+            set_fragments = ", ".join(f"{c} = ?" for c in merge_cols)
+            cursor.execute(
+                f"UPDATE devices SET {set_fragments} WHERE id = ?",  # noqa: S608
+                [keeper[c] for c in merge_cols] + [keeper["id"]],
+            )
+
+            sibling_ids = [s["id"] for s in siblings]
+            if sibling_ids:
+                placeholders = ",".join("?" * len(sibling_ids))
+                cursor.execute(
+                    f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
+                    sibling_ids,
+                )
+
+        conn.commit()
+        applied_migrations.append("dedupe_zombie_device_rows")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 35 stale-constraint addendum: drop composite UNIQUE + composite
+    # index (both incompatible with hostname-only upsert). SQLite cannot
+    # ALTER TABLE DROP CONSTRAINT; idiomatic path is table rebuild. Guard on
+    # sqlite_master SQL text so re-run is a no-op.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'")
+    row = cursor.fetchone()
+    current_sql = row[0] if row else ""
+    if "UNIQUE(hostname, connection_ip)" in current_sql or "UNIQUE (hostname, connection_ip)" in current_sql:
+        cursor.execute("DROP INDEX IF EXISTS idx_devices_hostname_ip")
+        # Phase 35 I8: idempotent recovery from a prior partial-failure run
+        # that may have left an orphan `devices_new` table — without this,
+        # the subsequent CREATE would raise "table devices_new already exists".
+        cursor.execute("DROP TABLE IF EXISTS devices_new")
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
+            CREATE TABLE devices_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER,
                 hostname TEXT NOT NULL,
-                username TEXT NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name TEXT,
-                is_active INTEGER DEFAULT 1,
-                last_verified TEXT,
+                connection_ip TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                status TEXT NOT NULL,
+                cpu_model TEXT,
+                cpu_cores INTEGER,
+                memory_total TEXT,
+                memory_used TEXT,
+                memory_free TEXT,
+                memory_available TEXT,
+                disk_filesystem TEXT,
+                disk_size TEXT,
+                disk_used TEXT,
+                disk_available TEXT,
+                disk_use_percent TEXT,
+                disk_mount TEXT,
+                network_interfaces TEXT,
+                usb_devices TEXT,
+                pci_devices TEXT,
+                block_devices TEXT,
+                uptime TEXT,
+                os_info TEXT,
+                error_message TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, username),
-                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
-        adapter.connection.commit()
-        applied_migrations.append("create_ssh_credentials_table")
-        print("✓ Created ssh_credentials table")
+        # Dynamic column copy: older pre-Phase-35 schemas may be missing some
+        # columns (e.g., the three new JSON columns added just above, or columns
+        # from older baseline schemas). Select NULL for any target column
+        # missing on the source table so the INSERT never fails.
+        cursor.execute("PRAGMA table_info(devices)")
+        source_cols = {row[1] for row in cursor.fetchall()}
+        target_cols = [
+            "id",
+            "hostname",
+            "connection_ip",
+            "last_seen",
+            "status",
+            "cpu_model",
+            "cpu_cores",
+            "memory_total",
+            "memory_used",
+            "memory_free",
+            "memory_available",
+            "disk_filesystem",
+            "disk_size",
+            "disk_used",
+            "disk_available",
+            "disk_use_percent",
+            "disk_mount",
+            "network_interfaces",
+            "usb_devices",
+            "pci_devices",
+            "block_devices",
+            "uptime",
+            "os_info",
+            "error_message",
+            "created_at",
+            "updated_at",
+        ]
+        insert_col_list = ", ".join(target_cols)
+        select_fragments = ", ".join(c if c in source_cols else f"NULL AS {c}" for c in target_cols)
+        cursor.execute(
+            f"INSERT INTO devices_new ({insert_col_list}) SELECT {select_fragments} FROM devices"  # noqa: S608
+        )
+        cursor.execute("DROP TABLE devices")
+        cursor.execute("ALTER TABLE devices_new RENAME TO devices")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices (hostname)")
+        conn.commit()
+        applied_migrations.append("drop_stale_hostname_ip_unique")
 
     # Check if drift_baselines table exists
     cursor.execute("""
@@ -87,69 +243,161 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
             CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
             ON drift_baselines (node, vmid, vm_type)
         """)
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("create_drift_baselines_table")
 
-    adapter.close()
+    if own_connection:
+        assert adapter is not None
+        adapter.close()
     return applied_migrations
 
 
-def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> list[str]:
-    """Run pending migrations on PostgreSQL database."""
-    config = get_config()
-    if postgres_params is None:
-        postgres_params = config.database.postgres_config
+def run_postgres_migrations(postgres_params: dict[str, Any] | None = None, *, _connection: Any = None) -> list[str]:
+    """Run pending migrations on PostgreSQL database.
 
-    adapter = PostgreSQLAdapter(postgres_params)
-    adapter.connect()
-    assert adapter.connection is not None
+    Pass ``_connection`` to migrate on an existing open connection (used by
+    ``PostgreSQLAdapter.init_schema`` to avoid the close/reopen dance).
+    Without it, opens/closes its own connection.
+    """
+    own_connection = _connection is None
+    adapter: PostgreSQLAdapter | None = None
+    if own_connection:
+        config = get_config()
+        if postgres_params is None:
+            postgres_params = config.database.postgres_config
+        adapter = PostgreSQLAdapter(postgres_params)
+        adapter.connect()
+        assert adapter.connection is not None
+        conn = adapter.connection
+    else:
+        conn = _connection
 
     applied_migrations: list[str] = []
 
-    cursor = adapter.connection.cursor()
+    cursor = conn.cursor()
 
-    # Check if ssh_credentials table exists
-    cursor.execute("""
+    # D-01: Drop legacy ssh_credentials table if it still exists (v1.6 cleanup — Postgres path).
+    # Keyring is now the single source of truth for remote credentials (CRED-04).
+    cursor.execute(
+        """
         SELECT EXISTS (
             SELECT FROM information_schema.tables
             WHERE table_name = 'ssh_credentials'
         )
-    """)
+        """
+    )
+    if cursor.fetchone()[0]:
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_hostname")
+        cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_device_id")
+        cursor.execute("DROP TABLE IF EXISTS ssh_credentials")
+        conn.commit()
+        applied_migrations.append("drop_ssh_credentials_table")
+        import sys  # noqa: PLC0415
 
-    if not cursor.fetchone()[0]:
-        # Create ssh_credentials table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name VARCHAR(255),
-                is_active BOOLEAN DEFAULT TRUE,
-                last_verified TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, username)
+        print(
+            "Dropped legacy ssh_credentials table from Postgres (v1.6: keyring is now the sole credential store)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Any credentials previously stored in the database have been removed.\n"
+            "Re-add them with: homelab-mcp credentials add <hostname> <username>",
+            file=sys.stderr,
+        )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 35 D-02 (Postgres): Collapse duplicate hostnames. Same
+    # keep-greatest-last_seen + non-null-sibling-merge semantics as SQLite.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute(
+        """
+        SELECT hostname, COUNT(*) AS n
+        FROM devices
+        WHERE hostname NOT IN ('', 'unknown') AND hostname IS NOT NULL
+        GROUP BY hostname
+        HAVING COUNT(*) > 1
+        """
+    )
+    duplicate_hostnames_pg = [row[0] for row in cursor.fetchall()]
+    if duplicate_hostnames_pg:
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'devices'
+            """
+        )
+        all_cols_pg = [row[0] for row in cursor.fetchall()]
+        merge_cols_pg = [c for c in all_cols_pg if c not in ("id", "hostname", "created_at")]
+
+        for hostname in duplicate_hostnames_pg:
+            cursor.execute(
+                f"SELECT {', '.join(all_cols_pg)} FROM devices WHERE hostname = %s ORDER BY last_seen DESC",  # noqa: S608
+                (hostname,),
             )
-        """)
+            rows_pg = cursor.fetchall()
+            keeper_pg = dict(zip(all_cols_pg, rows_pg[0], strict=True))
+            siblings_pg = [dict(zip(all_cols_pg, r, strict=True)) for r in rows_pg[1:]]
 
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
+            for sibling in siblings_pg:
+                for col in merge_cols_pg:
+                    if keeper_pg.get(col) is None and sibling.get(col) is not None:
+                        keeper_pg[col] = sibling[col]
 
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
+            set_fragments_pg = ", ".join(f"{c} = %s" for c in merge_cols_pg)
+            cursor.execute(
+                f"UPDATE devices SET {set_fragments_pg} WHERE id = %s",  # noqa: S608
+                [keeper_pg[c] for c in merge_cols_pg] + [keeper_pg["id"]],
+            )
 
-        adapter.connection.commit()
-        applied_migrations.append("create_ssh_credentials_table")
-        print("✓ Created ssh_credentials table")
+            sibling_ids_pg = [s["id"] for s in siblings_pg]
+            if sibling_ids_pg:
+                cursor.execute(
+                    "DELETE FROM devices WHERE id = ANY(%s)",
+                    (sibling_ids_pg,),
+                )
 
-    adapter.close()
+        conn.commit()
+        applied_migrations.append("dedupe_zombie_device_rows")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 35 stale-constraint addendum (Postgres): drop composite UNIQUE
+    # and composite index; create replacement hostname-alone index.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute(
+        """
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'devices'::regclass
+        AND contype = 'u'
+        AND pg_get_constraintdef(oid) = 'UNIQUE (hostname, connection_ip)'
+        """
+    )
+    stale_unique = cursor.fetchone()
+    if stale_unique:
+        cursor.execute(f"ALTER TABLE devices DROP CONSTRAINT {stale_unique[0]}")  # noqa: S608
+        conn.commit()
+        applied_migrations.append("drop_stale_hostname_ip_unique")
+
+    cursor.execute(
+        """
+        SELECT indexname FROM pg_indexes
+        WHERE tablename = 'devices' AND indexname = 'idx_devices_hostname_ip'
+        """
+    )
+    if cursor.fetchone():
+        cursor.execute("DROP INDEX idx_devices_hostname_ip")
+        conn.commit()
+        applied_migrations.append("drop_stale_hostname_ip_index")
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices (hostname)
+        """
+    )
+    conn.commit()
+
+    if own_connection:
+        assert adapter is not None
+        adapter.close()
     return applied_migrations
 
 

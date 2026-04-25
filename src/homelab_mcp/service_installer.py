@@ -492,7 +492,6 @@ class ServiceInstaller:
                 username=username,
                 password=password,
                 command=full_command,
-                timeout=300.0,
             )
 
             try:

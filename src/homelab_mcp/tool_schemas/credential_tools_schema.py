@@ -4,39 +4,34 @@ from typing import Any
 
 CREDENTIAL_TOOLS: dict[str, dict[str, Any]] = {
     "register_server": {
-        "description": "Register a server with SSH credentials for persistent access without repeatedly providing credentials",
+        "description": (
+            "Verify SSH connectivity to a registered server using keyring credentials. "
+            "Does not write any credentials — credentials must already be stored via "
+            "`homelab-mcp credentials add <hostname> <username>` in the CLI. "
+            "Returns a status object with verified=true on successful handshake."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "hostname": {
                     "type": "string",
-                    "description": "Hostname or IP address of the server",
+                    "description": "Hostname or IP address of the target server",
                 },
                 "username": {
                     "type": "string",
-                    "description": "SSH username (default: mcp_admin)",
-                    "default": "mcp_admin",
-                },
-                "key_path": {
-                    "type": "string",
-                    "description": "Path to SSH private key (optional, uses default MCP key if not provided)",
+                    "description": "SSH username to verify; must match a keyring entry",
                 },
                 "port": {
                     "type": "integer",
-                    "description": "SSH port (default: 22)",
+                    "description": "SSH port (default 22)",
                     "default": 22,
                 },
                 "display_name": {
                     "type": "string",
-                    "description": "Friendly name for the server (optional)",
-                },
-                "verify_connection": {
-                    "type": "boolean",
-                    "description": "Whether to verify SSH connection before saving (default: true)",
-                    "default": True,
+                    "description": "Optional human-readable label",
                 },
             },
-            "required": ["hostname"],
+            "required": ["hostname", "username"],
         },
     },
     "list_registered_servers": {
@@ -53,83 +48,23 @@ CREDENTIAL_TOOLS: dict[str, dict[str, Any]] = {
             "required": [],
         },
     },
-    "update_server_credentials": {
-        "description": "Update SSH credentials for an existing registered server",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "credential_id": {
-                    "type": "integer",
-                    "description": "ID of the credential to update (optional if hostname provided)",
-                },
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname to look up (optional if credential_id provided)",
-                },
-                "username": {
-                    "type": "string",
-                    "description": "New SSH username",
-                },
-                "key_path": {
-                    "type": "string",
-                    "description": "New path to SSH private key",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "New SSH port",
-                },
-                "display_name": {
-                    "type": "string",
-                    "description": "New friendly name for the server",
-                },
-                "is_active": {
-                    "type": "boolean",
-                    "description": "Set server active/inactive status",
-                },
-            },
-            "required": [],
-        },
-    },
-    "remove_server": {
-        "description": "Remove a server from the registered servers list",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "credential_id": {
-                    "type": "integer",
-                    "description": "ID of the credential to remove (optional if hostname provided)",
-                },
-                "hostname": {
-                    "type": "string",
-                    "description": "Hostname to look up (optional if credential_id provided)",
-                },
-                "dry_run": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "If true, return a preview of what would be affected without executing any changes.",
-                },
-            },
-            "required": [],
-        },
-    },
 }
 
-CREDENTIAL_TOOLS["remove_server_preview"] = {
+CREDENTIAL_TOOLS["list_keyring_credentials"] = {
     "description": (
-        "Preview what remove_server would affect without executing. "
-        "Returns a structured dry-run report. No credentials are removed."
+        "List hosts that have credentials stored in the OS keyring registry. "
+        "Call this before ssh_discover or ssh_execute_command to check whether "
+        "a host has stored credentials. Returns hostname and username per entry."
     ),
     "inputSchema": {
         "type": "object",
         "properties": {
-            "credential_id": {
-                "type": "integer",
-                "description": "ID of the credential to remove (optional if hostname provided)",
-            },
-            "hostname": {
+            "credential_type": {
                 "type": "string",
-                "description": "Hostname to look up (optional if credential_id provided)",
-            },
+                "description": "Credential type to list: 'ssh' (default) or 'proxmox'",
+                "default": "ssh",
+                "enum": ["ssh", "proxmox"],
+            }
         },
         "required": [],
     },

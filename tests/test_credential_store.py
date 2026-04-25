@@ -134,7 +134,16 @@ def test_register_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
     register_credential("host1", "user1", credential_type="ssh")
     entries = list_credentials(credential_type="ssh")
-    assert entries == [{"hostname": "host1", "username": "user1", "credential_type": "ssh"}]
+    assert entries == [
+        {
+            "hostname": "host1",
+            "username": "user1",
+            "credential_type": "ssh",
+            "auth_type": "password",
+            "scope": "node",
+            "cluster_name": "",
+        }
+    ]
 
 
 def test_unregister_removes_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -194,6 +203,238 @@ def test_list_filters_by_type(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     register_credential("ssh-host", "ssh-user", credential_type="ssh")
     register_credential("px-host", "px-user", credential_type="proxmox")
     ssh_entries = list_credentials(credential_type="ssh")
-    assert ssh_entries == [{"hostname": "ssh-host", "username": "ssh-user", "credential_type": "ssh"}]
+    assert ssh_entries == [
+        {
+            "hostname": "ssh-host",
+            "username": "ssh-user",
+            "credential_type": "ssh",
+            "auth_type": "password",
+            "scope": "node",
+            "cluster_name": "",
+        }
+    ]
     proxmox_entries = list_credentials(credential_type="proxmox")
-    assert proxmox_entries == [{"hostname": "px-host", "username": "px-user", "credential_type": "proxmox"}]
+    assert proxmox_entries == [
+        {
+            "hostname": "px-host",
+            "username": "px-user",
+            "credential_type": "proxmox",
+            "auth_type": "password",
+            "scope": "node",
+            "cluster_name": "",
+        }
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 34 — Plan 01: scope + cluster_name fields on register_credential (D-01, D-02, D-08a)
+# ---------------------------------------------------------------------------
+
+
+def test_register_credential_cluster_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """register_credential with scope='cluster' writes scope and cluster_name fields (D-01, D-02)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="homelab-prod")
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1
+    assert entries[0]["scope"] == "cluster"
+    assert entries[0]["cluster_name"] == "homelab-prod"
+    assert entries[0]["hostname"] == ""
+
+
+def test_register_credential_cluster_requires_cluster_name(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """register_credential with scope='cluster' and empty cluster_name raises ValueError (D-08a)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    import pytest as _pytest  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import register_credential  # noqa: PLC0415
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        register_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="")
+
+
+def test_register_credential_invalid_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """register_credential with an invalid scope value raises ValueError."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    import pytest as _pytest  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import register_credential  # noqa: PLC0415
+
+    with _pytest.raises(ValueError, match="scope"):
+        register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="bogus")
+
+
+def test_register_credential_cluster_upsert_ignores_hostname(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cluster entries upsert by (cluster_name, username, credential_type) — hostname is irrelevant (D-08a)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    # Register twice with same cluster_name/username/type but different hostnames (including "")
+    register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="homelab-prod")
+    register_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="homelab-prod")
+
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1, f"Expected 1 entry after cluster upsert, got {len(entries)}"
+    assert entries[0]["scope"] == "cluster"
+    assert entries[0]["cluster_name"] == "homelab-prod"
+
+
+def test_register_credential_node_scope_legacy_dedup_unchanged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-node entries still upsert by (hostname, username, credential_type) — legacy behavior unchanged."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import list_credentials, register_credential  # noqa: PLC0415
+
+    register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="node")
+    register_credential("pve1", "root@pam!tok", credential_type="proxmox", scope="node")
+
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1, f"Expected 1 entry after per-node upsert, got {len(entries)}"
+    assert entries[0]["scope"] == "node"
+
+
+def test_list_credentials_backward_readable_scope_defaults(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Legacy registry rows (without scope/cluster_name) load safely via .get() defaults (D-01)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    import json  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import list_credentials  # noqa: PLC0415
+
+    # Simulate a legacy row written before Phase 34 (no scope or cluster_name fields)
+    legacy_registry = [
+        {"hostname": "pve1", "username": "root@pam!tok", "credential_type": "proxmox", "auth_type": "password"}
+    ]
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(json.dumps(legacy_registry))
+
+    entries = list_credentials(credential_type="proxmox")
+    assert len(entries) == 1
+    # Readers use .get() — must not raise KeyError
+    assert entries[0].get("scope", "node") == "node"
+    assert entries[0].get("cluster_name", "") == ""
+
+
+# ---------------------------------------------------------------------------
+# Phase 34 — Plan 01 Task 2: cluster keyring key form in store/get/delete (D-03)
+# ---------------------------------------------------------------------------
+
+
+def test_store_credential_cluster_scope_key_form(mocker) -> None:
+    """store_credential with scope='cluster' calls keyring with '@cluster:' key form (D-03)."""
+    mock_set = mocker.patch("keyring.set_password", return_value=None)
+    from homelab_mcp.credential_store import store_credential  # noqa: PLC0415
+
+    store_credential(
+        "",
+        "root@pam!tok",
+        "secret_uuid",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    mock_set.assert_called_once()
+    call_args = mock_set.call_args[0]
+    assert call_args[0] == "homelab-mcp-proxmox"
+    assert call_args[1] == "root@pam!tok@cluster:homelab-prod"
+    assert call_args[2] == "secret_uuid"
+
+
+def test_get_credential_cluster_scope_key_form(mocker) -> None:
+    """get_credential with scope='cluster' calls keyring with '@cluster:' key form (D-03)."""
+    mock_get = mocker.patch("keyring.get_password", return_value="secret_uuid")
+    from homelab_mcp.credential_store import get_credential  # noqa: PLC0415
+
+    result = get_credential(
+        "",
+        "root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    mock_get.assert_called_once()
+    call_args = mock_get.call_args[0]
+    assert call_args[0] == "homelab-mcp-proxmox"
+    assert call_args[1] == "root@pam!tok@cluster:homelab-prod"
+    assert result == "secret_uuid"
+
+
+def test_delete_credential_cluster_scope_key_form(mocker) -> None:
+    """delete_credential with scope='cluster' calls keyring with '@cluster:' key form (D-03)."""
+    mock_del = mocker.patch("keyring.delete_password", return_value=None)
+    from homelab_mcp.credential_store import delete_credential  # noqa: PLC0415
+
+    delete_credential(
+        "",
+        "root@pam!tok",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    mock_del.assert_called_once()
+    call_args = mock_del.call_args[0]
+    assert call_args[0] == "homelab-mcp-proxmox"
+    assert call_args[1] == "root@pam!tok@cluster:homelab-prod"
+
+
+def test_credential_helpers_legacy_key_form_unchanged(mocker) -> None:
+    """Default (no scope kwarg) still uses legacy '@hostname' key form — no regression."""
+    mock_set = mocker.patch("keyring.set_password", return_value=None)
+    mock_get = mocker.patch("keyring.get_password", return_value="pw")
+    mock_del = mocker.patch("keyring.delete_password", return_value=None)
+    from homelab_mcp.credential_store import delete_credential, get_credential, store_credential  # noqa: PLC0415
+
+    store_credential("pve1", "root@pam!tok", "s", credential_type="proxmox")
+    assert mock_set.call_args[0][1] == "root@pam!tok@pve1"
+
+    get_credential("pve1", "root@pam!tok", credential_type="proxmox")
+    assert mock_get.call_args[0][1] == "root@pam!tok@pve1"
+
+    delete_credential("pve1", "root@pam!tok", credential_type="proxmox")
+    assert mock_del.call_args[0][1] == "root@pam!tok@pve1"
+
+
+def test_credential_helpers_cluster_requires_cluster_name(mocker) -> None:
+    """store/get/delete_credential raise ValueError when scope='cluster' and cluster_name is empty."""
+    import pytest as _pytest  # noqa: PLC0415
+
+    mocker.patch("keyring.set_password", return_value=None)
+    mocker.patch("keyring.get_password", return_value=None)
+    mocker.patch("keyring.delete_password", return_value=None)
+
+    from homelab_mcp.credential_store import delete_credential, get_credential, store_credential  # noqa: PLC0415
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        store_credential("", "root@pam!tok", "s", credential_type="proxmox", scope="cluster", cluster_name="")
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        get_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="")
+
+    with _pytest.raises(ValueError, match="cluster_name"):
+        delete_credential("", "root@pam!tok", credential_type="proxmox", scope="cluster", cluster_name="")
+
+
+def test_store_credential_cluster_scope_headless_fallback(mocker) -> None:
+    """store_credential cluster scope returns False (not raises) on NoKeyringError."""
+    import keyring.errors  # noqa: PLC0415
+
+    from homelab_mcp.credential_store import store_credential  # noqa: PLC0415
+
+    mocker.patch("keyring.set_password", side_effect=keyring.errors.NoKeyringError())
+    result = store_credential(
+        "",
+        "root@pam!tok",
+        "secret_uuid",
+        credential_type="proxmox",
+        scope="cluster",
+        cluster_name="homelab-prod",
+    )
+    assert result is False

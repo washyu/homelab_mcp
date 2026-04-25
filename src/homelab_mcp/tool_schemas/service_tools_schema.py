@@ -42,11 +42,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "SSH password (not needed for mcp_admin after setup)",
                 },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
             },
             "required": ["service_name", "hostname"],
         },
@@ -77,11 +72,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "object",
                     "description": "Optional configuration overrides for the service",
                 },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
             },
             "required": ["service_name", "hostname"],
         },
@@ -107,11 +97,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                 "password": {
                     "type": "string",
                     "description": "SSH password (not needed for mcp_admin after setup)",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
                 },
             },
             "required": ["service_name", "hostname"],
@@ -143,11 +128,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "object",
                     "description": "Optional configuration overrides for the service",
                 },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
             },
             "required": ["service_name", "hostname"],
         },
@@ -173,11 +153,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                 "password": {
                     "type": "string",
                     "description": "SSH password (not needed for mcp_admin after setup)",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
                 },
                 "dry_run": {
                     "type": "boolean",
@@ -210,11 +185,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "SSH password (not needed for mcp_admin after setup)",
                 },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
             },
             "required": ["service_name", "hostname"],
         },
@@ -240,11 +210,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                 "password": {
                     "type": "string",
                     "description": "SSH password (not needed for mcp_admin after setup)",
-                },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
                 },
             },
             "required": ["service_name", "hostname"],
@@ -286,11 +251,6 @@ SERVICE_TOOLS: dict[str, dict[str, Any]] = {
                     "default": False,
                     "description": "Run in check mode (dry run)",
                 },
-                "port": {
-                    "type": "integer",
-                    "description": "SSH port (default: 22)",
-                    "default": 22,
-                },
             },
             "required": ["service_name", "hostname"],
         },
@@ -321,11 +281,6 @@ SERVICE_TOOLS["destroy_terraform_service_preview"] = {
             "password": {
                 "type": "string",
                 "description": "SSH password (not needed for mcp_admin after setup)",
-            },
-            "port": {
-                "type": "integer",
-                "description": "SSH port (default: 22)",
-                "default": 22,
             },
         },
         "required": ["service_name", "hostname"],

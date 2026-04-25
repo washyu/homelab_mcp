@@ -13,17 +13,19 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 56
-    )  # All tools including SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift tools, and preview tools
+        len(tools) == 52
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries
     assert "ssh_discover" in tools
-    assert "setup_mcp_admin" in tools
-    assert "verify_mcp_admin" in tools
+    assert "purge_failed_discoveries" in tools  # v1.6.x: sitemap CRUD completion
+    assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
+    assert "verify_mcp_admin" not in tools  # D-05: removed in Phase 33.1
+    assert "update_mcp_admin_groups" not in tools  # D-05: removed in Phase 33.1
 
-    # Server registration tools
+    # Server registration tools (Phase 33: update_server_credentials and remove_server removed)
     assert "register_server" in tools
     assert "list_registered_servers" in tools
-    assert "update_server_credentials" in tools
-    assert "remove_server" in tools
+    assert "update_server_credentials" not in tools  # D-20: removed
+    assert "remove_server" not in tools  # D-21: replaced by CLI credentials remove
 
     # New sitemap tools
     assert "discover_and_map" in tools
@@ -292,7 +294,7 @@ def test_sitemap_tool_schemas():
     assert "inputSchema" in discover_tool
     assert "hostname" in discover_tool["inputSchema"]["properties"]
     assert "username" in discover_tool["inputSchema"]["properties"]
-    assert discover_tool["inputSchema"]["required"] == ["hostname", "username"]
+    assert discover_tool["inputSchema"]["required"] == ["hostname"]
 
     # Test bulk_discover_and_map schema
     bulk_tool = tools["bulk_discover_and_map"]
@@ -312,6 +314,29 @@ def test_sitemap_tool_schemas():
     ]:
         tool = tools[tool_name]
         assert tool["inputSchema"]["required"] == []
+
+
+def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
+    """D-01, D-03, D-12: network schema drops password property and mcp_admin default."""
+    from homelab_mcp.tool_schemas.network_tools_schema import NETWORK_TOOLS
+
+    discover = NETWORK_TOOLS["discover_and_map"]["inputSchema"]["properties"]
+    assert "password" not in discover, "D-01: discover_and_map must not expose password property"
+    assert "default" not in discover["username"], "D-03: username must have no default"
+    assert "Defaults to 'mcp_admin'" not in discover["username"]["description"], (
+        "D-12: description must not claim mcp_admin default"
+    )
+
+    bulk_target_props = NETWORK_TOOLS["bulk_discover_and_map"]["inputSchema"]["properties"]["targets"]["items"][
+        "properties"
+    ]
+    assert "password" not in bulk_target_props, "D-01: bulk_discover_and_map targets must not expose password property"
+    assert "default" not in bulk_target_props["username"], "D-03: bulk target username must have no default"
+
+
+# test_update_mcp_admin_groups_schema_no_password REMOVED in Phase 33.1 (D-05).
+# update_mcp_admin_groups schema deleted entirely — Phase 33.1 D-02 became moot
+# because the whole tool was removed, not just its password property.
 
 
 @pytest.mark.asyncio
@@ -597,6 +622,33 @@ async def test_execute_get_vm_logs(mock_get_logs):
     mock_get_logs.assert_called_once_with(device_id=1, platform="docker", vm_name="test-container", lines=100)
 
 
+def test_start_interactive_shell_schema_mentions_http() -> None:
+    """start_interactive_shell description must mention HTTP server mode or --http (SHELL-05)."""
+    tools = get_available_tools()
+    desc = tools["start_interactive_shell"]["description"]
+    assert "--http" in desc or "HTTP server mode" in desc, (
+        f"start_interactive_shell description must mention --http or HTTP server mode; got: {desc!r}"
+    )
+
+
+def test_ssh_discover_description_contains_credential_recovery() -> None:
+    """ssh_discover description must mention list_keyring_credentials for recovery (CRED-03)."""
+    tools = get_available_tools()
+    desc = tools["ssh_discover"]["description"]
+    assert "list_keyring_credentials" in desc, (
+        f"ssh_discover description must mention list_keyring_credentials; got: {desc!r}"
+    )
+
+
+def test_ssh_execute_command_description_contains_credential_recovery() -> None:
+    """ssh_execute_command description must mention list_keyring_credentials for recovery (CRED-03)."""
+    tools = get_available_tools()
+    desc = tools["ssh_execute_command"]["description"]
+    assert "list_keyring_credentials" in desc, (
+        f"ssh_execute_command description must mention list_keyring_credentials; got: {desc!r}"
+    )
+
+
 def test_vm_tool_schemas():
     """Test that all VM tools have proper schemas."""
     tools = get_available_tools()
@@ -662,3 +714,222 @@ def test_vm_tool_schemas():
         "platform",
         "vm_name",
     ]
+
+
+def test_list_keyring_credentials_in_registry():
+    """Test that list_keyring_credentials exists in the tool registry."""
+    tools = get_available_tools()
+    assert "list_keyring_credentials" in tools
+    tool = tools["list_keyring_credentials"]
+    assert "description" in tool
+    assert "inputSchema" in tool
+    assert "credential_type" in tool["inputSchema"]["properties"]
+    assert tool["inputSchema"]["required"] == []
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.credential_handlers.list_credentials")
+async def test_handle_list_keyring_credentials_returns_entries(mock_list_creds):
+    """list_keyring_credentials handler returns JSON with status=success and credentials array."""
+    mock_list_creds.return_value = [
+        {"hostname": "host1", "username": "alice", "credential_type": "ssh"},
+        {"hostname": "host2", "username": "bob", "credential_type": "ssh"},
+    ]
+
+    from src.homelab_mcp.tool_handlers.credential_handlers import handle_list_keyring_credentials
+
+    result = await handle_list_keyring_credentials({})
+    assert "content" in result
+    assert len(result["content"]) == 1
+    data = json.loads(result["content"][0]["text"])
+    assert data["status"] == "success"
+    assert data["count"] == 2
+    assert data["credentials"] == [
+        {"hostname": "host1", "username": "alice"},
+        {"hostname": "host2", "username": "bob"},
+    ]
+    assert data["credential_type"] == "ssh"
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.credential_handlers.list_credentials")
+async def test_handle_list_keyring_credentials_passes_credential_type(mock_list_creds):
+    """list_keyring_credentials handler passes credential_type argument through."""
+    mock_list_creds.return_value = []
+
+    from src.homelab_mcp.tool_handlers.credential_handlers import handle_list_keyring_credentials
+
+    result = await handle_list_keyring_credentials({"credential_type": "proxmox"})
+    mock_list_creds.assert_called_once_with(credential_type="proxmox")
+    data = json.loads(result["content"][0]["text"])
+    assert data["credential_type"] == "proxmox"
+    assert data["count"] == 0
+
+
+# test_setup_mcp_admin_schema_password_not_required REMOVED in Phase 33 (D-10).
+# setup_mcp_admin MCP tool is intentionally deleted; replaced by test_tools.py::test_setup_mcp_admin_removed_from_tool_handlers.
+
+
+# test_update_mcp_admin_groups_schema_password_not_required REMOVED in Phase 33.1 (D-05).
+# update_mcp_admin_groups tool deleted entirely; no schema to assert against.
+
+
+def test_no_tool_has_password_required():
+    """Audit guard: no tool schema should have 'password' in its required array.
+
+    SSH tools use keyring auto-inject. Proxmox LXC 'password' is for container root, not SSH auth,
+    but it is also optional. If a future tool legitimately needs a required password field,
+    update this test with an explicit allowlist.
+    """
+    tools = get_available_tools()
+    for tool_name, tool_def in tools.items():
+        schema = tool_def.get("inputSchema", {})
+        required = schema.get("required", [])
+        assert "password" not in required, (
+            f"Tool '{tool_name}' has 'password' in required — "
+            f"use resolve_ssh_credentials() for SSH auth or make it optional"
+        )
+
+
+def test_create_proxmox_vm_schema_phase26_parameters():
+    """create_proxmox_vm schema exposes sockets, cdrom, net0, ostype (Phase 26-03)."""
+    tools = get_available_tools()
+    schema = tools["create_proxmox_vm"]["inputSchema"]["properties"]
+    assert "sockets" in schema
+    assert schema["sockets"]["default"] == 1
+    assert "cdrom" in schema
+    # cdrom has no default (None in handler, not in schema)
+    assert "net0" in schema
+    assert schema["net0"]["default"] == "virtio,bridge=vmbr0"
+    assert "ostype" in schema
+    assert schema["ostype"]["default"] == "l26"
+
+
+def test_create_proxmox_lxc_schema_phase26_parameters():
+    """create_proxmox_lxc schema exposes swap, ssh_public_keys, unprivileged (Phase 26-03)."""
+    tools = get_available_tools()
+    schema = tools["create_proxmox_lxc"]["inputSchema"]["properties"]
+    assert "swap" in schema
+    assert schema["swap"]["default"] == 512
+    assert "ssh_public_keys" in schema
+    # ssh_public_keys has no default (None in handler, not in schema)
+    assert "unprivileged" in schema
+    assert schema["unprivileged"]["default"] is True
+
+
+# test_setup_mcp_admin_schema_has_timeout REMOVED in Phase 33 (D-10).
+# setup_mcp_admin MCP tool is intentionally deleted.
+
+
+# test_verify_mcp_admin_schema_has_timeout REMOVED in Phase 33.1 (D-05).
+# verify_mcp_admin tool deleted entirely; Phase 26-02 timeout assertion is moot.
+
+
+def test_ssh_execute_command_schema_no_timeout():
+    """ssh_execute_command must NOT have timeout in schema (Phase 26-02 regression guard)."""
+    tools = get_available_tools()
+    schema = tools["ssh_execute_command"]["inputSchema"]["properties"]
+    assert "timeout" not in schema, "ssh_execute_command should not expose timeout parameter"
+
+
+# test_update_mcp_admin_groups_schema_has_key_path REMOVED in Phase 33.1 (D-05).
+# update_mcp_admin_groups tool deleted entirely; Phase 26-02 key_path assertion is moot.
+
+
+def test_no_service_tool_has_port_property():
+    """No service tool schema has port property (Phase 26-01 regression guard).
+
+    Phase 26-01 removed phantom port parameters from all service tools.
+    ServiceInstaller has no port parameter; including port in schema causes
+    TypeError at runtime when handlers pass **arguments directly.
+    """
+    from src.homelab_mcp.tool_schemas.service_tools_schema import SERVICE_TOOLS
+
+    for tool_name, tool_def in SERVICE_TOOLS.items():
+        props = tool_def.get("inputSchema", {}).get("properties", {})
+        assert "port" not in props, (
+            f"Service tool '{tool_name}' has phantom 'port' property — "
+            f"ServiceInstaller has no port parameter (Phase 26-01)"
+        )
+
+
+def test_all_tool_schema_properties_are_valid_dicts():
+    """Every property in every tool schema is a dict with type or description.
+
+    Lightweight structural audit to catch malformed schema entries across
+    all tools. Does not validate specific property values.
+    """
+    tools = get_available_tools()
+    for tool_name, tool_def in tools.items():
+        props = tool_def.get("inputSchema", {}).get("properties", {})
+        for prop_name, prop_def in props.items():
+            assert isinstance(prop_def, dict), (
+                f"Tool '{tool_name}' property '{prop_name}' is not a dict: {type(prop_def)}"
+            )
+            has_type = "type" in prop_def
+            has_desc = "description" in prop_def
+            has_oneof = "oneOf" in prop_def
+            has_anyof = "anyOf" in prop_def
+            assert has_type or has_desc or has_oneof or has_anyof, (
+                f"Tool '{tool_name}' property '{prop_name}' missing type/description/oneOf/anyOf"
+            )
+
+
+# --- Regression guards (v1.5 / PR #39) ---
+
+
+def test_sch01_credential_type_rejects_non_enum_values() -> None:
+    """SCH-01 regression: list_keyring_credentials.credential_type has enum=['ssh','proxmox'].
+
+    Before commit bdb76bb the schema accepted arbitrary strings for credential_type, so
+    MCP clients could call `list_keyring_credentials(credential_type='bogus')` and reach
+    the handler with an invalid value. The fix adds `enum: ["ssh", "proxmox"]` to the
+    property, causing the MCP framework to reject non-matching values at the JSON Schema
+    validation step before the handler runs.
+
+    Revert-proof: reverting commit bdb76bb (removing the `enum: ["ssh", "proxmox"]` line
+    from credential_tools_schema.py) causes this test to fail on the
+    `prop["enum"] == ["ssh", "proxmox"]` assertion because the `enum` key is absent
+    (KeyError) or has a different value.
+    """
+    tools = get_available_tools()
+
+    assert "list_keyring_credentials" in tools, "list_keyring_credentials must be registered in the tool registry"
+    tool = tools["list_keyring_credentials"]
+
+    assert "inputSchema" in tool
+    props = tool["inputSchema"]["properties"]
+    assert "credential_type" in props, "list_keyring_credentials must expose credential_type in its inputSchema"
+    prop = props["credential_type"]
+
+    # Core SCH-01 assertions:
+    assert prop["type"] == "string", f"credential_type type must be 'string'; got {prop!r}"
+    assert prop["enum"] == ["ssh", "proxmox"], (
+        f"credential_type must restrict values to enum ['ssh', 'proxmox']; "
+        f"got enum={prop.get('enum')!r} — SCH-01 regression would allow arbitrary strings"
+    )
+
+
+# Phase 33 regression tests — RED until implementation plans land (D-10, D-20, D-21)
+
+
+def test_setup_mcp_admin_removed_from_tool_handlers() -> None:
+    """D-10: setup_mcp_admin must not be in TOOL_HANDLERS dispatch."""
+    from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+
+    assert "setup_mcp_admin" not in TOOL_HANDLERS, "setup_mcp_admin must be removed from TOOL_HANDLERS dispatch (D-10)"
+
+
+def test_update_server_credentials_removed_from_tool_handlers() -> None:
+    """D-20: update_server_credentials must not be in TOOL_HANDLERS dispatch."""
+    from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+
+    assert "update_server_credentials" not in TOOL_HANDLERS
+
+
+def test_remove_server_removed_from_tool_handlers() -> None:
+    """D-21: remove_server must not be in TOOL_HANDLERS dispatch."""
+    from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+
+    assert "remove_server" not in TOOL_HANDLERS
+    assert "remove_server_preview" not in TOOL_HANDLERS
