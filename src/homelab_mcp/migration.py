@@ -221,30 +221,30 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
         conn.commit()
         applied_migrations.append("drop_stale_hostname_ip_unique")
 
-    # Check if drift_baselines table exists
-    cursor.execute("""
+    # Phase 36 D-05: Drop legacy drift_baselines table if it still exists (v1.7 cleanup).
+    # Sitemap is now the single source of truth for drift detection (DRFT-11).
+    cursor.execute(
+        """
         SELECT name FROM sqlite_master
         WHERE type='table' AND name='drift_baselines'
-    """)
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS drift_baselines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node TEXT NOT NULL,
-                vmid INTEGER NOT NULL,
-                vm_type TEXT NOT NULL DEFAULT 'qemu',
-                baseline_config TEXT NOT NULL,
-                recorded_at TEXT NOT NULL,
-                recorded_by TEXT NOT NULL,
-                UNIQUE(node, vmid, vm_type)
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
-            ON drift_baselines (node, vmid, vm_type)
-        """)
+        """
+    )
+    if cursor.fetchone():
+        cursor.execute("DROP INDEX IF EXISTS idx_drift_baselines_node_vmid")
+        cursor.execute("DROP TABLE IF EXISTS drift_baselines")
         conn.commit()
-        applied_migrations.append("create_drift_baselines_table")
+        applied_migrations.append("drop_drift_baselines_table")
+        import sys  # noqa: PLC0415
+
+        print(
+            "Dropped legacy drift_baselines table (v1.7: sitemap is now the single source of truth for drift)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Pre-existing baseline rows are not preserved (per DRFT-21 architectural decision).\n"
+            "      Drift now reports against the live sitemap; no manual baseline registration is needed.",
+            file=sys.stderr,
+        )
 
     if own_connection:
         assert adapter is not None
