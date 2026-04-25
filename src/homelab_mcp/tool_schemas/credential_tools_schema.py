@@ -69,4 +69,3 @@ CREDENTIAL_TOOLS["list_keyring_credentials"] = {
         "required": [],
     },
 }
-

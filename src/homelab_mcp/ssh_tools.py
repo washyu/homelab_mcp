@@ -131,11 +131,7 @@ def resolve_ssh_credentials(
         # Explicit username path: find the registry entry for this user
         # (existing behaviour from Phase 33).
         registry_entries = list_credentials(credential_type="ssh")
-        matched = [
-            e
-            for e in registry_entries
-            if e["hostname"] == hostname and e["username"] == username
-        ]
+        matched = [e for e in registry_entries if e["hostname"] == hostname and e["username"] == username]
         resolved_username = username
 
     if matched:
@@ -261,18 +257,14 @@ async def ssh_discover_system(
         timed_out_commands: list[str] = []
 
         # Get actual hostname from the remote system
-        hostname_result = await _run_with_timeout(
-            conn, "hostname", cmd_name="hostname", timed_out=timed_out_commands
-        )
+        hostname_result = await _run_with_timeout(conn, "hostname", cmd_name="hostname", timed_out=timed_out_commands)
         actual_hostname = hostname  # Default to the IP/hostname we connected with
         if hostname_result and hostname_result.exit_status == 0 and hostname_result.stdout:
             actual_hostname = cast(str, hostname_result.stdout).strip()
 
         # Get CPU info
         cpu_info: dict[str, Any] = {}
-        cpu_result = await _run_with_timeout(
-            conn, "nproc", cmd_name="nproc", timed_out=timed_out_commands
-        )
+        cpu_result = await _run_with_timeout(conn, "nproc", cmd_name="nproc", timed_out=timed_out_commands)
         if cpu_result and cpu_result.exit_status == 0 and cpu_result.stdout:
             cpu_info["cores"] = int(cast(str, cpu_result.stdout).strip())
 
@@ -291,9 +283,7 @@ async def ssh_discover_system(
             system_info["cpu"] = cpu_info
 
         # Get memory info
-        mem_result = await _run_with_timeout(
-            conn, "free -b", cmd_name="free", timed_out=timed_out_commands
-        )
+        mem_result = await _run_with_timeout(conn, "free -b", cmd_name="free", timed_out=timed_out_commands)
         if mem_result and mem_result.exit_status == 0 and mem_result.stdout:
             lines = cast(str, mem_result.stdout).strip().split("\n")
             for line in lines:
@@ -304,7 +294,7 @@ async def ssh_discover_system(
                         used_b = int(parts[2])
                         free_b = int(parts[3])
                         available_b = int(parts[6])
-                        gib = 1024 ** 3
+                        gib = 1024**3
                         system_info["memory"] = {
                             "total": f"{total_b // gib}Gi",
                             "used": f"{used_b // gib}Gi",
@@ -314,9 +304,7 @@ async def ssh_discover_system(
                     break
 
         # Get disk usage
-        disk_result = await _run_with_timeout(
-            conn, "df -B1 -T /", cmd_name="df", timed_out=timed_out_commands
-        )
+        disk_result = await _run_with_timeout(conn, "df -B1 -T /", cmd_name="df", timed_out=timed_out_commands)
         if disk_result and disk_result.exit_status == 0 and disk_result.stdout:
             lines = cast(str, disk_result.stdout).strip().split("\n")
             if len(lines) > 1:
@@ -328,7 +316,7 @@ async def ssh_discover_system(
                     used_b = int(parts[3])
                     avail_b = int(parts[4])
                     use_pct = f"{used_b * 100 // size_b}%" if size_b > 0 else "0%"
-                    gib = 1024 ** 3
+                    gib = 1024**3
                     system_info["disk"] = {
                         "filesystem": parts[0],
                         "size": f"{size_b // gib}Gi",
@@ -367,9 +355,7 @@ async def ssh_discover_system(
                 )
 
         # Get system uptime
-        uptime_result = await _run_with_timeout(
-            conn, "uptime -p", cmd_name="uptime", timed_out=timed_out_commands
-        )
+        uptime_result = await _run_with_timeout(conn, "uptime -p", cmd_name="uptime", timed_out=timed_out_commands)
         if uptime_result and uptime_result.exit_status == 0 and uptime_result.stdout:
             system_info["uptime"] = cast(str, uptime_result.stdout).strip()
 
@@ -507,9 +493,7 @@ async def _run_with_timeout(
     a ``None`` at that position.
     """
     try:
-        return await asyncio.wait_for(
-            conn.run(command, check=False), timeout=timeout
-        )
+        return await asyncio.wait_for(conn.run(command, check=False), timeout=timeout)
     except TimeoutError:
         logger.debug(
             "SSH discovery probe %r exceeded %.1fs on %s; field skipped",

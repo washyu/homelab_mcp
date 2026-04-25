@@ -452,9 +452,7 @@ async def bulk_discover_and_store(sitemap: NetworkSiteMap, targets: list[dict[st
         return_exceptions=True,
     )
     results: list[dict[str, Any]] = [
-        r if isinstance(r, dict)
-        else {"status": "error", "message": str(r)}
-        for r in raw_results
+        r if isinstance(r, dict) else {"status": "error", "message": str(r)} for r in raw_results
     ]
 
     await emit_progress("info", f"Bulk discovery complete: {total} targets processed")

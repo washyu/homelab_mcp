@@ -112,9 +112,7 @@ def test_connect_to_device_prompt() -> None:
     assert "credentials add" in combined_text, (
         "D-13 step 2: prompt must instruct user to run `homelab-mcp credentials add`"
     )
-    assert "register_server" in combined_text, (
-        "D-13 step 3: prompt must instruct AI to call register_server"
-    )
+    assert "register_server" in combined_text, "D-13 step 3: prompt must instruct AI to call register_server"
     assert "ssh_discover" in combined_text
     assert "discover_and_map" in combined_text
     # D-05/D-05b: verify_mcp_admin tool removed in Phase 33.1; prompt Step 6
@@ -196,8 +194,7 @@ def test_connect_to_device_no_verify_bypass() -> None:
 
     result = _build_connect_to_device_result({"hostname": "test.local"})
     combined = " ".join(
-        msg.content.text if hasattr(msg.content, "text") else str(msg.content)
-        for msg in result.messages
+        msg.content.text if hasattr(msg.content, "text") else str(msg.content) for msg in result.messages
     )
     assert "verify_connection=False" not in combined, (
         "D-14: prompt must not reference the removed verify_connection=False bypass"
@@ -213,8 +210,7 @@ def test_connect_to_device_mentions_credentials_cli() -> None:
 
     result = _build_connect_to_device_result({"hostname": "test.local"})
     combined = " ".join(
-        msg.content.text if hasattr(msg.content, "text") else str(msg.content)
-        for msg in result.messages
+        msg.content.text if hasattr(msg.content, "text") else str(msg.content) for msg in result.messages
     )
     assert "homelab-mcp credentials add" in combined, (
         "D-22: prompt step 2 must name the CLI command `homelab-mcp credentials add`"

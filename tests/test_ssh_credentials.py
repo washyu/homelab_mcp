@@ -205,9 +205,7 @@ class TestResolveSSHCredentials:
             }
         ]
 
-        creds = resolve_ssh_credentials(
-            hostname="h.example.com", username=None, password="explicit-pw"
-        )
+        creds = resolve_ssh_credentials(hostname="h.example.com", username=None, password="explicit-pw")
 
         assert isinstance(creds, SSHCredentials)
         # username comes from the registry (the only registered user for this host)
@@ -236,9 +234,7 @@ class TestResolveSSHCredentials:
         ]
 
         with pytest.raises(CredentialNotFoundError) as exc_info:
-            resolve_ssh_credentials(
-                hostname="h.example.com", username=None, password="p"
-            )
+            resolve_ssh_credentials(hostname="h.example.com", username=None, password="p")
 
         msg = str(exc_info.value)
         assert "alice" in msg
@@ -255,9 +251,7 @@ class TestResolveSSHCredentials:
         mock_list_creds.return_value = []
 
         with pytest.raises(CredentialNotFoundError) as exc_info:
-            resolve_ssh_credentials(
-                hostname="h.example.com", username=None, password="p"
-            )
+            resolve_ssh_credentials(hostname="h.example.com", username=None, password="p")
 
         msg = str(exc_info.value)
         assert "homelab-mcp credentials add" in msg
@@ -290,9 +284,7 @@ class TestRegisterServer:
     @patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
     async def test_register_verify_success(self, mock_ssh_connect, mock_resolve):
         """register_server returns verified=true when keyring resolves and SSH connects."""
-        mock_resolve.return_value = SSHCredentials(
-            hostname="192.168.1.100", username="admin", port=22, password="pw"
-        )
+        mock_resolve.return_value = SSHCredentials(hostname="192.168.1.100", username="admin", port=22, password="pw")
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = AsyncMock()
         mock_ctx.__aexit__.return_value = None
@@ -310,8 +302,7 @@ class TestRegisterServer:
     async def test_register_missing_keyring_error(self, mock_resolve):
         """register_server returns actionable error when keyring has no entry (D-05)."""
         mock_resolve.side_effect = CredentialNotFoundError(
-            "No credentials found for 192.168.1.100. "
-            "Run `homelab-mcp credentials add 192.168.1.100 admin`"
+            "No credentials found for 192.168.1.100. Run `homelab-mcp credentials add 192.168.1.100 admin`"
         )
         result = await register_server(hostname="192.168.1.100", username="admin")
         result_dict = json.loads(result)
@@ -322,6 +313,7 @@ class TestRegisterServer:
     def test_register_server_schema_no_write_params(self):
         """D-03: register_server signature accepts no password or key_path."""
         import inspect
+
         sig = inspect.signature(register_server)
         assert "password" not in sig.parameters
         assert "key_path" not in sig.parameters
@@ -329,12 +321,14 @@ class TestRegisterServer:
     def test_register_no_verify_connection_flag(self):
         """D-07: register_server has no verify_connection parameter."""
         import inspect
+
         sig = inspect.signature(register_server)
         assert "verify_connection" not in sig.parameters
 
     def test_register_username_required(self):
         """D-23: register_server username parameter is required (no default)."""
         import inspect
+
         sig = inspect.signature(register_server)
         username_param = sig.parameters.get("username")
         assert username_param is not None
@@ -348,9 +342,7 @@ class TestRegisterServer:
     @patch("src.homelab_mcp.ssh_tools.asyncssh.connect")
     async def test_register_does_not_write_db(self, mock_ssh_connect, mock_resolve, mock_db_adapter):
         """D-03/D-04: register_server must NOT touch the database."""
-        mock_resolve.return_value = SSHCredentials(
-            hostname="192.168.1.100", username="admin", port=22, password="pw"
-        )
+        mock_resolve.return_value = SSHCredentials(hostname="192.168.1.100", username="admin", port=22, password="pw")
         mock_ctx = AsyncMock()
         mock_ctx.__aenter__.return_value = AsyncMock()
         mock_ctx.__aexit__.return_value = None

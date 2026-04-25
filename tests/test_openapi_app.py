@@ -1,4 +1,5 @@
 """CRED-06 / D-10: setup_mcp_admin and peer removed tools must not appear in openapi allow-lists."""
+
 from __future__ import annotations
 
 
@@ -30,7 +31,5 @@ def test_remove_server_absent() -> None:
     from homelab_mcp.openapi_app import _SSH_TOOLS_WITH_HOSTNAME, TOOL_CATEGORIES
 
     for category, tools in TOOL_CATEGORIES.items():
-        assert "remove_server" not in tools, (
-            f"remove_server must be removed from TOOL_CATEGORIES[{category!r}] (D-21)"
-        )
+        assert "remove_server" not in tools, f"remove_server must be removed from TOOL_CATEGORIES[{category!r}] (D-21)"
     assert "remove_server" not in _SSH_TOOLS_WITH_HOSTNAME

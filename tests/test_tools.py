@@ -329,9 +329,7 @@ def test_discover_and_map_schema_no_password_no_mcp_admin_default() -> None:
     bulk_target_props = NETWORK_TOOLS["bulk_discover_and_map"]["inputSchema"]["properties"]["targets"]["items"][
         "properties"
     ]
-    assert "password" not in bulk_target_props, (
-        "D-01: bulk_discover_and_map targets must not expose password property"
-    )
+    assert "password" not in bulk_target_props, "D-01: bulk_discover_and_map targets must not expose password property"
     assert "default" not in bulk_target_props["username"], "D-03: bulk target username must have no default"
 
 
@@ -917,19 +915,20 @@ def test_sch01_credential_type_rejects_non_enum_values() -> None:
 def test_setup_mcp_admin_removed_from_tool_handlers() -> None:
     """D-10: setup_mcp_admin must not be in TOOL_HANDLERS dispatch."""
     from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
-    assert "setup_mcp_admin" not in TOOL_HANDLERS, (
-        "setup_mcp_admin must be removed from TOOL_HANDLERS dispatch (D-10)"
-    )
+
+    assert "setup_mcp_admin" not in TOOL_HANDLERS, "setup_mcp_admin must be removed from TOOL_HANDLERS dispatch (D-10)"
 
 
 def test_update_server_credentials_removed_from_tool_handlers() -> None:
     """D-20: update_server_credentials must not be in TOOL_HANDLERS dispatch."""
     from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+
     assert "update_server_credentials" not in TOOL_HANDLERS
 
 
 def test_remove_server_removed_from_tool_handlers() -> None:
     """D-21: remove_server must not be in TOOL_HANDLERS dispatch."""
     from src.homelab_mcp.tool_handlers import TOOL_HANDLERS
+
     assert "remove_server" not in TOOL_HANDLERS
     assert "remove_server_preview" not in TOOL_HANDLERS
