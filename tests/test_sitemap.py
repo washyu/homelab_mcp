@@ -672,3 +672,89 @@ def test_analyzers_skip_null_cpu_cores_device_phase35(tmp_path):
         "a device with cpu_cores=None (false positive — the None → 0 "
         "coercion pattern must have returned)"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v1.6.x post-milestone regression tests for memory/disk format and analyzer
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_parse_memory_gb_handles_raw_bytes(tmp_path):
+    """Producer now emits raw byte ints; parser must accept them.
+
+    SQLite TEXT columns coerce ints to digit strings on store; both forms
+    must round-trip cleanly through ``_parse_memory_gb``.
+    """
+    sm = NetworkSiteMap(db_path=str(tmp_path / "fmt.db"), db_type="sqlite")
+
+    # Raw int (in-memory dict from new producer)
+    assert sm._parse_memory_gb(8 * 1024**3) == pytest.approx(8.0, rel=1e-3)
+    # Digit string (after SQLite TEXT coercion)
+    assert sm._parse_memory_gb(str(8 * 1024**3)) == pytest.approx(8.0, rel=1e-3)
+    # Legacy "Gi" string (pre-fix rows that haven't been re-discovered yet)
+    assert sm._parse_memory_gb("8Gi") == pytest.approx(8.0, rel=1e-3)
+    # Legacy "G" string
+    assert sm._parse_memory_gb("8G") == pytest.approx(8.0, rel=1e-3)
+    # Sub-GiB precision (the bug #18 case)
+    assert sm._parse_memory_gb(360 * 1024**2) == pytest.approx(0.351, rel=1e-2)
+    # Empty / None / garbage
+    assert sm._parse_memory_gb(None) == 0.0
+    assert sm._parse_memory_gb("") == 0.0
+    assert sm._parse_memory_gb("not-a-size") == 0.0
+
+
+def test_analyzer_flags_high_memory_usage(tmp_path):
+    """Bug #14: pve2 with 86% memory pressure must appear in high_memory_usage."""
+    sm = NetworkSiteMap(db_path=str(tmp_path / "memhi.db"), db_type="sqlite")
+
+    # Simulate post-fix producer output: raw byte ints
+    sm.store_device(
+        NetworkDevice(
+            hostname="pve2",
+            connection_ip="10.0.0.21",
+            last_seen="2026-04-25T00:00:00",
+            status="success",
+            cpu_model="AMD EPYC",
+            cpu_cores=32,
+            memory_total=str(7 * 1024**3),  # 7 GiB
+            memory_used=str(6 * 1024**3),  # 6 GiB used = 85.7%
+            memory_available=str(1 * 1024**3),
+            os_info="Debian 13",
+        )
+    )
+
+    topology = sm.analyze_network_topology()
+    high_mem = topology["resource_utilization"]["high_memory_usage"]
+    assert any(entry["hostname"] == "pve2" for entry in high_mem), (
+        f"Bug #14 regression: pve2 at 85.7% memory not flagged in high_memory_usage; got {high_mem}"
+    )
+
+
+def test_analyzer_renders_null_cpu_model_as_unknown(tmp_path):
+    """Bug #16: device with null cpu_model must bucket as 'Unknown', not 'null'.
+
+    Prior regression: ``device.get("cpu_model", "Unknown")`` only fell back to
+    "Unknown" when the key was MISSING — when the key existed with value None
+    (as Pi 4 currently does for ARM CPUs), it returned None which JSON-serialized
+    as the literal string "null" in the cpu_architectures bucket.
+    """
+    sm = NetworkSiteMap(db_path=str(tmp_path / "nullcpu.db"), db_type="sqlite")
+
+    sm.store_device(
+        NetworkDevice(
+            hostname="pi-dac",
+            connection_ip="10.0.0.84",
+            last_seen="2026-04-25T00:00:00",
+            status="success",
+            cpu_model=None,  # ARM Pi 4: cpu_model parser couldn't extract
+            cpu_cores=4,
+            memory_total=str(4 * 1024**3),
+            memory_used=str(1 * 1024**3),
+            os_info="Debian 12",
+        )
+    )
+
+    topology = sm.analyze_network_topology()
+    arches = topology["cpu_architectures"]
+    assert "null" not in arches, f"Bug #16 regression: 'null' key in cpu_architectures: {arches}"
+    assert arches.get("Unknown") == 1, f"Expected one Unknown CPU; got {arches}"

@@ -268,16 +268,29 @@ async def ssh_discover_system(
         if cpu_result and cpu_result.exit_status == 0 and cpu_result.stdout:
             cpu_info["cores"] = int(cast(str, cpu_result.stdout).strip())
 
+        # ARM systems (Raspberry Pi, etc.) don't have a "model name" line;
+        # they use "Model" (Pi-style, device name) or "Hardware" (SoC fallback).
+        # Match all three; pick the most informative one.
         cpu_model_result = await _run_with_timeout(
             conn,
-            'grep "model name" /proc/cpuinfo | head -1',
+            r'grep -E "^(model name|Model|Hardware)\s*:" /proc/cpuinfo',
             cmd_name="cpuinfo",
             timed_out=timed_out_commands,
         )
         if cpu_model_result and cpu_model_result.exit_status == 0 and cpu_model_result.stdout:
-            model_line = cast(str, cpu_model_result.stdout).strip()
-            if ":" in model_line:
-                cpu_info["model"] = model_line.split(":", 1)[1].strip()
+            candidates: dict[str, str] = {}
+            for line in cast(str, cpu_model_result.stdout).splitlines():
+                if ":" not in line:
+                    continue
+                label, _, value = line.partition(":")
+                key = label.strip().lower()
+                if key not in candidates and value.strip():
+                    candidates[key] = value.strip()
+            # Priority: x86 standard → Pi device → ARM SoC
+            for key in ("model name", "model", "hardware"):
+                if candidates.get(key):
+                    cpu_info["model"] = candidates[key]
+                    break
 
         if cpu_info:
             system_info["cpu"] = cpu_info
@@ -290,16 +303,14 @@ async def ssh_discover_system(
                 if line.startswith("Mem:"):
                     parts = line.split()
                     if len(parts) >= 7:
-                        total_b = int(parts[1])
-                        used_b = int(parts[2])
-                        free_b = int(parts[3])
-                        available_b = int(parts[6])
-                        gib = 1024**3
+                        # Emit raw byte integers — analyzers need precision for
+                        # threshold math, and human formatting at storage time
+                        # rounded sub-GiB values to "0Gi" (Phase 35 v1.6 fix).
                         system_info["memory"] = {
-                            "total": f"{total_b // gib}Gi",
-                            "used": f"{used_b // gib}Gi",
-                            "free": f"{free_b // gib}Gi",
-                            "available": f"{available_b // gib}Gi",
+                            "total": int(parts[1]),
+                            "used": int(parts[2]),
+                            "free": int(parts[3]),
+                            "available": int(parts[6]),
                         }
                     break
 
@@ -316,12 +327,12 @@ async def ssh_discover_system(
                     used_b = int(parts[3])
                     avail_b = int(parts[4])
                     use_pct = f"{used_b * 100 // size_b}%" if size_b > 0 else "0%"
-                    gib = 1024**3
+                    # Emit raw byte integers (see memory note above).
                     system_info["disk"] = {
                         "filesystem": parts[0],
-                        "size": f"{size_b // gib}Gi",
-                        "used": f"{used_b // gib}Gi",
-                        "available": f"{avail_b // gib}Gi",
+                        "size": size_b,
+                        "used": used_b,
+                        "available": avail_b,
                         "use_percent": use_pct,
                         "mount": parts[6],
                     }

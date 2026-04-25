@@ -184,14 +184,20 @@ class NetworkSiteMap:
         for device in devices:
             if device["status"] != "success":
                 continue
+            # Skip degenerate rows that slipped past the status filter (defense
+            # in depth for legacy/zombie rows with empty hostname).
+            if not device.get("hostname"):
+                continue
 
-            # OS distribution
-            os_info = device.get("os_info", "Unknown")
+            # OS distribution — `or "Unknown"` (not `, "Unknown"` default) so a
+            # null value bucketed alongside missing key, instead of rendering "null".
+            os_info = device.get("os_info") or "Unknown"
             if isinstance(analysis["operating_systems"], dict):
                 analysis["operating_systems"][os_info] = analysis["operating_systems"].get(os_info, 0) + 1
 
-            # CPU models
-            cpu_model = device.get("cpu_model", "Unknown")
+            # CPU models — `or "Unknown"` for the same reason (Pi 4 currently
+            # returns null for cpu_model; that should bucket to Unknown, not "null").
+            cpu_model = device.get("cpu_model") or "Unknown"
             if isinstance(analysis["cpu_architectures"], dict):
                 analysis["cpu_architectures"][cpu_model] = analysis["cpu_architectures"].get(cpu_model, 0) + 1
 
@@ -225,6 +231,26 @@ class NetworkSiteMap:
                         device.get("hostname", "unknown"),
                     )
 
+            # Memory pressure detection. Used > 80% of total flags high_memory_usage.
+            # Both fields parse via _parse_memory_gb so legacy "Gi" strings and
+            # raw-byte ints are handled uniformly. Skip cleanly on parse failure.
+            mem_total_raw = device.get("memory_total")
+            mem_used_raw = device.get("memory_used")
+            if mem_total_raw and mem_used_raw:
+                total_gb = self._parse_memory_gb(mem_total_raw)
+                used_gb = self._parse_memory_gb(mem_used_raw)
+                if total_gb > 0:
+                    pct = used_gb / total_gb * 100
+                    if pct > 80 and isinstance(analysis["resource_utilization"], dict):
+                        analysis["resource_utilization"]["high_memory_usage"].append(
+                            {
+                                "hostname": device["hostname"],
+                                "usage_percent": round(pct, 1),
+                                "used_gb": round(used_gb, 1),
+                                "total_gb": round(total_gb, 1),
+                            }
+                        )
+
             # Identify resource-constrained devices
             cpu_cores = device.get("cpu_cores")
             if cpu_cores is not None and cpu_cores <= 2:
@@ -246,23 +272,37 @@ class NetworkSiteMap:
 
         return analysis
 
-    def _parse_memory_gb(self, memory_str: str) -> float:
-        """Parse memory string and return value in GB."""
-        if not memory_str:
-            return 0.0
+    def _parse_memory_gb(self, memory_str: Any) -> float:
+        """Parse a memory value (raw bytes int, "Gi"/"G" string) and return GiB.
 
-        memory_str = str(memory_str).strip()
-        if memory_str.endswith("Gi"):
+        Accepts:
+        - int / float bytes (current producer format) → bytes / 1024**3
+        - "<n>Gi" or "<n>G" strings (legacy producer format) → n
+        - SQLite TEXT columns coerce ints to digit strings; we detect and parse those
+        """
+        gib = 1024**3
+        if memory_str is None or memory_str == "":
+            return 0.0
+        if isinstance(memory_str, (int, float)):
+            return float(memory_str) / gib
+
+        s = str(memory_str).strip()
+        if not s:
+            return 0.0
+        if s.endswith("Gi"):
             try:
-                return float(memory_str.rstrip("Gi"))
+                return float(s.rstrip("Gi"))
             except (ValueError, AttributeError):
                 return 0.0
-        elif memory_str.endswith("G"):
+        if s.endswith("G"):
             try:
-                return float(memory_str.rstrip("G"))
+                return float(s.rstrip("G"))
             except (ValueError, AttributeError):
                 return 0.0
-        else:
+        # Plain digits = raw bytes (from current producer, stored as TEXT)
+        try:
+            return float(s) / gib
+        except (ValueError, AttributeError):
             return 0.0
 
     def suggest_deployments(self) -> dict[str, Any]:
