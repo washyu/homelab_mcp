@@ -725,3 +725,68 @@ def test_migration_dedup_collapses_duplicates_and_is_idempotent_phase35(tmp_path
     assert "dedupe_zombie_device_rows" not in applied2, applied2
     assert not any(a.startswith("add_column_") for a in applied2), applied2
     assert "drop_stale_hostname_ip_unique" not in applied2, applied2
+
+
+def test_init_schema_triggers_phase35_migrations_on_legacy_db(tmp_path):
+    """Regression: ``SQLiteAdapter.init_schema`` must run Phase 33/35 migrations
+    on pre-existing databases.
+
+    Without this wiring, ``CREATE TABLE IF NOT EXISTS devices`` is a no-op on
+    a legacy DB, so the new ``usb_devices`` / ``pci_devices`` / ``block_devices``
+    columns are never added — causing ``store_device`` to fail with
+    ``no such column: usb_devices``. The zombie-row dedup and stale UNIQUE drop
+    similarly skip. This test simulates a pre-Phase-35 DB and verifies that
+    instantiating ``NetworkSiteMap`` alone triggers all three migrations.
+    """
+    import sqlite3
+
+    from src.homelab_mcp.sitemap import NetworkSiteMap
+
+    db_path = str(tmp_path / "legacy_pre_phase35.db")
+
+    # Pre-Phase-35 schema: no usb/pci/block columns, with stale UNIQUE
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hostname TEXT NOT NULL,
+            connection_ip TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            status TEXT NOT NULL,
+            cpu_cores INTEGER,
+            UNIQUE(hostname, connection_ip)
+        )
+        """
+    )
+    # Two rows with same hostname — Phase 35 dedup target
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, cpu_cores) "
+        "VALUES ('pve1', '10.0.0.1', '2026-01-01', 'success', 4)"
+    )
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status, cpu_cores) "
+        "VALUES ('pve1', '10.0.0.2', '2026-01-02', 'success', 4)"
+    )
+    conn.commit()
+    conn.close()
+
+    # Instantiating NetworkSiteMap must be sufficient to run migrations
+    NetworkSiteMap(db_path=db_path, db_type="sqlite")
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        assert "usb_devices" in cols, "Phase 35 usb_devices column not added by init_schema migrations"
+        assert "pci_devices" in cols, "Phase 35 pci_devices column not added by init_schema migrations"
+        assert "block_devices" in cols, "Phase 35 block_devices column not added by init_schema migrations"
+
+        rows = conn.execute("SELECT hostname, connection_ip FROM devices").fetchall()
+        assert len(rows) == 1, f"Zombie row dedup did not run on init_schema; got {rows}"
+        assert rows[0] == ("pve1", "10.0.0.2"), f"Keeper should have latest last_seen; got {rows[0]}"
+
+        table_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='devices'").fetchone()[0]
+        assert "UNIQUE(hostname, connection_ip)" not in table_sql, "Stale composite UNIQUE not dropped on init_schema"
+        assert "UNIQUE (hostname, connection_ip)" not in table_sql, "Stale composite UNIQUE not dropped on init_schema"
+    finally:
+        conn.close()

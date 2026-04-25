@@ -12,21 +12,31 @@ from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
 logger = logging.getLogger(__name__)
 
 
-def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
-    """Run pending migrations on SQLite database."""
-    config = get_config()
-    if db_path is None:
-        db_path = config.database.sqlite_path
+def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None) -> list[str]:
+    """Run pending migrations on SQLite database.
 
-    adapter = SQLiteAdapter(db_path)
-    adapter.connect()
-    assert adapter.connection is not None
+    Pass ``_connection`` to migrate on an existing open connection (used by
+    ``SQLiteAdapter.init_schema`` to avoid the close/reopen dance that breaks
+    ``:memory:`` databases). Without it, opens/closes its own connection.
+    """
+    own_connection = _connection is None
+    adapter: SQLiteAdapter | None = None
+    if own_connection:
+        config = get_config()
+        if db_path is None:
+            db_path = config.database.sqlite_path
+        adapter = SQLiteAdapter(db_path)
+        adapter.connect()
+        assert adapter.connection is not None
+        conn = adapter.connection
+    else:
+        conn = _connection
 
     applied_migrations: list[str] = []
 
     # D-01: Drop legacy ssh_credentials table if it still exists (v1.6 cleanup).
     # Keyring is now the single source of truth for remote credentials (CRED-04).
-    cursor = adapter.connection.cursor()
+    cursor = conn.cursor()
     cursor.execute(
         """
         SELECT name FROM sqlite_master
@@ -37,7 +47,7 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
         cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_hostname")
         cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_device_id")
         cursor.execute("DROP TABLE IF EXISTS ssh_credentials")
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("drop_ssh_credentials_table")
         import sys  # noqa: PLC0415
 
@@ -64,7 +74,7 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
             cursor.execute(f"ALTER TABLE devices ADD COLUMN {new_col} TEXT")  # noqa: S608
             newly_added.append(new_col)
     if newly_added:
-        adapter.connection.commit()
+        conn.commit()
         for col in newly_added:
             applied_migrations.append(f"add_column_{col}")
 
@@ -118,7 +128,7 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
                     sibling_ids,
                 )
 
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("dedupe_zombie_device_rows")
 
     # ─────────────────────────────────────────────────────────────────
@@ -208,7 +218,7 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
         cursor.execute("DROP TABLE devices")
         cursor.execute("ALTER TABLE devices_new RENAME TO devices")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices (hostname)")
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("drop_stale_hostname_ip_unique")
 
     # Check if drift_baselines table exists
@@ -233,26 +243,38 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
             CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
             ON drift_baselines (node, vmid, vm_type)
         """)
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("create_drift_baselines_table")
 
-    adapter.close()
+    if own_connection:
+        assert adapter is not None
+        adapter.close()
     return applied_migrations
 
 
-def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> list[str]:
-    """Run pending migrations on PostgreSQL database."""
-    config = get_config()
-    if postgres_params is None:
-        postgres_params = config.database.postgres_config
+def run_postgres_migrations(postgres_params: dict[str, Any] | None = None, *, _connection: Any = None) -> list[str]:
+    """Run pending migrations on PostgreSQL database.
 
-    adapter = PostgreSQLAdapter(postgres_params)
-    adapter.connect()
-    assert adapter.connection is not None
+    Pass ``_connection`` to migrate on an existing open connection (used by
+    ``PostgreSQLAdapter.init_schema`` to avoid the close/reopen dance).
+    Without it, opens/closes its own connection.
+    """
+    own_connection = _connection is None
+    adapter: PostgreSQLAdapter | None = None
+    if own_connection:
+        config = get_config()
+        if postgres_params is None:
+            postgres_params = config.database.postgres_config
+        adapter = PostgreSQLAdapter(postgres_params)
+        adapter.connect()
+        assert adapter.connection is not None
+        conn = adapter.connection
+    else:
+        conn = _connection
 
     applied_migrations: list[str] = []
 
-    cursor = adapter.connection.cursor()
+    cursor = conn.cursor()
 
     # D-01: Drop legacy ssh_credentials table if it still exists (v1.6 cleanup — Postgres path).
     # Keyring is now the single source of truth for remote credentials (CRED-04).
@@ -268,7 +290,7 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
         cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_hostname")
         cursor.execute("DROP INDEX IF EXISTS idx_ssh_credentials_device_id")
         cursor.execute("DROP TABLE IF EXISTS ssh_credentials")
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("drop_ssh_credentials_table")
         import sys  # noqa: PLC0415
 
@@ -334,7 +356,7 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
                     (sibling_ids_pg,),
                 )
 
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("dedupe_zombie_device_rows")
 
     # ─────────────────────────────────────────────────────────────────
@@ -352,7 +374,7 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
     stale_unique = cursor.fetchone()
     if stale_unique:
         cursor.execute(f"ALTER TABLE devices DROP CONSTRAINT {stale_unique[0]}")  # noqa: S608
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("drop_stale_hostname_ip_unique")
 
     cursor.execute(
@@ -363,7 +385,7 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
     )
     if cursor.fetchone():
         cursor.execute("DROP INDEX idx_devices_hostname_ip")
-        adapter.connection.commit()
+        conn.commit()
         applied_migrations.append("drop_stale_hostname_ip_index")
 
     cursor.execute(
@@ -371,9 +393,11 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
         CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices (hostname)
         """
     )
-    adapter.connection.commit()
+    conn.commit()
 
-    adapter.close()
+    if own_connection:
+        assert adapter is not None
+        adapter.close()
     return applied_migrations
 
 

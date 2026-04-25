@@ -212,6 +212,15 @@ class SQLiteAdapter(DatabaseAdapter):
 
         self.connection.commit()
 
+        # Phase 33/35 migrations: CREATE TABLE IF NOT EXISTS is a no-op on
+        # pre-existing DBs, so ALTER-TABLE migrations (Phase 35 usb/pci/block
+        # columns, stale UNIQUE drop, zombie-row dedup, Phase 33 ssh_credentials
+        # drop) must run separately. Pass our live connection so ``:memory:``
+        # databases (which are per-connection) stay on the same DB.
+        from .migration import run_sqlite_migrations  # noqa: PLC0415
+
+        run_sqlite_migrations(_connection=self.connection)
+
     def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device in SQLite."""
         if not self.connection:
@@ -609,6 +618,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
         """)
 
         self.connection.commit()
+
+        # Phase 33/35 migrations on pre-existing Postgres DBs: drop legacy
+        # ssh_credentials table, dedup zombie hostname rows, drop stale UNIQUE
+        # (hostname, connection_ip). Pass our live connection to reuse it.
+        from .migration import run_postgres_migrations  # noqa: PLC0415
+
+        run_postgres_migrations(_connection=self.connection)
 
     def store_device(self, device_data: dict[str, Any]) -> int:
         """Store or update a device in PostgreSQL with JSONB."""
