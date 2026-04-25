@@ -115,25 +115,31 @@ Promotes backlog 999.4 (sitemap tags/categories). Drift checks role-scoped via t
 
 ## Traceability
 
-(filled by gsd-roadmapper when phases are mapped to requirements)
-
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| DRFT-11 | TBD | pending |
-| DRFT-12 | TBD | pending |
-| DRFT-13 | TBD | pending |
-| DRFT-14 | TBD | pending |
-| DRFT-15 | TBD | pending |
-| DRFT-16 | TBD | pending |
-| DRFT-17 | TBD | pending |
-| DRFT-18 | TBD | pending |
-| DRFT-19 | TBD | pending |
-| DRFT-20 | TBD | pending |
-| DRFT-21 | TBD | pending |
-| POL-01 | TBD | pending |
-| POL-02 | TBD | pending |
-| POL-03 | TBD | pending |
+| DRFT-11 | Phase 36 | pending |
+| DRFT-12 | Phase 36 | pending |
+| DRFT-13 | Phase 37 | pending |
+| DRFT-14 | Phase 37 | pending |
+| DRFT-15 | Phase 37 | pending |
+| DRFT-16 | Phase 37 | pending |
+| DRFT-17 | Phase 39 | pending |
+| DRFT-18 | Phase 39 | pending |
+| DRFT-19 | Phase 39 | pending |
+| DRFT-20 | Phase 38 | pending |
+| DRFT-21 | Phase 36 | pending |
+| POL-01 | Phase 40 | pending |
+| POL-02 | Phase 40 | pending |
+| POL-03 | Phase 40 | pending |
+
+**Coverage:** 14 / 14 requirements mapped, 0 orphans, 0 duplicates.
+
+**Phase ordering rationale:**
+- Phase 36 (foundation) runs first in isolation: DRFT-21's table drop is one-way, and DRFT-11/DRFT-12 rewrite the scan path on top of the unified data model.
+- Phase 37 (output shape) and Phase 38 (schema) both depend on Phase 36 only — parallelizable.
+- Phase 39 (detection cases) depends on Phase 38 (DRFT-19 changed-detection compares against the new fingerprint fields).
+- Phase 40 (POL polish) is independent of drift work; bundled at end for clean separation.
 
 ---
 
-*Last updated: 2026-04-25 — v1.7 milestone scope locked (14 reqs). v1.7.1 + v1.7.2 sketched as upcoming.*
+*Last updated: 2026-04-25 — v1.7 traceability filled by gsd-roadmapper. 5 phases (36-40), 14 requirements, 100% coverage.*

@@ -9,6 +9,7 @@
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
 - ✅ **v1.5 Critical Bug Fixes** — Phases 31-32 (shipped 2026-04-20)
 - ✅ **v1.6 Credential Architecture Cleanup** — Phases 33, 33.1, 34, 35 (shipped 2026-04-24)
+- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-40 (in progress)
 
 ## Phases
 
@@ -95,6 +96,73 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 </details>
 
+<details>
+<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-40) — IN PROGRESS</summary>
+
+- [ ] **Phase 36: Drift ↔ Sitemap Foundation** — Drop parallel `drift_baselines` table; wire `scan_infrastructure_drift` to iterate sitemap rows; resolve Proxmox creds via `resolve_proxmox_credentials`
+- [ ] **Phase 37: Drift Output Shape & Error Hygiene** — Consistent shape across all filter scopes; four-bucket coverage transparency; error messages reference sitemap CRUD tools, never `PROXMOX_HOST`
+- [ ] **Phase 38: Sitemap Fingerprint Schema** — Sitemap rows capture kernel version, package fingerprint, and capability probes (GPU passthrough, Vulkan/ML library availability) so OS-level changes surface as drift
+- [ ] **Phase 39: Drift Detection Cases** — Detect unknown (manually-created VMs not in sitemap), missing (sitemap rows that no longer probe-respond), and changed (fingerprint differs from stored) infrastructure
+- [ ] **Phase 40: Proxmox VM Lifecycle Polish** — `get_proxmox_vm_status` clean "VM not found" error; `create_proxmox_vm` schema accuracy + cred-error guidance pointing to `credentials add`, never `PROXMOX_HOST`
+
+## Phase Details
+
+### Phase 36: Drift ↔ Sitemap Foundation
+**Goal**: Sitemap becomes the single source of truth for drift — the parallel `drift_baselines` table is gone and `scan_infrastructure_drift` reads sitemap rows directly with proper credential resolution.
+**Depends on**: Nothing (foundation phase for v1.7)
+**Requirements**: DRFT-11, DRFT-12, DRFT-21
+**Success Criteria** (what must be TRUE):
+  1. After upgrading, the `drift_baselines` table no longer exists in either the SQLite or Postgres adapter — fresh installs never create it, and migration on existing installs drops it cleanly
+  2. A user calling `scan_infrastructure_drift` with no Proxmox env vars set sees a successful scan that resolves credentials through `resolve_proxmox_credentials` (per-node → cluster → actionable error), identical to how every other Proxmox tool resolves
+  3. A user can grep the production code path for `drift_baselines` reads/writes and find none — the only references that remain are the migration step that drops the table
+  4. An AST meta-test fails CI if any future code path on the drift-scan call chain reads from a parallel baseline table instead of sitemap rows
+**Plans**: TBD
+
+### Phase 37: Drift Output Shape & Error Hygiene
+**Goal**: A user calling `scan_infrastructure_drift` gets the same response shape regardless of filter scope, can see at a glance which hosts were probed and which weren't, and never sees an error message pointing to a deprecated env var or a non-existent baseline tool.
+**Depends on**: Phase 36
+**Requirements**: DRFT-13, DRFT-14, DRFT-15, DRFT-16
+**Success Criteria** (what must be TRUE):
+  1. A user calling `scan_infrastructure_drift` with `node=*`, `vm_type=qemu`, `vm_type=lxc`, or no filter at all gets the same response shape — empty match returns an empty result, never a scope error (closes Bugs A and E)
+  2. The drift report distinguishes four buckets — probed-OK, unreachable, unknown, and changed — so a user reading the output can tell exactly which hosts were covered and which weren't (closes Bug D)
+  3. Every drift family error message that suggests a recovery action points to an existing sitemap CRUD tool (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`) — no message mentions `PROXMOX_HOST` (closes Bug B)
+  4. The MCP tool list contains no `register_drift_baseline`, `list_drift_baselines`, or `delete_drift_baseline` tool — drift docs and any baseline-lifecycle error message reference the existing sitemap CRUD tools (closes Bug C architecturally)
+**Plans**: TBD
+
+### Phase 38: Sitemap Fingerprint Schema
+**Goal**: Sitemap rows capture enough fingerprint detail (kernel version, installed-package digest, hardware capability probes) that an OS-level change like a kernel update breaking GPU passthrough or Vulkan support shows up as drift instead of vanishing silently.
+**Depends on**: Phase 36
+**Requirements**: DRFT-20
+**Success Criteria** (what must be TRUE):
+  1. After running `discover_and_map` on a host, the user can read the sitemap row and see kernel version, package fingerprint, and capability probe results (GPU passthrough state, Vulkan/ML library availability) populated
+  2. A user inspecting two sitemap rows for the same host taken before and after a kernel update can see the kernel version field change, with package fingerprint and capability fields available for comparison
+  3. The schema migration runs cleanly on existing sitemap databases — old rows get NULL for the new fields and re-discovery populates them; no data loss for existing fields
+  4. The discovery probe code that populates the new fields wraps every `conn.run` call with `_run_with_timeout(10s)` and emits the `partial: True` payload tag when probes time out (carries forward Phase 35 reliability pattern)
+**Plans**: TBD
+
+### Phase 39: Drift Detection Cases
+**Goal**: A user running `scan_infrastructure_drift` after a real-world change — a manually-created VM, an offline NAS, a kernel update that regressed Vulkan support — sees that change reported as drift, classified into the right bucket.
+**Depends on**: Phase 36, Phase 38
+**Requirements**: DRFT-17, DRFT-18, DRFT-19
+**Success Criteria** (what must be TRUE):
+  1. When a user creates a VM directly in the Proxmox UI without going through the MCP server, the next `scan_infrastructure_drift` reports that VM in the **unknown infrastructure** bucket with the host node, VMID, and a pointer to `discover_and_map` for adoption
+  2. When a sitemap-known host stops responding (powered off, network outage, decommissioned but not purged), `scan_infrastructure_drift` reports it in the **missing infrastructure** bucket with last-seen timestamp and a pointer to `decommission_device` or `purge_failed_discoveries`
+  3. When a host's kernel version, package fingerprint, or capability probe (e.g., Vulkan availability) differs from the stored sitemap row, `scan_infrastructure_drift` reports it in the **changed infrastructure** bucket with a per-field diff showing stored-vs-current values
+  4. The unknown-detection path enumerates Proxmox VMs/LXC via the API; the missing- and changed-detection paths use SSH probes that respect the per-subprocess `_run_with_timeout(10s)` pattern from Phase 35 — no scan hangs longer than the documented bulk timeout when a host is unresponsive
+**Plans**: TBD
+
+### Phase 40: Proxmox VM Lifecycle Polish
+**Goal**: A user hitting Bug I (querying a nonexistent VMID) or Bug G (calling `create_proxmox_vm` without configured credentials) gets a clean structured error that tells them what to do next, never a raw HTTP 500 leak or a pointer to a deprecated env var.
+**Depends on**: Nothing (independent of drift work; can run in parallel with Phase 37/38/39)
+**Requirements**: POL-01, POL-02, POL-03
+**Success Criteria** (what must be TRUE):
+  1. A user calling `get_proxmox_vm_status` with a VMID that doesn't exist on the target node sees a structured `VM not found` error with hostname and VMID echoed back — no raw HTTP 500, no internal Proxmox API URL leaked into the message (closes Bug I)
+  2. The `create_proxmox_vm` tool schema declares its `host` parameter as optional or required in a way that matches runtime behavior under cluster-scope keyring resolution — schema and runtime agree, no schema lie (closes Bug G schema half)
+  3. When `create_proxmox_vm` cannot resolve credentials, the error message points the user to `homelab-mcp credentials add --type proxmox` (with a note about `--scope cluster:<name>` for cluster tokens) — no message mentions `PROXMOX_HOST` (closes Bug G error half)
+**Plans**: TBD
+
+</details>
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -126,6 +194,11 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 33.1 SSH Tool Family Keyring Uniformity | v1.6 | 5/5 | Complete | 2026-04-23 |
 | 34. Cluster-Scoped Proxmox Credentials | v1.6 | 4/4 | Complete | 2026-04-23 |
 | 35. Sitemap + Discovery Reliability | v1.6 | 4/4 | Complete | 2026-04-24 |
+| 36. Drift ↔ Sitemap Foundation | v1.7 | 0/0 | Not started | - |
+| 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
+| 38. Sitemap Fingerprint Schema | v1.7 | 0/0 | Not started | - |
+| 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
+| 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
 
