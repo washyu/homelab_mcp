@@ -573,6 +573,65 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 
 ---
 
+### scan_infrastructure_drift
+
+**Description:** Scan for infrastructure drift against the sitemap. Iterates registered devices in the network sitemap, resolves Proxmox credentials per row through the keyring (per-node -> cluster -> error), and probes each resolved host's `/cluster/status` endpoint. Returns a 2-bucket coverage report (`probed_ok`, `unreachable`) per host. Filter semantics for `node` and `vm_type` are under Phase 37 redesign and are currently inert -- both arguments are accepted for back-compat but not yet acted upon.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| node | string | No | (none) | Filter scope (Phase 37 will activate; currently inert) |
+| vm_type | string | No | "all" | Filter scope: "qemu", "lxc", or "all" (Phase 37 will activate; currently inert) |
+
+**Example:**
+
+```json
+{}
+```
+
+**Returns:**
+
+```json
+{
+  "status": "success",
+  "scan_timestamp": "2026-04-25T12:34:56+00:00",
+  "scanned": 2,
+  "probed_ok": [
+    {
+      "hostname": "pve1",
+      "connection_ip": "10.0.0.10",
+      "scope": "node",
+      "cluster_name": null,
+      "status": "probed-ok",
+      "error": null,
+      "scan_timestamp": "2026-04-25T12:34:56+00:00"
+    }
+  ],
+  "unreachable": [
+    {
+      "hostname": "pi-lab",
+      "connection_ip": "10.0.0.12",
+      "scope": "cluster",
+      "cluster_name": "homelab-prod",
+      "status": "unreachable",
+      "error": "Cannot connect to host pi-lab",
+      "scan_timestamp": "2026-04-25T12:34:56+00:00"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Baselines are not registered separately. The sitemap (populated by `discover_and_map`) serves as the baseline for drift detection. To add a host to drift coverage, register it via `discover_and_map`.
+- Hosts without Proxmox credentials in the keyring are silently excluded (they are not Proxmox hosts).
+- Empty sitemap returns a successful empty result (`scanned: 0`), not an error.
+- Phase 37 will expand the response to a 4-bucket shape (probed-OK / unreachable / unknown / changed).
+
+---
+
 ## VM Tools
 
 Tools for deploying, controlling, monitoring, and removing virtual machines and containers.
