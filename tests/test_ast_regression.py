@@ -560,3 +560,32 @@ def test_no_threshold_coercion_in_analyzer_bodies_phase35() -> None:
         "analyzer bodies. Use explicit `is not None` guards or "
         "`_has_threshold_data(device, ...)`:\n" + "\n".join(f"  - {v}" for v in violations)
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 36 AST regression guards (D-13)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_drift_detection_no_baseline_references_phase36() -> None:
+    """Phase 36 D-13: drift_detection.py must contain no reference to the
+    parallel baseline data layer — singular OR plural, in any source-text form
+    (string literal, identifier, attribute access).
+
+    Belt-and-braces guard: the broader test_no_forbidden_strings_in_source()
+    catches reintroduction in any source file via AST walk; this test pins
+    drift_detection.py specifically as the only module on the drift-scan call
+    chain (per CONTEXT.md SC-4 wording).
+    """
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+
+    forbidden = [
+        "drift_baseline",  # singular — covers e.g. db_adapter.upsert_drift_baseline()
+        "drift_baselines",  # plural — covers table name + db_adapter.get_all_drift_baselines()
+    ]
+    violations = [s for s in forbidden if s in source]
+    assert not violations, (
+        f"Phase 36 D-13 regression — drift_detection.py contains forbidden baseline references: {violations}. "
+        f"scan_drift must read from sitemap rows (db_adapter.get_all_devices()) only."
+    )
