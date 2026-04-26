@@ -136,3 +136,72 @@ async def handle_update_device_fingerprint(arguments: dict[str, Any]) -> dict[st
         indent=2,
     )
     return {"content": [{"type": "text", "text": result_str}]}
+
+
+async def handle_update_device_fingerprint_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle update_device_fingerprint_preview tool (Phase 38 D-05c, Plan 05).
+
+    Read-only thin wrapper around merge_fingerprint: fetches the device row via
+    get_all_devices, computes the would-be merge result, and returns it WITHOUT
+    persisting. The adapter's update_device_fingerprint method is NOT called.
+
+    Mirrors the validation/filtering of handle_update_device_fingerprint so the
+    preview shape exactly matches what the real call would write.
+    """
+    from ..database import merge_fingerprint  # local import — avoids circular issues
+
+    RECOGNIZED_TOP_LEVEL = {
+        "kernel_name",
+        "kernel_version",
+        "os_name",
+        "os_version",
+        "package_fingerprint",
+        "capabilities",
+    }
+    validate_hostname(arguments["hostname"])
+    fp_in = arguments.get("fingerprint", {})
+    if not isinstance(fp_in, dict):
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": f"`fingerprint` must be an object (got {type(fp_in).__name__})",
+                "hint": "Provide fingerprint as a JSON object with recognized top-level keys.",
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+    cleaned = {k: v for k, v in fp_in.items() if k in RECOGNIZED_TOP_LEVEL}
+
+    sitemap = NetworkSiteMap()
+    devices = sitemap.db_adapter.get_all_devices()
+    target = next((d for d in devices if d.get("hostname") == arguments["hostname"]), None)
+    if target is None:
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": f"Hostname not in sitemap: {arguments['hostname']!r}.",
+                "hint": "Run discover_and_map for this hostname first to add it to the sitemap.",
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+
+    stored = target.get("fingerprint") or {}
+    if isinstance(stored, str):
+        # Some adapters may still surface a JSON string; normalize to dict before merge.
+        try:
+            stored = json.loads(stored)
+        except json.JSONDecodeError:
+            stored = {}
+    if not isinstance(stored, dict):
+        stored = {}
+
+    merged = merge_fingerprint(stored, cleaned)
+    result_str = json.dumps(
+        {
+            "status": "success",
+            "hostname": arguments["hostname"],
+            "fingerprint": merged,
+            "preview": True,
+        },
+        indent=2,
+    )
+    return {"content": [{"type": "text", "text": result_str}]}

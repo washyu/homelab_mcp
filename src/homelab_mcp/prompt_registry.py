@@ -60,6 +60,21 @@ HOMELAB_PROMPTS: dict[str, types.Prompt] = {
             )
         ],
     ),
+    "configure_host_fingerprint": types.Prompt(
+        name="configure_host_fingerprint",
+        description=(
+            "Conversational workflow for capturing per-host capability fingerprints "
+            "(GPU passthrough state, Vulkan/CUDA versions, ZFS pool config, etc.) "
+            "to enable Phase 39 changed-infrastructure drift detection."
+        ),
+        arguments=[
+            types.PromptArgument(
+                name="hostname",
+                description="Hostname or IP of the device to configure fingerprint tracking for",
+                required=True,
+            )
+        ],
+    ),
 }
 
 
@@ -154,6 +169,56 @@ If any step fails, fix the issue before proceeding to the next step."""
     )
 
 
+def _build_configure_host_fingerprint_result(args: dict[str, str]) -> types.GetPromptResult:
+    """Build the configure_host_fingerprint prompt result (Phase 38 D-06).
+
+    Body is plain narrative instructions; the agent interprets and executes.
+    Role-hint inference rules per D-06b: Proxmox VE → gpu_passthrough;
+    NVIDIA in pci_devices → cuda; AMD VGA → vulkan; TrueNAS/ZFS → zfs.
+    """
+    hostname = args.get("hostname", "<hostname>")
+    text = f"""Follow these steps to configure capability-fingerprint tracking for {hostname}:
+
+1. Call get_network_sitemap and find the entry whose hostname matches "{hostname}". \
+If not found, redirect the user: "Run discover_and_map first so {hostname} is in the sitemap."
+
+2. Read the entry's fingerprint.os_name and pci_devices fields to infer role hints:
+   - If os_name contains "Proxmox VE": likely a Proxmox host. Suggest tracking gpu_passthrough \
+(IOMMU groups, vfio modules, kernel cmdline) and ZFS module version if pools exist.
+   - If pci_devices contains "NVIDIA": likely a GPU host. Suggest tracking CUDA driver and \
+runtime versions.
+   - If pci_devices contains "AMD" + "VGA" or "Display": likely a graphics-capable host. \
+Suggest tracking Vulkan loader version and Mesa/ROCm library versions.
+   - If os_name contains "TrueNAS" or block_devices show ZFS pool members: likely a NAS. \
+Suggest tracking ZFS module version and expected-running services.
+
+3. Present the suggestions to the user (free-form): "Based on what I see on {hostname}, \
+here are signals I'd suggest tracking as drift indicators: [list]. Should I track these? \
+Anything else to add?" — let the user accept, modify, or extend the list.
+
+4. For each agreed signal, call ssh_execute_command(hostname="{hostname}", command="<probe>") \
+to capture the current value. Examples:
+   - vulkaninfo: command="vulkaninfo --summary 2>/dev/null | head -20"
+   - nvidia-smi: command="nvidia-smi --query-gpu=driver_version,name --format=csv,noheader"
+   - IOMMU groups: command="ls /sys/kernel/iommu_groups/ 2>/dev/null | wc -l"
+   - vfio modules: command="lsmod | grep -E '^vfio'"
+   - ZFS module: command="modinfo zfs 2>/dev/null | grep ^version"
+   - kernel cmdline: command="cat /proc/cmdline"
+
+5. Build a capabilities dict from the captured values and call \
+update_device_fingerprint(hostname="{hostname}", fingerprint={{"capabilities": {{...}}}}). \
+Use update_device_fingerprint_preview first if you want to confirm the merge before persisting.
+
+6. Confirm the persisted fingerprint to the user, summarising what is now being tracked.
+
+Phase 39's drift detection will use these signals to detect changed infrastructure on \
+subsequent discover_and_map runs."""
+    return types.GetPromptResult(
+        description="Per-host capability fingerprint configuration workflow",
+        messages=[_make_user_message(text)],
+    )
+
+
 def _build_health_check_result(args: dict[str, str]) -> types.GetPromptResult:
     """Build the homelab_health_check prompt result (PRMT-04)."""
     text = """Read the following MCP resources and summarize homelab infrastructure state:
@@ -198,6 +263,8 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
         return _build_health_check_result(args)
     elif name == "connect_to_device":
         return _build_connect_to_device_result(args)
+    elif name == "configure_host_fingerprint":
+        return _build_configure_host_fingerprint_result(args)
     else:
         raise McpError(
             types.ErrorData(

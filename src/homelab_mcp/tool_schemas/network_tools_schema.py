@@ -4,7 +4,11 @@ from typing import Any
 
 NETWORK_TOOLS: dict[str, dict[str, Any]] = {
     "discover_and_map": {
-        "description": "Discover a device via SSH and store it in the network site map database",
+        "description": (
+            "Discover a device via SSH and store it in the network site map database. "
+            "Recommended follow-up: run the configure_host_fingerprint prompt to capture "
+            "per-host capability signals for drift detection."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -118,6 +122,40 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                         "Fingerprint dict. Recognized top-level keys: kernel_name, kernel_version, "
                         "os_name, os_version, package_fingerprint, capabilities. Unknown top-level "
                         "keys are dropped server-side. capabilities is a freeform sub-dict."
+                    ),
+                    "properties": {
+                        "kernel_name": {"type": "string"},
+                        "kernel_version": {"type": "string"},
+                        "os_name": {"type": "string"},
+                        "os_version": {"type": "string"},
+                        "package_fingerprint": {"type": "string"},
+                        "capabilities": {"type": "object", "additionalProperties": True},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["hostname", "fingerprint"],
+        },
+    },
+    "update_device_fingerprint_preview": {
+        "description": (
+            "Preview the merge result of update_device_fingerprint without persisting. "
+            "Returns the would-be merged fingerprint dict (top-level overwrite + capabilities "
+            "deep-merge). Read-only — no DB write occurs. Phase 38 D-05c."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname of the device to preview-fingerprint",
+                },
+                "fingerprint": {
+                    "type": "object",
+                    "description": (
+                        "Same shape as update_device_fingerprint.fingerprint. Recognized top-level "
+                        "keys: kernel_name, kernel_version, os_name, os_version, package_fingerprint, "
+                        "capabilities."
                     ),
                     "properties": {
                         "kernel_name": {"type": "string"},

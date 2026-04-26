@@ -49,6 +49,7 @@ _READ_ONLY_TOOLS = [
     "remove_vm_preview",
     "destroy_terraform_service_preview",
     "rollback_infrastructure_changes_preview",
+    "update_device_fingerprint_preview",  # Phase 38 D-05c (Plan 05)
 ]
 
 # ---------------------------------------------------------------------------

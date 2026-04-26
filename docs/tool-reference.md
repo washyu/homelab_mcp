@@ -14,6 +14,7 @@ Each tool is documented with its description, annotations, arguments, a usage ex
 - [Service Tools](#service-tools)
 - [Credential Tools](#credential-tools)
 - [Proxmox Tools](#proxmox-tools)
+- [MCP Prompts](#mcp-prompts)
 
 ## Annotation Legend
 
@@ -34,7 +35,7 @@ Tools for SSH-based system discovery, administration, and remote command executi
 
 ### ssh_discover
 
-**Description:** SSH into a system and gather hardware/system information.
+**Description:** SSH into a system and gather hardware/system information. Recommended follow-up after onboarding: run the `configure_host_fingerprint` prompt (see [MCP Prompts](#mcp-prompts)) to capture per-host capability signals for drift detection.
 
 **Annotations:** `[Read-Only]` `[Idempotent]`
 
@@ -213,7 +214,7 @@ Tools for network device discovery, topology mapping, and change tracking.
 
 ### discover_and_map
 
-**Description:** Discover a device via SSH and store it in the network site map database.
+**Description:** Discover a device via SSH and store it in the network site map database. Recommended follow-up: run the `configure_host_fingerprint` prompt (see [MCP Prompts](#mcp-prompts)) to capture per-host capability signals for drift detection.
 
 **Annotations:** `[Idempotent]`
 
@@ -351,6 +352,70 @@ None.
 ```
 
 **Returns:** A dict with the change history records for the specified device.
+
+---
+
+### update_device_fingerprint
+
+**Description:** Merge fingerprint data (kernel, OS, package digest, capabilities) into a device's sitemap row. Top-level keys (`kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`) overwrite; the `capabilities` sub-dict deep-merges (incoming sub-keys overwrite, missing sub-keys preserve). Run `discover_and_map` first to add the device to the sitemap. See the [`configure_host_fingerprint`](#configure_host_fingerprint) MCP prompt for the conversational workflow that drives this tool.
+
+**Annotations:** `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| hostname | string | Yes | -- | Hostname of the device to fingerprint |
+| fingerprint | object | Yes | -- | Fingerprint dict. Recognized top-level keys: `kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`, `capabilities`. Unknown top-level keys are dropped server-side. `capabilities` is a freeform sub-dict. |
+
+**Example:**
+
+```json
+{
+  "hostname": "pve1.local",
+  "fingerprint": {
+    "kernel_version": "6.5.13-1-pve",
+    "capabilities": {
+      "vulkan": {"available": true, "loader_version": "1.3.275"}
+    }
+  }
+}
+```
+
+**Returns:** A dict with `status: "success"`, the hostname, and the merged fingerprint dict that was persisted.
+
+**Errors:**
+
+- `Hostname not in sitemap` (status=error) — hint points to running `discover_and_map` first.
+- `` `fingerprint` must be an object `` (status=error) — schema-level rejection when fingerprint is not a JSON object.
+
+---
+
+### update_device_fingerprint_preview
+
+**Description:** Read-only dry-run of `update_device_fingerprint`. Returns the would-be merged fingerprint without writing to the database. Use to confirm a merge before committing it via `update_device_fingerprint`. Phase 38 D-05c.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`update_device_fingerprint`](#update_device_fingerprint).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| hostname | string | Yes | -- | Hostname of the device to preview-fingerprint |
+| fingerprint | object | Yes | -- | Same shape as `update_device_fingerprint.fingerprint` |
+
+**Example:**
+
+```json
+{
+  "hostname": "pve1.local",
+  "fingerprint": {"capabilities": {"cuda": {"driver_version": "535"}}}
+}
+```
+
+**Returns:** A dict with `status: "success"`, `preview: true`, the hostname, and the merged fingerprint dict that *would* be persisted (not actually written).
 
 ---
 
@@ -1561,3 +1626,26 @@ Tools for Proxmox API integration, community script discovery, and VM/container 
 ```
 
 **Returns:** A dict with the deletion result and task ID.
+
+---
+
+## MCP Prompts
+
+MCP prompt templates that ship with the server. Prompts are surfaced to the AI agent via the MCP `prompts/get` capability and provide structured workflows for multi-step operations. Use `prompts/list` from your MCP client to discover available prompts at runtime.
+
+### configure_host_fingerprint
+
+**Description:** Conversational workflow for capturing per-host capability fingerprints (GPU passthrough state, Vulkan/CUDA versions, ZFS pool config, etc.). Used after `discover_and_map` to enable Phase 39 changed-infrastructure drift detection. The prompt instructs the agent to:
+
+1. Read the device's sitemap row via `get_network_sitemap` to interpret role hints (Proxmox VE → gpu_passthrough; NVIDIA in `pci_devices` → cuda; AMD VGA → vulkan; TrueNAS/ZFS → zfs).
+2. Suggest signals to track based on the inferred role and ask the user for confirmation.
+3. Use `ssh_execute_command` to capture each agreed signal's current value.
+4. Persist the captured values via `update_device_fingerprint(hostname, {"capabilities": {...}})`. Optionally use `update_device_fingerprint_preview` to confirm the merge before persisting.
+
+**Argument:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| hostname | string | Yes | Hostname or IP of the device to configure fingerprint tracking for |
+
+**Related tools:** [`update_device_fingerprint`](#update_device_fingerprint), [`update_device_fingerprint_preview`](#update_device_fingerprint_preview), [`get_network_sitemap`](#get_network_sitemap), [`ssh_execute_command`](#ssh_execute_command).
