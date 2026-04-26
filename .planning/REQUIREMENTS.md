@@ -16,10 +16,10 @@ Continues v1.1 numbering (DRFT-01..10 shipped in v1.1 Phase 11 / v1.2 Phase 13).
 
 - [ ] **DRFT-11**: `scan_infrastructure_drift` iterates sitemap rows as the source of truth — no parallel baseline table read on the scan path
 - [ ] **DRFT-12**: `scan_infrastructure_drift` resolves Proxmox credentials via `resolve_proxmox_credentials` — no `PROXMOX_HOST` env-var coupling on the success path
-- [ ] **DRFT-13**: `scan_infrastructure_drift` returns consistent shape across all filter scopes (no filter, `node=*`, `vm_type=qemu`, `vm_type=lxc`) — empty result on no-match, never a scope error (closes Bugs A, E)
-- [ ] **DRFT-14**: `scan_infrastructure_drift` output distinguishes four buckets — probed-OK, unreachable, unknown (drift case 1), changed (drift case 3) — so coverage is transparent (closes Bug D)
-- [ ] **DRFT-15**: Drift family error messages point to existing sitemap tools (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`), never `PROXMOX_HOST` env var (closes Bug B)
-- [ ] **DRFT-16**: Bug C resolved by architectural unification — no new `register_drift_baseline` / `list_drift_baselines` / `delete_drift_baseline` MCP tools created. Drift docs and error messages reference existing sitemap CRUD tools as the baseline lifecycle.
+- [x] **DRFT-13**: `scan_infrastructure_drift` returns consistent shape across all filter scopes (no filter, `node=*`, `vm_type=qemu`, `vm_type=lxc`) — empty result on no-match, never a scope error (closes Bugs A, E)
+- [x] **DRFT-14**: `scan_infrastructure_drift` output distinguishes four buckets — probed-OK, unreachable, unknown (drift case 1), changed (drift case 3) — so coverage is transparent (closes Bug D)
+- [x] **DRFT-15**: Drift family error messages point to existing sitemap tools (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`), never `PROXMOX_HOST` env var (closes Bug B)
+- [x] **DRFT-16**: Bug C resolved by architectural unification — no new `register_drift_baseline` / `list_drift_baselines` / `delete_drift_baseline` MCP tools created. Drift docs and error messages reference existing sitemap CRUD tools as the baseline lifecycle.
 - [ ] **DRFT-17**: `scan_infrastructure_drift` detects **unknown infrastructure** — VMs/LXC present on a Proxmox hypervisor but absent from sitemap (drift case 1: manually-created VM)
 - [ ] **DRFT-18**: `scan_infrastructure_drift` detects **missing infrastructure** — sitemap rows that no longer respond to live probe (drift case 2: offline / removed host or VM)
 - [ ] **DRFT-19**: `scan_infrastructure_drift` detects **changed infrastructure** — sitemap fields differ from current probe values (drift case 3: kernel update, package change, hardware capability change)
@@ -119,10 +119,10 @@ Promotes backlog 999.4 (sitemap tags/categories). Drift checks role-scoped via t
 |--------|-------|--------|
 | DRFT-11 | Phase 36 | pending |
 | DRFT-12 | Phase 36 | pending |
-| DRFT-13 | Phase 37 | pending |
-| DRFT-14 | Phase 37 | pending |
-| DRFT-15 | Phase 37 | pending |
-| DRFT-16 | Phase 37 | pending |
+| DRFT-13 | Phase 37 | validated |
+| DRFT-14 | Phase 37 | validated |
+| DRFT-15 | Phase 37 | validated |
+| DRFT-16 | Phase 37 | validated |
 | DRFT-17 | Phase 39 | pending |
 | DRFT-18 | Phase 39 | pending |
 | DRFT-19 | Phase 39 | pending |
