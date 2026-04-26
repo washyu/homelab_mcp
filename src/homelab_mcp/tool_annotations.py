@@ -43,7 +43,6 @@ _READ_ONLY_TOOLS = [
     "get_proxmox_vm_status",
     "check_ansible_service",
     "validate_infrastructure_changes",
-    "list_keyring_credentials",
     "decommission_device_preview",
     "delete_proxmox_vm_preview",
     "remove_vm_preview",
