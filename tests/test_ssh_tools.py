@@ -12,7 +12,6 @@ from src.homelab_mcp.ssh_tools import (
     ssh_discover_system,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 38 Plan 01 Task 1 (RED): refactor brittle fixed-order list mock to
 # STDOUT_BY_CMD lookup pattern (mirrors Phase 35 tests at lines 507-525) so
@@ -92,11 +91,7 @@ async def test_ssh_discover_success(monkeypatch):
         # Phase 38 NEW probes (Task 2 will land the implementation that reads these)
         "uname-s": "Linux\n",
         "uname-r": "6.5.13-1-pve\n",
-        "os-release-full": (
-            'NAME="Proxmox VE"\n'
-            'PRETTY_NAME="Proxmox VE 8.2.4"\n'
-            'VERSION_ID="8.2.4"\n'
-        ),
+        "os-release-full": ('NAME="Proxmox VE"\nPRETTY_NAME="Proxmox VE 8.2.4"\nVERSION_ID="8.2.4"\n'),
         "dpkg-fingerprint": "abc123def456789  -\n",
     }
 
@@ -106,9 +101,7 @@ async def test_ssh_discover_success(monkeypatch):
     monkeypatch.setattr(ssh_tools, "_run_with_timeout", _mock_run_with_timeout)
 
     # Execute discovery
-    result = await ssh_tools.ssh_discover_system(
-        hostname="test-host", username="test-user", password="test-pass"
-    )
+    result = await ssh_tools.ssh_discover_system(hostname="test-host", username="test-user", password="test-pass")
 
     # Parse result
     result_data = _json.loads(result)
@@ -244,25 +237,18 @@ async def test_ssh_discover_populates_fingerprint_phase38(monkeypatch):
         # Phase 38 NEW probes
         "uname-s": "Linux\n",
         "uname-r": "6.5.13-1-pve\n",
-        "os-release-full": (
-            'NAME="Proxmox VE"\n'
-            'PRETTY_NAME="Proxmox VE 8.2.4"\n'
-            'VERSION_ID="8.2.4"\n'
-        ),
+        "os-release-full": ('NAME="Proxmox VE"\nPRETTY_NAME="Proxmox VE 8.2.4"\nVERSION_ID="8.2.4"\n'),
         "dpkg-fingerprint": "abc123def456789  -\n",
     }
     _phase38_install_mocks(monkeypatch, stdout_by_cmd)
 
     from src.homelab_mcp import ssh_tools
 
-    result_str = await ssh_tools.ssh_discover_system(
-        hostname="10.0.0.5", username="user", password="pw"
-    )
+    result_str = await ssh_tools.ssh_discover_system(hostname="10.0.0.5", username="user", password="pw")
     result = _json.loads(result_str)
 
     assert "fingerprint" in result["data"], (
-        "Phase 38 D-04 regression: expected `data.fingerprint` sub-dict on "
-        "successful discovery"
+        "Phase 38 D-04 regression: expected `data.fingerprint` sub-dict on successful discovery"
     )
     fp = result["data"]["fingerprint"]
     assert fp["kernel_name"] == "Linux"
@@ -325,19 +311,14 @@ async def test_ssh_discover_partial_when_dpkg_missing_phase38(monkeypatch):
             return _fake_cp("", exit_status=1)
         return _fake_cp(stdout_by_cmd.get(cmd_name, ""))
 
-    _phase38_install_mocks(
-        monkeypatch, stdout_by_cmd, run_with_timeout=_missing_dpkg_run_with_timeout
-    )
+    _phase38_install_mocks(monkeypatch, stdout_by_cmd, run_with_timeout=_missing_dpkg_run_with_timeout)
 
-    result_str = await ssh_tools.ssh_discover_system(
-        hostname="10.0.0.6", username="user", password="pw"
-    )
+    result_str = await ssh_tools.ssh_discover_system(hostname="10.0.0.6", username="user", password="pw")
     result = _json.loads(result_str)
 
     fp = result["data"].get("fingerprint", {})
     assert "package_fingerprint" not in fp, (
-        "Phase 38 D-04: package_fingerprint key must be absent when dpkg is "
-        "unavailable on the remote host"
+        "Phase 38 D-04: package_fingerprint key must be absent when dpkg is unavailable on the remote host"
     )
     # Other fingerprint fields still populated
     assert fp.get("kernel_name") == "Linux"
@@ -345,8 +326,7 @@ async def test_ssh_discover_partial_when_dpkg_missing_phase38(monkeypatch):
     # Phase 35 D-09a: partial:True fires because dpkg-fingerprint was added
     # to timed_out_commands by the implementation's missing-tool branch.
     assert result.get("partial") is True, (
-        "Phase 35 D-09a: expected `partial: true` when dpkg-fingerprint "
-        "probe is unavailable"
+        "Phase 35 D-09a: expected `partial: true` when dpkg-fingerprint probe is unavailable"
     )
     assert "dpkg-fingerprint" in result.get("timed_out_commands", [])
 
