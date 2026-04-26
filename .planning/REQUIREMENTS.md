@@ -23,7 +23,7 @@ Continues v1.1 numbering (DRFT-01..10 shipped in v1.1 Phase 11 / v1.2 Phase 13).
 - [ ] **DRFT-17**: `scan_infrastructure_drift` detects **unknown infrastructure** — VMs/LXC present on a Proxmox hypervisor but absent from sitemap (drift case 1: manually-created VM)
 - [ ] **DRFT-18**: `scan_infrastructure_drift` detects **missing infrastructure** — sitemap rows that no longer respond to live probe (drift case 2: offline / removed host or VM)
 - [ ] **DRFT-19**: `scan_infrastructure_drift` detects **changed infrastructure** — sitemap fields differ from current probe values (drift case 3: kernel update, package change, hardware capability change)
-- [ ] **DRFT-20**: Sitemap schema captures the fields necessary for meaningful drift detection — kernel version, package fingerprint, and capability probes (e.g., GPU passthrough state, ML library availability such as Vulkan support for llama.cpp). Specific fields finalized during phase planning; principle is that background OS updates that change behavior must surface as drift.
+- [x] **DRFT-20**: Sitemap schema captures the fields necessary for meaningful drift detection — kernel version, package fingerprint, and capability probes (e.g., GPU passthrough state, ML library availability such as Vulkan support for llama.cpp). Specific fields finalized during phase planning; principle is that background OS updates that change behavior must surface as drift.
 - [ ] **DRFT-21**: Drop the parallel `drift_baselines` SQLite table on both adapters (SQLite + Postgres). No auto-migration — homelab single-user scope, mirrors v1.6 CRED-04 keyring migration. Migration step removes the table cleanly; pre-existing baseline rows are not reconciled.
 
 ### Polish (POL-*)
@@ -126,7 +126,7 @@ Promotes backlog 999.4 (sitemap tags/categories). Drift checks role-scoped via t
 | DRFT-17 | Phase 39 | pending |
 | DRFT-18 | Phase 39 | pending |
 | DRFT-19 | Phase 39 | pending |
-| DRFT-20 | Phase 38 | pending |
+| DRFT-20 | Phase 38 | validated |
 | DRFT-21 | Phase 36 | pending |
 | POL-01 | Phase 40 | pending |
 | POL-02 | Phase 40 | pending |
