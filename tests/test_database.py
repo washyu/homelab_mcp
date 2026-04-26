@@ -132,6 +132,49 @@ class TestSQLiteAdapter:
         changes = adapter.get_device_changes(device_id)
         assert len(changes) == 1
 
+    def test_store_and_retrieve_fingerprint_phase38_sqlite(self, adapter):
+        """Phase 38 D-09: SQLite store_device round-trips fingerprint as JSON-string + flatten-on-read."""
+        fp_dict = {
+            "kernel_name": "Linux",
+            "kernel_version": "6.5.13-1-pve",
+            "os_name": "Proxmox VE 8.2.4",
+            "os_version": "8.2.4",
+            "package_fingerprint": "sha256:abc123",
+            "capabilities": {"vulkan": {"available": True, "loader_version": "1.3.275"}},
+        }
+        device_data = {
+            "hostname": "test-pve",
+            "connection_ip": "10.0.0.5",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(fp_dict),
+        }
+        adapter.store_device(device_data)
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1
+        fp_back = devices[0]["fingerprint"]
+        assert isinstance(fp_back, dict), f"fingerprint should be decoded to dict, got {type(fp_back)}"
+        assert fp_back["kernel_name"] == "Linux"
+        assert fp_back["kernel_version"] == "6.5.13-1-pve"
+        assert fp_back["capabilities"]["vulkan"]["available"] is True
+
+    def test_store_device_update_branch_writes_fingerprint_phase38_sqlite(self, adapter):
+        """Phase 38 D-09: UPDATE branch (re-storing same hostname) writes fingerprint."""
+        base = {
+            "hostname": "test-host",
+            "connection_ip": "10.0.0.6",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+        # First store: no fingerprint
+        adapter.store_device(dict(base))
+        # Second store: same hostname (UPDATE branch) with fingerprint
+        fp_dict = {"kernel_name": "Linux", "kernel_version": "6.0.0"}
+        adapter.store_device({**base, "fingerprint": json.dumps(fp_dict)})
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1
+        assert devices[0]["fingerprint"]["kernel_version"] == "6.0.0"
+
 
 @pytest.mark.skipif(not POSTGRESQL_AVAILABLE, reason="psycopg2 not available")
 class TestPostgreSQLAdapter:
@@ -193,6 +236,133 @@ class TestPostgreSQLAdapter:
         # Verify INSERT was called with JSONB data
         assert mock_cursor.execute.call_count >= 2  # SELECT + INSERT
         mock_conn.commit.assert_called()
+
+    def test_store_device_jsonb_includes_fingerprint_phase38(self, mock_connection):
+        """Phase 38 D-09a: Postgres store_device places fingerprint inside system_info JSONB.
+
+        Mirrors test_store_device_jsonb above — asserts on mock_cursor.execute, not on round-trip.
+        The codebase has no live-Postgres fixture; mock-cursor assertion is the established pattern.
+        """
+        mock_conn, mock_cursor = mock_connection
+        # SELECT (existence check) returns None, then INSERT RETURNING returns [1]
+        mock_cursor.fetchone.side_effect = [None, [1]]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        fp_dict = {
+            "kernel_name": "Linux",
+            "kernel_version": "6.5.13-1-pve",
+            "package_fingerprint": "sha256:def456",
+            "capabilities": {"cuda": {"driver_version": "535.183.06"}},
+        }
+        device_data = {
+            "hostname": "test-pg",
+            "connection_ip": "10.0.0.7",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(fp_dict),
+        }
+        adapter.store_device(device_data)
+
+        # Find the INSERT call (after the SELECT for existence check).
+        # The system_info JSON-string is positional arg index 4 in the INSERT VALUES tuple
+        # (hostname, connection_ip, last_seen, status, system_info, network_interfaces, error_message).
+        insert_call = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call.args[0]
+            if "INSERT INTO devices" in sql:
+                insert_call = call
+                break
+        assert insert_call is not None, "Expected INSERT INTO devices call"
+        params = insert_call.args[1]
+        system_info_json = params[4]  # 5th positional in VALUES tuple
+        parsed = json.loads(system_info_json)
+        assert "fingerprint" in parsed, (
+            f"system_info JSONB must include 'fingerprint' sub-key, got keys: {list(parsed.keys())}"
+        )
+        assert parsed["fingerprint"]["kernel_name"] == "Linux"
+        assert parsed["fingerprint"]["kernel_version"] == "6.5.13-1-pve"
+        assert parsed["fingerprint"]["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+
+    def test_store_device_update_branch_includes_fingerprint_phase38_postgres(self, mock_connection):
+        """Phase 38 D-09a: Postgres UPDATE branch (existing device) carries fingerprint inside system_info JSONB."""
+        mock_conn, mock_cursor = mock_connection
+        # Existing device: SELECT returns [1] (device id)
+        mock_cursor.fetchone.return_value = [1]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        fp_dict = {"kernel_name": "Linux", "kernel_version": "6.0.0"}
+        device_data = {
+            "hostname": "test-pg-update",
+            "connection_ip": "10.0.0.8",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(fp_dict),
+        }
+        adapter.store_device(device_data)
+
+        # Find the UPDATE call. system_info JSON-string is positional arg index 2 in the UPDATE
+        # tuple (last_seen, status, system_info, network_interfaces, error_message, connection_ip, id).
+        update_call = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call.args[0]
+            if "UPDATE devices SET" in sql:
+                update_call = call
+                break
+        assert update_call is not None, "Expected UPDATE devices SET call"
+        params = update_call.args[1]
+        system_info_json = params[2]
+        parsed = json.loads(system_info_json)
+        assert "fingerprint" in parsed
+        assert parsed["fingerprint"]["kernel_version"] == "6.0.0"
+
+    def test_get_all_devices_flattens_fingerprint_phase38_postgres(self, mock_connection):
+        """Phase 38 D-10: Postgres get_all_devices lifts system_info['fingerprint'] to top-level row key."""
+        mock_conn, mock_cursor = mock_connection
+
+        # Prime the read path: cursor.fetchall returns row dicts (RealDictCursor shape).
+        mock_cursor.fetchall.return_value = [
+            {
+                "id": 1,
+                "hostname": "test-pg-read",
+                "connection_ip": "10.0.0.9",
+                "last_seen": datetime.now().isoformat(),
+                "status": "success",
+                "system_info": {
+                    "cpu": {"model": "Intel", "cores": 4},
+                    "memory": {"total": "16G"},
+                    "disk": {},
+                    "uptime": "1h",
+                    "os": "Linux",
+                    "usb_devices": [],
+                    "pci_devices": [],
+                    "block_devices": [],
+                    "fingerprint": {
+                        "kernel_name": "Linux",
+                        "kernel_version": "6.5.13-1-pve",
+                        "capabilities": {"cuda": {"driver_version": "535.183.06"}},
+                    },
+                },
+                "network_interfaces": [],
+                "error_message": None,
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            }
+        ]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1
+        assert "fingerprint" in devices[0], (
+            "get_all_devices must flatten system_info['fingerprint'] to top-level row key"
+        )
+        assert devices[0]["fingerprint"]["kernel_name"] == "Linux"
+        assert devices[0]["fingerprint"]["capabilities"]["cuda"]["driver_version"] == "535.183.06"
 
 
 class TestDatabaseFactory:
