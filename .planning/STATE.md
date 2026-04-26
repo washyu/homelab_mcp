@@ -85,6 +85,10 @@ Bug I (`get_proxmox_vm_status` HTTP 500 leak) bundled into v1.7 as adjacent poli
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 38.1 inserted after Phase 38: Sitemap-keystore credential binding (URGENT) — Claude Desktop UAT on 2026-04-26 surfaced Bug O (sitemap stores hostnames, keyring keyed by IP/FQDN, no normalization → drift returns scanned: 0 on documented happy path) and Bug N (drift eligibility heuristic invisible to users). Architectural decision: each sitemap row carries a stable `keystore_id` reference rather than relying on hostname/IP join inference. Blocks Phase 39 — drift detection cases depend on credential resolution working end-to-end.
+
 ### Decisions
 
 Full v1.0-v1.6 decision logs in `.planning/milestones/v{X.Y}-ROADMAP.md`. Key patterns established through v1.6 (carry forward into v1.7):

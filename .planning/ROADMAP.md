@@ -158,6 +158,16 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   - [x] 38-05-PLAN.md — configure_host_fingerprint prompt + preview tool + description follow-ups + docs sweep
   - [x] 38-06-PLAN.md — End-to-end integration test against Debian Docker container
 
+### Phase 38.1: Sitemap-keystore credential binding (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 38
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 38.1 to break down)
+
 ### Phase 39: Drift Detection Cases
 **Goal**: A user running `scan_infrastructure_drift` after a real-world change — a manually-created VM, an offline NAS, a kernel update that regressed Vulkan support — sees that change reported as drift, classified into the right bucket.
 **Depends on**: Phase 36, Phase 38
