@@ -148,7 +148,13 @@ HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
     },
     "homelab://drift/latest": {
         "name": "Drift Report",
-        "description": "Latest infrastructure drift scan result (2-bucket interim — shape stabilizes in Phase 37)",
+        "description": (
+            "Latest infrastructure drift scan result. Four-bucket coverage report "
+            "(probed_ok, unreachable, unknown, changed) with per-bucket counts and a "
+            "conditional guidance field when no hosts were scanned. Populated by "
+            "scan_infrastructure_drift; recovery via discover_and_map / "
+            "get_network_sitemap / purge_failed_discoveries."
+        ),
     },
 }
 

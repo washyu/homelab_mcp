@@ -57,7 +57,7 @@ INFRA_REQUIREMENTS: dict[str, str] = {
     "Credentials": "valid credential parameters (hostname, username, password)",
     "Infrastructure": "configured infrastructure targets. Register credentials first: POST /api/tools/register_server",
     "Proxmox": "a Proxmox VE host. Set PROXMOX_HOST and credentials via environment or POST /api/tools/register_server",
-    "Drift Detection": "a Proxmox VE host with stored baselines. Set PROXMOX_HOST and credentials first",
+    "Drift Detection": "a Proxmox VE host registered in the sitemap. Populate via 'discover_and_map' and configure credentials with 'homelab-mcp credentials add --type proxmox' (per-node) or '--scope cluster:<name>' (cluster-wide)",
 }
 
 # External reachability requirements: tool -> how to locate the target and what port to probe.

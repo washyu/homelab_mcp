@@ -9,8 +9,14 @@ from ..drift_detection import scan_drift
 async def handle_scan_infrastructure_drift(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle scan_infrastructure_drift tool.
 
-    Phase 36 D-03: empty sitemap returns successful empty result (no precondition error).
-    The 2-bucket scan_drift output is cached for the homelab://drift/latest resource.
+    Thin pass-through to scan_drift. Returns the Phase 37 four-bucket envelope
+    (probed_ok, unreachable, unknown, changed) with per-bucket counts and, when
+    zero hosts were scanned, a top-level guidance field pointing to sitemap CRUD
+    tools (discover_and_map, get_network_sitemap, purge_failed_discoveries,
+    decommission_device). Empty sitemap or no-match node filter returns
+    status='success' with empty buckets — never an error (DRFT-13).
+
+    Output is cached for the homelab://drift/latest resource (DRFT-09).
     """
     from ..server import get_resource_manager, set_latest_drift_report  # deferred
 
