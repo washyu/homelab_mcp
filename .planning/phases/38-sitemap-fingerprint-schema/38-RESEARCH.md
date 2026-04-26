@@ -548,7 +548,13 @@ elif name == "configure_host_fingerprint":
 | A7 | The existing `test_ssh_discover_success` test at `tests/test_ssh_tools.py:16-152` will break when 3 new probes are added (fixed-order list lookup hits 9th call falling through to default) | Items CONTEXT.md Missed §4 | Medium — verified by reading the mock_run closure lines 76-95; certain to break unless refactored |
 | A8 | The Phase 35 STDOUT_BY_CMD pattern at `tests/test_ssh_tools.py:507-525` is the recommended pattern to refactor `test_ssh_discover_success` to | Items CONTEXT.md Missed §4 | Low — already in use elsewhere in the same file; planner can mirror exactly |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> **Status (Phase 38 plan-checker iteration 1):** All four open-question recommendations are materially honored by the plan set. Specifically:
+> - Q1 (LC_ALL=C on dpkg probe) → incorporated into Plan 01's probe definition (recommendation accepted).
+> - Q2 (update_device_fingerprint_preview ship-or-defer) → DEFERRED per D-11 Option A scoping; the preview wrapper is out of Phase 38 scope, captured for follow-up.
+> - Q3 (D-11 adapter strategy) → Option A chosen; Plan 04 implements the dedicated adapter method.
+> - Q4 (test file naming) → Extend existing files; Plans 01-06 all extend `tests/test_*.py` rather than creating `tests/test_sitemap_fingerprint.py`.
 
 1. **Should `LC_ALL=C` go into the `dpkg -l` probe command?** (Pitfall 1)
    - What we know: Locale affects sort order; pinning to C is the documented best practice.
