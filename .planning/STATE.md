@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
-stopped_at: Phase 38 plan 04 complete (update_device_fingerprint MCP tool + adapter method wired through all 5 sites; CONTEXT.md gaps annotations + MUTATING_TOOLS closed)
-last_updated: "2026-04-26T10:15:00.000Z"
-last_activity: 2026-04-26 -- Phase 38 plan 04 complete; ready to execute plan 05
+stopped_at: Phase 38 plan 05 complete (configure_host_fingerprint MCP prompt + update_device_fingerprint_preview thin-delegation wrapper + tool description follow-ups + docs/tool-reference.md sweep)
+last_updated: "2026-04-26T10:35:00.000Z"
+last_activity: 2026-04-26 -- Phase 38 plan 05 complete; ready to execute plan 06 (integration test)
 progress:
   total_phases: 14
   completed_phases: 2
   total_plans: 16
-  completed_plans: 12
-  percent: 75
+  completed_plans: 13
+  percent: 81
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 Milestone: v1.7 Drift Architectural Fix
 Phase: 38 (sitemap-fingerprint-schema) — EXECUTING
-Plan: 5 of 6 (next)
-Status: Executing Phase 38 (plans 01, 02, 03, 04 complete)
-Last activity: 2026-04-26 -- Phase 38 plan 04 complete; update_device_fingerprint MCP tool wired through all 5 sites + adapter method shipped
+Plan: 6 of 6 (next)
+Status: Executing Phase 38 (plans 01, 02, 03, 04, 05 complete)
+Last activity: 2026-04-26 -- Phase 38 plan 05 complete; configure_host_fingerprint MCP prompt + update_device_fingerprint_preview thin-delegation wrapper + tool-reference.md sweep
 
-Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 in progress (4/6 plans complete)
+Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 in progress (5/6 plans complete)
 
 ## v1.7 Phase Summary
 
@@ -126,6 +126,6 @@ None at v1.7 ROADMAP-complete. Will be populated as phase planning progresses.
 
 ## Session Continuity
 
-Last session: 2026-04-26T10:15:00.000Z
-Stopped at: Phase 38 plan 04 complete (update_device_fingerprint MCP tool + adapter method wired through all 5 sites; CONTEXT.md gaps annotations + MUTATING_TOOLS closed)
-Resume command: `/gsd-execute-phase 38` to execute remaining plans (05, 06) of Phase 38
+Last session: 2026-04-26T10:35:00.000Z
+Stopped at: Phase 38 plan 05 complete (configure_host_fingerprint MCP prompt + update_device_fingerprint_preview thin-delegation wrapper + discover_and_map / ssh_discover follow-up notes + docs/tool-reference.md sweep)
+Resume command: `/gsd-execute-phase 38` to execute remaining plan (06) of Phase 38

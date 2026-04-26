@@ -155,7 +155,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   - [x] 38-02-PLAN.md — Schema substrate: NetworkDevice field, parse branch, SQLite column, idempotent ALTER + schema-rebuild update
   - [x] 38-03-PLAN.md — Adapter round-trip: SQLite store/get + Postgres system_info JSONB write + flatten-on-read
   - [x] 38-04-PLAN.md — update_device_fingerprint adapter method + MCP tool wired through 5 sites (schema/handler/routing/annotations/MUTATING_TOOLS)
-  - [ ] 38-05-PLAN.md — configure_host_fingerprint prompt + preview tool + description follow-ups + docs sweep
+  - [x] 38-05-PLAN.md — configure_host_fingerprint prompt + preview tool + description follow-ups + docs sweep
   - [ ] 38-06-PLAN.md — End-to-end integration test against Debian Docker container
 
 ### Phase 39: Drift Detection Cases
