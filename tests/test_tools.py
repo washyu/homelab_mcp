@@ -13,10 +13,11 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 52
-    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries
+        len(tools) == 53
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint
     assert "ssh_discover" in tools
     assert "purge_failed_discoveries" in tools  # v1.6.x: sitemap CRUD completion
+    assert "update_device_fingerprint" in tools  # Phase 38
     assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
     assert "verify_mcp_admin" not in tools  # D-05: removed in Phase 33.1
     assert "update_mcp_admin_groups" not in tools  # D-05: removed in Phase 33.1
@@ -933,3 +934,79 @@ def test_remove_server_removed_from_tool_handlers() -> None:
 
     assert "remove_server" not in TOOL_HANDLERS
     assert "remove_server_preview" not in TOOL_HANDLERS
+
+
+# Phase 38 — update_device_fingerprint MCP routing tests
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
+async def test_execute_update_device_fingerprint_success_phase38(mock_sitemap_cls):
+    """Phase 38 D-05: handler routes successfully and returns merged fingerprint dict."""
+    mock_adapter = MagicMock()
+    mock_adapter.update_device_fingerprint.return_value = {
+        "kernel_name": "Linux",
+        "kernel_version": "6.5.13",
+    }
+    mock_sitemap_cls.return_value.db_adapter = mock_adapter
+    result = await execute_tool(
+        "update_device_fingerprint",
+        {"hostname": "test-host", "fingerprint": {"kernel_name": "Linux"}},
+    )
+    assert "content" in result
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "success"
+    assert payload["fingerprint"]["kernel_name"] == "Linux"
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
+async def test_update_device_fingerprint_filters_unknown_top_level_phase38(mock_sitemap_cls):
+    """Phase 38 D-05b: handler drops unknown top-level keys before adapter call."""
+    mock_adapter = MagicMock()
+    mock_adapter.update_device_fingerprint.return_value = {"kernel_name": "X"}
+    mock_sitemap_cls.return_value.db_adapter = mock_adapter
+    await execute_tool(
+        "update_device_fingerprint",
+        {"hostname": "h", "fingerprint": {"kernel_name": "X", "bogus_key": "Y"}},
+    )
+    # Adapter is called with cleaned dict — bogus_key dropped
+    call_args = mock_adapter.update_device_fingerprint.call_args
+    cleaned = call_args[0][1]  # second positional arg
+    assert "kernel_name" in cleaned
+    assert "bogus_key" not in cleaned
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
+async def test_update_device_fingerprint_missing_hostname_phase38(mock_sitemap_cls):
+    """W3 fix: assert on EXACT handler-emitted hint substring, not just 'discover_and_map'.
+
+    The substring 'discover_and_map' alone could appear in the tool description or in
+    a 'Unknown tool' envelope from the dispatcher; tightening to the exact handler hint
+    proves the handler's error envelope path is hit specifically.
+    """
+    mock_adapter = MagicMock()
+    mock_adapter.update_device_fingerprint.side_effect = ValueError(
+        "Hostname not in sitemap: 'unknown.local'. Run discover_and_map first to add the device."
+    )
+    mock_sitemap_cls.return_value.db_adapter = mock_adapter
+    result = await execute_tool(
+        "update_device_fingerprint",
+        {"hostname": "unknown.local", "fingerprint": {}},
+    )
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "error"
+    # Exact substring from the handler's hint (Task 3 will emit this).
+    assert "Run discover_and_map for this hostname first" in payload.get("hint", "")
+
+
+def test_update_device_fingerprint_annotations_phase38():
+    """Phase 38: tool annotations registered with idempotentHint=True."""
+    from src.homelab_mcp.tool_annotations import get_tool_annotations
+
+    ann = get_tool_annotations("update_device_fingerprint")
+    assert ann is not None
+    assert ann.idempotentHint is True
+    assert ann.readOnlyHint is False
+    assert ann.destructiveHint is False

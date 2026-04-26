@@ -175,6 +175,62 @@ class TestSQLiteAdapter:
         assert len(devices) == 1
         assert devices[0]["fingerprint"]["kernel_version"] == "6.0.0"
 
+    def test_update_device_fingerprint_deep_merge_capabilities_phase38_sqlite(self, adapter):
+        """Phase 38 D-05: capabilities sub-dict deep-merges (existing keys preserved)."""
+        base = {
+            "hostname": "merge-host",
+            "connection_ip": "10.0.0.10",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(
+                {
+                    "kernel_version": "6.0.0",
+                    "capabilities": {"vulkan": {"available": True, "loader_version": "1.3.275"}},
+                }
+            ),
+        }
+        adapter.store_device(base)
+        merged = adapter.update_device_fingerprint(
+            "merge-host",
+            {"capabilities": {"cuda": {"driver_version": "535.183.06"}}},
+        )
+        assert "vulkan" in merged["capabilities"], "Original capability should survive deep-merge"
+        assert merged["capabilities"]["vulkan"]["available"] is True
+        assert "cuda" in merged["capabilities"]
+        assert merged["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+        # And the persisted state matches.
+        devices = adapter.get_all_devices()
+        target = next(d for d in devices if d["hostname"] == "merge-host")
+        assert "vulkan" in target["fingerprint"]["capabilities"]
+        assert "cuda" in target["fingerprint"]["capabilities"]
+
+    def test_update_device_fingerprint_overwrites_top_level_phase38_sqlite(self, adapter):
+        """Phase 38 D-05: top-level keys (kernel/os/package) overwrite, capabilities preserved."""
+        base = {
+            "hostname": "overwrite-host",
+            "connection_ip": "10.0.0.11",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(
+                {
+                    "kernel_version": "6.0.0",
+                    "capabilities": {"vulkan": {"available": True}},
+                }
+            ),
+        }
+        adapter.store_device(base)
+        merged = adapter.update_device_fingerprint(
+            "overwrite-host",
+            {"kernel_version": "6.5.13-1-pve"},
+        )
+        assert merged["kernel_version"] == "6.5.13-1-pve"
+        assert merged["capabilities"]["vulkan"]["available"] is True
+
+    def test_update_device_fingerprint_missing_hostname_raises_phase38_sqlite(self, adapter):
+        """Phase 38 D-05: missing hostname raises ValueError with discover_and_map hint."""
+        with pytest.raises(ValueError, match="discover_and_map"):
+            adapter.update_device_fingerprint("nonexistent.local", {"kernel_name": "Linux"})
+
 
 @pytest.mark.skipif(not POSTGRESQL_AVAILABLE, reason="psycopg2 not available")
 class TestPostgreSQLAdapter:
@@ -363,6 +419,121 @@ class TestPostgreSQLAdapter:
         )
         assert devices[0]["fingerprint"]["kernel_name"] == "Linux"
         assert devices[0]["fingerprint"]["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+
+    def test_update_device_fingerprint_deep_merge_capabilities_phase38_postgres(self, mock_connection):
+        """Phase 38 D-05/D-11: Postgres deep-merge proven via mock_cursor.execute on SELECT-then-UPDATE.
+
+        Mirrors test_store_device_jsonb at line 171 — asserts on mock_cursor.execute, not real round-trip.
+        Postgres "round-trip" in this codebase = "adapter produced the right SQL with the right JSON args".
+        """
+        mock_conn, mock_cursor = mock_connection
+
+        # Prime the SELECT-system_info-from-devices-where-hostname read.
+        existing_system_info = {
+            "cpu": {"model": "Intel"},
+            "memory": {"total": "16G"},
+            "disk": {},
+            "uptime": "1h",
+            "os": "Linux",
+            "usb_devices": [],
+            "pci_devices": [],
+            "block_devices": [],
+            "fingerprint": {
+                "kernel_version": "6.0.0",
+                "capabilities": {"vulkan": {"available": True, "loader_version": "1.3.275"}},
+            },
+        }
+        mock_cursor.fetchone.return_value = [existing_system_info]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        merged = adapter.update_device_fingerprint(
+            "merge-host",
+            {"capabilities": {"cuda": {"driver_version": "535.183.06"}}},
+        )
+
+        # Return value is the merged fingerprint dict.
+        assert "vulkan" in merged["capabilities"], "Original capability survives deep-merge"
+        assert "cuda" in merged["capabilities"]
+        assert merged["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+
+        # Verify SELECT-then-UPDATE sequence on mock cursor.
+        select_call = None
+        update_call = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call.args[0]
+            if "SELECT system_info FROM devices" in sql:
+                select_call = call
+            elif "UPDATE devices SET" in sql:
+                update_call = call
+        assert select_call is not None, "Expected SELECT system_info FROM devices call"
+        assert update_call is not None, "Expected UPDATE devices SET call"
+
+        # SELECT should be parameterized on hostname.
+        assert "hostname" in select_call.args[0]
+        assert select_call.args[1] == ("merge-host",)
+
+        # UPDATE's system_info JSON arg should contain the merged fingerprint.
+        update_params = update_call.args[1]
+        # Find the JSON-string param (system_info is a json.dumps result).
+        system_info_json = next(p for p in update_params if isinstance(p, str) and p.startswith("{"))
+        parsed = json.loads(system_info_json)
+        assert "vulkan" in parsed["fingerprint"]["capabilities"]
+        assert "cuda" in parsed["fingerprint"]["capabilities"]
+
+    def test_update_device_fingerprint_overwrites_top_level_phase38_postgres(self, mock_connection):
+        """Phase 38 D-05/D-11: top-level overwrite proven via mock_cursor.execute UPDATE inspection."""
+        mock_conn, mock_cursor = mock_connection
+
+        existing_system_info = {
+            "cpu": {},
+            "memory": {},
+            "disk": {},
+            "uptime": "",
+            "os": "",
+            "usb_devices": [],
+            "pci_devices": [],
+            "block_devices": [],
+            "fingerprint": {
+                "kernel_version": "6.0.0",
+                "capabilities": {"vulkan": {"available": True}},
+            },
+        }
+        mock_cursor.fetchone.return_value = [existing_system_info]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        merged = adapter.update_device_fingerprint(
+            "overwrite-host",
+            {"kernel_version": "6.5.13-1-pve"},
+        )
+
+        assert merged["kernel_version"] == "6.5.13-1-pve"
+        assert merged["capabilities"]["vulkan"]["available"] is True
+
+        update_call = next(
+            (c for c in mock_cursor.execute.call_args_list if "UPDATE devices SET" in c.args[0]),
+            None,
+        )
+        assert update_call is not None
+        update_params = update_call.args[1]
+        system_info_json = next(p for p in update_params if isinstance(p, str) and p.startswith("{"))
+        parsed = json.loads(system_info_json)
+        assert parsed["fingerprint"]["kernel_version"] == "6.5.13-1-pve"
+        assert parsed["fingerprint"]["capabilities"]["vulkan"]["available"] is True
+
+    def test_update_device_fingerprint_missing_hostname_raises_phase38_postgres(self, mock_connection):
+        """Phase 38 D-05: Postgres missing-hostname path raises ValueError with discover_and_map hint."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchone.return_value = None  # No row found for hostname.
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        with pytest.raises(ValueError, match="discover_and_map"):
+            adapter.update_device_fingerprint("nonexistent.local", {"kernel_name": "Linux"})
 
 
 class TestDatabaseFactory:
