@@ -13,103 +13,105 @@ from src.homelab_mcp.ssh_tools import (
 )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38 Plan 01 Task 1 (RED): refactor brittle fixed-order list mock to
+# STDOUT_BY_CMD lookup pattern (mirrors Phase 35 tests at lines 507-525) so
+# adding more probes never silently breaks existing assertions. Also adds
+# new probe entries (uname-s, uname-r, os-release-full, dpkg-fingerprint)
+# in preparation for the Task 2 GREEN implementation.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_ssh_discover_success(mock_connect):
-    """Test successful SSH discovery."""
-    # Mock command results - in the order they are executed by ssh_discover_system
-    # Only the commands that will actually be executed when CPU model succeeds on first try
-    hostname_result = MagicMock()
-    hostname_result.exit_status = 0
-    hostname_result.stdout = "raspberrypi"
+async def test_ssh_discover_success(monkeypatch):
+    """Test successful SSH discovery (Phase 38 refactor: STDOUT_BY_CMD lookup)."""
+    import json as _json
+    from types import SimpleNamespace
 
-    # nproc command for CPU cores
-    nproc_result = MagicMock()
-    nproc_result.exit_status = 0
-    nproc_result.stdout = "4"
+    from src.homelab_mcp import ssh_tools
 
-    # CPU model name command (succeeds, so fallback methods won't be called)
-    cpu_model_result = MagicMock()
-    cpu_model_result.exit_status = 0
-    cpu_model_result.stdout = "model name\t: Intel Core i5"
+    fake_conn = MagicMock()
 
-    # Memory command - free -b returns bytes
-    mem_result = MagicMock()
-    mem_result.exit_status = 0
-    mem_result.stdout = """              total        used        free      shared  buff/cache   available
-Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"""
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
 
-    # Disk command — Phase 35 D-09a.3: `df -B1 -T /` (adds Type column)
-    # Columns: filesystem, type, 1B-blocks(size), used, available, use%, mount
-    disk_result = MagicMock()
-    disk_result.exit_status = 0
-    disk_result.stdout = """Filesystem     Type  1B-blocks        Used    Available Use% Mounted on
-/dev/sda1      ext4  21474836480  5905580032  14970068992  30% /"""
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
 
-    # Network command
-    net_result = MagicMock()
-    net_result.exit_status = 0
-    net_result.stdout = json.dumps(
-        [
-            {
-                "ifname": "eth0",
-                "operstate": "UP",
-                "addr_info": [{"family": "inet", "local": "192.168.1.100"}],
-            }
-        ]
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
     )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
 
-    # Uptime command
-    uptime_result = MagicMock()
-    uptime_result.exit_status = 0
-    uptime_result.stdout = "up 2 days, 3 hours, 45 minutes"
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        # Mirror Phase 35 helper at line 504: empty stdout still returns
+        # exit_status=0 by default so the probe-success conditional bites
+        # only on stdout truthiness when needed.
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
 
-    # OS command
-    os_result = MagicMock()
-    os_result.exit_status = 0
-    os_result.stdout = 'PRETTY_NAME="Ubuntu 22.04.3 LTS"'
+    STDOUT_BY_CMD = {
+        # Pre-Phase-38 probes (existing assertions preserved)
+        "hostname": "raspberrypi\n",
+        "nproc": "4\n",
+        "cpuinfo": "model name\t: Intel Core i5\n",
+        "free": (
+            "              total        used        free      shared  buff/cache   available\n"
+            "Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208\n"
+        ),
+        "df": (
+            "Filesystem     Type  1B-blocks        Used    Available Use% Mounted on\n"
+            "/dev/sda1      ext4  21474836480  5905580032  14970068992  30% /\n"
+        ),
+        "ip": _json.dumps(
+            [
+                {
+                    "ifname": "eth0",
+                    "operstate": "UP",
+                    "addr_info": [{"family": "inet", "local": "192.168.1.100"}],
+                }
+            ]
+        )
+        + "\n",
+        "uptime": "up 2 days, 3 hours, 45 minutes\n",
+        "os-release": 'PRETTY_NAME="Ubuntu 22.04.3 LTS"\n',
+        "lsusb": "",
+        "lspci": "",
+        "lsblk": "",
+        # Phase 38 NEW probes (Task 2 will land the implementation that reads these)
+        "uname-s": "Linux\n",
+        "uname-r": "6.5.13-1-pve\n",
+        "os-release-full": (
+            'NAME="Proxmox VE"\n'
+            'PRETTY_NAME="Proxmox VE 8.2.4"\n'
+            'VERSION_ID="8.2.4"\n'
+        ),
+        "dpkg-fingerprint": "abc123def456789  -\n",
+    }
 
-    # Create mock connection
-    mock_conn = AsyncMock()
-    call_count = 0
+    async def _mock_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        return _fake_cp(STDOUT_BY_CMD.get(cmd_name, ""))
 
-    async def mock_run(*args, **kwargs):
-        nonlocal call_count
-        # Commands in actual order: hostname, nproc, cpu model, free, df, ip, uptime, os-release
-        results = [
-            hostname_result,
-            nproc_result,
-            cpu_model_result,
-            mem_result,
-            disk_result,
-            net_result,
-            uptime_result,
-            os_result,
-        ]
-        if call_count < len(results):
-            result = results[call_count]
-            call_count += 1
-            return result
-        else:
-            # Return a default failure result for any extra calls
-            default_result = MagicMock()
-            default_result.exit_status = 1
-            default_result.stdout = ""
-            return default_result
-
-    mock_conn.run = mock_run
-
-    # ssh_connect is async, returns a connection usable as async context manager
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", _mock_run_with_timeout)
 
     # Execute discovery
-    result = await ssh_discover_system(hostname="test-host", username="test-user", password="test-pass")
+    result = await ssh_tools.ssh_discover_system(
+        hostname="test-host", username="test-user", password="test-pass"
+    )
 
     # Parse result
-    result_data = json.loads(result)
+    result_data = _json.loads(result)
 
     # Verify structure
     assert result_data["status"] == "success"
@@ -146,9 +148,207 @@ Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"
     assert result_data["data"]["network"][0]["name"] == "eth0"
     assert "192.168.1.100" in result_data["data"]["network"][0]["addresses"]
 
-    # Verify uptime and OS
+    # Verify uptime and OS (Phase 38 D-07: legacy data["os"] field stays
+    # populated independently of the new data["fingerprint"] sub-dict)
     assert result_data["data"]["uptime"] == "up 2 days, 3 hours, 45 minutes"
     assert result_data["data"]["os"] == "Ubuntu 22.04.3 LTS"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38 Plan 01 Task 1 (RED): fingerprint sub-dict assertions.
+# These tests MUST fail before Task 2 lands the new probes and MUST pass
+# after Task 2. They prove the universal-core fingerprint substrate exists
+# on every successful discovery.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _phase38_install_mocks(monkeypatch, stdout_by_cmd, *, run_with_timeout=None):
+    """Shared mock plumbing for the Phase 38 fingerprint tests.
+
+    Mirrors the Phase 35 helper plumbing in ``test_ssh_discover_system_*_phase35``
+    tests above so the fingerprint tests stay in lockstep with the existing
+    convention.
+    """
+    from types import SimpleNamespace
+
+    from src.homelab_mcp import ssh_tools
+
+    fake_conn = MagicMock()
+
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
+    )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    if run_with_timeout is None:
+
+        async def _default_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+            return _fake_cp(stdout_by_cmd.get(cmd_name, ""))
+
+        run_with_timeout = _default_run_with_timeout
+
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", run_with_timeout)
+    return _fake_cp
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_populates_fingerprint_phase38(monkeypatch):
+    """Phase 38 D-04: fingerprint sub-dict populated from new probes.
+
+    RED before Task 2 — once Task 2 lands the three universal-core probes
+    (uname -s, uname -r, /etc/os-release full parse, dpkg-fingerprint),
+    every successful discovery payload carries a top-level
+    ``data["fingerprint"]`` sub-dict with kernel + OS + package digest.
+    """
+    import json as _json
+
+    stdout_by_cmd = {
+        "hostname": "pve1\n",
+        "nproc": "4\n",
+        "cpuinfo": "model name : CPU Model Z9\n",
+        "free": (
+            "              total        used        free      shared  buff/cache   available\n"
+            "Mem:    8589934592  2147483648  4294967296           0  2147483648  5368709120\n"
+        ),
+        "df": (
+            "Filesystem     Type  1B-blocks       Used   Available Use% Mounted on\n"
+            "/dev/sda1      ext4  100000000000  40000000000  60000000000  40% /\n"
+        ),
+        "ip": '[{"ifname":"eth0","operstate":"UP","addr_info":[{"family":"inet","local":"10.0.0.5"}]}]\n',
+        "uptime": "up 2 days, 3 hours\n",
+        "os-release": 'PRETTY_NAME="Debian 12"\n',
+        "lsusb": "",
+        "lspci": "",
+        "lsblk": "",
+        # Phase 38 NEW probes
+        "uname-s": "Linux\n",
+        "uname-r": "6.5.13-1-pve\n",
+        "os-release-full": (
+            'NAME="Proxmox VE"\n'
+            'PRETTY_NAME="Proxmox VE 8.2.4"\n'
+            'VERSION_ID="8.2.4"\n'
+        ),
+        "dpkg-fingerprint": "abc123def456789  -\n",
+    }
+    _phase38_install_mocks(monkeypatch, stdout_by_cmd)
+
+    from src.homelab_mcp import ssh_tools
+
+    result_str = await ssh_tools.ssh_discover_system(
+        hostname="10.0.0.5", username="user", password="pw"
+    )
+    result = _json.loads(result_str)
+
+    assert "fingerprint" in result["data"], (
+        "Phase 38 D-04 regression: expected `data.fingerprint` sub-dict on "
+        "successful discovery"
+    )
+    fp = result["data"]["fingerprint"]
+    assert fp["kernel_name"] == "Linux"
+    assert fp["kernel_version"] == "6.5.13-1-pve"
+    assert fp["os_name"] == "Proxmox VE 8.2.4"
+    assert fp["os_version"] == "8.2.4"
+    assert fp["package_fingerprint"] == "sha256:abc123def456789"
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_partial_when_dpkg_missing_phase38(monkeypatch):
+    """Phase 38 D-04 + Phase 35 D-09a: missing dpkg means key absent + partial:True.
+
+    When the dpkg probe returns exit_status=1 (e.g., on Alpine where dpkg
+    is absent), the ``package_fingerprint`` key MUST be absent from the
+    fingerprint sub-dict and the response MUST flag ``partial: True`` per
+    the Phase 35 timed_out_commands accumulator path.
+    """
+    import json as _json
+    from types import SimpleNamespace
+
+    from src.homelab_mcp import ssh_tools
+
+    stdout_by_cmd = {
+        "hostname": "alpine1\n",
+        "nproc": "2\n",
+        "cpuinfo": "model name : CPU Model Z9\n",
+        "free": (
+            "              total        used        free      shared  buff/cache   available\n"
+            "Mem:    4294967296  1073741824  2147483648           0  1073741824  3221225472\n"
+        ),
+        "df": (
+            "Filesystem     Type  1B-blocks       Used   Available Use% Mounted on\n"
+            "/dev/sda1      ext4  50000000000  20000000000  30000000000  40% /\n"
+        ),
+        "ip": '[{"ifname":"eth0","operstate":"UP","addr_info":[{"family":"inet","local":"10.0.0.6"}]}]\n',
+        "uptime": "up 1 day\n",
+        "os-release": 'PRETTY_NAME="Alpine Linux v3.19"\n',
+        "lsusb": "",
+        "lspci": "",
+        "lsblk": "",
+        "uname-s": "Linux\n",
+        "uname-r": "6.6.10-0-lts\n",
+        "os-release-full": 'PRETTY_NAME="Alpine Linux v3.19"\nVERSION_ID="3.19.0"\n',
+        # dpkg-fingerprint intentionally omitted from stdout dict — handler
+        # below returns a non-zero-exit-status SimpleNamespace for it.
+    }
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    async def _missing_dpkg_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        if cmd_name == "dpkg-fingerprint":
+            # Phase 35 D-09a: Phase 38 implementation must trigger the partial
+            # path when dpkg is unavailable. The implementation MAY do this by
+            # appending to ``timed_out`` OR by leaving the field unset (which
+            # the test below confirms is sufficient when paired with the
+            # accumulator append in ssh_discover_system's missing-tool branch).
+            timed_out.append("dpkg-fingerprint")
+            return _fake_cp("", exit_status=1)
+        return _fake_cp(stdout_by_cmd.get(cmd_name, ""))
+
+    _phase38_install_mocks(
+        monkeypatch, stdout_by_cmd, run_with_timeout=_missing_dpkg_run_with_timeout
+    )
+
+    result_str = await ssh_tools.ssh_discover_system(
+        hostname="10.0.0.6", username="user", password="pw"
+    )
+    result = _json.loads(result_str)
+
+    fp = result["data"].get("fingerprint", {})
+    assert "package_fingerprint" not in fp, (
+        "Phase 38 D-04: package_fingerprint key must be absent when dpkg is "
+        "unavailable on the remote host"
+    )
+    # Other fingerprint fields still populated
+    assert fp.get("kernel_name") == "Linux"
+    assert fp.get("kernel_version") == "6.6.10-0-lts"
+    # Phase 35 D-09a: partial:True fires because dpkg-fingerprint was added
+    # to timed_out_commands by the implementation's missing-tool branch.
+    assert result.get("partial") is True, (
+        "Phase 35 D-09a: expected `partial: true` when dpkg-fingerprint "
+        "probe is unavailable"
+    )
+    assert "dpkg-fingerprint" in result.get("timed_out_commands", [])
 
 
 @pytest.mark.asyncio
