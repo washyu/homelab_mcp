@@ -133,7 +133,11 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. The drift report distinguishes four buckets — probed-OK, unreachable, unknown, and changed — so a user reading the output can tell exactly which hosts were covered and which weren't (closes Bug D)
   3. Every drift family error message that suggests a recovery action points to an existing sitemap CRUD tool (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`) — no message mentions `PROXMOX_HOST` (closes Bug B)
   4. The MCP tool list contains no `register_drift_baseline`, `list_drift_baselines`, or `delete_drift_baseline` tool — drift docs and any baseline-lifecycle error message reference the existing sitemap CRUD tools (closes Bug C architecturally)
-**Plans**: TBD
+**Plans**:
+  - [ ] 37-01-PLAN.md — `scan_drift` shape rewrite (hostname filter, 4-bucket envelope, counts sub-dict, conditional guidance, Phase 36 per-row preservation)
+  - [ ] 37-02-PLAN.md — Drift surface text scrub (schema description, MCP resource description, OpenAPI Drift block, handler docstring, tool-reference.md)
+  - [ ] 37-03-PLAN.md — AST regression guards (`TestPhase37DriftHygiene`: PROXMOX_HOST per-file scan + forbidden baseline-tool-name whole-tree scan)
+  - [ ] 37-04-PLAN.md — Functional regression tests (`TestScanDrift4Bucket`: envelope, counts, guidance, node filter, vm_type inertness)
 
 ### Phase 38: Sitemap Fingerprint Schema
 **Goal**: Sitemap rows capture enough fingerprint detail (kernel version, installed-package digest, hardware capability probes) that an OS-level change like a kernel update breaking GPU passthrough or Vulkan support shows up as drift instead of vanishing silently.
