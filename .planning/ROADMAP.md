@@ -105,6 +105,8 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 - [ ] **Phase 39: Drift Detection Cases** — Detect unknown (manually-created VMs not in sitemap), missing (sitemap rows that no longer probe-respond), and changed (fingerprint differs from stored) infrastructure
 - [ ] **Phase 40: Proxmox VM Lifecycle Polish** — `get_proxmox_vm_status` clean "VM not found" error; `create_proxmox_vm` schema accuracy + cred-error guidance pointing to `credentials add`, never `PROXMOX_HOST`
 
+</details>
+
 ## Phase Details
 
 ### Phase 36: Drift ↔ Sitemap Foundation
@@ -170,8 +172,6 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. The `create_proxmox_vm` tool schema declares its `host` parameter as optional or required in a way that matches runtime behavior under cluster-scope keyring resolution — schema and runtime agree, no schema lie (closes Bug G schema half)
   3. When `create_proxmox_vm` cannot resolve credentials, the error message points the user to `homelab-mcp credentials add --type proxmox` (with a note about `--scope cluster:<name>` for cluster tokens) — no message mentions `PROXMOX_HOST` (closes Bug G error half)
 **Plans**: TBD
-
-</details>
 
 ## Progress
 
