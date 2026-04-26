@@ -55,6 +55,7 @@ class NetworkDevice:
     usb_devices: str | None = None  # JSON string (Phase 35 D-09b)
     pci_devices: str | None = None  # JSON string (Phase 35 D-09b)
     block_devices: str | None = None  # JSON string (Phase 35 D-09b)
+    fingerprint: str | None = None  # JSON string (Phase 38 D-04c, D-09b convention)
     uptime: str | None = None
     os_info: str | None = None
     error_message: str | None = None
@@ -125,6 +126,10 @@ class NetworkSiteMap:
                     device.pci_devices = json.dumps(discovery_data["pci_devices"])
                 if "block_devices" in discovery_data:
                     device.block_devices = json.dumps(discovery_data["block_devices"])
+
+                # Fingerprint sub-dict (Phase 38 D-04c: store as JSON string per Phase 35 D-09b convention)
+                if "fingerprint" in discovery_data:
+                    device.fingerprint = json.dumps(discovery_data["fingerprint"])
 
                 # System information
                 device.uptime = discovery_data.get("uptime")

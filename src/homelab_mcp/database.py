@@ -140,6 +140,7 @@ class SQLiteAdapter(DatabaseAdapter):
                 usb_devices TEXT,
                 pci_devices TEXT,
                 block_devices TEXT,
+                fingerprint TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
