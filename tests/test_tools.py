@@ -1010,3 +1010,22 @@ def test_update_device_fingerprint_annotations_phase38():
     assert ann.idempotentHint is True
     assert ann.readOnlyHint is False
     assert ann.destructiveHint is False
+
+
+@pytest.mark.asyncio
+async def test_update_device_fingerprint_malformed_dict_phase38():
+    """W3 fix: assert handler's exact malformed-dict error string.
+
+    Authored in Task 3 (after handler registration) so it specifically exercises the
+    handler's `if not isinstance(fp_in, dict)` branch — NOT a dispatcher 'Unknown tool'
+    envelope. The exact substring "`fingerprint` must be an object" is unique to the
+    handler's malformed-dict branch and would not appear in any other error path.
+    """
+    result = await execute_tool(
+        "update_device_fingerprint",
+        {"hostname": "h", "fingerprint": "not a dict"},
+    )
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "error"
+    # Exact substring from the handler's malformed-dict branch.
+    assert "`fingerprint` must be an object" in payload["error"]

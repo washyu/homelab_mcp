@@ -28,6 +28,7 @@ from .network_handlers import (
     handle_get_network_sitemap,
     handle_purge_failed_discoveries,
     handle_suggest_deployments,
+    handle_update_device_fingerprint,
 )
 from .proxmox_handlers import (
     handle_clone_proxmox_vm,
@@ -87,6 +88,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "suggest_deployments": handle_suggest_deployments,
     "get_device_changes": handle_get_device_changes,
     "purge_failed_discoveries": handle_purge_failed_discoveries,
+    "update_device_fingerprint": handle_update_device_fingerprint,  # Phase 38
     # Infrastructure tools
     "deploy_infrastructure": handle_deploy_infrastructure,
     "update_device_config": handle_update_device_config,

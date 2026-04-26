@@ -169,6 +169,7 @@ MUTATING_TOOLS: frozenset[str] = frozenset(
     {
         "discover_and_map",
         "bulk_discover_and_map",
+        "update_device_fingerprint",  # Phase 38: merge writes new fingerprint into device row
     }
 )
 

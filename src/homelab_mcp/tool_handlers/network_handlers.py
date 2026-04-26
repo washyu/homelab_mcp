@@ -82,3 +82,57 @@ async def handle_purge_failed_discoveries(arguments: dict[str, Any]) -> dict[str
         default=str,
     )
     return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_update_device_fingerprint(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle update_device_fingerprint tool (Phase 38 D-05).
+
+    The MCP framework does not validate inputSchema (RESEARCH.md §5), so the
+    handler filters unknown top-level keys (D-05b) and returns a structured
+    error envelope on missing hostname or malformed fingerprint dict.
+    """
+    RECOGNIZED_TOP_LEVEL = {
+        "kernel_name",
+        "kernel_version",
+        "os_name",
+        "os_version",
+        "package_fingerprint",
+        "capabilities",
+    }
+    validate_hostname(arguments["hostname"])
+    fp_in = arguments.get("fingerprint", {})
+    if not isinstance(fp_in, dict):
+        # NOTE: error string is asserted exactly by test_update_device_fingerprint_malformed_dict_phase38.
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": f"`fingerprint` must be an object (got {type(fp_in).__name__})",
+                "hint": "Provide fingerprint as a JSON object with recognized top-level keys.",
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+    cleaned = {k: v for k, v in fp_in.items() if k in RECOGNIZED_TOP_LEVEL}
+
+    sitemap = NetworkSiteMap()
+    try:
+        merged = sitemap.db_adapter.update_device_fingerprint(arguments["hostname"], cleaned)
+    except ValueError as e:
+        # NOTE: hint substring is asserted exactly by test_update_device_fingerprint_missing_hostname_phase38.
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": str(e),
+                "hint": "Run discover_and_map for this hostname first to add it to the sitemap.",
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+
+    result_str = json.dumps(
+        {
+            "status": "success",
+            "hostname": arguments["hostname"],
+            "fingerprint": merged,
+        },
+        indent=2,
+    )
+    return {"content": [{"type": "text", "text": result_str}]}

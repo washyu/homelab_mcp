@@ -87,6 +87,13 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         destructiveHint=False,
         idempotentHint=True,
     ),
+    "update_device_fingerprint": ToolAnnotations(
+        # Phase 38: idempotent because identical (hostname, fingerprint) input
+        # produces identical merged output.
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+    ),
     "ssh_execute_command": ToolAnnotations(
         readOnlyHint=False,
         destructiveHint=False,

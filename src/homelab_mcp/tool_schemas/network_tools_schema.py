@@ -98,4 +98,39 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
             "required": [],
         },
     },
+    "update_device_fingerprint": {
+        "description": (
+            "Merge fingerprint data (kernel, OS, package digest, capabilities) into a "
+            "device's sitemap row. Top-level keys overwrite; capabilities sub-keys deep-merge. "
+            "Run discover_and_map first to populate the device. See the "
+            "configure_host_fingerprint prompt for the conversational workflow."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "description": "Hostname of the device to fingerprint",
+                },
+                "fingerprint": {
+                    "type": "object",
+                    "description": (
+                        "Fingerprint dict. Recognized top-level keys: kernel_name, kernel_version, "
+                        "os_name, os_version, package_fingerprint, capabilities. Unknown top-level "
+                        "keys are dropped server-side. capabilities is a freeform sub-dict."
+                    ),
+                    "properties": {
+                        "kernel_name": {"type": "string"},
+                        "kernel_version": {"type": "string"},
+                        "os_name": {"type": "string"},
+                        "os_version": {"type": "string"},
+                        "package_fingerprint": {"type": "string"},
+                        "capabilities": {"type": "object", "additionalProperties": True},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["hostname", "fingerprint"],
+        },
+    },
 }
