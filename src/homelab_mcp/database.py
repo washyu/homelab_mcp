@@ -223,6 +223,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     disk_filesystem = ?, disk_size = ?, disk_used = ?, disk_available = ?,
                     disk_use_percent = ?, disk_mount = ?, network_interfaces = ?,
                     usb_devices = ?, pci_devices = ?, block_devices = ?,
+                    fingerprint = ?,
                     uptime = ?, os_info = ?, error_message = ?, updated_at = ?,
                     connection_ip = ?
                 WHERE id = ?
@@ -246,6 +247,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("usb_devices"),
                     device_data.get("pci_devices"),
                     device_data.get("block_devices"),
+                    device_data.get("fingerprint"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
@@ -264,8 +266,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     disk_filesystem, disk_size, disk_used, disk_available,
                     disk_use_percent, disk_mount, network_interfaces,
                     usb_devices, pci_devices, block_devices,
+                    fingerprint,
                     uptime, os_info, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     device_data["hostname"],
@@ -288,6 +291,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("usb_devices"),
                     device_data.get("pci_devices"),
                     device_data.get("block_devices"),
+                    device_data.get("fingerprint"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
@@ -326,6 +330,13 @@ class SQLiteAdapter(DatabaseAdapter):
                         device_dict[_json_col] = json.loads(device_dict[_json_col])
                     except json.JSONDecodeError:
                         device_dict[_json_col] = []
+
+            # Phase 38 D-10: parse fingerprint JSON (dict default, not list)
+            if device_dict.get("fingerprint"):
+                try:
+                    device_dict["fingerprint"] = json.loads(device_dict["fingerprint"])
+                except json.JSONDecodeError:
+                    device_dict["fingerprint"] = {}
 
             devices.append(device_dict)
 
@@ -581,6 +592,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
             "usb_devices": _maybe_json_load(device_data.get("usb_devices")),
             "pci_devices": _maybe_json_load(device_data.get("pci_devices")),
             "block_devices": _maybe_json_load(device_data.get("block_devices")),
+            # Phase 38 D-09a: fingerprint sub-dict lands inside system_info JSONB
+            # (no DDL change). _maybe_json_load handles JSON-string from
+            # parse_discovery_output AND already-decoded dict from update_device_fingerprint.
+            "fingerprint": _maybe_json_load(device_data.get("fingerprint")),
         }
 
         # Parse network interfaces
@@ -706,6 +721,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         "usb_devices": system_info.get("usb_devices"),
                         "pci_devices": system_info.get("pci_devices"),
                         "block_devices": system_info.get("block_devices"),
+                        # Phase 38 D-10: flatten fingerprint sub-dict to top-level
+                        # for SQLite parity (Phase 35 D-09b convention).
+                        "fingerprint": system_info.get("fingerprint"),
                     }
                 )
 
