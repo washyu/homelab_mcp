@@ -1,4 +1,4 @@
-"""Tests for drift detection — Phase 36 (sitemap-as-baseline 2-bucket interim)."""
+"""Tests for drift detection — Phase 36/37 (sitemap-as-baseline, 4-bucket stable shape)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -165,3 +165,194 @@ class TestScanDrift2Bucket:
             session=None, db_adapter=db_adapter, node=None, vm_type="all"
         )
         assert result["status"] == "success"
+
+
+class TestScanDrift4Bucket:
+    """Phase 37 DRFT-13/14/15: 4-bucket envelope, hostname filter, counts sub-dict, guidance field."""
+
+    @pytest.mark.asyncio
+    async def test_four_buckets_always_present_empty_sitemap(self):
+        """D-05: all four bucket keys present even when sitemap is empty."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert "probed_ok" in result
+        assert "unreachable" in result
+        assert "unknown" in result
+        assert "changed" in result
+        assert result["unknown"] == []
+        assert result["changed"] == []
+
+    @pytest.mark.asyncio
+    async def test_counts_subdict_present_and_mirrors_buckets(self):
+        """D-07: counts sub-dict present with four keys mirroring bucket sizes."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert "counts" in result
+        counts = result["counts"]
+        assert set(counts.keys()) == {"probed_ok", "unreachable", "unknown", "changed"}
+        assert counts["probed_ok"] == len(result["probed_ok"])
+        assert counts["unreachable"] == len(result["unreachable"])
+        assert counts["unknown"] == 0
+        assert counts["changed"] == 0
+
+    @pytest.mark.asyncio
+    async def test_scanned_equals_sum_of_counts(self):
+        """D-07: scanned == sum(counts.values()) defensive invariant."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["scanned"] == sum(result["counts"].values())
+
+    @pytest.mark.asyncio
+    async def test_guidance_present_when_scanned_zero(self):
+        """D-09: guidance field present iff scanned == 0; text references sitemap CRUD tools."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["scanned"] == 0
+        assert "guidance" in result
+        assert isinstance(result["guidance"], str)
+        assert len(result["guidance"]) > 0
+        assert "discover_and_map" in result["guidance"]
+        assert "get_network_sitemap" in result["guidance"]
+        assert "PROXMOX_HOST" not in result["guidance"]
+
+    @pytest.mark.asyncio
+    async def test_guidance_absent_when_scanned_nonzero(self):
+        """D-09: guidance key MUST NOT be present when scanned > 0."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
+        ]
+
+        async def fake_get_client(host, session=None):
+            client = MagicMock()
+            client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
+            return client
+
+        async def fake_resolve(host, session=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["scanned"] > 0
+        assert "guidance" not in result
+
+    @pytest.mark.asyncio
+    async def test_node_filter_exact_match(self):
+        """D-01: node parameter filters by exact hostname; non-matching rows excluded."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
+            {"hostname": "pve2", "connection_ip": "10.0.0.11", "status": "success"},
+        ]
+
+        call_log: list[str] = []
+
+        async def fake_get_client(host, session=None):
+            call_log.append(host)
+            client = MagicMock()
+            client.get = AsyncMock(return_value=[{"type": "node", "name": host}])
+            return client
+
+        async def fake_resolve(host, session=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter, node="pve1")
+
+        # Only pve1 should have been probed
+        assert call_log == ["pve1"]
+        assert result["scanned"] == 1
+        assert result["probed_ok"][0]["hostname"] == "pve1"
+
+    @pytest.mark.asyncio
+    async def test_node_filter_no_match_returns_success_with_empty_buckets(self):
+        """D-01/D-03: node filter with no match returns success + empty buckets + guidance; never error."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
+        ]
+
+        result = await scan_drift(session=None, db_adapter=db_adapter, node="nonexistent-host")
+
+        assert result["status"] == "success"
+        assert result["scanned"] == 0
+        assert result["probed_ok"] == []
+        assert result["unreachable"] == []
+        assert result["unknown"] == []
+        assert result["changed"] == []
+        assert "guidance" in result
+
+    @pytest.mark.asyncio
+    async def test_node_filter_applied_before_degenerate_skip(self):
+        """D-01: filter applied AFTER get_all_devices and BEFORE degenerate-row skip."""
+        db_adapter = MagicMock()
+        # degenerate row with matching hostname — node filter should still narrow to it
+        # but degenerate skip should then exclude it; result: empty, not error
+        db_adapter.get_all_devices.return_value = [
+            {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "error"},
+        ]
+
+        with patch("homelab_mcp.drift_detection.get_proxmox_client") as mock_client:
+            result = await scan_drift(session=None, db_adapter=db_adapter, node="pve1")
+
+        # Degenerate skip should fire; no probe attempt
+        mock_client.assert_not_called()
+        assert result["status"] == "success"
+        assert result["scanned"] == 0
+
+    @pytest.mark.asyncio
+    async def test_vm_type_inert_same_shape_across_values(self):
+        """D-02: vm_type=qemu / lxc / all all produce identical response shapes."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        for vm_type in ("qemu", "lxc", "all"):
+            result = await scan_drift(session=None, db_adapter=db_adapter, vm_type=vm_type)
+            assert result["status"] == "success"
+            assert "probed_ok" in result
+            assert "unreachable" in result
+            assert "unknown" in result
+            assert "changed" in result
+            assert "counts" in result
+
+    @pytest.mark.asyncio
+    async def test_envelope_key_order(self):
+        """Locked key order: status, scan_timestamp, scanned, counts, guidance, probed_ok, unreachable, unknown, changed."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        keys = list(result.keys())
+        expected = ["status", "scan_timestamp", "scanned", "counts", "guidance", "probed_ok", "unreachable", "unknown", "changed"]
+        assert keys == expected, f"Key order mismatch: {keys}"
+
+    @pytest.mark.asyncio
+    async def test_guidance_references_recovery_tools(self):
+        """D-09: guidance text must reference purge_failed_discoveries or decommission_device."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = []
+
+        result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        guidance = result["guidance"]
+        assert "purge_failed_discoveries" in guidance or "decommission_device" in guidance
