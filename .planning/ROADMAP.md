@@ -151,8 +151,8 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   3. The schema migration runs cleanly on existing sitemap databases — old rows get NULL for the new fields and re-discovery populates them; no data loss for existing fields
   4. The discovery probe code that populates the new fields wraps every `conn.run` call with `_run_with_timeout(10s)` and emits the `partial: True` payload tag when probes time out (carries forward Phase 35 reliability pattern)
 **Plans**: 6 plans
-  - [ ] 38-01-PLAN.md — Universal core probes + payload assembly inside ssh_discover_system; refactor brittle test mock
-  - [ ] 38-02-PLAN.md — Schema substrate: NetworkDevice field, parse branch, SQLite column, idempotent ALTER + schema-rebuild update
+  - [x] 38-01-PLAN.md — Universal core probes + payload assembly inside ssh_discover_system; refactor brittle test mock
+  - [x] 38-02-PLAN.md — Schema substrate: NetworkDevice field, parse branch, SQLite column, idempotent ALTER + schema-rebuild update
   - [ ] 38-03-PLAN.md — Adapter round-trip: SQLite store/get + Postgres system_info JSONB write + flatten-on-read
   - [ ] 38-04-PLAN.md — update_device_fingerprint adapter method + MCP tool wired through 5 sites (schema/handler/routing/annotations/MUTATING_TOOLS)
   - [ ] 38-05-PLAN.md — configure_host_fingerprint prompt + preview tool + description follow-ups + docs sweep
@@ -212,7 +212,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 35. Sitemap + Discovery Reliability | v1.6 | 4/4 | Complete | 2026-04-24 |
 | 36. Drift ↔ Sitemap Foundation | v1.7 | 6/6 | Complete   | 2026-04-25 |
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
-| 38. Sitemap Fingerprint Schema | v1.7 | 0/6 | Planned | - |
+| 38. Sitemap Fingerprint Schema | v1.7 | 2/6 | In Progress|  |
 | 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
@@ -222,7 +222,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 2/6 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
