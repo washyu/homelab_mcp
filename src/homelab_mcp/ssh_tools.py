@@ -382,6 +382,85 @@ async def ssh_discover_system(
             if "=" in os_line:
                 system_info["os"] = os_line.split("=", 1)[1].strip('"')
 
+        # ─────────────────────────────────────────────────────────────────────
+        # Phase 38 D-04: universal-core fingerprint sub-dict.
+        # Three probes (uname -s, uname -r, /etc/os-release full parse,
+        # dpkg-fingerprint) populate ``system_info["fingerprint"]`` for
+        # Phase 39's ``changed`` bucket diff (DRFT-19). Every probe goes
+        # through ``_run_with_timeout`` (Phase 35 D-05; AST guard at
+        # tests/test_ast_regression.py:447 enforces). Missing tools cause
+        # the relevant key to stay absent; the existing ``partial: True``
+        # flag (Phase 35 D-09a) fires automatically because we explicitly
+        # append to ``timed_out_commands`` when dpkg returns a non-zero
+        # exit status — keeping the response shape's "partial when any
+        # probe is unavailable" contract that CONTEXT.md D-04 asserts.
+        #
+        # The legacy ``data.os`` field above stays for D-07 back-compat —
+        # ``analyze_network_topology`` reads it; new consumers
+        # (Phase 39 drift) read ``data.fingerprint.os_*`` instead.
+        # ─────────────────────────────────────────────────────────────────────
+        fingerprint_info: dict[str, Any] = {}
+
+        uname_s_result = await _run_with_timeout(conn, "uname -s", cmd_name="uname-s", timed_out=timed_out_commands)
+        if uname_s_result and uname_s_result.exit_status == 0 and uname_s_result.stdout:
+            fingerprint_info["kernel_name"] = cast(str, uname_s_result.stdout).strip()
+
+        uname_r_result = await _run_with_timeout(conn, "uname -r", cmd_name="uname-r", timed_out=timed_out_commands)
+        if uname_r_result and uname_r_result.exit_status == 0 and uname_r_result.stdout:
+            fingerprint_info["kernel_version"] = cast(str, uname_r_result.stdout).strip()
+
+        # Full /etc/os-release parse for the structured fingerprint.os_name /
+        # os_version fields. The legacy PRETTY_NAME-only line above stays for
+        # the ``system_info["os"]`` field per D-07 back-compat.
+        os_release_result = await _run_with_timeout(
+            conn,
+            "cat /etc/os-release 2>/dev/null",
+            cmd_name="os-release-full",
+            timed_out=timed_out_commands,
+        )
+        if os_release_result and os_release_result.exit_status == 0 and os_release_result.stdout:
+            parsed: dict[str, str] = {}
+            for line in cast(str, os_release_result.stdout).splitlines():
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                parsed[key.strip()] = value.strip().strip('"').strip("'")
+            if parsed.get("PRETTY_NAME"):
+                fingerprint_info["os_name"] = parsed["PRETTY_NAME"]
+            elif parsed.get("NAME"):
+                fingerprint_info["os_name"] = parsed["NAME"]
+            if parsed.get("VERSION_ID"):
+                fingerprint_info["os_version"] = parsed["VERSION_ID"]
+
+        # Locale-pinned dpkg digest for cross-locale reproducibility
+        # (RESEARCH.md Pitfall 1: glibc strcoll() honors LC_COLLATE; the
+        # ``LC_ALL=C`` prefix forces byte-wise sort). ``sha256sum`` of
+        # stdin emits ``<digest>  -`` — strip the trailing field. Skip
+        # the empty-input sha (``d41d8cd...``) which is what ``sha256sum``
+        # of an empty pipe returns when ``dpkg`` is missing.
+        dpkg_result = await _run_with_timeout(
+            conn,
+            "LC_ALL=C dpkg -l 2>/dev/null | sort | sha256sum",
+            cmd_name="dpkg-fingerprint",
+            timed_out=timed_out_commands,
+        )
+        if dpkg_result is not None and dpkg_result.exit_status == 0 and dpkg_result.stdout:
+            digest_field = cast(str, dpkg_result.stdout).strip().split()[0]
+            if digest_field and digest_field != "d41d8cd98f00b204e9800998ecf8427e":
+                fingerprint_info["package_fingerprint"] = f"sha256:{digest_field}"
+        elif dpkg_result is not None and dpkg_result.exit_status != 0:
+            # Phase 38 D-04 + Phase 35 D-09a: when dpkg is unavailable on
+            # the remote host (e.g., Alpine), the probe returns non-zero
+            # but does NOT raise TimeoutError. Explicitly enroll it in
+            # ``timed_out_commands`` so the response carries
+            # ``partial: True`` per the locked decision in CONTEXT.md
+            # ("Phase 35 partial:True semantics fire automatically").
+            if "dpkg-fingerprint" not in timed_out_commands:
+                timed_out_commands.append("dpkg-fingerprint")
+
+        if fingerprint_info:
+            system_info["fingerprint"] = fingerprint_info
+
         # Get USB devices
         usb_devices: list[dict[str, str]] = []
         lsusb_result = await _run_with_timeout(
