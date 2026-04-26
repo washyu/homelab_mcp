@@ -134,9 +134,9 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   3. Every drift family error message that suggests a recovery action points to an existing sitemap CRUD tool (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`) — no message mentions `PROXMOX_HOST` (closes Bug B)
   4. The MCP tool list contains no `register_drift_baseline`, `list_drift_baselines`, or `delete_drift_baseline` tool — drift docs and any baseline-lifecycle error message reference the existing sitemap CRUD tools (closes Bug C architecturally)
 **Plans**:
-  - [ ] 37-01-PLAN.md — `scan_drift` shape rewrite (hostname filter, 4-bucket envelope, counts sub-dict, conditional guidance, Phase 36 per-row preservation)
-  - [ ] 37-02-PLAN.md — Drift surface text scrub (schema description, MCP resource description, OpenAPI Drift block, handler docstring, tool-reference.md)
-  - [ ] 37-03-PLAN.md — AST regression guards (`TestPhase37DriftHygiene`: PROXMOX_HOST per-file scan + forbidden baseline-tool-name whole-tree scan)
+  - [x] 37-01-PLAN.md — `scan_drift` shape rewrite (hostname filter, 4-bucket envelope, counts sub-dict, conditional guidance, Phase 36 per-row preservation)
+  - [x] 37-02-PLAN.md — Drift surface text scrub (schema description, MCP resource description, OpenAPI Drift block, handler docstring, tool-reference.md)
+  - [x] 37-03-PLAN.md — AST regression guards (`TestPhase37DriftHygiene`: PROXMOX_HOST per-file scan + forbidden baseline-tool-name whole-tree scan)
   - [ ] 37-04-PLAN.md — Functional regression tests (`TestScanDrift4Bucket`: envelope, counts, guidance, node filter, vm_type inertness)
 
 ### Phase 38: Sitemap Fingerprint Schema

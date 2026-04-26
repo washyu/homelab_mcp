@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
-stopped_at: Phase 37 plans created (4 plans, 2 waves; verification passed all 23 gates)
-last_updated: "2026-04-26T02:23:39.296Z"
-last_activity: 2026-04-26 -- Phase 37 execution started
+stopped_at: Phase 37 Wave 1 complete (3/4 plans); Wave 2 (37-04) pending
+last_updated: "2026-04-26T03:00:00.000Z"
+last_activity: 2026-04-26 -- Phase 37 Wave 1 complete (37-01 4-bucket envelope, 37-02 surface text scrub, 37-03 AST guards); 728 unit tests green
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 4
+  completed_plans: 3
   percent: 20
 ---
 
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 Milestone: v1.7 Drift Architectural Fix
 Phase: 37 (drift-output-shape-error-hygiene) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 37
-Last activity: 2026-04-26 -- Phase 37 execution started
+Plan: 3 of 4
+Status: Wave 1 complete; Wave 2 (37-04) pending
+Last activity: 2026-04-26 -- Phase 37 Wave 1 complete (37-01 4-bucket envelope, 37-02 surface text scrub, 37-03 AST guards); 728 unit tests green
 
 Progress: [██        ] 20% — 1 / 5 phases complete (Phase 36 verified)
 
