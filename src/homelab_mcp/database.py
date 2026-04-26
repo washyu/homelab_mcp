@@ -45,6 +45,15 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
+        """Phase 38 D-05/D-11: deep-merge fingerprint dict into the device row.
+
+        Returns the merged fingerprint dict. Raises ValueError if hostname is
+        not found in the sitemap (with a hint pointing to discover_and_map).
+        """
+        pass
+
+    @abstractmethod
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from the database."""
         pass
@@ -303,6 +312,40 @@ class SQLiteAdapter(DatabaseAdapter):
 
         self.connection.commit()
         return device_id
+
+    def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
+        """Phase 38 D-05/D-11 SQLite: read-merge-write fingerprint."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        # Hostname-natural-key lookup (Phase 35 D-01 — AST guard tests/test_ast_regression.py:392).
+        if hostname in (None, "", "unknown"):
+            raise ValueError(
+                f"Cannot fingerprint degenerate hostname: {hostname!r}. "
+                "Run discover_and_map for this hostname first to populate a real hostname."
+            )
+        cursor.execute(
+            "SELECT fingerprint FROM devices WHERE hostname = ?",
+            (hostname,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(
+                f"Hostname not in sitemap: {hostname!r}. "
+                "Run discover_and_map for this hostname first to add the device."
+            )
+
+        stored: dict[str, Any] = json.loads(row[0]) if row[0] else {}
+        merged = merge_fingerprint(stored, fingerprint)
+        now_iso = datetime.now().isoformat()
+        cursor.execute(
+            "UPDATE devices SET fingerprint = ?, last_seen = ?, updated_at = ? WHERE hostname = ?",
+            (json.dumps(merged), now_iso, now_iso, hostname),
+        )
+        self.connection.commit()
+        return merged
 
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from SQLite."""
@@ -677,6 +720,47 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self.connection.commit()
         return device_id
 
+    def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
+        """Phase 38 D-05/D-11 Postgres: read-merge-write for path parity with SQLite.
+
+        Pitfall 4 (RESEARCH.md): does NOT use jsonb_set / || — merge happens in
+        Python so that SQLite and Postgres adapters produce identical results.
+        """
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        if hostname in (None, "", "unknown"):
+            raise ValueError(
+                f"Cannot fingerprint degenerate hostname: {hostname!r}. "
+                "Run discover_and_map for this hostname first to populate a real hostname."
+            )
+        cursor.execute(
+            "SELECT system_info FROM devices WHERE hostname = %s",
+            (hostname,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(
+                f"Hostname not in sitemap: {hostname!r}. "
+                "Run discover_and_map for this hostname first to add the device."
+            )
+
+        system_info = row[0] if row[0] else {}
+        if isinstance(system_info, str):
+            system_info = json.loads(system_info)
+        stored_fp = system_info.get("fingerprint") or {}
+        merged = merge_fingerprint(stored_fp, fingerprint)
+        system_info["fingerprint"] = merged
+
+        cursor.execute(
+            "UPDATE devices SET system_info = %s, last_seen = NOW(), updated_at = NOW() WHERE hostname = %s",
+            (json.dumps(system_info), hostname),
+        )
+        self.connection.commit()
+        return merged
+
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from PostgreSQL."""
         if not self.connection:
@@ -874,3 +958,26 @@ def _maybe_json_load(value: Any) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return None
+
+
+def merge_fingerprint(stored: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Phase 38 D-05 merge contract: top-level overwrite, capabilities deep-merge.
+
+    ``stored`` is the existing fingerprint dict (parsed from DB).
+    ``incoming`` is the dict from update_device_fingerprint (already filtered
+    to recognized keys). Returns the merged dict to write back. Pure function —
+    no side effects.
+
+    - Top-level keys (kernel/os/package_*) overwrite (last-write-wins).
+    - ``capabilities`` sub-dict deep-merges: incoming sub-keys overwrite,
+      missing sub-keys preserved.
+    """
+    merged: dict[str, Any] = dict(stored)
+    for key, value in incoming.items():
+        if key == "capabilities" and isinstance(value, dict):
+            existing_caps = dict(merged.get("capabilities", {}))
+            existing_caps.update(value)  # incoming sub-keys overwrite, others preserved
+            merged["capabilities"] = existing_caps
+        else:
+            merged[key] = value  # top-level keys overwrite (D-05 step 3a)
+    return merged
