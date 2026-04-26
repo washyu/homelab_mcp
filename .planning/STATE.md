@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
-stopped_at: Phase 37 Wave 1 complete (3/4 plans); Wave 2 (37-04) pending
-last_updated: "2026-04-26T03:00:00.000Z"
-last_activity: 2026-04-26 -- Phase 37 Wave 1 complete (37-01 4-bucket envelope, 37-02 surface text scrub, 37-03 AST guards); 728 unit tests green
+stopped_at: Phase 37 complete (4/4 plans); all waves done
+last_updated: "2026-04-26T02:46:08Z"
+last_activity: 2026-04-26 -- Phase 37 Wave 2 complete (37-04 regression tests); 732 unit tests green; TestScanDrift4Bucket 21 tests
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 20
+  completed_plans: 4
+  percent: 25
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 37 — drift-output-shape-error-hygiene
+**Current focus:** Phase 38 — sitemap-fingerprint-schema (next phase)
 
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 37 (drift-output-shape-error-hygiene) — EXECUTING
-Plan: 3 of 4
-Status: Wave 1 complete; Wave 2 (37-04) pending
-Last activity: 2026-04-26 -- Phase 37 Wave 1 complete (37-01 4-bucket envelope, 37-02 surface text scrub, 37-03 AST guards); 728 unit tests green
+Phase: 37 (drift-output-shape-error-hygiene) — COMPLETE
+Plan: 4 of 4
+Status: All 4 plans complete; Phase 37 done
+Last activity: 2026-04-26 -- Phase 37 Wave 2 complete (37-04 regression tests); 732 unit tests green; TestScanDrift4Bucket 21 tests
 
-Progress: [██        ] 20% — 1 / 5 phases complete (Phase 36 verified)
+Progress: [███       ] 25% — 2 / 5 phases complete (Phase 36 + Phase 37 verified)
 
 ## v1.7 Phase Summary
 
