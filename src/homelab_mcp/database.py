@@ -340,9 +340,14 @@ class SQLiteAdapter(DatabaseAdapter):
         stored: dict[str, Any] = json.loads(row[0]) if row[0] else {}
         merged = merge_fingerprint(stored, fingerprint)
         now_iso = datetime.now().isoformat()
+        # Phase 38 WR-03: do NOT bump ``last_seen`` here — fingerprint merge is
+        # NOT a discovery event. ``last_seen`` should reflect "we last heard
+        # from the device" (set by store_device); ``updated_at`` already covers
+        # "this row was touched". Bumping last_seen on every fingerprint call
+        # would confuse Phase 39 drift detection that reads last_seen.
         cursor.execute(
-            "UPDATE devices SET fingerprint = ?, last_seen = ?, updated_at = ? WHERE hostname = ?",
-            (json.dumps(merged), now_iso, now_iso, hostname),
+            "UPDATE devices SET fingerprint = ?, updated_at = ? WHERE hostname = ?",
+            (json.dumps(merged), now_iso, hostname),
         )
         self.connection.commit()
         return merged
@@ -754,8 +759,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
         merged = merge_fingerprint(stored_fp, fingerprint)
         system_info["fingerprint"] = merged
 
+        # Phase 38 WR-03: do NOT bump ``last_seen`` here — fingerprint merge is
+        # NOT a discovery event. ``last_seen`` should reflect "we last heard
+        # from the device" (set by store_device); ``updated_at`` already covers
+        # "this row was touched".
         cursor.execute(
-            "UPDATE devices SET system_info = %s, last_seen = NOW(), updated_at = NOW() WHERE hostname = %s",
+            "UPDATE devices SET system_info = %s, updated_at = NOW() WHERE hostname = %s",
             (json.dumps(system_info), hostname),
         )
         self.connection.commit()
