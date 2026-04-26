@@ -101,7 +101,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 - [ ] **Phase 36: Drift ↔ Sitemap Foundation** — Drop parallel `drift_baselines` table; wire `scan_infrastructure_drift` to iterate sitemap rows; resolve Proxmox creds via `resolve_proxmox_credentials`
 - [ ] **Phase 37: Drift Output Shape & Error Hygiene** — Consistent shape across all filter scopes; four-bucket coverage transparency; error messages reference sitemap CRUD tools, never `PROXMOX_HOST`
-- [ ] **Phase 38: Sitemap Fingerprint Schema** — Sitemap rows capture kernel version, package fingerprint, and capability probes (GPU passthrough, Vulkan/ML library availability) so OS-level changes surface as drift
+- [x] **Phase 38: Sitemap Fingerprint Schema** — Sitemap rows capture kernel version, package fingerprint, and capability probes (GPU passthrough, Vulkan/ML library availability) so OS-level changes surface as drift (completed 2026-04-26)
 - [ ] **Phase 39: Drift Detection Cases** — Detect unknown (manually-created VMs not in sitemap), missing (sitemap rows that no longer probe-respond), and changed (fingerprint differs from stored) infrastructure
 - [ ] **Phase 40: Proxmox VM Lifecycle Polish** — `get_proxmox_vm_status` clean "VM not found" error; `create_proxmox_vm` schema accuracy + cred-error guidance pointing to `credentials add`, never `PROXMOX_HOST`
 
@@ -212,7 +212,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 35. Sitemap + Discovery Reliability | v1.6 | 4/4 | Complete | 2026-04-24 |
 | 36. Drift ↔ Sitemap Foundation | v1.7 | 6/6 | Complete   | 2026-04-25 |
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
-| 38. Sitemap Fingerprint Schema | v1.7 | 3/6 | In Progress|  |
+| 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
@@ -222,7 +222,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 2/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
