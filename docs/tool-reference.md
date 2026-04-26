@@ -575,7 +575,7 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 
 ### scan_infrastructure_drift
 
-**Description:** Scan for infrastructure drift against the sitemap. Iterates registered devices in the network sitemap, resolves Proxmox credentials per row through the keyring (per-node -> cluster -> error), and probes each resolved host's `/cluster/status` endpoint. Returns a 2-bucket coverage report (`probed_ok`, `unreachable`) per host. Filter semantics for `node` and `vm_type` are under Phase 37 redesign and are currently inert -- both arguments are accepted for back-compat but not yet acted upon.
+**Description:** Scan for infrastructure drift against the sitemap. Iterates registered devices in the network sitemap, resolves Proxmox credentials per row through the keyring (per-node → cluster → error), and probes each resolved host's `/cluster/status` endpoint. Returns a four-bucket coverage report — `probed_ok` (host probed successfully), `unreachable` (host did not respond), `unknown` (reserved for Phase 39: VMs/LXC present on a Proxmox hypervisor but absent from sitemap), and `changed` (reserved for Phase 39: fingerprint differs from stored). All four buckets are always present (empty arrays for the Phase-39-reserved buckets). The response also includes a `counts` sub-dict mirroring bucket sizes. When zero hosts were scanned (empty sitemap, or `node` filter narrowed everything out), a top-level `guidance` field is included with pointers to the sitemap CRUD tools (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`); when at least one host was scanned, the `guidance` field is omitted.
 
 **Annotations:** `[Read-Only]` `[Idempotent]`
 
@@ -583,22 +583,34 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| node | string | No | (none) | Filter scope (Phase 37 will activate; currently inert) |
-| vm_type | string | No | "all" | Filter scope: "qemu", "lxc", or "all" (Phase 37 will activate; currently inert) |
+| node | string | No | (none) | Optional sitemap hostname filter. Exact-match only — no wildcards, no case folding. When set to a hostname that does not match any sitemap row, returns `status="success"` with all four buckets empty and a `guidance` field — never an error. |
+| vm_type | string | No | "all" | Reserved for Phase 39 per-VM detection; currently filters at host level only (no-op until per-VM enumeration ships). Accepts `"qemu"`, `"lxc"`, or `"all"` — all three values produce identical scan results in this release. |
 
-**Example:**
+**Example (no filter):**
 
 ```json
 {}
 ```
 
-**Returns:**
+**Example (hostname filter):**
+
+```json
+{ "node": "pve1" }
+```
+
+**Returns (populated scan):**
 
 ```json
 {
   "status": "success",
   "scan_timestamp": "2026-04-25T12:34:56+00:00",
   "scanned": 2,
+  "counts": {
+    "probed_ok": 1,
+    "unreachable": 1,
+    "unknown": 0,
+    "changed": 0
+  },
   "probed_ok": [
     {
       "hostname": "pve1",
@@ -617,18 +629,37 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
       "scope": "cluster",
       "cluster_name": "homelab-prod",
       "status": "unreachable",
-      "error": "Cannot connect to host pi-lab",
+      "error": "connection refused",
       "scan_timestamp": "2026-04-25T12:34:56+00:00"
     }
-  ]
+  ],
+  "unknown": [],
+  "changed": []
 }
 ```
 
-**Notes:**
-- Baselines are not registered separately. The sitemap (populated by `discover_and_map`) serves as the baseline for drift detection. To add a host to drift coverage, register it via `discover_and_map`.
-- Hosts without Proxmox credentials in the keyring are silently excluded (they are not Proxmox hosts).
-- Empty sitemap returns a successful empty result (`scanned: 0`), not an error.
-- Phase 37 will expand the response to a 4-bucket shape (probed-OK / unreachable / unknown / changed).
+**Returns (empty scan — empty sitemap or no-match filter):**
+
+```json
+{
+  "status": "success",
+  "scan_timestamp": "2026-04-25T12:34:56+00:00",
+  "scanned": 0,
+  "counts": {
+    "probed_ok": 0,
+    "unreachable": 0,
+    "unknown": 0,
+    "changed": 0
+  },
+  "guidance": "No Proxmox hosts in sitemap matched this scan. Run discover_and_map to populate the sitemap, get_network_sitemap to inspect what's tracked, or purge_failed_discoveries to clean stale rows. If a host is decommissioned, use decommission_device.",
+  "probed_ok": [],
+  "unreachable": [],
+  "unknown": [],
+  "changed": []
+}
+```
+
+**Recovery from credential failure:** If a sitemap row resolves to a Proxmox host but no keyring credential exists, the row is silently skipped (it is treated as "not a registered Proxmox host"). To register credentials, run `homelab-mcp credentials add --type proxmox` (per-node) or `homelab-mcp credentials add --type proxmox --scope cluster:<name>` (cluster-wide).
 
 ---
 
