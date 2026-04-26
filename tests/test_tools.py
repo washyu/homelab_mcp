@@ -13,11 +13,12 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 53
-    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint
+        len(tools) == 54
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint + update_device_fingerprint_preview (Plan 05)
     assert "ssh_discover" in tools
     assert "purge_failed_discoveries" in tools  # v1.6.x: sitemap CRUD completion
     assert "update_device_fingerprint" in tools  # Phase 38
+    assert "update_device_fingerprint_preview" in tools  # Phase 38 D-05c (Plan 05)
     assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
     assert "verify_mcp_admin" not in tools  # D-05: removed in Phase 33.1
     assert "update_mcp_admin_groups" not in tools  # D-05: removed in Phase 33.1
@@ -1029,3 +1030,56 @@ async def test_update_device_fingerprint_malformed_dict_phase38():
     assert payload["status"] == "error"
     # Exact substring from the handler's malformed-dict branch.
     assert "`fingerprint` must be an object" in payload["error"]
+
+
+# Phase 38 Plan 05 — update_device_fingerprint_preview MCP routing tests
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap")
+async def test_execute_update_device_fingerprint_preview_phase38(mock_sitemap_cls):
+    """Phase 38 D-05c (Plan 05): preview returns the merge result without persisting.
+
+    The preview reads via get_all_devices, does NOT call the adapter's
+    update_device_fingerprint method. Verifies BOTH the previously-stored
+    capability (vulkan) and the incoming capability (cuda) appear in the
+    returned merged dict.
+    """
+    mock_adapter = MagicMock()
+    # Preview reads the current row via get_all_devices.
+    mock_adapter.get_all_devices.return_value = [
+        {
+            "hostname": "h",
+            "fingerprint": {
+                "kernel_version": "6.0.0",
+                "capabilities": {"vulkan": {"available": True}},
+            },
+        }
+    ]
+    mock_sitemap_cls.return_value.db_adapter = mock_adapter
+
+    result = await execute_tool(
+        "update_device_fingerprint_preview",
+        {"hostname": "h", "fingerprint": {"capabilities": {"cuda": {"driver_version": "535"}}}},
+    )
+
+    payload = json.loads(result["content"][0]["text"])
+    assert payload["status"] == "success"
+    # Preview returns the merged dict — both vulkan (preserved) and cuda (incoming) present
+    assert "vulkan" in payload["fingerprint"]["capabilities"]
+    assert "cuda" in payload["fingerprint"]["capabilities"]
+    # Adapter's update method MUST NOT be called (preview is read-only)
+    mock_adapter.update_device_fingerprint.assert_not_called()
+
+
+def test_update_device_fingerprint_preview_in_read_only_tools_phase38():
+    """Phase 38 D-05c (Plan 05): preview tool registered in _READ_ONLY_TOOLS, NOT in MUTATING_TOOLS.
+
+    The preview wrapper is read-only — adding to MUTATING_TOOLS would fire spurious
+    notifications/resources/list_changed events for what is a no-op merge calculation.
+    """
+    from src.homelab_mcp.server import MUTATING_TOOLS
+    from src.homelab_mcp.tool_annotations import _READ_ONLY_TOOLS
+
+    assert "update_device_fingerprint_preview" in _READ_ONLY_TOOLS
+    assert "update_device_fingerprint_preview" not in MUTATING_TOOLS
