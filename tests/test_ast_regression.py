@@ -589,3 +589,151 @@ def test_drift_detection_no_baseline_references_phase36() -> None:
         f"Phase 36 D-13 regression — drift_detection.py contains forbidden baseline references: {violations}. "
         f"scan_drift must read from sitemap rows (db_adapter.get_all_devices()) only."
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 37 AST regression guards (D-11 / D-12)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase37DriftHygiene:
+    """Phase 37 D-11 + D-12: drift surface architectural lock-in.
+
+    D-11 (PROXMOX_HOST forbidden in drift surface, DRFT-15 closure):
+      Drift-family files must never reference the deprecated PROXMOX_HOST
+      env var. Recovery should point to sitemap CRUD tools and the
+      `homelab-mcp credentials add --type proxmox` CLI instead.
+
+      Per CONTEXT.md D-08 the openapi_app.py "Proxmox" entry STILL contains
+      PROXMOX_HOST (Phase 40 POL-03 territory) — this guard scopes the
+      openapi_app.py check to ONLY the "Drift Detection" INFRA_REQUIREMENTS
+      value, leaving the Proxmox entry to a future phase.
+
+    D-12 (no baseline-lifecycle MCP tools, DRFT-16 closure):
+      The Bug-C tool names register_drift_baseline / list_drift_baselines /
+      delete_drift_baseline must NEVER appear anywhere under
+      src/homelab_mcp/. Phase 36 architecturally dissolved Bug C by
+      unifying drift detection with the sitemap; this guard locks that in.
+
+    Per CONTEXT.md D-15, both guards are AST-only — no runtime registry
+    check. CI catches reintroduction at merge time; the duplicate
+    enforcement at server startup is not worth the production cost.
+    """
+
+    # ── D-11: PROXMOX_HOST forbidden in drift surface ──────────────────
+
+    # Drift-family source files that must contain ZERO PROXMOX_HOST references.
+    # NOTE: openapi_app.py is intentionally NOT in this list — it contains a
+    # legitimate "Proxmox" PROXMOX_HOST reference (Phase 40 POL-03 territory).
+    # The "Drift Detection" entry in openapi_app.py is checked separately via
+    # dict access below.
+    _DRIFT_SURFACE_FILES: tuple[str, ...] = (
+        "drift_detection.py",
+        "tool_handlers/drift_handlers.py",
+        "tool_schemas/drift_tools_schema.py",
+    )
+
+    def test_no_proxmox_host_in_drift_files(self) -> None:
+        """Phase 37 D-11: drift surface files contain no PROXMOX_HOST references.
+
+        Scans each of:
+          - src/homelab_mcp/drift_detection.py
+          - src/homelab_mcp/tool_handlers/drift_handlers.py
+          - src/homelab_mcp/tool_schemas/drift_tools_schema.py
+
+        for the substring `PROXMOX_HOST` (must be zero matches per file). Then
+        imports INFRA_REQUIREMENTS from openapi_app and verifies that the
+        "Drift Detection" entry's value does not contain PROXMOX_HOST.
+
+        The "Proxmox" entry in INFRA_REQUIREMENTS is intentionally NOT checked —
+        it is Phase 40 POL-03 territory per CONTEXT.md D-08.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        violations: list[str] = []
+
+        # File scan: each drift-surface file must have zero PROXMOX_HOST.
+        for relative_path in self._DRIFT_SURFACE_FILES:
+            file_path = src_root / relative_path
+            assert file_path.exists(), (
+                f"Phase 37 D-11 setup error: {file_path} does not exist. "
+                f"_DRIFT_SURFACE_FILES is out of sync with the source tree."
+            )
+            source = file_path.read_text(encoding="utf-8")
+            if "PROXMOX_HOST" in source:
+                violations.append(
+                    f"{relative_path}: contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15 — "
+                    f"drift surface must reference sitemap CRUD tools + credentials CLI, "
+                    f"not the deprecated env var)"
+                )
+
+        # Dict-value scan: openapi_app.py "Drift Detection" INFRA_REQUIREMENTS
+        # entry must lack PROXMOX_HOST. Done via import to avoid fragile line-
+        # number coupling; the "Proxmox" entry on the previous line is
+        # intentionally not checked (Phase 40 POL-03).
+        from homelab_mcp.openapi_app import INFRA_REQUIREMENTS
+
+        drift_entry = INFRA_REQUIREMENTS.get("Drift Detection", "")
+        if "PROXMOX_HOST" in drift_entry:
+            violations.append(
+                "openapi_app.py INFRA_REQUIREMENTS['Drift Detection']: "
+                "contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15)"
+            )
+
+        assert not violations, (
+            "Phase 37 D-11 regression — PROXMOX_HOST reintroduced in drift surface:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nDrift-family text should reference discover_and_map / "
+            "get_network_sitemap / purge_failed_discoveries / decommission_device "
+            "and the 'homelab-mcp credentials add --type proxmox' CLI instead."
+        )
+
+    # ── D-12: no baseline-lifecycle MCP tool names anywhere in src/ ─────
+
+    # Forbidden tool names — Bug C architectural dissolution. Per CONTEXT.md
+    # D-12, ZERO matches anywhere under src/homelab_mcp/. No allowed
+    # exceptions: these tools were never built and must never be built.
+    _FORBIDDEN_BASELINE_TOOL_NAMES: tuple[str, ...] = (
+        "register_drift_baseline",
+        "list_drift_baselines",
+        "delete_drift_baseline",
+    )
+
+    def test_no_baseline_lifecycle_tool_names_in_source(self) -> None:
+        """Phase 37 D-12: forbidden baseline-lifecycle MCP tool names absent.
+
+        Walks every *.py under src/homelab_mcp/ and scans each file's source
+        for register_drift_baseline / list_drift_baselines / delete_drift_baseline.
+        Must be ZERO matches across all source files — no allowed exceptions
+        (these tools were dissolved architecturally by Phase 36's sitemap
+        unification per DRFT-16 / Bug C).
+
+        Catches reintroduction in tool_schemas/, tools.py, handler files,
+        docstrings, deferred imports, and any other source location.
+
+        Per CONTEXT.md D-13, this scan is source-only; documentation drift is
+        caught via D-08 sweep + code review.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        assert src_root.exists(), f"Source root not found: {src_root}"
+
+        violations: list[str] = []
+
+        for py_file in sorted(src_root.rglob("*.py")):
+            source = py_file.read_text(encoding="utf-8")
+            for forbidden in self._FORBIDDEN_BASELINE_TOOL_NAMES:
+                if forbidden in source:
+                    violations.append(
+                        f"{py_file.relative_to(src_root.parent.parent)}: "
+                        f"contains forbidden tool name {forbidden!r}"
+                    )
+
+        assert not violations, (
+            "Phase 37 D-12 regression — forbidden baseline-lifecycle MCP tool "
+            "names reintroduced in source:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nPhase 36 architecturally dissolved Bug C by unifying drift "
+            "detection with the sitemap. The MCP tool surface must NEVER expose "
+            "register_drift_baseline / list_drift_baselines / delete_drift_baseline "
+            "(DRFT-16). Drift baselines ARE sitemap rows; lifecycle is handled by "
+            "discover_and_map / decommission_device / purge_failed_discoveries."
+        )
