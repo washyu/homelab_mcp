@@ -153,7 +153,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 **Plans**: 6 plans
   - [x] 38-01-PLAN.md — Universal core probes + payload assembly inside ssh_discover_system; refactor brittle test mock
   - [x] 38-02-PLAN.md — Schema substrate: NetworkDevice field, parse branch, SQLite column, idempotent ALTER + schema-rebuild update
-  - [ ] 38-03-PLAN.md — Adapter round-trip: SQLite store/get + Postgres system_info JSONB write + flatten-on-read
+  - [x] 38-03-PLAN.md — Adapter round-trip: SQLite store/get + Postgres system_info JSONB write + flatten-on-read
   - [ ] 38-04-PLAN.md — update_device_fingerprint adapter method + MCP tool wired through 5 sites (schema/handler/routing/annotations/MUTATING_TOOLS)
   - [ ] 38-05-PLAN.md — configure_host_fingerprint prompt + preview tool + description follow-ups + docs sweep
   - [ ] 38-06-PLAN.md — End-to-end integration test against Debian Docker container
@@ -212,7 +212,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 35. Sitemap + Discovery Reliability | v1.6 | 4/4 | Complete | 2026-04-24 |
 | 36. Drift ↔ Sitemap Foundation | v1.7 | 6/6 | Complete   | 2026-04-25 |
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
-| 38. Sitemap Fingerprint Schema | v1.7 | 2/6 | In Progress|  |
+| 38. Sitemap Fingerprint Schema | v1.7 | 3/6 | In Progress|  |
 | 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
