@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
-status: completed
-stopped_at: Phase 38 context gathered
-last_updated: "2026-04-26T03:44:30.396Z"
-last_activity: 2026-04-26 -- Phase 37 Wave 2 complete (37-04 regression tests); 732 unit tests green; TestScanDrift4Bucket 21 tests
+status: ready_to_execute
+stopped_at: Phase 38 planned (6 plans across 5 waves)
+last_updated: "2026-04-26T04:30:00.000Z"
+last_activity: 2026-04-26 -- Phase 38 planned (DRFT-20); 6 plans, 5 waves; plan-checker passed iteration 2 after Postgres mock-cursor refactor
 progress:
   total_phases: 14
   completed_phases: 2
-  total_plans: 10
+  total_plans: 16
   completed_plans: 10
   percent: 100
 ---
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 37 (drift-output-shape-error-hygiene) — COMPLETE
-Plan: 4 of 4
-Status: All 4 plans complete; Phase 37 done
-Last activity: 2026-04-26 -- Phase 37 Wave 2 complete (37-04 regression tests); 732 unit tests green; TestScanDrift4Bucket 21 tests
+Phase: 38 (sitemap-fingerprint-schema) — PLANNED, ready to execute
+Plan: 0 of 6
+Status: 6 plans across 5 waves; plan-checker passed iteration 2 (Postgres tests refactored to mock-cursor pattern); RESEARCH + PATTERNS + VALIDATION committed
+Last activity: 2026-04-26 -- Phase 38 planned (DRFT-20); 6 plans, 5 waves; plan-checker passed iteration 2
 
-Progress: [███       ] 25% — 2 / 5 phases complete (Phase 36 + Phase 37 verified)
+Progress: [███       ] 25% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 ready to execute
 
 ## v1.7 Phase Summary
 
@@ -126,6 +126,6 @@ None at v1.7 ROADMAP-complete. Will be populated as phase planning progresses.
 
 ## Session Continuity
 
-Last session: 2026-04-26T03:44:30.392Z
-Stopped at: Phase 38 context gathered
-Resume command: `/gsd-execute-phase 37` to execute Phase 37 (Drift Output Shape & Error Hygiene)
+Last session: 2026-04-26T04:30:00.000Z
+Stopped at: Phase 38 planned (6 plans across 5 waves; plan-checker passed iteration 2)
+Resume command: `/gsd-execute-phase 38` to execute Phase 38 (Sitemap Fingerprint Schema)
