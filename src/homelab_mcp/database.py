@@ -730,6 +730,17 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         Pitfall 4 (RESEARCH.md): does NOT use jsonb_set / || — merge happens in
         Python so that SQLite and Postgres adapters produce identical results.
+
+        Phase 38 WR-04: the SELECT + Python merge + UPDATE sequence is wrapped
+        in an explicit transaction with ``SELECT ... FOR UPDATE`` to row-lock
+        the device during the merge window. Without the lock, a concurrent
+        ``store_device`` writer landing between the SELECT and the UPDATE
+        would have its mutations to other ``system_info`` sub-keys (cpu,
+        memory, disk, etc.) silently overwritten by this method's write-back
+        of the full blob. The connection is configured with ``autocommit =
+        False`` (see ``connect``), so the explicit ``BEGIN`` is redundant but
+        kept for clarity. On any error the transaction is rolled back to
+        avoid leaving an open lock on the row.
         """
         if not self.connection:
             self.connect()
@@ -741,34 +752,46 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 f"Cannot fingerprint degenerate hostname: {hostname!r}. "
                 "Run discover_and_map for this hostname first to populate a real hostname."
             )
-        cursor.execute(
-            "SELECT system_info FROM devices WHERE hostname = %s",
-            (hostname,),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError(
-                f"Hostname not in sitemap: {hostname!r}. "
-                "Run discover_and_map for this hostname first to add the device."
+
+        try:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT system_info FROM devices WHERE hostname = %s FOR UPDATE",
+                (hostname,),
             )
+            row = cursor.fetchone()
+            if row is None:
+                # No row to lock; release the empty transaction before raising.
+                self.connection.rollback()
+                raise ValueError(
+                    f"Hostname not in sitemap: {hostname!r}. "
+                    "Run discover_and_map for this hostname first to add the device."
+                )
 
-        system_info = row[0] if row[0] else {}
-        if isinstance(system_info, str):
-            system_info = json.loads(system_info)
-        stored_fp = system_info.get("fingerprint") or {}
-        merged = merge_fingerprint(stored_fp, fingerprint)
-        system_info["fingerprint"] = merged
+            system_info = row[0] if row[0] else {}
+            if isinstance(system_info, str):
+                system_info = json.loads(system_info)
+            stored_fp = system_info.get("fingerprint") or {}
+            merged = merge_fingerprint(stored_fp, fingerprint)
+            system_info["fingerprint"] = merged
 
-        # Phase 38 WR-03: do NOT bump ``last_seen`` here — fingerprint merge is
-        # NOT a discovery event. ``last_seen`` should reflect "we last heard
-        # from the device" (set by store_device); ``updated_at`` already covers
-        # "this row was touched".
-        cursor.execute(
-            "UPDATE devices SET system_info = %s, updated_at = NOW() WHERE hostname = %s",
-            (json.dumps(system_info), hostname),
-        )
-        self.connection.commit()
-        return merged
+            # Phase 38 WR-03: do NOT bump ``last_seen`` here — fingerprint merge is
+            # NOT a discovery event. ``last_seen`` should reflect "we last heard
+            # from the device" (set by store_device); ``updated_at`` already covers
+            # "this row was touched".
+            cursor.execute(
+                "UPDATE devices SET system_info = %s, updated_at = NOW() WHERE hostname = %s",
+                (json.dumps(system_info), hostname),
+            )
+            self.connection.commit()
+            return merged
+        except ValueError:
+            # ValueError already rolled back above; re-raise for the caller.
+            raise
+        except Exception:
+            # Any DB or merge error: release the row lock before propagating.
+            self.connection.rollback()
+            raise
 
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from PostgreSQL."""
