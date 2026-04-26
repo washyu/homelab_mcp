@@ -404,10 +404,21 @@ async def ssh_discover_system(
         uname_s_result = await _run_with_timeout(conn, "uname -s", cmd_name="uname-s", timed_out=timed_out_commands)
         if uname_s_result and uname_s_result.exit_status == 0 and uname_s_result.stdout:
             fingerprint_info["kernel_name"] = cast(str, uname_s_result.stdout).strip()
+        elif uname_s_result is not None and uname_s_result.exit_status != 0:
+            # Phase 38 WR-01: enroll in timed_out_commands so the response carries
+            # ``partial: True`` when the kernel-name probe fails on a host (e.g.,
+            # locked-down minimal image). Mirrors the dpkg-fingerprint pattern below.
+            if "uname-s" not in timed_out_commands:
+                timed_out_commands.append("uname-s")
 
         uname_r_result = await _run_with_timeout(conn, "uname -r", cmd_name="uname-r", timed_out=timed_out_commands)
         if uname_r_result and uname_r_result.exit_status == 0 and uname_r_result.stdout:
             fingerprint_info["kernel_version"] = cast(str, uname_r_result.stdout).strip()
+        elif uname_r_result is not None and uname_r_result.exit_status != 0:
+            # Phase 38 WR-01: enroll in timed_out_commands on non-zero exit so the
+            # response carries ``partial: True`` instead of silently dropping the field.
+            if "uname-r" not in timed_out_commands:
+                timed_out_commands.append("uname-r")
 
         # Full /etc/os-release parse for the structured fingerprint.os_name /
         # os_version fields. The legacy PRETTY_NAME-only line above stays for
@@ -431,6 +442,12 @@ async def ssh_discover_system(
                 fingerprint_info["os_name"] = parsed["NAME"]
             if parsed.get("VERSION_ID"):
                 fingerprint_info["os_version"] = parsed["VERSION_ID"]
+        elif os_release_result is not None and os_release_result.exit_status != 0:
+            # Phase 38 WR-01: enroll in timed_out_commands on non-zero exit so the
+            # response carries ``partial: True`` when /etc/os-release is unreadable
+            # (e.g., chroot or stripped image), instead of silently omitting os_name/version.
+            if "os-release-full" not in timed_out_commands:
+                timed_out_commands.append("os-release-full")
 
         # Locale-pinned dpkg digest for cross-locale reproducibility
         # (RESEARCH.md Pitfall 1: glibc strcoll() honors LC_COLLATE; the
