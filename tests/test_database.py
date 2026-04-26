@@ -676,3 +676,55 @@ def test_init_schema_triggers_phase35_migrations_on_legacy_db(tmp_path):
         assert "UNIQUE (hostname, connection_ip)" not in table_sql, "Stale composite UNIQUE not dropped on init_schema"
     finally:
         conn.close()
+
+
+def test_run_sqlite_migrations_adds_fingerprint_column_idempotently_phase38(tmp_path):
+    """Phase 38 D-08 / SC-3: ADD COLUMN fingerprint is idempotent and non-destructive."""
+    import sqlite3
+
+    from src.homelab_mcp.migration import run_sqlite_migrations
+
+    db_path = str(tmp_path / "legacy.db")
+    # Build a pre-Phase-38 schema (with usb/pci/block but no fingerprint).
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hostname TEXT NOT NULL,
+            connection_ip TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            status TEXT NOT NULL,
+            usb_devices TEXT,
+            pci_devices TEXT,
+            block_devices TEXT
+        )
+        """
+    )
+    # Insert a legacy row to confirm it survives the migration with NULL fingerprint
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status) VALUES (?, ?, ?, ?)",
+        ("legacy.local", "10.0.0.1", "2026-04-01T00:00:00", "success"),
+    )
+    conn.commit()
+    conn.close()
+
+    applied1 = run_sqlite_migrations(db_path=db_path)
+    assert "add_column_fingerprint" in applied1, applied1
+
+    # Verify column exists, legacy row still present, fingerprint is NULL.
+    conn = sqlite3.connect(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+    assert "fingerprint" in cols, cols
+    row = conn.execute(
+        "SELECT hostname, fingerprint FROM devices WHERE hostname = ?",
+        ("legacy.local",),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "legacy.local"
+    assert row[1] is None  # NULL on legacy rows — re-discovery populates
+    conn.close()
+
+    # Re-run is idempotent — no add_column_fingerprint on second call.
+    applied2 = run_sqlite_migrations(db_path=db_path)
+    assert "add_column_fingerprint" not in applied2, applied2

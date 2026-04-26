@@ -79,6 +79,17 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
             applied_migrations.append(f"add_column_{col}")
 
     # ─────────────────────────────────────────────────────────────────
+    # Phase 38 D-08: ADD COLUMN fingerprint for sitemap drift detection.
+    # Mirrors Phase 35 D-09c. Legacy rows get NULL until re-discovered.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(devices)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    if "fingerprint" not in existing_columns:
+        cursor.execute("ALTER TABLE devices ADD COLUMN fingerprint TEXT")  # noqa: S608
+        conn.commit()
+        applied_migrations.append("add_column_fingerprint")
+
+    # ─────────────────────────────────────────────────────────────────
     # Phase 35 D-02: Collapse duplicate hostnames into a single row. Keep row
     # with greatest last_seen; merge non-null values from siblings (non-null
     # wins); delete siblings. Skip degenerate hostnames ('', 'unknown', NULL)
@@ -169,6 +180,7 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
                 usb_devices TEXT,
                 pci_devices TEXT,
                 block_devices TEXT,
+                fingerprint TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
@@ -204,6 +216,7 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
             "usb_devices",
             "pci_devices",
             "block_devices",
+            "fingerprint",
             "uptime",
             "os_info",
             "error_message",

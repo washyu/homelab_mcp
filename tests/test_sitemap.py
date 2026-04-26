@@ -52,6 +52,13 @@ def sample_ssh_discovery_success():
                 "network": [{"name": "eth0", "state": "UP", "addresses": ["192.168.1.100"]}],
                 "uptime": "up 5 days, 2 hours, 30 minutes",
                 "os": "Ubuntu 22.04.3 LTS",
+                "fingerprint": {
+                    "kernel_name": "Linux",
+                    "kernel_version": "6.5.13-1-pve",
+                    "os_name": "Proxmox VE 8.2.4",
+                    "os_version": "8.2.4",
+                    "package_fingerprint": "sha256:abc123def456",
+                },
             },
         }
     )
@@ -122,6 +129,17 @@ class TestNetworkSiteMap:
         assert len(network_data) == 1
         assert network_data[0]["name"] == "eth0"
         assert network_data[0]["addresses"] == ["192.168.1.100"]
+
+    def test_parse_discovery_output_fingerprint_phase38(self, sitemap, sample_ssh_discovery_success):
+        """Phase 38 D-04c: parse_discovery_output stores fingerprint as JSON string."""
+        device = sitemap.parse_discovery_output(sample_ssh_discovery_success)
+        assert device.fingerprint is not None, "fingerprint should be populated from data['fingerprint']"
+        fp = json.loads(device.fingerprint)
+        assert fp["kernel_name"] == "Linux"
+        assert fp["kernel_version"] == "6.5.13-1-pve"
+        assert fp["os_name"] == "Proxmox VE 8.2.4"
+        assert fp["os_version"] == "8.2.4"
+        assert fp["package_fingerprint"] == "sha256:abc123def456"
 
     def test_parse_discovery_output_error(self, sitemap, sample_ssh_discovery_error):
         """Test parsing failed SSH discovery output."""
