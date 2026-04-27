@@ -80,6 +80,16 @@ def _classify_credential_failure(exc: CredentialNotFoundError, binding: str | No
     # Default: a bound row whose resolver raised — by elimination the binding
     # is stale (the real Tier-0 resolver always sets reason_hint, but be
     # defensive against fakes / future code paths that don't).
+    # WR-08 (Phase 38.1 review): log when we hit the fallback so a future
+    # code path that forgets to set reason_hint (or a flaky probe causing
+    # the wrong root-cause classification) is detectable in logs. The
+    # binding_stale recommendation may not match the true cause.
+    logger.warning(
+        "Resolver raised CredentialNotFoundError without reason_hint for "
+        "bound row (binding=%s). Defaulting to binding_stale; this indicates "
+        "a code path that should set reason_hint explicitly.",
+        binding,
+    )
     return "binding_stale"
 
 
