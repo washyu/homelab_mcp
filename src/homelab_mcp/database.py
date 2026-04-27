@@ -986,10 +986,16 @@ class PostgreSQLAdapter(DatabaseAdapter):
             self.connect()
         assert self.connection is not None
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # WR-05 (Phase 38.1 review): compare against host(connection_ip) so a
+        # row inserted with a CIDR-suffixed INET ('192.168.1.5/24') still
+        # matches when caller passes a bare IP. ::text would preserve the
+        # netmask suffix and silently miss the row, falling into the silent
+        # no-op D-01 path. host() strips any netmask. The SELECT clause keeps
+        # ::text for output stability (consumers expect plain-string IPs).
         cursor.execute(
             "SELECT id, hostname, connection_ip::text AS connection_ip, "
             "ssh_credential_id, proxmox_credential_id "
-            "FROM devices WHERE hostname = %s OR connection_ip::text = %s",
+            "FROM devices WHERE hostname = %s OR host(connection_ip) = %s",
             (hostname, hostname),
         )
         return [dict(row) for row in cursor.fetchall()]
