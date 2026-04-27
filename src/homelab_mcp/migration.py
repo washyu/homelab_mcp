@@ -42,18 +42,21 @@ def _phase_38_1_applied() -> bool:
     return bool(_load_migration_state().get(_PHASE_38_1_KEY))
 
 
-def _archive_registry_for_phase_38_1() -> pathlib.Path:
+def _archive_registry_for_phase_38_1() -> pathlib.Path | None:
     """Archive the credential registry to ``.bak.<microsecond_ts>`` (D-20 step 1).
 
-    Returns the backup path. If the registry doesn't exist, returns a synthetic
-    ``.bak.none`` path so the banner still has something to print. D-22:
-    microsecond-precision timestamp; while-loop guards against collisions
-    so an existing ``.bak.<ts>`` is never overwritten.
+    Returns the backup path, or ``None`` when the registry file does not
+    exist (no archive happened). Callers must handle the ``None`` case
+    when emitting operator-facing messages — synthesizing a fake
+    ``.bak.none`` path is misleading (WR-03).
+
+    D-22: microsecond-precision timestamp; while-loop guards against
+    collisions so an existing ``.bak.<ts>`` is never overwritten.
     """
     from .credential_store import _REGISTRY_PATH  # noqa: PLC0415
 
     if not _REGISTRY_PATH.exists():
-        return pathlib.Path(str(_REGISTRY_PATH) + ".bak.none")
+        return None
 
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     backup_path = pathlib.Path(str(_REGISTRY_PATH) + f".bak.{timestamp}")
@@ -66,19 +69,30 @@ def _archive_registry_for_phase_38_1() -> pathlib.Path:
     return backup_path
 
 
-def _print_phase_38_1_banner(backup_path: pathlib.Path) -> None:
+def _print_phase_38_1_banner(backup_path: pathlib.Path | None) -> None:
     """3-block stderr banner per Phase 38.1 D-21 (action / why / recovery).
 
     W5: block 1 explicitly names BOTH dropped tables (devices) and cleared
     FK-dependent rows (discovery_history) so operators understand the full
     side-effect surface.
+
+    WR-03: ``backup_path`` is ``None`` when no registry file existed at
+    archive time; in that case the "Archived..." line is omitted so we
+    don't point operators at a path that does not exist on disk.
     """
-    print(
-        f"Archived credential registry to {backup_path}\n"
-        "Dropped devices table (v1.7 credential-binding rollout)\n"
-        "Cleared discovery_history rows (FK-dependent on devices table)\n",
-        file=sys.stderr,
-    )
+    if backup_path is not None:
+        print(
+            f"Archived credential registry to {backup_path}\n"
+            "Dropped devices table (v1.7 credential-binding rollout)\n"
+            "Cleared discovery_history rows (FK-dependent on devices table)\n",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "Dropped devices table (v1.7 credential-binding rollout)\n"
+            "Cleared discovery_history rows (FK-dependent on devices table)\n",
+            file=sys.stderr,
+        )
     print(
         "v1.7 introduces opaque credential UUIDs binding sitemap rows to keyring entries.\n"
         "Existing registry entries don't carry UUIDs and the devices table doesn't carry\n"
@@ -192,29 +206,53 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
     # (3) stamp version. Idempotent: re-runs are no-ops once stamped (D-19).
     # ─────────────────────────────────────────────────────────────────
     if not _phase_38_1_applied():
-        # D-20 step 1: backup registry (preserve user data BEFORE any DB op).
-        backup_path = _archive_registry_for_phase_38_1()
+        # CR-01 (Phase 38.1 review): defense-in-depth gating to prevent the
+        # destructive block from firing on (a) fresh installs where init_schema
+        # just created the table, or (b) state-file deletion on an
+        # already-migrated DB (silent data loss risk). Inspect the live
+        # devices table for the binding columns; only run drop+recreate when
+        # they are genuinely missing.
+        cursor.execute("PRAGMA table_info(devices)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        devices_table_exists = bool(existing_columns)
+        bindings_already_present = (
+            "ssh_credential_id" in existing_columns and "proxmox_credential_id" in existing_columns
+        )
+        if devices_table_exists and bindings_already_present:
+            # Already migrated (state file lost or never written) — just stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        elif not devices_table_exists:
+            # Fresh install — init_schema just created an empty table OR no
+            # table exists yet; nothing to drop. Skip the banner and just stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        else:
+            # Real migration: pre-existing devices table without binding columns.
+            # D-20 step 1: backup registry (preserve user data BEFORE any DB op).
+            backup_path = _archive_registry_for_phase_38_1()
 
-        # D-20 step 2: drop devices table.
-        # W5: SQLite does NOT auto-cascade FK on DROP TABLE; explicitly
-        # delete discovery_history rows first so we don't leave dangling
-        # FK references. Banner block 1 names this side-effect explicitly.
-        cursor.execute("DELETE FROM discovery_history")
-        cursor.execute("DROP TABLE IF EXISTS devices")
-        conn.commit()
+            # D-20 step 2: drop devices table.
+            # W5/WR-09: SQLite does NOT auto-cascade FK on DROP TABLE; explicitly
+            # delete discovery_history rows first so we don't leave dangling
+            # FK references. Guard the DELETE on table existence — defense-in-depth
+            # against a future refactor that moves migration before init_schema.
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM discovery_history")
+            cursor.execute("DROP TABLE IF EXISTS devices")
+            conn.commit()
 
-        # Recreate the devices table inline so subsequent ALTER blocks have
-        # something to operate on. Mirrors database.py:197 + Plan 03's
-        # ssh_credential_id / proxmox_credential_id additions.
-        cursor.executescript(_SQLITE_RECREATE_DEVICES)
-        conn.commit()
+            # Recreate the devices table inline so subsequent ALTER blocks have
+            # something to operate on. Mirrors database.py:197 + Plan 03's
+            # ssh_credential_id / proxmox_credential_id additions.
+            cursor.executescript(_SQLITE_RECREATE_DEVICES)
+            conn.commit()
 
-        # D-20 step 3: stamp version (only after backup + drop succeeded).
-        _stamp_migration(_PHASE_38_1_KEY)
-        applied_migrations.append("phase_38_1_drop_recreate")
+            # D-20 step 3: stamp version (only after backup + drop succeeded).
+            _stamp_migration(_PHASE_38_1_KEY)
+            applied_migrations.append("phase_38_1_drop_recreate")
 
-        # D-21: 3-block stderr banner with recovery commands.
-        _print_phase_38_1_banner(backup_path)
+            # D-21: 3-block stderr banner with recovery commands.
+            _print_phase_38_1_banner(backup_path)
 
     # ─────────────────────────────────────────────────────────────────
     # Phase 38.1 R2: idempotent ALTER TABLE ADD COLUMN for the binding
@@ -502,16 +540,56 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None, *, _c
     # discovery_history.device_id, so no separate DELETE is required (W5).
     # ─────────────────────────────────────────────────────────────────
     if not _phase_38_1_applied():
-        backup_path_pg = _archive_registry_for_phase_38_1()
-        cursor.execute("DROP TABLE IF EXISTS devices CASCADE")
-        conn.commit()
+        # CR-01/CR-02 (Phase 38.1 review): defense-in-depth gating.
+        # Only run drop+recreate when binding columns are genuinely missing.
+        # Detect via information_schema.columns instead of pg_attribute so
+        # the check is portable and skip-safe on a fresh DB.
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'devices'
+            """
+        )
+        existing_columns_pg = {row[0] for row in cursor.fetchall()}
+        devices_table_exists_pg = bool(existing_columns_pg)
+        bindings_already_present_pg = (
+            "ssh_credential_id" in existing_columns_pg and "proxmox_credential_id" in existing_columns_pg
+        )
+        if devices_table_exists_pg and bindings_already_present_pg:
+            # Already migrated (state file lost) — just stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        elif not devices_table_exists_pg:
+            # Fresh install — nothing to drop. Skip banner and stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        else:
+            # Real migration: pre-existing devices table without binding columns.
+            backup_path_pg = _archive_registry_for_phase_38_1()
+            # CR-02 (Phase 38.1 review): mirror SQLite path — clear FK-dependent
+            # rows BEFORE dropping the parent. CASCADE on DROP TABLE removes the
+            # FK CONSTRAINT, not the dependent rows; without this DELETE, the
+            # discovery_history rows would survive and dangle with stale device_ids
+            # (and the banner's "Cleared discovery_history rows" line would be a lie).
+            # WR-09: guard DELETE on table existence (defense-in-depth).
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'discovery_history'
+                )
+                """
+            )
+            if cursor.fetchone()[0]:
+                cursor.execute("DELETE FROM discovery_history")
+            cursor.execute("DROP TABLE IF EXISTS devices CASCADE")
+            conn.commit()
 
-        cursor.execute(_POSTGRES_RECREATE_DEVICES)
-        conn.commit()
+            cursor.execute(_POSTGRES_RECREATE_DEVICES)
+            conn.commit()
 
-        _stamp_migration(_PHASE_38_1_KEY)
-        applied_migrations.append("phase_38_1_drop_recreate")
-        _print_phase_38_1_banner(backup_path_pg)
+            _stamp_migration(_PHASE_38_1_KEY)
+            applied_migrations.append("phase_38_1_drop_recreate")
+            _print_phase_38_1_banner(backup_path_pg)
 
     # ─────────────────────────────────────────────────────────────────
     # Phase 38.1 R2 (Postgres): idempotent ADD COLUMN IF NOT EXISTS for
