@@ -35,6 +35,7 @@ from .log_filter import sanitize_error
 from .proxmox_api import (
     CredentialNotFoundError,
     get_proxmox_client,
+    get_resolution_telemetry,
     resolve_proxmox_credentials,
 )
 
@@ -54,9 +55,7 @@ _EMPTY_SCAN_GUIDANCE = (
 )
 
 
-def _classify_credential_failure(
-    exc: CredentialNotFoundError, binding: str | None
-) -> str:
+def _classify_credential_failure(exc: CredentialNotFoundError, binding: str | None) -> str:
     """Map (CredentialNotFoundError, binding-context) → reason enum (D-08).
 
     Reads the ``.reason_hint`` attribute set by the resolver Tier-0 path
@@ -221,93 +220,113 @@ async def scan_drift(
         # These are legitimate sitemap rows for failed discoveries / non-Proxmox
         # infrastructure. Routing to not_eligible (instead of silently skipping)
         # makes the row visible to the user with a recovery pointer.
-        if (
-            hostname is None
-            or hostname in ("", "unknown")
-            or row.get("status") == "error"
-        ):
-            not_eligible.append({
-                "hostname": hostname or "",
-                "connection_ip": row.get("connection_ip", ""),
-                "scope": "unknown",
-                "reason": "degenerate",
-                "message": _reason_message(
-                    "degenerate", hostname or "<empty>", "proxmox"
-                ),
-            })
+        if hostname is None or hostname in ("", "unknown") or row.get("status") == "error":
+            not_eligible.append(
+                {
+                    "hostname": hostname or "",
+                    "connection_ip": row.get("connection_ip", ""),
+                    "scope": "unknown",
+                    "reason": "degenerate",
+                    "message": _reason_message("degenerate", hostname or "<empty>", "proxmox"),
+                }
+            )
         else:
             # Phase 38.1 R6: pass binding UUID to resolver. When binding is None,
             # resolver falls through to Tier-1/Tier-2 (cluster walk handles
             # cluster-served rows per D-09).
             try:
                 client = await get_proxmox_client(
-                    host=hostname, session=session, credential_id=binding,
+                    host=hostname,
+                    session=session,
+                    credential_id=binding,
                 )
             except CredentialNotFoundError as exc:
                 reason = _classify_credential_failure(exc, binding)
-                not_eligible.append({
-                    "hostname": hostname,
-                    "connection_ip": row.get("connection_ip", ""),
-                    "scope": "unknown",
-                    "reason": reason,
-                    "message": _reason_message(reason, hostname, "proxmox"),
-                })
-            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-                # Resolver-during-cluster-walk failure — surface as unreachable
-                unreachable.append({
-                    "hostname": hostname,
-                    "connection_ip": row.get("connection_ip", ""),
-                    "scope": "unknown",
-                    "cluster_name": None,
-                    "status": "unreachable",
-                    "error": sanitize_error(exc),
-                    "scan_timestamp": scan_timestamp,
-                })
-            else:
-                # Capture (scope, cluster_name) telemetry — second resolver call
-                # hits _HOST_CLUSTER_CACHE so cost is microseconds. Pass the same
-                # binding so Tier-0 short-circuit fires when present.
-                try:
-                    _token, scope, cluster_name = await resolve_proxmox_credentials(
-                        hostname, session=session, credential_id=binding,
-                    )
-                except CredentialNotFoundError as exc:
-                    # Defensive — should not happen after get_proxmox_client succeeded.
-                    # Route to not_eligible (NOT continue) per D-15 invariant.
-                    reason = _classify_credential_failure(exc, binding)
-                    not_eligible.append({
+                not_eligible.append(
+                    {
                         "hostname": hostname,
                         "connection_ip": row.get("connection_ip", ""),
                         "scope": "unknown",
                         "reason": reason,
                         "message": _reason_message(reason, hostname, "proxmox"),
-                    })
+                    }
+                )
+            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                # Resolver-during-cluster-walk failure — surface as unreachable
+                unreachable.append(
+                    {
+                        "hostname": hostname,
+                        "connection_ip": row.get("connection_ip", ""),
+                        "scope": "unknown",
+                        "cluster_name": None,
+                        "status": "unreachable",
+                        "error": sanitize_error(exc),
+                        "scan_timestamp": scan_timestamp,
+                    }
+                )
+            else:
+                # WR-04 (Phase 38.1 review): use the resolution telemetry cache
+                # populated by resolve_proxmox_credentials on the just-completed
+                # successful resolution. Avoids re-invoking the resolver (which
+                # on flaky keyring backends could fail the second call and
+                # mis-route a perfectly reachable host into not_eligible).
+                # Fall back to a fresh resolver call only when the cache is
+                # cold (defensive — should not happen since get_proxmox_client
+                # just populated it via the same code path).
+                telemetry = get_resolution_telemetry(hostname, binding)
+                resolver_exc: CredentialNotFoundError | None = None
+                if telemetry is not None:
+                    scope, cluster_name = telemetry
+                else:
+                    try:
+                        _token, scope, cluster_name = await resolve_proxmox_credentials(
+                            hostname,
+                            session=session,
+                            credential_id=binding,
+                        )
+                    except CredentialNotFoundError as exc:
+                        resolver_exc = exc
+                if resolver_exc is not None:
+                    # Defensive — should not happen after get_proxmox_client succeeded.
+                    # Route to not_eligible (NOT continue) per D-15 invariant.
+                    reason = _classify_credential_failure(resolver_exc, binding)
+                    not_eligible.append(
+                        {
+                            "hostname": hostname,
+                            "connection_ip": row.get("connection_ip", ""),
+                            "scope": "unknown",
+                            "reason": reason,
+                            "message": _reason_message(reason, hostname, "proxmox"),
+                        }
+                    )
                 else:
                     try:
                         status = await client.get("/cluster/status")
                         if not isinstance(status, list):
-                            raise ValueError(
-                                f"unexpected /cluster/status payload type: {type(status).__name__}"
-                            )
-                        probed_ok.append({
-                            "hostname": hostname,
-                            "connection_ip": row.get("connection_ip", ""),
-                            "scope": scope,
-                            "cluster_name": cluster_name,
-                            "status": "probed-ok",
-                            "error": None,
-                            "scan_timestamp": scan_timestamp,
-                        })
+                            raise ValueError(f"unexpected /cluster/status payload type: {type(status).__name__}")
+                        probed_ok.append(
+                            {
+                                "hostname": hostname,
+                                "connection_ip": row.get("connection_ip", ""),
+                                "scope": scope,
+                                "cluster_name": cluster_name,
+                                "status": "probed-ok",
+                                "error": None,
+                                "scan_timestamp": scan_timestamp,
+                            }
+                        )
                     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-                        unreachable.append({
-                            "hostname": hostname,
-                            "connection_ip": row.get("connection_ip", ""),
-                            "scope": scope,
-                            "cluster_name": cluster_name,
-                            "status": "unreachable",
-                            "error": sanitize_error(exc),
-                            "scan_timestamp": scan_timestamp,
-                        })
+                        unreachable.append(
+                            {
+                                "hostname": hostname,
+                                "connection_ip": row.get("connection_ip", ""),
+                                "scope": scope,
+                                "cluster_name": cluster_name,
+                                "status": "unreachable",
+                                "error": sanitize_error(exc),
+                                "scan_timestamp": scan_timestamp,
+                            }
+                        )
 
     # D-07: counts sub-dict mirrors bucket sizes.
     counts: dict[str, int] = {

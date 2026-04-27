@@ -21,6 +21,30 @@ logger = logging.getLogger(__name__)
 # D-05a: in-memory cache for successful host→cluster_name mappings. Process-lifetime only.
 _HOST_CLUSTER_CACHE: dict[str, str] = {}
 
+# WR-04 (Phase 38.1 review): in-memory cache for the (scope, cluster_name)
+# telemetry of the most recent successful resolution per (host, credential_id).
+# Drift's second resolver call after get_proxmox_client succeeds previously
+# re-executed Tier-0 / Tier-1 logic (registry load + keyring round-trip) on
+# every probe — on flaky keyring backends that succeeded the first call but
+# failed the second, drift would mis-route a perfectly reachable host into
+# not_eligible. Populating this cache from EVERY successful tier (not just
+# Tier-2 cluster-walk hits like _HOST_CLUSTER_CACHE) lets drift cheaply
+# recover the telemetry without re-invoking the resolver.
+_RESOLUTION_TELEMETRY_CACHE: dict[tuple[str, str | None], tuple[Literal["node", "cluster"], str | None]] = {}
+
+
+def get_resolution_telemetry(
+    host: str,
+    credential_id: str | None = None,
+) -> tuple[Literal["node", "cluster"], str | None] | None:
+    """Return the cached (scope, cluster_name) for a previously-resolved host.
+
+    Returns ``None`` when no cache entry exists. Used by drift_detection.scan_drift
+    to avoid a second ``resolve_proxmox_credentials`` call when telemetry was
+    already captured during the first resolution. WR-04 (Phase 38.1 review).
+    """
+    return _RESOLUTION_TELEMETRY_CACHE.get((host, credential_id))
+
 
 class ProxmoxAPIClient:
     """Client for interacting with Proxmox VE API."""
@@ -294,6 +318,8 @@ async def resolve_proxmox_credentials(
         )
         # Narrow scope_str back to Literal for the function return type.
         scope_literal: Literal["node", "cluster"] = "cluster" if scope_str == "cluster" else "node"
+        # WR-04: populate telemetry cache for drift's second-call optimization.
+        _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = (scope_literal, entry_cluster_name)
         return (f"{entry['username']}={secret}", scope_literal, entry_cluster_name)
 
     entries = list_credentials(credential_type="proxmox")
@@ -316,6 +342,8 @@ async def resolve_proxmox_credentials(
         else:
             api_token = f"{entry['username']}={secret}"
             logger.debug("proxmox resolve host=%s source=node", host)
+            # WR-04: populate telemetry cache for drift's second-call optimization.
+            _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = ("node", None)
             return (api_token, "node", None)
     logger.debug("proxmox resolve host=%s tier=node MISS", host)
 
@@ -339,6 +367,8 @@ async def resolve_proxmox_credentials(
                         host,
                         cached_cluster,
                     )
+                    # WR-04: populate telemetry cache.
+                    _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = ("cluster", cached_cluster)
                     return (api_token, "cluster", cached_cluster)
                 # Desync on cached entry → fall through to re-walk.
                 break
@@ -394,6 +424,8 @@ async def resolve_proxmox_credentials(
             _HOST_CLUSTER_CACHE[host] = cluster_name
             logger.debug("proxmox resolve host=%s tier=cluster MATCH cluster=%s", host, cluster_name)
             logger.debug("proxmox resolve host=%s source=cluster", host)
+            # WR-04: populate telemetry cache.
+            _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = ("cluster", cluster_name)
             return (candidate_token, "cluster", cluster_name)
 
     # Terminal: no credential anywhere (D-05, D-15).
