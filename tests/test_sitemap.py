@@ -888,3 +888,40 @@ def test_purge_failed_discoveries_handler_dry_run_default_false(tmp_path, monkey
     payload2 = json.loads(result2["content"][0]["text"])
     assert payload2["purged_count"] == 0
     assert payload2["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R7: eligibility field round-trip via NetworkSiteMap (Task 2 TDD)
+# ---------------------------------------------------------------------------
+
+
+def test_eligibility_field_phase381(temp_db):
+    """Phase 38.1 R7/D-10: NetworkSiteMap.get_sitemap rows must carry eligibility:{ssh, proxmox}."""
+    import asyncio
+    from datetime import datetime
+
+    from src.homelab_mcp.database import SQLiteAdapter
+
+    sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+    # Store a device directly via the adapter
+    adapter: SQLiteAdapter = sitemap.db  # type: ignore[assignment]
+    device_id = adapter.store_device({
+        "hostname": "test-node",
+        "connection_ip": "10.1.1.1",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    })
+
+    # With no credential binding both flags should be False
+    devices = adapter.get_all_devices()
+    assert len(devices) == 1
+    device = devices[0]
+    assert "eligibility" in device, "get_all_devices must emit eligibility key"
+    assert device["eligibility"]["ssh"] is False
+    assert device["eligibility"]["proxmox"] is False
+
+    # After binding ssh the flag should flip
+    adapter.set_device_credential_binding(device_id, "ssh", "some-uuid")
+    devices_after = adapter.get_all_devices()
+    assert devices_after[0]["eligibility"]["ssh"] is True
+    assert devices_after[0]["eligibility"]["proxmox"] is False

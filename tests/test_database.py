@@ -1069,3 +1069,208 @@ def test_run_sqlite_migrations_adds_fingerprint_column_idempotently_phase38(tmp_
     # Re-run is idempotent — no add_column_fingerprint on second call.
     applied2 = run_sqlite_migrations(db_path=db_path)
     assert "add_column_fingerprint" not in applied2, applied2
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R2: credential_id columns on devices (Task 1 TDD — RED)
+# ---------------------------------------------------------------------------
+
+
+def test_devices_has_credential_id_columns_phase381_sqlite():
+    """Phase 38.1 R2: fresh SQLite schema must have ssh_credential_id + proxmox_credential_id."""
+    import sqlite3
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+    assert adapter.connection is not None
+    cols = {row[1] for row in adapter.connection.execute("PRAGMA table_info(devices)").fetchall()}
+    assert "ssh_credential_id" in cols, f"ssh_credential_id missing from devices; cols={cols}"
+    assert "proxmox_credential_id" in cols, f"proxmox_credential_id missing from devices; cols={cols}"
+    adapter.close()
+
+
+def test_set_device_credential_binding_writes_column_sqlite():
+    """Phase 38.1 R3/R4/R8/R9: set_device_credential_binding writes correct column + validates type."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    # Insert a device
+    device_id = adapter.store_device({
+        "hostname": "pve1",
+        "connection_ip": "10.0.0.1",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    })
+
+    # Write ssh binding
+    adapter.set_device_credential_binding(device_id, "ssh", "test-uuid-001")
+    assert adapter.connection is not None
+    row = adapter.connection.execute(
+        "SELECT ssh_credential_id, proxmox_credential_id FROM devices WHERE id = ?",
+        (device_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "test-uuid-001", f"Expected test-uuid-001, got {row[0]}"
+    assert row[1] is None, f"proxmox_credential_id should still be NULL, got {row[1]}"
+
+    # Write proxmox binding
+    adapter.set_device_credential_binding(device_id, "proxmox", "prox-uuid-002")
+    row = adapter.connection.execute(
+        "SELECT ssh_credential_id, proxmox_credential_id FROM devices WHERE id = ?",
+        (device_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "test-uuid-001", "ssh_credential_id must not change"
+    assert row[1] == "prox-uuid-002", f"Expected prox-uuid-002, got {row[1]}"
+
+    # Null-the binding (unlink)
+    adapter.set_device_credential_binding(device_id, "ssh", None)
+    row = adapter.connection.execute(
+        "SELECT ssh_credential_id FROM devices WHERE id = ?",
+        (device_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] is None, "Null write must clear the binding"
+
+    # Closed-set enforcement
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="credential_type must be"):
+        adapter.set_device_credential_binding(device_id, "invalid", "some-uuid")
+
+    adapter.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R7: eligibility flatten on get_all_devices (Task 2 TDD — RED)
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_devices_includes_eligibility_field_sqlite():
+    """Phase 38.1 R7/D-10: get_all_devices must emit eligibility:{ssh, proxmox} per row."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    device_id = adapter.store_device({
+        "hostname": "node1",
+        "connection_ip": "10.0.0.2",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    })
+
+    # No bindings — both eligibility fields should be False
+    devices = adapter.get_all_devices()
+    assert len(devices) == 1
+    device = devices[0]
+    assert "eligibility" in device, "get_all_devices must emit eligibility key"
+    eligibility = device["eligibility"]
+    assert isinstance(eligibility, dict), f"eligibility must be a dict, got {type(eligibility)}"
+    assert "ssh" in eligibility, "eligibility must have 'ssh' key"
+    assert "proxmox" in eligibility, "eligibility must have 'proxmox' key"
+    assert eligibility["ssh"] is False, "ssh eligibility must be False when no binding"
+    assert eligibility["proxmox"] is False, "proxmox eligibility must be False when no binding"
+
+    # Add ssh binding — ssh eligibility should become True
+    adapter.set_device_credential_binding(device_id, "ssh", "uuid-abc")
+    devices = adapter.get_all_devices()
+    eligibility = devices[0]["eligibility"]
+    assert eligibility["ssh"] is True, "ssh eligibility must be True when binding present"
+    assert eligibility["proxmox"] is False, "proxmox eligibility must stay False"
+
+    # Add proxmox binding too
+    adapter.set_device_credential_binding(device_id, "proxmox", "uuid-xyz")
+    devices = adapter.get_all_devices()
+    eligibility = devices[0]["eligibility"]
+    assert eligibility["ssh"] is True
+    assert eligibility["proxmox"] is True
+
+    adapter.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 Blocker B2: typed adapter methods (Task 3 TDD — RED)
+# ---------------------------------------------------------------------------
+
+
+def test_find_devices_by_hostname_or_ip_phase381_sqlite():
+    """Phase 38.1 R4/R8 (Blocker B2): find_devices_by_hostname_or_ip returns rows for hostname or IP match."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    device_id = adapter.store_device({
+        "hostname": "pve-node",
+        "connection_ip": "192.168.1.50",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    })
+
+    # Match by hostname
+    results = adapter.find_devices_by_hostname_or_ip("pve-node")
+    assert len(results) == 1, f"Expected 1 result, got {len(results)}"
+    assert results[0]["hostname"] == "pve-node"
+    assert results[0]["id"] == device_id
+    assert "ssh_credential_id" in results[0]
+    assert "proxmox_credential_id" in results[0]
+    assert results[0]["ssh_credential_id"] is None
+
+    # Match by IP
+    results_ip = adapter.find_devices_by_hostname_or_ip("192.168.1.50")
+    assert len(results_ip) == 1, f"Expected 1 result by IP, got {len(results_ip)}"
+    assert results_ip[0]["id"] == device_id
+
+    # No match
+    no_match = adapter.find_devices_by_hostname_or_ip("nonexistent")
+    assert no_match == [], f"Expected empty list, got {no_match}"
+
+    adapter.close()
+
+
+def test_bulk_null_credential_binding_phase381_sqlite():
+    """Phase 38.1 R9 (Blocker B2): bulk_null_credential_binding nulls columns + returns affected hostnames."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    id1 = adapter.store_device({
+        "hostname": "alpha",
+        "connection_ip": "10.0.0.1",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    })
+    id2 = adapter.store_device({
+        "hostname": "beta",
+        "connection_ip": "10.0.0.2",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    })
+
+    # Set up bindings
+    adapter.set_device_credential_binding(id1, "ssh", "uuid-to-remove")
+    adapter.set_device_credential_binding(id2, "ssh", "uuid-to-remove")
+
+    # Bulk null
+    affected = adapter.bulk_null_credential_binding(["uuid-to-remove"], "ssh")
+    assert set(affected) == {"alpha", "beta"}, f"Expected alpha and beta, got {affected}"
+
+    # Verify nulled
+    assert adapter.connection is not None
+    rows = adapter.connection.execute("SELECT hostname, ssh_credential_id FROM devices ORDER BY hostname").fetchall()
+    for row in rows:
+        assert row[1] is None, f"ssh_credential_id for {row[0]} must be NULL after bulk_null"
+
+    # Empty input → no-op, returns []
+    result_empty = adapter.bulk_null_credential_binding([], "ssh")
+    assert result_empty == [], f"Expected [] for empty input, got {result_empty}"
+
+    # Closed-set enforcement
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="credential_type must be"):
+        adapter.bulk_null_credential_binding(["x"], "invalid")
+
+    adapter.close()
