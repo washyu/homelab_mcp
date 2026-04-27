@@ -421,14 +421,10 @@ class SQLiteAdapter(DatabaseAdapter):
         self.connection.commit()
         return merged
 
-    def set_device_credential_binding(
-        self, device_id: int, credential_type: str, credential_id: str | None
-    ) -> None:
+    def set_device_credential_binding(self, device_id: int, credential_type: str, credential_id: str | None) -> None:
         """Phase 38.1 R3/R4/R8/R9 — see DatabaseAdapter.set_device_credential_binding."""
         if credential_type not in ("ssh", "proxmox"):
-            raise ValueError(
-                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
-            )
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
         if not self.connection:
             self.connect()
         assert self.connection is not None
@@ -456,13 +452,13 @@ class SQLiteAdapter(DatabaseAdapter):
         return [dict(row) for row in cursor.fetchall()]
 
     def bulk_null_credential_binding(
-        self, credential_ids: list[str], credential_type: str,
+        self,
+        credential_ids: list[str],
+        credential_type: str,
     ) -> list[str]:
         """SQLite implementation. See DatabaseAdapter.bulk_null_credential_binding."""
         if credential_type not in ("ssh", "proxmox"):
-            raise ValueError(
-                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
-            )
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
         if not credential_ids:
             return []  # no-op on empty input
         if not self.connection:
@@ -470,23 +466,37 @@ class SQLiteAdapter(DatabaseAdapter):
         assert self.connection is not None
         cursor = self.connection.cursor()
         column = f"{credential_type}_credential_id"  # closed set
-        # SQLite-side placeholder construction stays internal to the adapter —
-        # never leaks to server.py (Blocker B2 mitigation).
-        placeholders = ",".join("?" * len(credential_ids))
-        # Step 1: capture affected hostnames BEFORE the UPDATE
-        cursor.execute(
-            f"SELECT hostname FROM devices WHERE {column} IN ({placeholders})",  # noqa: S608
-            tuple(credential_ids),
-        )
-        affected_hostnames = [row["hostname"] for row in cursor.fetchall()]
+
+        # WR-02 (Phase 38.1 review): chunk to stay safely under SQLite's
+        # SQLITE_MAX_VARIABLE_NUMBER limit (default 999 on older builds,
+        # 32766 on newer). 500 is a conservative cap that works on all
+        # supported SQLite versions and leaves headroom for the trailing
+        # updated_at parameter on the UPDATE.
+        chunk_size = 500
+        affected_hostnames: list[str] = []
+        now_iso = datetime.now().isoformat()
+        for start in range(0, len(credential_ids), chunk_size):
+            chunk = credential_ids[start : start + chunk_size]
+            # SQLite-side placeholder construction stays internal to the adapter —
+            # never leaks to server.py (Blocker B2 mitigation).
+            placeholders = ",".join("?" * len(chunk))
+            # Step 1: capture affected hostnames BEFORE the UPDATE
+            cursor.execute(
+                f"SELECT hostname FROM devices WHERE {column} IN ({placeholders})",  # noqa: S608
+                tuple(chunk),
+            )
+            chunk_hostnames = [row["hostname"] for row in cursor.fetchall()]
+            if not chunk_hostnames:
+                continue
+            # Step 2: null the binding
+            cursor.execute(
+                f"UPDATE devices SET {column} = NULL, updated_at = ? "  # noqa: S608
+                f"WHERE {column} IN ({placeholders})",
+                (now_iso, *chunk),
+            )
+            affected_hostnames.extend(chunk_hostnames)
         if not affected_hostnames:
             return []
-        # Step 2: null the binding
-        cursor.execute(
-            f"UPDATE devices SET {column} = NULL, updated_at = ? "  # noqa: S608
-            f"WHERE {column} IN ({placeholders})",
-            (datetime.now().isoformat(), *credential_ids),
-        )
         self.connection.commit()
         return affected_hostnames
 
@@ -943,14 +953,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
             self.connection.rollback()
             raise
 
-    def set_device_credential_binding(
-        self, device_id: int, credential_type: str, credential_id: str | None
-    ) -> None:
+    def set_device_credential_binding(self, device_id: int, credential_type: str, credential_id: str | None) -> None:
         """Phase 38.1 R3/R4/R8/R9 — see DatabaseAdapter.set_device_credential_binding."""
         if credential_type not in ("ssh", "proxmox"):
-            raise ValueError(
-                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
-            )
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
         if not self.connection:
             self.connect()
         assert self.connection is not None
@@ -989,13 +995,13 @@ class PostgreSQLAdapter(DatabaseAdapter):
         return [dict(row) for row in cursor.fetchall()]
 
     def bulk_null_credential_binding(
-        self, credential_ids: list[str], credential_type: str,
+        self,
+        credential_ids: list[str],
+        credential_type: str,
     ) -> list[str]:
         """PostgreSQL implementation. See DatabaseAdapter.bulk_null_credential_binding."""
         if credential_type not in ("ssh", "proxmox"):
-            raise ValueError(
-                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
-            )
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
         if not credential_ids:
             return []
         if not self.connection:
