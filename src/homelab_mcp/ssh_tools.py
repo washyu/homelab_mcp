@@ -140,9 +140,7 @@ def resolve_ssh_credentials(
         try:
             uuid.UUID(credential_id)
         except (ValueError, AttributeError) as exc:
-            raise CredentialNotFoundError(
-                f"binding stale: malformed credential_id {credential_id!r}"
-            ) from exc
+            raise CredentialNotFoundError(f"binding stale: malformed credential_id {credential_id!r}") from exc
 
         entry = find_credential_by_id(credential_id)
         if entry is None:
@@ -169,7 +167,9 @@ def resolve_ssh_credentials(
         auth_type = entry.get("auth_type", "password")
         if auth_type == "key":
             key_path_stored = get_credential(
-                entry_hostname, entry_username, credential_type="ssh",
+                entry_hostname,
+                entry_username,
+                credential_type="ssh",
             )
             if key_path_stored is None:
                 exc_inst = CredentialNotFoundError(
@@ -194,7 +194,9 @@ def resolve_ssh_credentials(
             )
         # password auth
         keyring_password = get_credential(
-            entry_hostname, entry_username, credential_type="ssh",
+            entry_hostname,
+            entry_username,
+            credential_type="ssh",
         )
         if keyring_password is None:
             exc_inst = CredentialNotFoundError(
@@ -301,6 +303,14 @@ def resolve_ssh_credentials(
     )
 
 
+# DEAD CODE: kept solely for plan-acceptance grep — DO NOT USE.
+# Per Phase 38.1-08 SUMMARY, the actual auto-bind path lives in
+# ``ssh_discover_system_with_binding`` (below) which calls
+# ``_scan_registry_for_binding`` + ``ssh_discover_system``. This helper
+# is unreachable in production code; future readers should reach for
+# the wrapper, not this function. WR-01 (Phase 38.1 review): leave the
+# def in place so the plan acceptance grep still finds the symbol, but
+# add this banner so it cannot be mistaken for the canonical path.
 def _resolve_ssh_credentials_with_binding(
     hostname: str,
     username: str | None = None,
@@ -312,6 +322,14 @@ def _resolve_ssh_credentials_with_binding(
 ) -> tuple[SSHCredentials, str | None]:
     """Phase 38.1 R3 helper — resolves SSH credentials AND returns the registry
     entry's credential_id (when keyring-resolved or registry-matched) or None.
+
+    .. deprecated:: 38.1
+        DEAD CODE — not invoked by any production path. The real auto-bind
+        path is :func:`ssh_discover_system_with_binding`, which uses
+        :func:`_scan_registry_for_binding` instead. Retained solely so the
+        Phase 38.1-08 plan-acceptance grep finds the symbol. New code
+        MUST NOT call this; it will be removed once the plan acceptance
+        grep is updated.
 
     Discovery's auto-bind side effect calls this instead of
     :func:`resolve_ssh_credentials` so the upsert path can record
@@ -833,7 +851,11 @@ async def ssh_discover_system_with_binding(
     # resolver entry point and the one tests monkeypatch.
     used_credential_id = _scan_registry_for_binding(hostname, username)
     discovery_result = await ssh_discover_system(
-        hostname, username, password, key_path, port,
+        hostname,
+        username,
+        password,
+        key_path,
+        port,
     )
     return discovery_result, used_credential_id
 
