@@ -24,6 +24,7 @@ from pydantic import AnyUrl
 from .config import MCPConfig, get_config
 from .credential_store import (
     delete_credential,
+    find_credential_by_id,
     list_credentials,
     register_credential,
     store_credential,
@@ -806,9 +807,20 @@ def _cmd_credentials_add(args: argparse.Namespace) -> None:
 
 
 def _cmd_credentials_list(args: argparse.Namespace) -> None:
-    """Handle `homelab-mcp credentials list [--type ssh|proxmox]`. Groups output by scope (D-08)."""
+    """Handle `homelab-mcp credentials list [--type ssh|proxmox] [--json]`.
+
+    Groups tabular output by scope (D-08). When ``--json`` is passed, emits
+    a JSON array of every entry (including ``credential_id``) so machine
+    consumers (D-23 / Phase 38.1) can discover UUIDs without scraping the
+    tabular view. Default tabular output omits ``credential_id`` to keep the
+    user-facing surface UUID-free (D-23).
+    """
     credential_type: str = args.credential_type
     entries = list_credentials(credential_type=credential_type)
+    # Phase 38.1 D-23: --json emits credential_ids; tabular default does not.
+    if getattr(args, "json", False):
+        print(json.dumps(entries, indent=2))
+        return
     if not entries:
         print(f"No stored {credential_type} credentials.")
         return
@@ -897,6 +909,94 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
         delete_credential(entry["hostname"], entry["username"], credential_type=credential_type)
     unregister_credential(hostname, credential_type=credential_type)
     print(f"Removed {credential_type} credential for {hostname}")
+
+
+def _cmd_credentials_link(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp credentials link <hostname> <credential_id> --type ...`.
+
+    Phase 38.1 R8 / D-24..D-25: manually bind a sitemap row to a credential by UUID.
+    Use when auto-bind didn't fit (multi-match, non-TTY, etc.). Find UUIDs via
+    ``credentials list --json``.
+
+    Adapter access goes through the ``set_device_credential_binding`` server-module
+    wrapper, which delegates to the typed adapter method (Blocker B2 mitigation).
+    """
+    import sys  # noqa: PLC0415
+
+    entry = find_credential_by_id(args.credential_id)
+    if entry is None:
+        print(
+            f"Error: credential_id {args.credential_id} not found in registry. "
+            f"Run `homelab-mcp credentials list --type {args.credential_type} --json` "
+            f"to find the right UUID.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    # D-25: actionable type-mismatch error.
+    if entry.get("credential_type") != args.credential_type:
+        print(
+            f"Error: credential {args.credential_id} is type="
+            f"{entry.get('credential_type')!r}, but --type {args.credential_type} "
+            f"was requested. Pass --type {entry.get('credential_type')}, or use a "
+            f"{args.credential_type} credential.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    rows = get_sitemap_rows_for_hostname(args.hostname)
+    # Filter to exact-hostname matches only (link is hostname-precise, not
+    # hostname-OR-ip; auto-bind is the broader matcher).
+    rows = [r for r in rows if r.get("hostname") == args.hostname]
+    if not rows:
+        print(
+            f"Error: no sitemap row found for hostname {args.hostname!r}. "
+            f"Run `homelab-mcp discover_and_map ...` first.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if len(rows) > 1:
+        print(
+            f"Error: multiple sitemap rows match hostname {args.hostname!r}. "
+            f"Use a more specific identifier or fix the duplication via "
+            f"purge_failed_discoveries.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    set_device_credential_binding(
+        rows[0]["hostname"], args.credential_type, args.credential_id,
+    )
+    print(f"Linked {args.hostname} → {args.credential_id} ({args.credential_type})")
+
+
+def _cmd_credentials_unlink(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp credentials unlink <hostname> --type ...`.
+
+    Phase 38.1 R8: clear a sitemap row's credential binding. The credential itself
+    remains in the registry; only the sitemap-side reference is cleared.
+
+    Adapter access goes through the ``set_device_credential_binding`` server-module
+    wrapper, which delegates to the typed adapter method (Blocker B2 mitigation).
+    """
+    import sys  # noqa: PLC0415
+
+    rows = get_sitemap_rows_for_hostname(args.hostname)
+    rows = [r for r in rows if r.get("hostname") == args.hostname]
+    if not rows:
+        print(
+            f"Error: no sitemap row found for hostname {args.hostname!r}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if len(rows) > 1:
+        print(
+            f"Error: multiple sitemap rows match hostname {args.hostname!r}. "
+            f"Use a more specific identifier or fix the duplication.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    set_device_credential_binding(
+        rows[0]["hostname"], args.credential_type, None,
+    )
+    print(f"Unlinked {args.hostname} ({args.credential_type})")
 
 
 def _run_stdio_wrapper(args: argparse.Namespace) -> None:
@@ -1065,9 +1165,17 @@ Credential management (OS keyring):
     )
     add_p.set_defaults(func=_cmd_credentials_add)
 
-    # credentials list [--type ssh|proxmox]
+    # credentials list [--type ssh|proxmox] [--json]
     list_p = cred_sub.add_parser("list", help="List stored credential hostnames")
     list_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
+    list_p.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "Emit JSON array of all entries including credential_id "
+            "(Phase 38.1 D-23). Default tabular view omits credential_id."
+        ),
+    )
     list_p.set_defaults(func=_cmd_credentials_list)
 
     # credentials remove [<hostname>] [--type ssh|proxmox] [--scope SCOPE]
@@ -1092,6 +1200,44 @@ Credential management (OS keyring):
         ),
     )
     remove_p.set_defaults(func=_cmd_credentials_remove)
+
+    # credentials link <hostname> <credential_id> --type {ssh,proxmox} (Phase 38.1 R8 / D-24)
+    link_p = cred_sub.add_parser(
+        "link",
+        help="Manually bind a sitemap row to a credential by UUID (Phase 38.1 R8 / D-24)",
+        description=(
+            "Manually bind a sitemap row to a credential UUID. Use when "
+            "auto-bind didn't fit (multi-match, non-TTY, etc.). Find UUIDs via "
+            "`credentials list --json`."
+        ),
+    )
+    link_p.add_argument("hostname", help="Sitemap row hostname")
+    link_p.add_argument("credential_id", help="Credential UUID from `credentials list --json`")
+    link_p.add_argument(
+        "--type",
+        choices=["ssh", "proxmox"],
+        required=True,
+        dest="credential_type",
+    )
+    link_p.set_defaults(func=_cmd_credentials_link)
+
+    # credentials unlink <hostname> --type {ssh,proxmox} (Phase 38.1 R8)
+    unlink_p = cred_sub.add_parser(
+        "unlink",
+        help="Clear a sitemap row's credential binding (Phase 38.1 R8)",
+        description=(
+            "Null the credential binding on a sitemap row. The credential itself "
+            "remains in the registry; only the sitemap-side reference is cleared."
+        ),
+    )
+    unlink_p.add_argument("hostname", help="Sitemap row hostname")
+    unlink_p.add_argument(
+        "--type",
+        choices=["ssh", "proxmox"],
+        required=True,
+        dest="credential_type",
+    )
+    unlink_p.set_defaults(func=_cmd_credentials_unlink)
 
     args = parser.parse_args()
     getattr(args, "func", _run_stdio_wrapper)(args)
