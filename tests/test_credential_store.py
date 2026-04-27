@@ -134,16 +134,19 @@ def test_register_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
     register_credential("host1", "user1", credential_type="ssh")
     entries = list_credentials(credential_type="ssh")
-    assert entries == [
-        {
-            "hostname": "host1",
-            "username": "user1",
-            "credential_type": "ssh",
-            "auth_type": "password",
-            "scope": "node",
-            "cluster_name": "",
-        }
-    ]
+    assert len(entries) == 1
+    entry = dict(entries[0])
+    # Phase 38.1 R1: credential_id is now a UUIDv4 — pop it for the stable-field assertion.
+    cred_id = entry.pop("credential_id", None)
+    assert cred_id is not None, "credential_id must be present (Phase 38.1 R1)"
+    assert entry == {
+        "hostname": "host1",
+        "username": "user1",
+        "credential_type": "ssh",
+        "auth_type": "password",
+        "scope": "node",
+        "cluster_name": "",
+    }
 
 
 def test_unregister_removes_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,27 +206,29 @@ def test_list_filters_by_type(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     register_credential("ssh-host", "ssh-user", credential_type="ssh")
     register_credential("px-host", "px-user", credential_type="proxmox")
     ssh_entries = list_credentials(credential_type="ssh")
-    assert ssh_entries == [
-        {
-            "hostname": "ssh-host",
-            "username": "ssh-user",
-            "credential_type": "ssh",
-            "auth_type": "password",
-            "scope": "node",
-            "cluster_name": "",
-        }
-    ]
+    assert len(ssh_entries) == 1
+    ssh_entry = dict(ssh_entries[0])
+    ssh_entry.pop("credential_id", None)  # Phase 38.1 R1: dynamic UUID
+    assert ssh_entry == {
+        "hostname": "ssh-host",
+        "username": "ssh-user",
+        "credential_type": "ssh",
+        "auth_type": "password",
+        "scope": "node",
+        "cluster_name": "",
+    }
     proxmox_entries = list_credentials(credential_type="proxmox")
-    assert proxmox_entries == [
-        {
-            "hostname": "px-host",
-            "username": "px-user",
-            "credential_type": "proxmox",
-            "auth_type": "password",
-            "scope": "node",
-            "cluster_name": "",
-        }
-    ]
+    assert len(proxmox_entries) == 1
+    px_entry = dict(proxmox_entries[0])
+    px_entry.pop("credential_id", None)  # Phase 38.1 R1: dynamic UUID
+    assert px_entry == {
+        "hostname": "px-host",
+        "username": "px-user",
+        "credential_type": "proxmox",
+        "auth_type": "password",
+        "scope": "node",
+        "cluster_name": "",
+    }
 
 
 # ---------------------------------------------------------------------------

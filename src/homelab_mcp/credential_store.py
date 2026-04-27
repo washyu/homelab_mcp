@@ -11,6 +11,7 @@ body) to avoid D-Bus probing during server startup.
 import json
 import logging
 import pathlib
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ def register_credential(
     *,
     scope: str = "node",
     cluster_name: str = "",
-) -> None:
+) -> str:
     """Record credential metadata in the registry (no password stored here).
 
     Upserts: replaces existing entry for same (hostname, username, credential_type)
@@ -201,6 +202,12 @@ def register_credential(
         cluster_name: Required when scope="cluster". Identifies the Proxmox cluster
             this credential serves. Empty string for per-node entries. Legacy entries
             without this field default to "" (use ``.get("cluster_name", "")``) — D-01.
+
+    Returns:
+        The newly-generated UUIDv4 credential_id string (Phase 38.1 R1). The
+        same identifier is persisted in the registry entry's ``credential_id``
+        field. On rotation (remove + re-add for the same hostname/username),
+        a fresh UUID is produced — by design (clean-slate semantics, D-23/D-24).
     """
     if auth_type not in ("password", "key"):
         raise ValueError(f"auth_type must be 'password' or 'key', got {auth_type!r}")
@@ -236,8 +243,10 @@ def register_credential(
                 and e["credential_type"] == credential_type
             )
         ]
+    new_credential_id = str(uuid.uuid4())
     entries.append(
         {
+            "credential_id": new_credential_id,
             "hostname": hostname,
             "username": username,
             "credential_type": credential_type,
@@ -247,6 +256,7 @@ def register_credential(
         }
     )
     _save_registry(entries)
+    return new_credential_id
 
 
 def unregister_credential(hostname: str, credential_type: str = "ssh") -> None:
