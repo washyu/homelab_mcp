@@ -3,13 +3,14 @@
 import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import asyncssh
 
-from .credential_store import get_credential, list_credentials
+from .credential_store import find_credential_by_id, get_credential, list_credentials
 from .database import (
     get_database_adapter,  # noqa: F401 — module-level attr for test monkeypatch (tests assert not-called)
 )
@@ -97,10 +98,17 @@ def resolve_ssh_credentials(
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
+    *,
+    credential_id: str | None = None,
 ) -> SSHCredentials:
     """Resolve SSH credentials for a hostname.
 
-    Two-tier resolution (v1.6, Phase 33 / Phase 33.1):
+    Resolution tiers (v1.7 Phase 38.1 D-11/D-12/D-13/D-14 + v1.6 Phase 33/33.1):
+      0. **UUID short-circuit** (when ``credential_id`` is supplied) — look up
+         the entry by UUID via :func:`credential_store.find_credential_by_id`.
+         UUID wins (D-13): hostname is used only for log/error context.
+         Branches on ``auth_type`` to mirror Tier-2 logic; key vs password
+         path. NEVER falls back to hostname-exact-match (D-11).
       1. **Explicit args** (``password`` or ``key_path`` supplied): returned
          directly. When ``username`` is also ``None``, the keyring registry is
          scanned by hostname to inject the username — no silent
@@ -111,14 +119,105 @@ def resolve_ssh_credentials(
          message (zero/multi match). Returns password or key_path based on the
          entry's ``auth_type`` (D-09).
 
+    Args:
+        hostname: Sitemap row hostname (used only for log/error context when
+            ``credential_id`` is supplied — UUID is the join key in tier-0).
+        username, password, key_path, port: Tier-1 explicit args.
+        credential_id: Optional UUID from a sitemap row's
+            ``ssh_credential_id`` column (Phase 38.1 D-14 keyword-only).
+
     Raises:
-        CredentialNotFoundError: if neither tier resolves credentials, or if
-            ``username`` is ``None`` and the registry has zero or multiple
-            entries for ``hostname``. The error message names
-            ``homelab-mcp credentials add <hostname> <username>`` (D-05) for
-            zero-match, or lists the registered usernames and references
-            ``list_keyring_credentials`` (D-04a) for multi-match.
+        CredentialNotFoundError: if no tier resolves credentials. Tier-0
+            raises with ``.reason_hint`` set to ``"binding_stale"`` (UUID not
+            in registry, wrong credential_type, or malformed UUID — D-11) or
+            ``"keyring_desync"`` (UUID found, keyring miss — D-12). Tier-1/
+            Tier-2 raises leave ``.reason_hint`` unset (drift maps to
+            ``"unbound"``).
     """
+    # Phase 38.1 Tier-0: UUID short-circuit (D-11/D-12/D-13).
+    if credential_id is not None:
+        # T-38.1-05-01: validate UUID format defensively.
+        try:
+            uuid.UUID(credential_id)
+        except (ValueError, AttributeError) as exc:
+            raise CredentialNotFoundError(
+                f"binding stale: malformed credential_id {credential_id!r}"
+            ) from exc
+
+        entry = find_credential_by_id(credential_id)
+        if entry is None:
+            # D-11: never fall back to hostname-exact-match
+            exc_inst = CredentialNotFoundError(
+                f"binding stale: UUID {credential_id} not in registry. "
+                f"Run `homelab-mcp credentials add --type ssh {hostname} <username>` "
+                f"to register, or `homelab-mcp credentials unlink {hostname} --type ssh` "
+                f"to clear the stale binding."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+        if entry.get("credential_type") != "ssh":
+            # T-38.1-05-02: caller passed a proxmox UUID to the SSH resolver.
+            exc_inst = CredentialNotFoundError(
+                f"binding type mismatch: credential_id {credential_id} is type "
+                f"{entry.get('credential_type')!r}, expected 'ssh'."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+
+        entry_username = entry["username"]
+        entry_hostname = entry["hostname"]
+        auth_type = entry.get("auth_type", "password")
+        if auth_type == "key":
+            key_path_stored = get_credential(
+                entry_hostname, entry_username, credential_type="ssh",
+            )
+            if key_path_stored is None:
+                exc_inst = CredentialNotFoundError(
+                    f"keyring desync for credential_id={credential_id}: "
+                    f"registry entry exists but keyring returned None — "
+                    f"re-run `homelab-mcp credentials add --type ssh "
+                    f"{entry_hostname} {entry_username} --key-path <path>` to restore."
+                )
+                exc_inst.reason_hint = "keyring_desync"
+                raise exc_inst
+            logger.debug(
+                "ssh resolve hostname=%s source=tier0_uuid auth=key credential_id=%s",
+                hostname,
+                credential_id,
+            )
+            return SSHCredentials(
+                hostname=hostname,
+                username=entry_username,
+                port=port,
+                key_path=key_path_stored,
+                password=None,
+            )
+        # password auth
+        keyring_password = get_credential(
+            entry_hostname, entry_username, credential_type="ssh",
+        )
+        if keyring_password is None:
+            exc_inst = CredentialNotFoundError(
+                f"keyring desync for credential_id={credential_id}: "
+                f"registry entry exists but keyring returned None — "
+                f"re-run `homelab-mcp credentials add --type ssh "
+                f"{entry_hostname} {entry_username}` to restore."
+            )
+            exc_inst.reason_hint = "keyring_desync"
+            raise exc_inst
+        logger.debug(
+            "ssh resolve hostname=%s source=tier0_uuid auth=password credential_id=%s",
+            hostname,
+            credential_id,
+        )
+        return SSHCredentials(
+            hostname=hostname,
+            username=entry_username,
+            port=port,
+            password=keyring_password,
+            key_path=None,
+        )
+
     # Tier 1: explicit args (backward compatible with test-only callers).
     # When username is None, perform the same registry scan as Tier 2 —
     # no "mcp_admin" silent fallback (D-04 contract: keyring is the only
