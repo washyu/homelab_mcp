@@ -777,6 +777,32 @@ async def ssh_discover_system(
     return json.dumps(payload, indent=2)
 
 
+def _scan_registry_for_binding(
+    hostname: str,
+    username: str | None,
+) -> str | None:
+    """Phase 38.1 R3 helper — best-effort registry scan to capture the
+    credential_id of the SSH entry matching ``hostname`` (and ``username``
+    when supplied).
+
+    Returns the matched entry's ``credential_id`` for an unambiguous single
+    match, or ``None`` for zero / multi-match. Never raises — discovery must
+    not fail purely because the binding capture didn't find a match.
+    """
+    entries = list_credentials(credential_type="ssh")
+    matching = [e for e in entries if e.get("hostname") == hostname]
+    if username is not None:
+        matching = [e for e in matching if e.get("username") == username]
+    if len(matching) == 1:
+        # Legacy entries written before Phase 38.1-02 lack credential_id;
+        # .get(...) returns None, which correctly signals "no UUID to bind".
+        return matching[0].get("credential_id")
+    # Zero matches OR multi-match — conservative-default-safe: leave the
+    # binding write skipped. Discovery itself proceeds via
+    # ssh_discover_system's own resolution path.
+    return None
+
+
 async def ssh_discover_system_with_binding(
     hostname: str,
     username: str | None = None,
@@ -785,32 +811,27 @@ async def ssh_discover_system_with_binding(
     port: int = 22,
 ) -> tuple[str, str | None]:
     """Phase 38.1 R3 wrapper — runs SSH discovery and ALSO returns the
-    credential_id of the registry entry that produced the secret (None when
-    no registry entry matches the hostname / username).
+    credential_id of the registry entry that matches the hostname / username
+    (None when no entry matches).
 
     Used by :func:`sitemap.discover_and_store` to wire R3 auto-bind on the
     upsert. Existing callers of :func:`ssh_discover_system` are unaffected —
     they continue to receive only the discovery JSON.
 
-    The wrapper resolves credentials via
-    :func:`_resolve_ssh_credentials_with_binding` to capture the matched
-    registry UUID (if any), then runs the existing discovery flow. The
-    discovery function internally re-resolves credentials too — that
-    duplication is intentional for Phase 38.1 (keeps the public
-    ``ssh_discover_system`` signature stable). Optimizing away the duplicate
-    resolution is a v1.8 refactor.
+    Implementation: the wrapper does a best-effort registry scan via
+    :func:`_scan_registry_for_binding` BEFORE calling :func:`ssh_discover_system`.
+    The actual credential resolution (Tier-0/1/2 logic, key vs password
+    branching, error mapping) happens inside :func:`ssh_discover_system`'s
+    own :func:`resolve_ssh_credentials` call — we don't duplicate that work
+    here, only capture the UUID. This keeps the public
+    :func:`ssh_discover_system` signature stable and makes test monkeypatch
+    of :func:`ssh_discover_system` (the existing pattern) flow unchanged.
     """
-    # Resolve and capture the binding UUID before connecting. _creds is
-    # intentionally unused here — ssh_discover_system does its own resolve
-    # internally. This wrapper exists ONLY to capture used_credential_id for
-    # the auto-bind side effect.
-    _creds, used_credential_id = _resolve_ssh_credentials_with_binding(
-        hostname,
-        username,
-        password,
-        key_path,
-        port,
-    )
+    # Capture the binding UUID up-front — registry scan is cheap (single JSON
+    # file read) and never raises. The actual credential resolution + SSH
+    # connection happen inside ssh_discover_system below; that's the canonical
+    # resolver entry point and the one tests monkeypatch.
+    used_credential_id = _scan_registry_for_binding(hostname, username)
     discovery_result = await ssh_discover_system(
         hostname, username, password, key_path, port,
     )
