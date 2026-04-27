@@ -1932,11 +1932,13 @@ class TestHandlerSessionThreading:
 
 
 @pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
 @patch("homelab_mcp.proxmox_api.list_credentials")
 @patch("homelab_mcp.proxmox_api.get_credential")
 async def test_resolve_credential_id_short_circuit_phase381(
     mock_get_cred,
     mock_list_creds,
+    mock_find_by_id,
 ) -> None:
     """D-13: resolve_proxmox_credentials(host='pve', credential_id=<uuid>) short-circuits to registry UUID."""
     from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
@@ -1944,6 +1946,14 @@ async def test_resolve_credential_id_short_circuit_phase381(
     test_uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     # Registry entry keyed by IP — different from host='pve'
     mock_list_creds.return_value = []  # hostname-exact-match tier finds nothing
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",
+        "scope": "node",
+        "cluster_name": "",
+    }
     mock_get_cred.return_value = "test-api-token"
 
     # Phase 38.1 R5: credential_id kwarg must exist and short-circuit lookup
@@ -1954,14 +1964,17 @@ async def test_resolve_credential_id_short_circuit_phase381(
 
 
 @pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
 @patch("homelab_mcp.proxmox_api.list_credentials")
 async def test_resolve_proxmox_credentials_with_unknown_uuid_raises_binding_stale_phase381(
     mock_list_creds,
+    mock_find_by_id,
 ) -> None:
     """D-11: resolve_proxmox_credentials with UUID not in registry raises CredentialNotFoundError (binding stale)."""
     from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
 
     mock_list_creds.return_value = []  # empty registry
+    mock_find_by_id.return_value = None  # UUID not in registry
 
     # Phase 38.1 D-11: unknown UUID → CredentialNotFoundError with 'binding stale' message
     with pytest.raises(CredentialNotFoundError) as exc_info:
@@ -1976,20 +1989,34 @@ async def test_resolve_proxmox_credentials_with_unknown_uuid_raises_binding_stal
     assert "credentials add --type proxmox pve" in error_msg, (
         f"Phase 38.1 D-11: error must include recovery command, got: {error_msg!r}"
     )
+    assert getattr(exc_info.value, "reason_hint", None) == "binding_stale", (
+        f"Phase 38.1 D-08: expected reason_hint='binding_stale', got: "
+        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
 
 
 @pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
 @patch("homelab_mcp.proxmox_api.list_credentials")
 @patch("homelab_mcp.proxmox_api.get_credential")
 async def test_resolve_proxmox_credentials_with_uuid_keyring_miss_raises_desync_phase381(
     mock_get_cred,
     mock_list_creds,
+    mock_find_by_id,
 ) -> None:
     """D-12: UUID found in registry but keyring returns None → CredentialNotFoundError (keyring_desync)."""
     from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
 
     test_uuid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     mock_list_creds.return_value = []  # tier-1 hostname match empty
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",
+        "scope": "node",
+        "cluster_name": "",
+    }
     mock_get_cred.return_value = None  # keyring desync
 
     # Phase 38.1 D-12: UUID hits registry entry, but keyring returns None
@@ -1999,14 +2026,23 @@ async def test_resolve_proxmox_credentials_with_uuid_keyring_miss_raises_desync_
     error_msg = str(exc_info.value)
     # Must not fall back silently — must surface desync
     assert exc_info.type is CredentialNotFoundError
+    assert "keyring desync" in error_msg, (
+        f"Phase 38.1 D-12: expected 'keyring desync' in error, got: {error_msg!r}"
+    )
+    assert getattr(exc_info.value, "reason_hint", None) == "keyring_desync", (
+        f"Phase 38.1 D-08: expected reason_hint='keyring_desync', got: "
+        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
 
 
 @pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
 @patch("homelab_mcp.proxmox_api.list_credentials")
 @patch("homelab_mcp.proxmox_api.get_credential")
 async def test_resolve_proxmox_credentials_with_credential_id_ignores_host_arg_phase381(
     mock_get_cred,
     mock_list_creds,
+    mock_find_by_id,
 ) -> None:
     """D-13: UUID wins over host — hostname mismatch is expected, not an error."""
     from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
@@ -2014,6 +2050,14 @@ async def test_resolve_proxmox_credentials_with_credential_id_ignores_host_arg_p
     # Registry entry keyed by IP; host passed as short name — mismatch is the point
     test_uuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     mock_list_creds.return_value = []
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",  # registry hostname
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",
+        "scope": "node",
+        "cluster_name": "",
+    }
     mock_get_cred.return_value = "valid-token"
 
     # Phase 38.1 D-13: UUID short-circuit means host mismatch is irrelevant
@@ -2050,3 +2094,54 @@ async def test_resolve_proxmox_credentials_legacy_positional_backward_compat_pha
     result = await resolve_proxmox_credentials("pve-legacy")
     assert result is not None
     assert isinstance(result, tuple)
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
+@patch("homelab_mcp.proxmox_api.list_credentials")
+async def test_resolve_proxmox_credentials_with_uuid_of_wrong_type_raises_type_mismatch_phase381(
+    mock_list_creds,
+    mock_find_by_id,
+) -> None:
+    """T-38.1-05-02: caller passes SSH UUID to proxmox resolver → 'binding type mismatch'."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    test_uuid = "11111111-1111-4111-8111-111111111111"
+    mock_list_creds.return_value = []
+    # Registry entry exists but is an SSH credential, not proxmox
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root",
+        "credential_type": "ssh",  # WRONG TYPE
+        "scope": "node",
+        "cluster_name": "",
+    }
+
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(host="pve", credential_id=test_uuid)
+
+    error_msg = str(exc_info.value)
+    assert "binding type mismatch" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02: expected 'binding type mismatch', got: {error_msg!r}"
+    )
+    assert "expected 'proxmox'" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02: expected target type in message, got: {error_msg!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_proxmox_credentials_with_malformed_credential_id_phase381() -> None:
+    """T-38.1-05-01: malformed (non-UUID) credential_id → CredentialNotFoundError 'binding stale: malformed'."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(host="pve", credential_id="not-a-uuid")
+
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, (
+        f"Phase 38.1 T-38.1-05-01: expected 'binding stale' for malformed UUID, got: {error_msg!r}"
+    )
+    assert "malformed" in error_msg, (
+        f"Phase 38.1 T-38.1-05-01: expected 'malformed' marker, got: {error_msg!r}"
+    )
