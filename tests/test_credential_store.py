@@ -438,3 +438,79 @@ def test_store_credential_cluster_scope_headless_fallback(mocker) -> None:
         cluster_name="homelab-prod",
     )
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Wave 0 RED tests: credential_id UUID (R1)
+# ---------------------------------------------------------------------------
+
+
+def test_register_credential_returns_uuid_phase381(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """register_credential returns a UUIDv4 string after Phase 38.1 R1 lands."""
+    import re  # noqa: PLC0415
+
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import register_credential  # noqa: PLC0415
+
+    result = register_credential("host-a", "user-a", credential_type="ssh")
+    # R1: register_credential MUST return the new credential_id UUID string
+    assert isinstance(result, str), (
+        f"Phase 38.1 R1: register_credential must return a str UUID, got {type(result).__name__!r}"
+    )
+    uuid4_pattern = re.compile(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        re.IGNORECASE,
+    )
+    assert uuid4_pattern.match(result), (
+        f"Phase 38.1 R1: return value must be a UUIDv4 string, got: {result!r}"
+    )
+
+
+def test_register_then_remove_then_register_yields_fresh_uuid_phase381(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """remove then re-register same (type, hostname, username) produces a different UUID (R1 acceptance)."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import register_credential, unregister_credential  # noqa: PLC0415
+
+    uuid1 = register_credential("host-b", "user-b", credential_type="proxmox")
+    unregister_credential("host-b", credential_type="proxmox")
+    uuid2 = register_credential("host-b", "user-b", credential_type="proxmox")
+
+    # Both calls must return UUIDs
+    assert isinstance(uuid1, str), f"Phase 38.1 R1: first register returned {type(uuid1).__name__!r}"
+    assert isinstance(uuid2, str), f"Phase 38.1 R1: second register returned {type(uuid2).__name__!r}"
+    # Must be different UUIDs (clean-slate rotation per D-22 / SPEC R1)
+    assert uuid1 != uuid2, (
+        "Phase 38.1 R1: remove + re-add must produce a fresh UUID, but got same value twice"
+    )
+
+
+def test_find_credential_by_id_returns_entry_phase381(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """find_credential_by_id returns the matching entry dict."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import find_credential_by_id, register_credential  # noqa: PLC0415
+
+    cred_id = register_credential("host-c", "user-c", credential_type="ssh")
+    entry = find_credential_by_id(cred_id)
+    assert entry is not None, f"Phase 38.1 R5: find_credential_by_id({cred_id!r}) returned None"
+    assert entry.get("hostname") == "host-c"
+    assert entry.get("username") == "user-c"
+    assert entry.get("credential_id") == cred_id
+
+
+def test_find_credential_by_id_returns_none_for_unknown_phase381(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """find_credential_by_id returns None for an unknown UUID."""
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import find_credential_by_id  # noqa: PLC0415
+
+    result = find_credential_by_id("00000000-0000-4000-8000-000000000000")
+    assert result is None, (
+        f"Phase 38.1 R5: find_credential_by_id for unknown UUID must return None, got {result!r}"
+    )

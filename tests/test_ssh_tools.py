@@ -864,3 +864,118 @@ async def test_ssh_discover_system_hostname_timeout_does_not_suppress_probes_pha
     # hostname field falls back to the connection-IP argument since the hostname
     # probe produced no stdout to overwrite actual_hostname.
     assert result["hostname"] == "10.0.0.5", result["hostname"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Wave 0 RED tests: resolve_ssh_credentials credential_id kwarg (R5, D-11, D-12, D-13, D-14)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_ssh_credential_id_short_circuit_phase381(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-13: resolve_ssh_credentials(hostname='host', credential_id=<uuid>) short-circuits to UUID lookup."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.1",  # different from 'host' arg
+        "username": "root",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value="ssh-password"):
+            # Phase 38.1 R5: credential_id kwarg must exist and bypass hostname-exact-match
+            result = resolve_ssh_credentials("host", credential_id=test_uuid)
+
+    assert result is not None
+    assert result.hostname in ("192.168.10.1", "host")  # implementation decides which hostname to use
+
+
+def test_resolve_ssh_with_unknown_uuid_raises_binding_stale_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-11: resolve_ssh_credentials with UUID not in registry raises CredentialNotFoundError (binding stale)."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=None):
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(
+                "host",
+                credential_id="00000000-0000-4000-8000-000000000001",
+            )
+
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, (
+        f"Phase 38.1 D-11 SSH: expected 'binding stale' in error, got: {error_msg!r}"
+    )
+
+
+def test_resolve_ssh_uuid_keyring_miss_raises_desync_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-12: UUID in registry but keyring returns None → CredentialNotFoundError (keyring_desync)."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "aaaabbbb-aaaa-4aaa-8aaa-bbbbbbbbbbbb"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "host",
+        "username": "root",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value=None):  # keyring desync
+            with pytest.raises(CredentialNotFoundError):
+                resolve_ssh_credentials("host", credential_id=test_uuid)
+
+
+def test_resolve_ssh_credential_id_ignores_host_mismatch_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-13: UUID wins over host — hostname mismatch between sitemap and registry is expected."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "ccccbbbb-cccc-4ccc-8ccc-bbbbbbbbbbbb"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.5",  # mismatch with 'short-name'
+        "username": "ubuntu",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value="ssh-pw"):
+            # Must not raise even though sitemap hostname ≠ registry hostname
+            result = resolve_ssh_credentials("short-name", credential_id=test_uuid)
+
+    assert result is not None
+
+
+def test_resolve_ssh_legacy_positional_backward_compat_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Existing callers without credential_id kwarg still work (D-14 backward compat)."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
+
+    with patch(
+        "homelab_mcp.ssh_tools.list_credentials",
+        return_value=[{
+            "hostname": "legacy-host",
+            "username": "legacy-user",
+            "credential_type": "ssh",
+        }],
+    ):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value="legacy-pw"):
+            # Phase 38.1 D-14: no credential_id → falls back to existing hostname-exact-match
+            result = resolve_ssh_credentials("legacy-host", username="legacy-user")
+
+    assert result is not None

@@ -1069,3 +1069,143 @@ def test_run_sqlite_migrations_adds_fingerprint_column_idempotently_phase38(tmp_
     # Re-run is idempotent — no add_column_fingerprint on second call.
     applied2 = run_sqlite_migrations(db_path=db_path)
     assert "add_column_fingerprint" not in applied2, applied2
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Wave 0 RED tests: credential binding columns + eligibility (R2, R7)
+# ---------------------------------------------------------------------------
+
+
+def test_devices_has_credential_id_columns_phase381_sqlite(tmp_path) -> None:
+    """devices table MUST have ssh_credential_id and proxmox_credential_id columns (R2 — SQLite)."""
+    import sqlite3  # noqa: PLC0415
+
+    db_path = str(tmp_path / "sitemap_381.db")
+    adapter = SQLiteAdapter(db_path)
+    adapter.init_schema()
+    adapter.close()
+
+    conn = sqlite3.connect(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+    conn.close()
+
+    assert "ssh_credential_id" in cols, (
+        f"Phase 38.1 R2: devices table missing ssh_credential_id column. Present columns: {sorted(cols)}"
+    )
+    assert "proxmox_credential_id" in cols, (
+        f"Phase 38.1 R2: devices table missing proxmox_credential_id column. Present columns: {sorted(cols)}"
+    )
+
+
+@pytest.mark.integration
+def test_devices_has_credential_id_columns_phase381_postgres(tmp_path) -> None:
+    """devices table MUST have ssh_credential_id and proxmox_credential_id columns (R2 — Postgres)."""
+    import os  # noqa: PLC0415
+
+    pg_url = os.environ.get("TEST_POSTGRES_URL", "")
+    if not pg_url:
+        pytest.skip("TEST_POSTGRES_URL not set — Postgres integration test skipped")
+
+    # Phase 38.1: verify both columns exist in Postgres devices table
+    # This test will FAIL until the Postgres schema migration lands in Plan 02.
+    adapter = PostgreSQLAdapter(pg_url)
+    adapter.connect()
+    cursor = adapter.connection.cursor()  # type: ignore[union-attr]
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'devices' AND column_name IN ('ssh_credential_id', 'proxmox_credential_id')"
+    )
+    found_cols = {row[0] for row in cursor.fetchall()}
+    adapter.close()
+
+    assert "ssh_credential_id" in found_cols, (
+        f"Phase 38.1 R2: Postgres devices missing ssh_credential_id. Found: {found_cols}"
+    )
+    assert "proxmox_credential_id" in found_cols, (
+        f"Phase 38.1 R2: Postgres devices missing proxmox_credential_id. Found: {found_cols}"
+    )
+
+
+def test_set_device_credential_binding_writes_column_sqlite_phase381(tmp_path) -> None:
+    """set_device_credential_binding writes UUID to the correct column (R2 + R3/R4 path)."""
+    import sqlite3  # noqa: PLC0415
+    from datetime import datetime  # noqa: PLC0415
+
+    db_path = str(tmp_path / "sitemap_bind.db")
+    adapter = SQLiteAdapter(db_path)
+    adapter.init_schema()
+
+    # Store a device so we have a row to bind
+    device_data = {
+        "hostname": "pve1",
+        "connection_ip": "10.0.0.10",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    }
+    adapter.store_device(device_data)
+
+    # Phase 38.1 R2: abstract method set_device_credential_binding must exist
+    test_uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    adapter.set_device_credential_binding(
+        hostname="pve1",
+        credential_type="proxmox",
+        credential_id=test_uuid,
+    )
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT proxmox_credential_id FROM devices WHERE hostname = ?", ("pve1",)
+    ).fetchone()
+    conn.close()
+    adapter.close()
+
+    assert row is not None, "Phase 38.1 R2: no device row found for 'pve1'"
+    assert row[0] == test_uuid, (
+        f"Phase 38.1 R2: expected proxmox_credential_id={test_uuid!r}, got {row[0]!r}"
+    )
+
+
+def test_get_all_devices_includes_eligibility_field_sqlite_phase381(tmp_path) -> None:
+    """get_all_devices rows include eligibility field with ssh+proxmox bool pair (R7)."""
+    from datetime import datetime  # noqa: PLC0415
+
+    db_path = str(tmp_path / "sitemap_elig.db")
+    adapter = SQLiteAdapter(db_path)
+    adapter.init_schema()
+
+    device_data = {
+        "hostname": "pve2",
+        "connection_ip": "10.0.0.20",
+        "last_seen": datetime.now().isoformat(),
+        "status": "success",
+    }
+    adapter.store_device(device_data)
+
+    devices = adapter.get_all_devices()
+    assert len(devices) == 1
+    device = devices[0]
+
+    # Phase 38.1 R7: each row must contain an eligibility field
+    assert "eligibility" in device, (
+        f"Phase 38.1 R7: get_all_devices row missing 'eligibility' field. Keys: {sorted(device.keys())}"
+    )
+    eligibility = device["eligibility"]
+    assert isinstance(eligibility, dict), (
+        f"Phase 38.1 R7: eligibility must be a dict, got {type(eligibility).__name__!r}"
+    )
+    assert "ssh" in eligibility, f"Phase 38.1 R7: eligibility missing 'ssh' key: {eligibility}"
+    assert "proxmox" in eligibility, f"Phase 38.1 R7: eligibility missing 'proxmox' key: {eligibility}"
+    assert isinstance(eligibility["ssh"], bool), (
+        f"Phase 38.1 R7: eligibility.ssh must be bool, got {type(eligibility['ssh']).__name__!r}"
+    )
+    assert isinstance(eligibility["proxmox"], bool), (
+        f"Phase 38.1 R7: eligibility.proxmox must be bool, got {type(eligibility['proxmox']).__name__!r}"
+    )
+    # New device has no credentials bound — both must be False
+    assert eligibility["ssh"] is False, (
+        "Phase 38.1 R7: unbound device should have eligibility.ssh == False"
+    )
+    assert eligibility["proxmox"] is False, (
+        "Phase 38.1 R7: unbound device should have eligibility.proxmox == False"
+    )
+    adapter.close()
