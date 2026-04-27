@@ -925,3 +925,45 @@ def test_eligibility_field_phase381(temp_db):
     devices_after = adapter.get_all_devices()
     assert devices_after[0]["eligibility"]["ssh"] is True
     assert devices_after[0]["eligibility"]["proxmox"] is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R3 RED scaffold (Plan 01 Task 2): discover_and_store writes
+# the registry entry's credential_id onto the devices row's ssh_credential_id
+# column. Lands GREEN in Plan 08. Until then this test fails.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.ssh_discover_system")
+async def test_discover_writes_credential_id_phase381(
+    mock_ssh_discover, temp_db, sample_ssh_discovery_success, tmp_path, monkeypatch,
+):
+    """R3: after discover_and_store, the devices row carries ssh_credential_id from the registry entry.
+
+    Plan 08 (Wave 4) wires this side-effect — until then this test fails because
+    discover_and_store never calls set_device_credential_binding with the resolver's UUID.
+    """
+    monkeypatch.setattr(
+        "homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json"
+    )
+    from src.homelab_mcp.credential_store import register_credential
+
+    cred_id = register_credential("test-host", "test-user", credential_type="ssh")
+    assert isinstance(cred_id, str), "Plan 02 prerequisite: register_credential must return UUID"
+
+    mock_ssh_discover.return_value = sample_ssh_discovery_success
+    sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+
+    await discover_and_store(
+        sitemap, hostname="test-host", username="test-user", password="test-pass"
+    )
+
+    devices = sitemap.get_all_devices()
+    assert len(devices) == 1
+    row = devices[0]
+    assert row.get("ssh_credential_id") == cred_id, (
+        f"Phase 38.1 R3: expected ssh_credential_id={cred_id!r} on the discovered "
+        f"devices row, got {row.get('ssh_credential_id')!r}. Plan 08 must wire "
+        "set_device_credential_binding into discover_and_store's post-upsert side-effect."
+    )
