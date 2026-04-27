@@ -535,9 +535,7 @@ def get_sitemap_rows_for_hostname(hostname: str) -> list[dict[str, Any]]:
     return sitemap.db_adapter.find_devices_by_hostname_or_ip(hostname)
 
 
-def set_device_credential_binding(
-    hostname: str, credential_type: str, credential_id: str | None
-) -> None:
+def set_device_credential_binding(hostname: str, credential_type: str, credential_id: str | None) -> None:
     """Phase 38.1 R4/R8: write the credential binding column for a single sitemap row.
 
     Resolves the row by hostname (must be exactly one match — caller is
@@ -555,11 +553,11 @@ def set_device_credential_binding(
     if not matches:
         raise ValueError(f"No sitemap row found for hostname {hostname!r}")
     if len(matches) > 1:
-        raise ValueError(
-            f"Multiple sitemap rows match hostname {hostname!r} — caller must narrow"
-        )
+        raise ValueError(f"Multiple sitemap rows match hostname {hostname!r} — caller must narrow")
     sitemap.db_adapter.set_device_credential_binding(
-        matches[0]["id"], credential_type, credential_id,
+        matches[0]["id"],
+        credential_type,
+        credential_id,
     )
 
 
@@ -577,7 +575,8 @@ def null_bindings_for_credential_id(credential_id: str, credential_type: str) ->
         return []
     sitemap = NetworkSiteMap()
     return sitemap.db_adapter.bulk_null_credential_binding(
-        [credential_id], credential_type,
+        [credential_id],
+        credential_type,
     )
 
 
@@ -618,7 +617,9 @@ def _auto_bind_credential(
         if current_binding is None:
             # Single match, no existing binding → bind silently
             set_device_credential_binding(
-                row["hostname"], credential_type, new_credential_id,
+                row["hostname"],
+                credential_type,
+                new_credential_id,
             )
             return
         # D-04: existing binding → prompt unless non-TTY (D-05)
@@ -630,13 +631,19 @@ def _auto_bind_credential(
                 file=sys.stderr,
             )
             return
-        answer = input(
-            f"Sitemap row {row['hostname']!r} is already bound to a different "
-            f"{credential_type} credential. Overwrite the mapping? [y/N]: "
-        ).strip().lower()
+        answer = (
+            input(
+                f"Sitemap row {row['hostname']!r} is already bound to a different "
+                f"{credential_type} credential. Overwrite the mapping? [y/N]: "
+            )
+            .strip()
+            .lower()
+        )
         if answer == "y":
             set_device_credential_binding(
-                row["hostname"], credential_type, new_credential_id,
+                row["hostname"],
+                credential_type,
+                new_credential_id,
             )
         # Empty input or anything else → keep existing binding (D-04 default-no)
         return
@@ -657,7 +664,9 @@ def _auto_bind_credential(
     if choice.isdigit() and 1 <= int(choice) <= len(matches):
         picked = matches[int(choice) - 1]
         set_device_credential_binding(
-            picked["hostname"], credential_type, new_credential_id,
+            picked["hostname"],
+            credential_type,
+            new_credential_id,
         )
     # 's' or any other input → skip silently
 
@@ -881,9 +890,7 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
         # so we can null any sitemap rows that pointed at them. Cluster-scope
         # rows should never have bindings (D-07), but a manually-link'd row
         # could exist — defensive cleanup.
-        cluster_removed_uuids: list[str] = [
-            e["credential_id"] for e in cluster_entries if e.get("credential_id")
-        ]
+        cluster_removed_uuids: list[str] = [e["credential_id"] for e in cluster_entries if e.get("credential_id")]
         for entry in cluster_entries:
             delete_credential(
                 "",
@@ -915,7 +922,17 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    entries = [e for e in list_credentials(credential_type=credential_type) if e["hostname"] == hostname]
+    # CR-03 (Phase 38.1 review): also filter on scope=='node' so a legacy or
+    # hand-edited cluster registry entry that happens to carry a non-empty
+    # hostname cannot be matched here. Matching such an entry would cause
+    # delete_credential() (default scope='node') to look up the wrong keyring
+    # key and silently fail, leaving the keyring secret orphaned forever
+    # while the registry entry and binding are removed.
+    entries = [
+        e
+        for e in list_credentials(credential_type=credential_type)
+        if e["hostname"] == hostname and e.get("scope", "node") == "node"
+    ]
     if not entries:
         print(
             f"No {credential_type} credential found for {hostname}",
@@ -928,9 +945,7 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
     # whose binding pointed at them. Adapter access goes through the typed
     # bulk method via null_bindings_for_credential_id — server.py never
     # constructs raw '?' or '%s' placeholders.
-    removed_uuids: list[str] = [
-        e["credential_id"] for e in entries if e.get("credential_id")
-    ]
+    removed_uuids: list[str] = [e["credential_id"] for e in entries if e.get("credential_id")]
 
     for entry in entries:
         delete_credential(entry["hostname"], entry["username"], credential_type=credential_type)
@@ -1002,7 +1017,9 @@ def _cmd_credentials_link(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
     set_device_credential_binding(
-        rows[0]["hostname"], args.credential_type, args.credential_id,
+        rows[0]["hostname"],
+        args.credential_type,
+        args.credential_id,
     )
     print(f"Linked {args.hostname} → {args.credential_id} ({args.credential_type})")
 
@@ -1034,7 +1051,9 @@ def _cmd_credentials_unlink(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
     set_device_credential_binding(
-        rows[0]["hostname"], args.credential_type, None,
+        rows[0]["hostname"],
+        args.credential_type,
+        None,
     )
     print(f"Unlinked {args.hostname} ({args.credential_type})")
 
