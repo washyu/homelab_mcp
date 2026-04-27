@@ -163,14 +163,14 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 **Goal**: A user who runs the documented happy path — `credentials add --type proxmox <id> <user> <secret>`, then `discover_and_map <id>`, then `scan_infrastructure_drift` — sees their host in `probed_ok` (count >= 1), regardless of whether the credential was registered by IP, short hostname, or FQDN. Drift detection becomes verifiable end-to-end in Claude Desktop instead of silently returning `scanned: 0`.
 **Requirements**: R1, R2, R3, R4, R5, R6, R7, R8, R9, R10 (locked in 38.1-SPEC.md; closes Bug O architectural + Bug N invisible eligibility from 2026-04-26 Claude Desktop UAT)
 **Depends on:** Phase 38
-**Plans:** 5/9 plans executed
+**Plans:** 7/9 plans executed
   - [x] 38.1-01-PLAN.md — Wave 0 RED test scaffolds (AST guards + functional fixtures + migration test scaffold + integration round-trip scaffold)
   - [x] 38.1-02-PLAN.md — Wave 1 credential_store.py UUID generation + find_credential_by_id helper (R1)
   - [x] 38.1-03-PLAN.md — Wave 1 database.py credential_id columns on both adapters + set_device_credential_binding method + eligibility flatten (R2 + R7-eligibility)
   - [x] 38.1-04-PLAN.md — Wave 2 migration.py destructive drop-and-recreate with version-stamp + 3-block banner (R10 + idempotent ALTER for R2)
   - [x] 38.1-05-PLAN.md — Wave 2 resolver credential_id keyword-only param (Tier-0 UUID short-circuit) on both proxmox_api.py + ssh_tools.py (R5)
-  - [ ] 38.1-06-PLAN.md — Wave 3 drift_detection.py 5-bucket envelope + reason-enum routing; AST guard D-15 GREEN (R6 + R7-bucket)
-  - [ ] 38.1-07-PLAN.md — Wave 3 server.py CLI auto-bind on add + rotation cleanup on remove + link/unlink subcommands + --json on list (R1-caller + R4 + R8 + R9)
+  - [x] 38.1-06-PLAN.md — Wave 3 drift_detection.py 5-bucket envelope + reason-enum routing; AST guard D-15 GREEN (R6 + R7-bucket)
+  - [x] 38.1-07-PLAN.md — Wave 3 server.py CLI auto-bind on add + rotation cleanup on remove + link/unlink subcommands + --json on list (R1-caller + R4 + R8 + R9)
   - [ ] 38.1-08-PLAN.md — Wave 4 sitemap.py discover_and_map writes ssh_credential_id post-upsert (R3)
   - [ ] 38.1-09-PLAN.md — Wave 5 integration round-trip acceptance test wired and GREEN (SPEC headline + 12 acceptance criteria + 4 invariants)
 
@@ -229,7 +229,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 36. Drift ↔ Sitemap Foundation | v1.7 | 6/6 | Complete   | 2026-04-25 |
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
-| 38.1 Sitemap-keystore Credential Binding | v1.7 | 5/9 | In Progress|  |
+| 38.1 Sitemap-keystore Credential Binding | v1.7 | 7/9 | In Progress|  |
 | 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
