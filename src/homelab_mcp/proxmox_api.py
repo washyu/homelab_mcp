@@ -244,9 +244,7 @@ async def resolve_proxmox_credentials(
         try:
             uuid.UUID(credential_id)
         except (ValueError, AttributeError) as exc:
-            raise CredentialNotFoundError(
-                f"binding stale: malformed credential_id {credential_id!r}"
-            ) from exc
+            raise CredentialNotFoundError(f"binding stale: malformed credential_id {credential_id!r}") from exc
 
         entry = find_credential_by_id(credential_id)
         if entry is None:
@@ -295,9 +293,7 @@ async def resolve_proxmox_credentials(
             scope_str,
         )
         # Narrow scope_str back to Literal for the function return type.
-        scope_literal: Literal["node", "cluster"] = (
-            "cluster" if scope_str == "cluster" else "node"
-        )
+        scope_literal: Literal["node", "cluster"] = "cluster" if scope_str == "cluster" else "node"
         return (f"{entry['username']}={secret}", scope_literal, entry_cluster_name)
 
     entries = list_credentials(credential_type="proxmox")
@@ -456,17 +452,37 @@ async def get_proxmox_client(
     # Explicit api_token / username+password (from kwargs or env vars picked up above)
     # bypasses the resolver entirely — preserves SC-5 back-compat for environments
     # that have always configured Proxmox via PROXMOX_* env vars.
-    if host and not api_token and not (username and password):
-        resolved_token, scope, cluster_name = await resolve_proxmox_credentials(
-            host, session=session, credential_id=credential_id,
-        )
-        api_token = resolved_token
-        logger.debug(
-            "Proxmox credential resolved for host=%s via source=%s cluster=%s",
-            host,
-            scope,
-            cluster_name,
-        )
+    #
+    # CR-04 (Phase 38.1 review): when an env-var/explicit auth is in play AND
+    # the caller threaded a sitemap binding via credential_id, emit a warning
+    # so operators can detect that the binding is being silently overridden by
+    # env vars. Drift's not_eligible bucket relies on the resolver actually
+    # being invoked — under env-var dominance, every probe succeeds with
+    # env creds regardless of binding state, and stale bindings become
+    # invisible to drift. Logging the override surfaces this for observability.
+    if host:
+        has_explicit_auth = bool(api_token or (username and password))
+        if credential_id is not None and has_explicit_auth:
+            logger.warning(
+                "Sitemap binding %s ignored for host=%s — explicit/env-var "
+                "credentials take precedence. Drift reports against env-creds, "
+                "not the bound UUID.",
+                credential_id,
+                host,
+            )
+        if not has_explicit_auth:
+            resolved_token, scope, cluster_name = await resolve_proxmox_credentials(
+                host,
+                session=session,
+                credential_id=credential_id,
+            )
+            api_token = resolved_token
+            logger.debug(
+                "Proxmox credential resolved for host=%s via source=%s cluster=%s",
+                host,
+                scope,
+                cluster_name,
+            )
 
     # Validation gates
     if not host:
