@@ -734,7 +734,7 @@ def _cmd_credentials_add(args: argparse.Namespace) -> None:
             cluster_name=cluster_name,
         )
         if ok:
-            register_credential(
+            new_cluster_id = register_credential(
                 "",
                 args.username,
                 credential_type=credential_type,
@@ -742,7 +742,14 @@ def _cmd_credentials_add(args: argparse.Namespace) -> None:
                 scope="cluster",
                 cluster_name=cluster_name,
             )
-            print(f"Stored {credential_type} credential for {args.username}@cluster:{cluster_name}")
+            # WR-07 (Phase 38.1 review): echo the UUID so operators can use it
+            # in `credentials link <hostname> <UUID> --type ...` without
+            # re-running `credentials list --json` to find it. Cluster creds
+            # don't auto-bind by design (D-07), but surfacing the UUID
+            # significantly improves the link workflow.
+            print(
+                f"Stored {credential_type} credential for {args.username}@cluster:{cluster_name} (id={new_cluster_id})"
+            )
         else:
             print(
                 f"Warning: OS keyring unavailable — credential not persisted for cluster:{cluster_name}",
