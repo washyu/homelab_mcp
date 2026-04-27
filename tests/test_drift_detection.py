@@ -27,7 +27,12 @@ class TestScanDrift4Bucket:
 
     @pytest.mark.asyncio
     async def test_three_row_classification(self):
-        """3-row sitemap: pve1 -> probed_ok, truenas1 -> silently skipped, pi-lab -> unreachable."""
+        """3-row sitemap: pve1 -> probed_ok, truenas1 -> not_eligible/unbound, pi-lab -> unreachable.
+
+        Phase 38.1 D-15/D-17 (Bug O fix): truenas1 (no proxmox creds) was
+        previously silently skipped — now routes to not_eligible/unbound so
+        the row stays visible to the user with a recovery pointer.
+        """
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
@@ -35,7 +40,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -48,7 +53,7 @@ class TestScanDrift4Bucket:
                 return client
             raise AssertionError(f"unexpected host: {host}")
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             if host == "pve1":
                 return ("token@node", "node", None)
             if host == "pi-lab":
@@ -62,7 +67,8 @@ class TestScanDrift4Bucket:
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
         assert result["status"] == "success"
-        assert result["scanned"] == 2  # pve1 + pi-lab; truenas1 silently skipped
+        # Phase 38.1: every row lands in some bucket; no silent skips.
+        assert result["scanned"] == 3
         assert len(result["probed_ok"]) == 1
         assert result["probed_ok"][0]["hostname"] == "pve1"
         assert result["probed_ok"][0]["scope"] == "node"
@@ -74,8 +80,10 @@ class TestScanDrift4Bucket:
         assert result["unreachable"][0]["scope"] == "cluster"
         assert result["unreachable"][0]["cluster_name"] == "homelab-prod"
         assert "connection refused" in result["unreachable"][0]["error"].lower()
-        all_hostnames = [r["hostname"] for r in result["probed_ok"] + result["unreachable"]]
-        assert "truenas1" not in all_hostnames
+        # Phase 38.1: truenas1 routes to not_eligible/unbound (no binding column set).
+        assert len(result["not_eligible"]) == 1
+        assert result["not_eligible"][0]["hostname"] == "truenas1"
+        assert result["not_eligible"][0]["reason"] == "unbound"
 
     @pytest.mark.asyncio
     async def test_empty_sitemap_returns_success(self):
@@ -93,7 +101,13 @@ class TestScanDrift4Bucket:
 
     @pytest.mark.asyncio
     async def test_degenerate_rows_excluded(self):
-        """D-10a: rows with status=='error' OR hostname in ('', 'unknown', None) skipped pre-resolve."""
+        """Phase 38.1 D-17: rows with status=='error' OR hostname in ('', 'unknown', None)
+        route to not_eligible/degenerate (pre-resolver — get_proxmox_client never called).
+
+        Pre-Plan-06 these rows were silently skipped (Phase 36 D-10a). Plan 06
+        keeps the pre-resolver routing but lands them in the not_eligible bucket
+        with reason='degenerate' so the user sees them.
+        """
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [
             {"hostname": "", "connection_ip": "10.0.0.1", "status": "success"},
@@ -102,32 +116,45 @@ class TestScanDrift4Bucket:
             {"hostname": "errored-host", "connection_ip": "10.0.0.4", "status": "error"},
         ]
 
-        # If degenerate-skip works, get_proxmox_client is never called
+        # Degenerate routing fires BEFORE the resolver — get_proxmox_client never called.
         with patch("homelab_mcp.drift_detection.get_proxmox_client") as mock_client:
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
         mock_client.assert_not_called()
-        assert result["scanned"] == 0
+        # Phase 38.1: all 4 degenerate rows route to not_eligible/degenerate.
+        assert result["scanned"] == 4
         assert result["probed_ok"] == []
         assert result["unreachable"] == []
+        assert len(result["not_eligible"]) == 4
+        assert all(r["reason"] == "degenerate" for r in result["not_eligible"])
 
     @pytest.mark.asyncio
     async def test_silent_skip_on_credential_not_found(self):
-        """D-10: CredentialNotFoundError on get_proxmox_client -> row excluded from both buckets."""
+        """Phase 38.1 D-15 (Bug O fix): CredentialNotFoundError on get_proxmox_client
+        routes to not_eligible bucket (no longer a silent skip).
+
+        Pre-Plan-06 this raised silently and the row vanished from the response.
+        Plan 06 routes it to not_eligible with reason classified by binding state
+        — here, no proxmox_credential_id column → reason='unbound'.
+        """
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [
             {"hostname": "not-a-proxmox-host", "connection_ip": "10.0.0.1", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             raise CredentialNotFoundError("no proxmox creds")
 
         with patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client):
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
-        assert result["scanned"] == 0
+        # Phase 38.1: no row vanishes; the row lands in not_eligible/unbound.
+        assert result["scanned"] == 1
         assert result["probed_ok"] == []
         assert result["unreachable"] == []
+        assert len(result["not_eligible"]) == 1
+        assert result["not_eligible"][0]["hostname"] == "not-a-proxmox-host"
+        assert result["not_eligible"][0]["reason"] == "unbound"
 
     @pytest.mark.asyncio
     async def test_unreachable_error_is_sanitized(self):
@@ -137,7 +164,7 @@ class TestScanDrift4Bucket:
             {"hostname": "leaky", "connection_ip": "10.0.0.1", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             client = MagicMock()
             # Simulate an exception that contains a "secret-looking" token
             client.get = AsyncMock(
@@ -145,7 +172,7 @@ class TestScanDrift4Bucket:
             )
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token", "node", None)
 
         with (
@@ -200,12 +227,12 @@ class TestScanDrift4Bucket:
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@node", "node", None)
 
         with (
@@ -222,10 +249,11 @@ class TestScanDrift4Bucket:
 
     @pytest.mark.asyncio
     async def test_counts_subdict_mirrors_bucket_sizes(self):
-        """D-07: response['counts'] has exactly four keys, each equal to len(bucket).
+        """D-07 + Phase 38.1: response['counts'] has exactly five keys, each equal to len(bucket).
 
-        In Phase 37, counts['unknown'] == 0 and counts['changed'] == 0 always
-        (the buckets are reserved-empty per D-05/D-06).
+        Phase 38.1 added 'not_eligible' to the counts sub-dict (slots between
+        'unreachable' and 'unknown'). 'unknown' and 'changed' remain 0 in
+        Phase 38.1 (reserved for Phase 39 DRFT-17/19).
         """
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [
@@ -233,7 +261,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -242,7 +270,7 @@ class TestScanDrift4Bucket:
             client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token", "node", None)
 
         with (
@@ -254,11 +282,16 @@ class TestScanDrift4Bucket:
         assert "counts" in result, f"missing 'counts' key; keys: {list(result.keys())}"
         counts = result["counts"]
         assert isinstance(counts, dict), f"counts is not a dict: {type(counts).__name__}"
-        assert set(counts.keys()) == {"probed_ok", "unreachable", "unknown", "changed"}, (
-            f"counts has unexpected key set: {set(counts.keys())}"
-        )
+        assert set(counts.keys()) == {
+            "probed_ok",
+            "unreachable",
+            "not_eligible",
+            "unknown",
+            "changed",
+        }, f"counts has unexpected key set: {set(counts.keys())}"
         assert counts["probed_ok"] == len(result["probed_ok"]) == 1
         assert counts["unreachable"] == len(result["unreachable"]) == 1
+        assert counts["not_eligible"] == len(result["not_eligible"]) == 0
         assert counts["unknown"] == len(result["unknown"]) == 0
         assert counts["changed"] == len(result["changed"]) == 0
 
@@ -283,7 +316,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -292,7 +325,7 @@ class TestScanDrift4Bucket:
             client.get = AsyncMock(side_effect=aiohttp.ClientError("refused"))
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token", "node", None)
 
         with (
@@ -324,9 +357,9 @@ class TestScanDrift4Bucket:
     async def test_guidance_absent_when_scanned_nonzero(self):
         """D-09: 'guidance' key is absent from the response dict when scanned > 0.
 
-        Uses the canonical 3-row mock harness from test_three_row_classification
-        which yields scanned == 2 (pve1 probed_ok + pi-lab unreachable; truenas1
-        silently skipped via CredentialNotFoundError).
+        Uses the canonical 3-row mock harness from test_three_row_classification.
+        Phase 38.1: yields scanned == 3 (pve1 probed_ok + pi-lab unreachable +
+        truenas1 not_eligible/unbound — no longer silently skipped per D-15).
         """
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [
@@ -335,7 +368,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -346,7 +379,7 @@ class TestScanDrift4Bucket:
             client.get = AsyncMock(side_effect=aiohttp.ClientError("refused"))
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token", "node", None)
 
         with (
@@ -355,7 +388,7 @@ class TestScanDrift4Bucket:
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
-        assert result["scanned"] == 2
+        assert result["scanned"] == 3
         assert "guidance" not in result, (
             f"populated-sitemap response unexpectedly contains 'guidance' key; "
             f"D-09 requires absence when scanned > 0. Keys: {list(result.keys())}"
@@ -416,7 +449,7 @@ class TestScanDrift4Bucket:
 
         called_hosts: list[str] = []
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             called_hosts.append(host)
             if host == "pve1":
                 client = MagicMock()
@@ -424,7 +457,7 @@ class TestScanDrift4Bucket:
                 return client
             raise AssertionError(f"D-01 violation: get_proxmox_client called for non-matching host {host!r}")
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@node", "node", None)
 
         with (
@@ -480,13 +513,13 @@ class TestScanDrift4Bucket:
 
         called_hosts: list[str] = []
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             called_hosts.append(host)
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": host}])
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@node", "node", None)
 
         with (
@@ -516,12 +549,12 @@ class TestScanDrift4Bucket:
         # Standard 1-row sitemap
         rows = [{"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"}]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@node", "node", None)
 
         results: dict[str, dict] = {}
@@ -573,15 +606,18 @@ class TestScanDrift4Bucket:
 
     @pytest.mark.asyncio
     async def test_envelope_key_order_is_locked(self):
-        """Plan 1 contract: top-level dict insertion order is locked.
+        """Plan 1 contract + Phase 38.1 D-08: top-level dict insertion order is locked.
 
         When scanned == 0:
           ['status', 'scan_timestamp', 'scanned', 'counts', 'guidance',
-           'probed_ok', 'unreachable', 'unknown', 'changed']
+           'probed_ok', 'unreachable', 'not_eligible', 'unknown', 'changed']
 
         When scanned > 0 (no 'guidance'):
           ['status', 'scan_timestamp', 'scanned', 'counts',
-           'probed_ok', 'unreachable', 'unknown', 'changed']
+           'probed_ok', 'unreachable', 'not_eligible', 'unknown', 'changed']
+
+        Phase 38.1: 'not_eligible' slots between 'unreachable' and 'unknown'
+        (R7 envelope position; the rest of the Phase 37 order is preserved).
         """
         # scanned == 0 case
         db_adapter = MagicMock()
@@ -595,6 +631,7 @@ class TestScanDrift4Bucket:
             "guidance",
             "probed_ok",
             "unreachable",
+            "not_eligible",
             "unknown",
             "changed",
         ]
@@ -608,12 +645,12 @@ class TestScanDrift4Bucket:
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@node", "node", None)
 
         with (
@@ -629,6 +666,7 @@ class TestScanDrift4Bucket:
             "counts",
             "probed_ok",
             "unreachable",
+            "not_eligible",
             "unknown",
             "changed",
         ]
@@ -648,12 +686,12 @@ class TestScanDrift4Bucket:
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@node", "node", None)
 
         with (
@@ -687,12 +725,12 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token@cluster", "cluster", "homelab-prod")
 
         with (
@@ -744,7 +782,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, session=None):
+        async def fake_get_client(host, *, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -753,7 +791,7 @@ class TestScanDrift4Bucket:
             client.get = AsyncMock(side_effect=aiohttp.ClientError("refused"))
             return client
 
-        async def fake_resolve(host, session=None):
+        async def fake_resolve(host, session=None, *, credential_id=None):
             return ("token", "node", None)
 
         with (

@@ -3,22 +3,25 @@
 v1.7 — sitemap is the single source of truth for drift detection. The parallel
 baseline cache table was dropped in Phase 36; scan_drift iterates sitemap rows
 directly, resolves Proxmox credentials via the get_proxmox_client funnel, and
-classifies each row into one of four buckets:
+classifies each row into one of FIVE buckets:
 
   - probed_ok    — credential resolved, GET /cluster/status returned a list
   - unreachable  — credential resolved, probe raised a network/timeout/value error
                    (Phase 39 DRFT-18 will enrich rows in this bucket with
                    last-seen and decommission/purge pointers)
+  - not_eligible — credential resolution itself failed for a structural reason
+                   (Phase 38.1: unbound, binding_stale, keyring_desync, degenerate).
+                   Replaces the v1.7 silent-skip behavior at the original
+                   drift_detection.py:148-149 (Bug O).
   - unknown      — reserved for Phase 39 (DRFT-17): VMs/LXC present on a Proxmox
-                   hypervisor but absent from the sitemap. Always [] in Phase 37.
+                   hypervisor but absent from the sitemap. Always [] in Phase 38.1.
   - changed      — reserved for Phase 39 (DRFT-19): sitemap fields differ from
                    current probe values. Depends on Phase 38's fingerprint
-                   schema. Always [] in Phase 37.
+                   schema. Always [] in Phase 38.1.
 
-The response envelope is stable in Phase 37: every scan returns the same shape
-regardless of filter scope. Filters that match zero rows (empty sitemap, no-match
-node filter) return status="success" with all four buckets empty and a top-level
-"guidance" field pointing to the sitemap CRUD tools.
+The response envelope is stable: every scan returns the same shape regardless of
+filter scope. Filters that match zero rows return status="success" with all five
+buckets empty and a top-level "guidance" field pointing to the sitemap CRUD tools.
 """
 
 import logging
@@ -51,31 +54,96 @@ _EMPTY_SCAN_GUIDANCE = (
 )
 
 
+def _classify_credential_failure(
+    exc: CredentialNotFoundError, binding: str | None
+) -> str:
+    """Map (CredentialNotFoundError, binding-context) → reason enum (D-08).
+
+    Reads the ``.reason_hint`` attribute set by the resolver Tier-0 path
+    (Phase 38.1 Wave 2 — proxmox_api.py / ssh_tools.py). When the sitemap
+    row's binding column is NULL, the failure is definitionally
+    ``"unbound"`` (no UUID was supplied; nothing to be stale or desynced
+    about). When binding is non-NULL, prefer the resolver's hint
+    (``binding_stale`` for D-11 / ``keyring_desync`` for D-12); fall back
+    to ``"binding_stale"`` if the hint is missing — a bound row whose
+    resolver raised CredentialNotFoundError must, by elimination, have a
+    stale or otherwise-broken binding.
+    """
+    # If the row had no binding, the failure is definitionally "unbound"
+    # — even if a passed-through credential_id (somehow non-None) hinted otherwise.
+    if binding is None:
+        return "unbound"
+    hint = getattr(exc, "reason_hint", None)
+    if hint == "binding_stale":
+        return "binding_stale"
+    if hint == "keyring_desync":
+        return "keyring_desync"
+    # Default: a bound row whose resolver raised — by elimination the binding
+    # is stale (the real Tier-0 resolver always sets reason_hint, but be
+    # defensive against fakes / future code paths that don't).
+    return "binding_stale"
+
+
+def _reason_message(reason: str, hostname: str, credential_type: str) -> str:
+    """Human-readable message for the not_eligible bucket (D-08)."""
+    if reason == "unbound":
+        return (
+            f"No {credential_type} credential bound; run "
+            f"`homelab-mcp credentials add --type {credential_type} {hostname} <username>` "
+            f"to bind."
+        )
+    if reason == "binding_stale":
+        return (
+            f"Binding UUID is stale (no matching registry entry); run "
+            f"`homelab-mcp credentials unlink {hostname} --type {credential_type}` "
+            f"or re-add the credential."
+        )
+    if reason == "keyring_desync":
+        return (
+            f"Registry entry exists but keyring secret is missing; re-run "
+            f"`homelab-mcp credentials add --type {credential_type} {hostname} <username>` "
+            f"to restore."
+        )
+    if reason == "degenerate":
+        return (
+            "Sitemap row has degenerate hostname or status=error; run "
+            "`homelab-mcp purge_failed_discoveries` to clean up."
+        )
+    return f"Unknown not_eligible reason: {reason!r}"
+
+
 async def scan_drift(
     session: aiohttp.ClientSession | None,
     db_adapter: DatabaseAdapter,
     node: str | None = None,
     vm_type: str = "all",
 ) -> dict[str, Any]:
-    """Scan for infrastructure drift against the sitemap (Phase 37 stable shape).
+    """Scan for infrastructure drift against the sitemap (Phase 38.1 5-bucket shape).
 
-    Iterates sitemap rows and classifies each one into one of four buckets:
-    probed_ok, unreachable, unknown, changed. The unknown and changed buckets
-    are reserved for Phase 39 (DRFT-17/19) and are always empty in Phase 37 —
-    they exist in the response so client code can iterate without defensive
-    `dict.get(..., [])` checks.
+    Iterates sitemap rows and classifies each one into exactly one of five
+    buckets: probed_ok, unreachable, not_eligible, unknown, changed. The
+    ``unknown`` and ``changed`` buckets are reserved for Phase 39
+    (DRFT-17/19) and are always empty in Phase 38.1 — they exist in the
+    response so client code can iterate without defensive
+    ``dict.get(..., [])`` checks. The ``not_eligible`` bucket replaces
+    the v1.7 silent-skip behavior (Bug O) — every credential-resolution
+    failure now produces a row with a reason enum and recovery message.
 
     Filter semantics (Phase 37 DRFT-13):
       - node: exact hostname match against sitemap rows (no wildcards, no
-        case folding). Filter applies BEFORE the degenerate-row skip. A
-        no-match returns status="success" with all four buckets empty and
-        a top-level "guidance" field — never status="error".
+        case folding). Filter applies BEFORE the degenerate-row routing.
+        A no-match returns status="success" with all five buckets empty
+        and a top-level "guidance" field — never status="error".
       - vm_type: reserved for Phase 39 per-VM detection; currently filters
         at the host level only (no-op until per-VM enumeration ships).
 
-    For each non-degenerate sitemap row that survives the filter:
-      1. Resolve Proxmox credentials via get_proxmox_client.
-         CredentialNotFoundError -> silent skip (row is not a Proxmox host).
+    For each sitemap row that survives the filter:
+      0. Phase 38.1 D-15/D-17 (Bug O fix): CredentialNotFoundError no longer
+         skips silently — routes to ``not_eligible`` with reason enum (D-08).
+         Degenerate rows (hostname None/''/'unknown' or status='error')
+         also route to ``not_eligible`` with reason="degenerate".
+      1. Resolve Proxmox credentials via get_proxmox_client, threading
+         ``credential_id=row.get('proxmox_credential_id')`` (Phase 38.1 R6).
       2. Probe GET /cluster/status. Success -> probed_ok bucket.
          aiohttp.ClientError / TimeoutError / ValueError -> unreachable bucket
          with sanitize_error()-redacted message.
@@ -88,22 +156,24 @@ async def scan_drift(
         session: Optional shared aiohttp session for connection pooling.
         db_adapter: Database adapter (single funnel for sitemap reads).
         node: Optional exact-hostname filter. None means "no filter".
-        vm_type: Reserved for Phase 39 per-VM detection; inert in Phase 37.
+        vm_type: Reserved for Phase 39 per-VM detection; inert in Phase 38.1.
 
     Returns:
         {
             "status": "success",
             "scan_timestamp": ISO-8601 UTC,
-            "scanned": int,                    # sum across all four buckets
+            "scanned": int,                    # sum across all five buckets
             "counts": {
                 "probed_ok": int,
                 "unreachable": int,
-                "unknown": int,                # always 0 in Phase 37
-                "changed": int,                # always 0 in Phase 37
+                "not_eligible": int,           # Phase 38.1 R7
+                "unknown": int,                # always 0 in Phase 38.1
+                "changed": int,                # always 0 in Phase 38.1
             },
             "guidance": str,                   # PRESENT only when scanned == 0
             "probed_ok": [<per-row record>, ...],
             "unreachable": [<per-row record>, ...],
+            "not_eligible": [<per-row record>, ...],   # Phase 38.1 R7
             "unknown": [],                     # reserved for Phase 39 DRFT-17
             "changed": [],                     # reserved for Phase 39 DRFT-19
         }
@@ -118,16 +188,26 @@ async def scan_drift(
             "error": str | None,               # sanitize_error() on unreachable
             "scan_timestamp": str,             # same value across all records
         }
+
+    Per-row record shape (not_eligible, Phase 38.1 D-08):
+        {
+            "hostname": str,                   # may be empty string for degenerate rows
+            "connection_ip": str,
+            "scope": "unknown",
+            "reason": "unbound" | "binding_stale" | "keyring_desync" | "degenerate",
+            "message": str,                    # human-readable, includes recovery command
+        }
     """
     scan_timestamp = datetime.now(UTC).isoformat()
     probed_ok: list[dict[str, Any]] = []
     unreachable: list[dict[str, Any]] = []
+    not_eligible: list[dict[str, Any]] = []
     unknown: list[dict[str, Any]] = []  # reserved for Phase 39 DRFT-17
     changed: list[dict[str, Any]] = []  # reserved for Phase 39 DRFT-19
 
     rows = db_adapter.get_all_devices()
 
-    # D-01: hostname exact-match filter applied BEFORE degenerate-row skip.
+    # D-01: hostname exact-match filter applied BEFORE degenerate-row routing.
     # node=None means "no filter"; non-None reduces rows to exact matches only.
     # No-match (zero remaining rows) is a successful empty-result, NOT an error.
     if node is not None:
@@ -135,80 +215,114 @@ async def scan_drift(
 
     for row in rows:
         hostname = row.get("hostname")
-        # D-10a (Phase 36): skip degenerate Phase-35 fallback rows
-        # (zombies, errors, empty hostnames). Defense in depth — these are
-        # legitimate sitemap rows for non-Proxmox infrastructure or failed
-        # discoveries; they get filtered before any cred-resolution attempt.
-        if hostname is None or hostname in ("", "unknown") or row.get("status") == "error":
-            continue
+        binding = row.get("proxmox_credential_id")  # Phase 38.1 R6
 
-        try:
-            client = await get_proxmox_client(host=hostname, session=session)
-        except CredentialNotFoundError:
-            # D-10 (Phase 36): row is not a registered Proxmox host -> silently skip
-            continue
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-            # Resolver-during-cluster-walk failure — surface as unreachable
-            unreachable.append({
-                "hostname": hostname,
+        # D-17: degenerate rows route to not_eligible (no continue — D-15 invariant).
+        # These are legitimate sitemap rows for failed discoveries / non-Proxmox
+        # infrastructure. Routing to not_eligible (instead of silently skipping)
+        # makes the row visible to the user with a recovery pointer.
+        if (
+            hostname is None
+            or hostname in ("", "unknown")
+            or row.get("status") == "error"
+        ):
+            not_eligible.append({
+                "hostname": hostname or "",
                 "connection_ip": row.get("connection_ip", ""),
                 "scope": "unknown",
-                "cluster_name": None,
-                "status": "unreachable",
-                "error": sanitize_error(exc),
-                "scan_timestamp": scan_timestamp,
+                "reason": "degenerate",
+                "message": _reason_message(
+                    "degenerate", hostname or "<empty>", "proxmox"
+                ),
             })
-            continue
-
-        # Capture (scope, cluster_name) telemetry for the per-row record.
-        # Second resolver call hits _HOST_CLUSTER_CACHE in proxmox_api.py
-        # (microsecond cost on warm runs).
-        try:
-            _token, scope, cluster_name = await resolve_proxmox_credentials(
-                hostname, session=session,
-            )
-        except CredentialNotFoundError:
-            # Defensive — should not happen after get_proxmox_client succeeded.
-            continue
-
-        try:
-            status = await client.get("/cluster/status")
-            if not isinstance(status, list):
-                raise ValueError(
-                    f"unexpected /cluster/status payload type: {type(status).__name__}"
+        else:
+            # Phase 38.1 R6: pass binding UUID to resolver. When binding is None,
+            # resolver falls through to Tier-1/Tier-2 (cluster walk handles
+            # cluster-served rows per D-09).
+            try:
+                client = await get_proxmox_client(
+                    host=hostname, session=session, credential_id=binding,
                 )
-            probed_ok.append({
-                "hostname": hostname,
-                "connection_ip": row.get("connection_ip", ""),
-                "scope": scope,
-                "cluster_name": cluster_name,
-                "status": "probed-ok",
-                "error": None,
-                "scan_timestamp": scan_timestamp,
-            })
-        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-            unreachable.append({
-                "hostname": hostname,
-                "connection_ip": row.get("connection_ip", ""),
-                "scope": scope,
-                "cluster_name": cluster_name,
-                "status": "unreachable",
-                "error": sanitize_error(exc),
-                "scan_timestamp": scan_timestamp,
-            })
+            except CredentialNotFoundError as exc:
+                reason = _classify_credential_failure(exc, binding)
+                not_eligible.append({
+                    "hostname": hostname,
+                    "connection_ip": row.get("connection_ip", ""),
+                    "scope": "unknown",
+                    "reason": reason,
+                    "message": _reason_message(reason, hostname, "proxmox"),
+                })
+            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                # Resolver-during-cluster-walk failure — surface as unreachable
+                unreachable.append({
+                    "hostname": hostname,
+                    "connection_ip": row.get("connection_ip", ""),
+                    "scope": "unknown",
+                    "cluster_name": None,
+                    "status": "unreachable",
+                    "error": sanitize_error(exc),
+                    "scan_timestamp": scan_timestamp,
+                })
+            else:
+                # Capture (scope, cluster_name) telemetry — second resolver call
+                # hits _HOST_CLUSTER_CACHE so cost is microseconds. Pass the same
+                # binding so Tier-0 short-circuit fires when present.
+                try:
+                    _token, scope, cluster_name = await resolve_proxmox_credentials(
+                        hostname, session=session, credential_id=binding,
+                    )
+                except CredentialNotFoundError as exc:
+                    # Defensive — should not happen after get_proxmox_client succeeded.
+                    # Route to not_eligible (NOT continue) per D-15 invariant.
+                    reason = _classify_credential_failure(exc, binding)
+                    not_eligible.append({
+                        "hostname": hostname,
+                        "connection_ip": row.get("connection_ip", ""),
+                        "scope": "unknown",
+                        "reason": reason,
+                        "message": _reason_message(reason, hostname, "proxmox"),
+                    })
+                else:
+                    try:
+                        status = await client.get("/cluster/status")
+                        if not isinstance(status, list):
+                            raise ValueError(
+                                f"unexpected /cluster/status payload type: {type(status).__name__}"
+                            )
+                        probed_ok.append({
+                            "hostname": hostname,
+                            "connection_ip": row.get("connection_ip", ""),
+                            "scope": scope,
+                            "cluster_name": cluster_name,
+                            "status": "probed-ok",
+                            "error": None,
+                            "scan_timestamp": scan_timestamp,
+                        })
+                    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                        unreachable.append({
+                            "hostname": hostname,
+                            "connection_ip": row.get("connection_ip", ""),
+                            "scope": scope,
+                            "cluster_name": cluster_name,
+                            "status": "unreachable",
+                            "error": sanitize_error(exc),
+                            "scan_timestamp": scan_timestamp,
+                        })
 
     # D-07: counts sub-dict mirrors bucket sizes.
     counts: dict[str, int] = {
         "probed_ok": len(probed_ok),
         "unreachable": len(unreachable),
-        "unknown": len(unknown),  # always 0 in Phase 37
-        "changed": len(changed),  # always 0 in Phase 37
+        "not_eligible": len(not_eligible),
+        "unknown": len(unknown),  # always 0 in Phase 38.1
+        "changed": len(changed),  # always 0 in Phase 38.1
     }
-    # scanned = sum across all four buckets (defensive vs. Phase 39 expansion).
+    # scanned = sum across all five buckets (defensive vs. Phase 39 expansion).
     scanned = sum(counts.values())
 
-    # D-04/D-05/D-07: locked envelope key order —
-    # status, scan_timestamp, scanned, counts, [guidance,] probed_ok, unreachable, unknown, changed
+    # D-04/D-05/D-07 (Phase 37) + Phase 38.1 D-08: locked envelope key order —
+    # status, scan_timestamp, scanned, counts, [guidance,] probed_ok, unreachable,
+    #   not_eligible, unknown, changed
     response: dict[str, Any] = {
         "status": "success",
         "scan_timestamp": scan_timestamp,
@@ -222,6 +336,7 @@ async def scan_drift(
 
     response["probed_ok"] = probed_ok
     response["unreachable"] = unreachable
+    response["not_eligible"] = not_eligible
     response["unknown"] = unknown
     response["changed"] = changed
 
