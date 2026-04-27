@@ -773,3 +773,216 @@ class TestScanDrift4Bucket:
         r3 = await scan_drift(session=None, db_adapter=db_adapter, node="nonexistent")
         assert r3["unknown"] == [], f"no-match unknown not []: {r3['unknown']}"
         assert r3["changed"] == [], f"no-match changed not []: {r3['changed']}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38.1 D-18: TestScanDriftNotEligible — functional routing regression
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestScanDriftNotEligible:
+    """Phase 38.1 D-18: routing-semantics regression.
+
+    Companion to the AST guard (D-15): the AST guard catches structural
+    regressions (a stray ``continue``); this class catches semantic regressions
+    (rows landing in the wrong bucket).
+
+    Each test patches ``get_proxmox_client`` and/or ``resolve_proxmox_credentials``
+    to simulate the four not_eligible reason codes from D-08:
+        - unbound       — proxmox_credential_id IS NULL
+        - binding_stale — UUID not in registry
+        - keyring_desync — UUID in registry but keyring secret missing
+        - degenerate    — row has bad hostname/status before resolver runs
+    """
+
+    @pytest.mark.asyncio
+    async def test_unbound_row_routes_to_not_eligible(self) -> None:
+        """Row with NULL proxmox_credential_id + no cluster cred → not_eligible/unbound."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pve1",
+                "connection_ip": "10.0.0.10",
+                "status": "success",
+                "proxmox_credential_id": None,
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            raise CredentialNotFoundError(f"No Proxmox credentials found for {host}.")
+
+        with patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["status"] == "success"
+        assert len(result["probed_ok"]) == 0
+        assert result["counts"]["not_eligible"] == 1
+        assert result["not_eligible"][0]["hostname"] == "pve1"
+        assert result["not_eligible"][0]["reason"] == "unbound"
+        assert "credentials add --type proxmox" in result["not_eligible"][0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_bound_row_with_valid_uuid_routes_to_probed_ok(self) -> None:
+        """Row with valid proxmox_credential_id → probed_ok (UUID short-circuit hits)."""
+        db_adapter = MagicMock()
+        valid_uuid = "11111111-1111-4111-8111-111111111111"
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pve2",
+                "connection_ip": "10.0.0.20",
+                "status": "success",
+                "proxmox_credential_id": valid_uuid,
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(return_value=[{"type": "node", "name": "pve2"}])
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["status"] == "success"
+        assert len(result["probed_ok"]) == 1
+        assert result["probed_ok"][0]["hostname"] == "pve2"
+        assert result["counts"].get("not_eligible", 0) == 0
+
+    @pytest.mark.asyncio
+    async def test_bound_row_stale_uuid_routes_to_not_eligible(self) -> None:
+        """Row with stale proxmox_credential_id → not_eligible/binding_stale."""
+        db_adapter = MagicMock()
+        stale_uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pve3",
+                "connection_ip": "10.0.0.30",
+                "status": "success",
+                "proxmox_credential_id": stale_uuid,
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            raise CredentialNotFoundError(
+                f"binding stale: UUID {stale_uuid} not in registry. "
+                f"Run `credentials add --type proxmox {host}` to register."
+            )
+
+        with patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["status"] == "success"
+        assert result["counts"]["not_eligible"] == 1
+        assert result["not_eligible"][0]["hostname"] == "pve3"
+        assert result["not_eligible"][0]["reason"] == "binding_stale"
+
+    @pytest.mark.asyncio
+    async def test_degenerate_row_routes_to_not_eligible(self) -> None:
+        """Row with hostname='' → not_eligible/degenerate (filter fires before resolver)."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "",
+                "connection_ip": "10.0.0.40",
+                "status": "success",
+                "proxmox_credential_id": None,
+                "ssh_credential_id": None,
+            },
+        ]
+
+        # No patch on get_proxmox_client — degenerate filter fires before resolver
+        with patch("homelab_mcp.drift_detection.get_proxmox_client") as mock_client:
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        mock_client.assert_not_called()
+        assert result["status"] == "success"
+        assert result["counts"]["not_eligible"] == 1
+        assert result["not_eligible"][0]["reason"] == "degenerate"
+
+    @pytest.mark.asyncio
+    async def test_no_row_vanishes(self) -> None:
+        """4-row fixture: every row lands in exactly one bucket; no row silently dropped.
+
+        I7: closure invariant — scanned == sum(len(result[bucket]) for all buckets).
+        """
+        valid_uuid = "22222222-2222-4222-8222-222222222222"
+        stale_uuid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            # Row 1: bound-fresh → probed_ok
+            {
+                "hostname": "pve-fresh",
+                "connection_ip": "10.0.0.1",
+                "status": "success",
+                "proxmox_credential_id": valid_uuid,
+                "ssh_credential_id": None,
+            },
+            # Row 2: unbound → not_eligible
+            {
+                "hostname": "pve-unbound",
+                "connection_ip": "10.0.0.2",
+                "status": "success",
+                "proxmox_credential_id": None,
+                "ssh_credential_id": None,
+            },
+            # Row 3: stale UUID → not_eligible
+            {
+                "hostname": "pve-stale",
+                "connection_ip": "10.0.0.3",
+                "status": "success",
+                "proxmox_credential_id": stale_uuid,
+                "ssh_credential_id": None,
+            },
+            # Row 4: degenerate hostname → not_eligible
+            {
+                "hostname": "unknown",
+                "connection_ip": "10.0.0.4",
+                "status": "success",
+                "proxmox_credential_id": None,
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            if host == "pve-fresh":
+                client = MagicMock()
+                client.get = AsyncMock(return_value=[{"type": "node", "name": "pve-fresh"}])
+                return client
+            if host == "pve-unbound":
+                raise CredentialNotFoundError(f"No Proxmox credentials found for {host}.")
+            if host == "pve-stale":
+                raise CredentialNotFoundError(
+                    f"binding stale: UUID {stale_uuid} not in registry."
+                )
+            raise AssertionError(f"unexpected host in fake_get_client: {host}")
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        buckets = ("probed_ok", "unreachable", "not_eligible", "unknown", "changed")
+        total_in_buckets = sum(len(result[b]) for b in buckets)
+        assert total_in_buckets == 4, (
+            f"I7 closure violation: 4 rows in, only {total_in_buckets} rows landed in buckets. "
+            f"Bucket sizes: { {b: len(result[b]) for b in buckets} }"
+        )
+        # I7: scanned must equal sum of all bucket lengths
+        assert result["scanned"] == sum(len(result[b]) for b in buckets), (
+            f"I7 scanned invariant violated: scanned={result['scanned']} but "
+            f"sum(bucket lengths)={sum(len(result[b]) for b in buckets)}"
+        )

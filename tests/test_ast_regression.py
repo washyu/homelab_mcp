@@ -737,3 +737,97 @@ class TestPhase37DriftHygiene:
             "(DRFT-16). Drift baselines ARE sitemap rows; lifecycle is handled by "
             "discover_and_map / decommission_device / purge_failed_discoveries."
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38.1 AST regression guards (D-15 / D-17)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase381CredBinding:
+    """Phase 38.1 D-15/D-17: drift's row loop never silently skips a sitemap row.
+
+    D-15: no ``ast.Continue`` may appear inside the row-iter for-loop body of
+        ``drift_detection.scan_drift``. Every row MUST land in one of five buckets
+        (probed_ok / unreachable / not_eligible / unknown / changed).
+    D-17: degenerate-row routing now goes to ``not_eligible``, not ``continue`` —
+        D-15 catches this structurally.
+    D-16: scope is ONLY ``scan_drift`` for now; Phase 39's unknown/changed helpers
+        will extend.
+
+    NOTE on function name: ``scan_drift`` (drift_detection.py:54), NOT
+    ``scan_infrastructure_drift`` (the latter is the MCP tool name in
+    tool_handlers/drift_handlers.py). RESEARCH Pitfall 1.
+    """
+
+    def test_scan_drift_no_continue_in_row_loop_phase38_1(self) -> None:
+        """Phase 38.1 D-15: no ``continue`` in scan_drift row loop.
+
+        The for-loop body must route EVERY row into one of the five buckets.
+        A bare ``continue`` is the original Bug O shape (silent skip).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        target = next(
+            (
+                n for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+                and n.name == "scan_drift"
+            ),
+            None,
+        )
+        assert target is not None, (
+            "Phase 38.1 D-15: scan_drift not found in drift_detection.py "
+            "(if you renamed the function, update this guard)"
+        )
+
+        # Find the row-iter for-loop ("for row in rows:")
+        row_loops = [
+            n for n in ast.walk(target)
+            if isinstance(n, ast.For)
+            and isinstance(n.target, ast.Name)
+            and n.target.id == "row"
+        ]
+        assert len(row_loops) == 1, (
+            f"Phase 38.1 D-15: expected one `for row in rows:` loop in scan_drift, "
+            f"found {len(row_loops)}. If you intentionally split the loop, update "
+            f"this guard's row-loop discovery shape."
+        )
+
+        violations = [
+            n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)
+        ]
+        assert not violations, (
+            f"Phase 38.1 D-15 regression — `continue` reappeared in scan_drift row "
+            f"loop at line(s): {violations}. Every row must land in one of five "
+            f"buckets (probed_ok, unreachable, not_eligible, unknown, changed)."
+        )
+
+    def test_drift_loop_routes_degenerate_to_not_eligible_phase38_1(self) -> None:
+        """Phase 38.1 D-17: scan_drift must contain at least one not_eligible.append(...)
+        call — degenerate-row routing per D-17 + credential-failure routing per D-15.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+        target = next(
+            (n for n in ast.walk(tree)
+             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"),
+            None,
+        )
+        assert target is not None, "Phase 38.1 D-15: scan_drift not found"
+        not_eligible_appends = [
+            n for n in ast.walk(target)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "not_eligible"
+            and n.func.attr == "append"
+        ]
+        assert not_eligible_appends, (
+            "Phase 38.1 D-17: scan_drift must contain at least one "
+            "`not_eligible.append(...)` call (degenerate-row routing per D-17 + "
+            "credential-failure routing per D-15). Current source has none."
+        )

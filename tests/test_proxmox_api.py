@@ -1924,3 +1924,129 @@ class TestHandlerSessionThreading:
 # deletes that shortcut. The new behavior is: get_proxmox_client() with no host
 # raises ValueError naming PROXMOX_HOST (see test_client_missing_host above).
 # The resolver path is covered by TestGetProxmoxClientAsync.
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Wave 0 RED tests: resolver credential_id kwarg (R5, D-11, D-12, D-13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_credential_id_short_circuit_phase381(
+    mock_get_cred,
+    mock_list_creds,
+) -> None:
+    """D-13: resolve_proxmox_credentials(host='pve', credential_id=<uuid>) short-circuits to registry UUID."""
+    from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
+
+    test_uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    # Registry entry keyed by IP — different from host='pve'
+    mock_list_creds.return_value = []  # hostname-exact-match tier finds nothing
+    mock_get_cred.return_value = "test-api-token"
+
+    # Phase 38.1 R5: credential_id kwarg must exist and short-circuit lookup
+    # This MUST FAIL until Plan 02 adds the credential_id parameter
+    result = await resolve_proxmox_credentials(host="pve", credential_id=test_uuid)
+    assert result is not None
+    assert isinstance(result, tuple)
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.list_credentials")
+async def test_resolve_proxmox_credentials_with_unknown_uuid_raises_binding_stale_phase381(
+    mock_list_creds,
+) -> None:
+    """D-11: resolve_proxmox_credentials with UUID not in registry raises CredentialNotFoundError (binding stale)."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    mock_list_creds.return_value = []  # empty registry
+
+    # Phase 38.1 D-11: unknown UUID → CredentialNotFoundError with 'binding stale' message
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(
+            host="pve",
+            credential_id="00000000-0000-4000-8000-000000000000",
+        )
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, (
+        f"Phase 38.1 D-11: expected 'binding stale' in error, got: {error_msg!r}"
+    )
+    assert "credentials add --type proxmox pve" in error_msg, (
+        f"Phase 38.1 D-11: error must include recovery command, got: {error_msg!r}"
+    )
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_proxmox_credentials_with_uuid_keyring_miss_raises_desync_phase381(
+    mock_get_cred,
+    mock_list_creds,
+) -> None:
+    """D-12: UUID found in registry but keyring returns None → CredentialNotFoundError (keyring_desync)."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    test_uuid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    mock_list_creds.return_value = []  # tier-1 hostname match empty
+    mock_get_cred.return_value = None  # keyring desync
+
+    # Phase 38.1 D-12: UUID hits registry entry, but keyring returns None
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(host="pve", credential_id=test_uuid)
+
+    error_msg = str(exc_info.value)
+    # Must not fall back silently — must surface desync
+    assert exc_info.type is CredentialNotFoundError
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_proxmox_credentials_with_credential_id_ignores_host_arg_phase381(
+    mock_get_cred,
+    mock_list_creds,
+) -> None:
+    """D-13: UUID wins over host — hostname mismatch is expected, not an error."""
+    from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
+
+    # Registry entry keyed by IP; host passed as short name — mismatch is the point
+    test_uuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    mock_list_creds.return_value = []
+    mock_get_cred.return_value = "valid-token"
+
+    # Phase 38.1 D-13: UUID short-circuit means host mismatch is irrelevant
+    # This MUST FAIL until Plan 02 adds credential_id support
+    result = await resolve_proxmox_credentials(
+        host="pve",  # sitemap short hostname
+        credential_id=test_uuid,  # UUID for '192.168.10.20' entry
+    )
+    assert result is not None  # must not raise
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_proxmox_credentials_legacy_positional_backward_compat_phase381(
+    mock_get_cred,
+    mock_list_creds,
+) -> None:
+    """Existing callers without credential_id still work (backward compat — D-14)."""
+    from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
+
+    mock_list_creds.return_value = [
+        {
+            "hostname": "pve-legacy",
+            "username": "root@pam!tok",
+            "credential_type": "proxmox",
+            "scope": "node",
+            "cluster_name": "",
+        }
+    ]
+    mock_get_cred.return_value = "legacy-token"
+
+    # Phase 38.1 D-14: legacy call without credential_id must still work
+    result = await resolve_proxmox_credentials("pve-legacy")
+    assert result is not None
+    assert isinstance(result, tuple)
