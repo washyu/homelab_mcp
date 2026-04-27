@@ -302,3 +302,29 @@ def list_credentials(credential_type: str = "ssh") -> list[dict[str, str]]:
         Returns empty list if registry file does not exist (fresh install).
     """
     return [e for e in _load_registry() if e["credential_type"] == credential_type]
+
+
+def find_credential_by_id(credential_id: str) -> dict[str, str] | None:
+    """Return the registry entry matching credential_id, or None.
+
+    Used by resolvers when caller passes ``credential_id=`` (Phase 38.1 D-11).
+    Single source of truth for "is this binding stale?" — drift's
+    ``not_eligible`` reason routing depends on the difference between
+    "UUID found, keyring miss" (D-12: keyring_desync) and "UUID not found
+    in registry" (D-11: binding_stale).
+
+    Args:
+        credential_id: UUID string from a sitemap row's
+            ``ssh_credential_id`` or ``proxmox_credential_id`` column.
+
+    Returns:
+        The registry entry dict (with ``credential_id``, ``hostname``,
+        ``username``, ``credential_type``, ``auth_type``, ``scope``,
+        ``cluster_name`` keys) when found; ``None`` when no entry has
+        this UUID. Caller must distinguish None (stale binding) from
+        "secret returned None" (keyring desync) — different reason codes.
+    """
+    for entry in _load_registry():
+        if entry.get("credential_id") == credential_id:
+            return entry
+    return None
