@@ -54,6 +54,73 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def set_device_credential_binding(
+        self,
+        device_id: int,
+        credential_type: str,
+        credential_id: str | None,
+    ) -> None:
+        """Phase 38.1 R3/R4/R8/R9: write the credential_id binding column.
+
+        Args:
+            device_id: ``devices.id`` primary key.
+            credential_type: ``"ssh"`` or ``"proxmox"`` — selects which
+                column (``ssh_credential_id`` or ``proxmox_credential_id``).
+                Closed set; ValueError on any other value (defense-in-depth
+                even though argparse and CLI handlers already constrain).
+            credential_id: UUID string from
+                ``credential_store.register_credential()``, or ``None`` to
+                null the binding (used by R9 rotation cleanup and ``unlink``).
+        """
+        pass
+
+    @abstractmethod
+    def find_devices_by_hostname_or_ip(self, hostname: str) -> list[dict[str, Any]]:
+        """Phase 38.1 R4/R8 (Blocker B2): find sitemap rows where
+        ``hostname == arg`` OR ``connection_ip == arg``.
+
+        Encapsulates SQLite ``?`` vs Postgres ``%s`` placeholder differences
+        so adapter-agnostic callers (server.py auto-bind, link, unlink) never
+        need to construct raw SQL.
+
+        Args:
+            hostname: identifier to match against either column. May be a
+                hostname (short or FQDN) or an IP address string.
+
+        Returns:
+            List of dicts each containing at minimum keys: ``id``,
+            ``hostname``, ``connection_ip``, ``ssh_credential_id``,
+            ``proxmox_credential_id``. Empty list when no row matches.
+        """
+        pass
+
+    @abstractmethod
+    def bulk_null_credential_binding(
+        self,
+        credential_ids: list[str],
+        credential_type: str,
+    ) -> list[str]:
+        """Phase 38.1 R9 (Blocker B2): null the ``<type>_credential_id`` column
+        on every devices row whose binding is in the given UUID list.
+
+        Used by the rotation-cleanup path in ``credentials remove``.
+        Encapsulates the placeholder differences (``IN (?,?,...)`` for SQLite
+        vs ``= ANY(%s)`` for Postgres) so the caller passes only plain Python
+        values.
+
+        Args:
+            credential_ids: UUID list to match against the binding column.
+                Empty list → no-op, returns ``[]``.
+            credential_type: ``"ssh"`` or ``"proxmox"`` — selects which
+                column to null. Closed set; ValueError on any other value.
+
+        Returns:
+            List of hostnames whose binding was nulled (for D-26 stderr
+            feedback). Empty list when no row matched.
+        """
+        pass
+
+    @abstractmethod
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from the database."""
         pass
@@ -150,6 +217,8 @@ class SQLiteAdapter(DatabaseAdapter):
                 pci_devices TEXT,
                 block_devices TEXT,
                 fingerprint TEXT,
+                ssh_credential_id TEXT,
+                proxmox_credential_id TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
@@ -352,6 +421,75 @@ class SQLiteAdapter(DatabaseAdapter):
         self.connection.commit()
         return merged
 
+    def set_device_credential_binding(
+        self, device_id: int, credential_type: str, credential_id: str | None
+    ) -> None:
+        """Phase 38.1 R3/R4/R8/R9 — see DatabaseAdapter.set_device_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(
+                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
+            )
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        # Closed set ({"ssh", "proxmox"}) — safe to interpolate column name.
+        column = f"{credential_type}_credential_id"
+        cursor.execute(
+            f"UPDATE devices SET {column} = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+            (credential_id, datetime.now().isoformat(), device_id),
+        )
+        self.connection.commit()
+
+    def find_devices_by_hostname_or_ip(self, hostname: str) -> list[dict[str, Any]]:
+        """SQLite implementation. See DatabaseAdapter.find_devices_by_hostname_or_ip."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT id, hostname, connection_ip, "
+            "ssh_credential_id, proxmox_credential_id "
+            "FROM devices WHERE hostname = ? OR connection_ip = ?",
+            (hostname, hostname),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def bulk_null_credential_binding(
+        self, credential_ids: list[str], credential_type: str,
+    ) -> list[str]:
+        """SQLite implementation. See DatabaseAdapter.bulk_null_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(
+                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
+            )
+        if not credential_ids:
+            return []  # no-op on empty input
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        column = f"{credential_type}_credential_id"  # closed set
+        # SQLite-side placeholder construction stays internal to the adapter —
+        # never leaks to server.py (Blocker B2 mitigation).
+        placeholders = ",".join("?" * len(credential_ids))
+        # Step 1: capture affected hostnames BEFORE the UPDATE
+        cursor.execute(
+            f"SELECT hostname FROM devices WHERE {column} IN ({placeholders})",  # noqa: S608
+            tuple(credential_ids),
+        )
+        affected_hostnames = [row["hostname"] for row in cursor.fetchall()]
+        if not affected_hostnames:
+            return []
+        # Step 2: null the binding
+        cursor.execute(
+            f"UPDATE devices SET {column} = NULL, updated_at = ? "  # noqa: S608
+            f"WHERE {column} IN ({placeholders})",
+            (datetime.now().isoformat(), *credential_ids),
+        )
+        self.connection.commit()
+        return affected_hostnames
+
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from SQLite."""
         if not self.connection:
@@ -385,6 +523,16 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_dict["fingerprint"] = json.loads(device_dict["fingerprint"])
                 except json.JSONDecodeError:
                     device_dict["fingerprint"] = {}
+
+            # Phase 38.1 R7 / D-10: per-row eligibility derived from binding columns.
+            # Pure binding-state (NOT cluster-walk-aware — D-09 ratifies this for the
+            # sitemap-row read path; cluster-served rows still report eligibility=false
+            # for the proxmox column even though drift's resolver Tier-2 walk resolves
+            # them at scan time).
+            device_dict["eligibility"] = {
+                "ssh": device_dict.get("ssh_credential_id") is not None,
+                "proxmox": device_dict.get("proxmox_credential_id") is not None,
+            }
 
             devices.append(device_dict)
 
@@ -546,6 +694,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 status VARCHAR(50) NOT NULL,
                 system_info JSONB DEFAULT '{}',
                 network_interfaces JSONB DEFAULT '[]',
+                ssh_credential_id TEXT,
+                proxmox_credential_id TEXT,
                 error_message TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
@@ -793,6 +943,91 @@ class PostgreSQLAdapter(DatabaseAdapter):
             self.connection.rollback()
             raise
 
+    def set_device_credential_binding(
+        self, device_id: int, credential_type: str, credential_id: str | None
+    ) -> None:
+        """Phase 38.1 R3/R4/R8/R9 — see DatabaseAdapter.set_device_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(
+                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
+            )
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        column = f"{credential_type}_credential_id"  # closed set
+        try:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT id FROM devices WHERE id = %s FOR UPDATE",
+                (device_id,),
+            )
+            if cursor.fetchone() is None:
+                self.connection.rollback()
+                raise ValueError(f"device_id {device_id} not found in devices table")
+            cursor.execute(
+                f"UPDATE devices SET {column} = %s, updated_at = NOW() WHERE id = %s",  # noqa: S608
+                (credential_id, device_id),
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def find_devices_by_hostname_or_ip(self, hostname: str) -> list[dict[str, Any]]:
+        """PostgreSQL implementation. See DatabaseAdapter.find_devices_by_hostname_or_ip."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            "SELECT id, hostname, connection_ip::text AS connection_ip, "
+            "ssh_credential_id, proxmox_credential_id "
+            "FROM devices WHERE hostname = %s OR connection_ip::text = %s",
+            (hostname, hostname),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def bulk_null_credential_binding(
+        self, credential_ids: list[str], credential_type: str,
+    ) -> list[str]:
+        """PostgreSQL implementation. See DatabaseAdapter.bulk_null_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(
+                f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}"
+            )
+        if not credential_ids:
+            return []
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        column = f"{credential_type}_credential_id"  # closed set
+        try:
+            cursor.execute("BEGIN")
+            # Capture affected hostnames first (under the same transaction so a
+            # concurrent rebind doesn't sneak in between SELECT and UPDATE).
+            cursor.execute(
+                f"SELECT id, hostname FROM devices "  # noqa: S608
+                f"WHERE {column} = ANY(%s) FOR UPDATE",
+                (credential_ids,),
+            )
+            rows = cursor.fetchall()
+            affected_hostnames = [row["hostname"] for row in rows]
+            if not affected_hostnames:
+                self.connection.rollback()
+                return []
+            cursor.execute(
+                f"UPDATE devices SET {column} = NULL, updated_at = NOW() "  # noqa: S608
+                f"WHERE {column} = ANY(%s)",
+                (credential_ids,),
+            )
+            self.connection.commit()
+            return affected_hostnames
+        except Exception:
+            self.connection.rollback()
+            raise
+
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from PostgreSQL."""
         if not self.connection:
@@ -803,7 +1038,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor.execute("""
             SELECT
                 id, hostname, connection_ip::text as connection_ip, last_seen, status,
-                system_info, network_interfaces, error_message, created_at, updated_at
+                system_info, network_interfaces, error_message, created_at, updated_at,
+                ssh_credential_id, proxmox_credential_id
             FROM devices
             ORDER BY hostname, connection_ip
         """)
@@ -842,6 +1078,12 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         "fingerprint": system_info.get("fingerprint"),
                     }
                 )
+
+            # Phase 38.1 R7 / D-10: per-row eligibility (parity with SQLite path).
+            device_dict["eligibility"] = {
+                "ssh": device_dict.get("ssh_credential_id") is not None,
+                "proxmox": device_dict.get("proxmox_credential_id") is not None,
+            }
 
             devices.append(device_dict)
 

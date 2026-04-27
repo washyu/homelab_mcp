@@ -904,7 +904,7 @@ def test_eligibility_field_phase381(temp_db):
 
     sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
     # Store a device directly via the adapter
-    adapter: SQLiteAdapter = sitemap.db  # type: ignore[assignment]
+    adapter: SQLiteAdapter = sitemap.db_adapter  # type: ignore[assignment]
     device_id = adapter.store_device({
         "hostname": "test-node",
         "connection_ip": "10.1.1.1",
