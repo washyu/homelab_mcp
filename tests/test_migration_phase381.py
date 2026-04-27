@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.homelab_mcp.database import SQLiteAdapter
+from homelab_mcp.database import SQLiteAdapter
 
 
 def _seed_registry(registry_path: Path) -> None:
@@ -50,6 +50,17 @@ def _bootstrap_sqlite(db_path: Path) -> SQLiteAdapter:
     return adapter
 
 
+def _reset_phase_38_1_state(stamp_path: Path, registry_path: Path) -> None:
+    """After ``_bootstrap_sqlite``, ``init_schema`` already fired the destructive
+    migration once. To exercise the destructive path again under controlled
+    state, clear the stamp file and re-seed the registry so the second
+    ``run_sqlite_migrations`` call sees a fresh first-run condition.
+    """
+    stamp_path.unlink(missing_ok=True)
+    if not registry_path.exists():
+        _seed_registry(registry_path)
+
+
 def _seed_device_and_history(adapter: SQLiteAdapter) -> int:
     device_id = adapter.store_device({
         "hostname": "pve",
@@ -68,7 +79,7 @@ def _seed_device_and_history(adapter: SQLiteAdapter) -> int:
 
 def test_first_run_archives_registry_to_bak_phase381(tmp_path, monkeypatch, capsys):
     """R10/D-21: first run archives `_REGISTRY_PATH` to `.bak.<microsecond_ts>`."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
@@ -99,27 +110,29 @@ def test_first_run_archives_registry_to_bak_phase381(tmp_path, monkeypatch, caps
 
     captured = capsys.readouterr()
     assert "Archived credential registry to" in captured.err
-    assert "v1.7" in captured.err and "credential UUID" in captured.err.lower()
+    assert "v1.7" in captured.err and "credential uuid" in captured.err.lower()
     assert "Recovery" in captured.err
 
 
 def test_first_run_drops_devices_table_phase381(tmp_path, monkeypatch):
     """R10: first run drops the `devices` table (rows do not survive)."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
+    stamp_path = tmp_path / "migration_state.json"
     _seed_registry(registry_path)
     monkeypatch.setattr(
         "homelab_mcp.credential_store._REGISTRY_PATH", registry_path
     )
     monkeypatch.setattr(
-        "homelab_mcp.migration._MIGRATION_STATE_PATH",
-        tmp_path / "migration_state.json",
-        raising=False,
+        "homelab_mcp.migration._MIGRATION_STATE_PATH", stamp_path, raising=False
     )
 
     db_path = tmp_path / "sitemap.db"
     adapter = _bootstrap_sqlite(db_path)
+    # init_schema fired the destructive migration once; reset state to exercise
+    # it again with a seeded device row present.
+    _reset_phase_38_1_state(stamp_path, registry_path)
     _seed_device_and_history(adapter)
     try:
         run_sqlite_migrations(_connection=adapter.connection)
@@ -137,21 +150,21 @@ def test_first_run_drops_devices_table_phase381(tmp_path, monkeypatch):
 
 def test_first_run_clears_discovery_history_phase381(tmp_path, monkeypatch):
     """W5: FK-dependent discovery_history rows are cleared on SQLite (banner block 1 promises this)."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
+    stamp_path = tmp_path / "migration_state.json"
     _seed_registry(registry_path)
     monkeypatch.setattr(
         "homelab_mcp.credential_store._REGISTRY_PATH", registry_path
     )
     monkeypatch.setattr(
-        "homelab_mcp.migration._MIGRATION_STATE_PATH",
-        tmp_path / "migration_state.json",
-        raising=False,
+        "homelab_mcp.migration._MIGRATION_STATE_PATH", stamp_path, raising=False
     )
 
     db_path = tmp_path / "sitemap.db"
     adapter = _bootstrap_sqlite(db_path)
+    _reset_phase_38_1_state(stamp_path, registry_path)
     _seed_device_and_history(adapter)
     try:
         run_sqlite_migrations(_connection=adapter.connection)
@@ -169,7 +182,7 @@ def test_first_run_clears_discovery_history_phase381(tmp_path, monkeypatch):
 
 def test_first_run_writes_version_stamp_phase381(tmp_path, monkeypatch):
     """D-19: stamp file written after successful drop."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
@@ -199,7 +212,7 @@ def test_first_run_writes_version_stamp_phase381(tmp_path, monkeypatch):
 
 def test_second_run_is_noop_after_stamp_phase381(tmp_path, monkeypatch):
     """D-19: idempotency — second invocation does NOT re-archive or re-drop."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
@@ -238,8 +251,15 @@ def test_second_run_is_noop_after_stamp_phase381(tmp_path, monkeypatch):
 
 
 def test_drop_failure_leaves_stamp_unwritten_phase381(tmp_path, monkeypatch):
-    """D-20: if drop fails, stamp is not written, but backup IS written (ordering safety)."""
-    from src.homelab_mcp import migration as migration_module
+    """D-20: if drop fails, stamp is not written, but backup IS written (ordering safety).
+
+    Patches the connection's ``cursor()`` method so the cursor's ``execute()``
+    raises on ``DROP TABLE``. Real ``sqlite3.Connection.execute`` is read-only;
+    we proxy the cursor instead, which is what the migration code actually uses.
+    """
+    from unittest.mock import MagicMock
+
+    from homelab_mcp import migration as migration_module
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
@@ -253,23 +273,36 @@ def test_drop_failure_leaves_stamp_unwritten_phase381(tmp_path, monkeypatch):
 
     db_path = tmp_path / "sitemap.db"
     adapter = _bootstrap_sqlite(db_path)
+    # init_schema fired the migration once already; reset and re-arm,
+    # plus wipe the prior bak so this assertion sees only the failure-path bak.
+    _reset_phase_38_1_state(stamp_path, registry_path)
+    for prior_bak in tmp_path.glob("credential_registry.json.bak.*"):
+        prior_bak.unlink()
     try:
-        original_execute = adapter.connection.execute
+        real_cursor = adapter.connection.cursor()
 
-        def _failing_execute(sql, *args, **kwargs):
+        def _execute_failing_drop(sql, *args, **kwargs):
             if isinstance(sql, str) and "DROP TABLE" in sql.upper():
                 raise RuntimeError("simulated drop failure (D-20 ordering test)")
-            return original_execute(sql, *args, **kwargs)
+            return real_cursor.execute(sql, *args, **kwargs)
 
-        with patch.object(adapter.connection, "execute", side_effect=_failing_execute):
-            with pytest.raises(RuntimeError):
-                migration_module.run_sqlite_migrations(_connection=adapter.connection)
+        proxy_cursor = MagicMock(wraps=real_cursor)
+        proxy_cursor.execute = _execute_failing_drop
+        proxy_cursor.fetchone = real_cursor.fetchone
+        proxy_cursor.fetchall = real_cursor.fetchall
+
+        proxy_conn = MagicMock(wraps=adapter.connection)
+        proxy_conn.cursor = lambda: proxy_cursor
+        proxy_conn.commit = adapter.connection.commit
+
+        with pytest.raises(RuntimeError):
+            migration_module.run_sqlite_migrations(_connection=proxy_conn)
     finally:
         adapter.close()
 
     bak_files = list(tmp_path.glob("credential_registry.json.bak.*"))
     assert len(bak_files) == 1, (
-        "Phase 38.1 D-20: backup must be written BEFORE drop attempt"
+        f"Phase 38.1 D-20: backup must be written BEFORE drop attempt; got {[p.name for p in bak_files]}"
     )
     assert not stamp_path.exists(), (
         "Phase 38.1 D-20: stamp must NOT be written when drop fails"
@@ -278,7 +311,7 @@ def test_drop_failure_leaves_stamp_unwritten_phase381(tmp_path, monkeypatch):
 
 def test_bak_filename_collision_uses_microsecond_timestamp_per_d22(tmp_path, monkeypatch):
     """D-22: pre-existing second-resolution .bak does NOT block; microsecond timestamp wins."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
@@ -320,7 +353,7 @@ def test_bak_filename_collision_uses_microsecond_timestamp_per_d22(tmp_path, mon
 
 def test_banner_printed_to_stderr_3_blocks_per_d21(tmp_path, monkeypatch, capsys):
     """D-21 + W5: banner emits 3 stderr blocks; block 1 names devices AND discovery_history."""
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
@@ -360,7 +393,7 @@ def test_backup_file_mode_preserved_phase381(tmp_path, monkeypatch):
     if os.name == "nt":
         pytest.skip("POSIX file modes are not meaningful on Windows")
 
-    from src.homelab_mcp.migration import run_sqlite_migrations
+    from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
     _seed_registry(registry_path)
