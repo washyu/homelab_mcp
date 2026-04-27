@@ -7,11 +7,12 @@ Supports both password and API token authentication.
 
 import logging
 import os
+import uuid
 from typing import Any, Literal
 
 import aiohttp
 
-from .credential_store import get_credential, list_credentials
+from .credential_store import find_credential_by_id, get_credential, list_credentials
 from .log_filter import sanitize_error
 from .ssh_tools import CredentialNotFoundError  # noqa: F401 — re-exported for consumers
 
@@ -193,11 +194,19 @@ class ProxmoxAPIClient:
 
 async def resolve_proxmox_credentials(
     host: str,
+    *,
     session: aiohttp.ClientSession | None = None,
+    credential_id: str | None = None,
 ) -> tuple[str, Literal["node", "cluster"], str | None]:
-    """Resolve Proxmox API credentials for a host via per-node → cluster → error tiers.
+    """Resolve Proxmox API credentials for a host via Tier-0 → per-node → cluster → error.
 
-    Two-tier resolution (v1.6 Phase 34, D-09/D-10):
+    Resolution tiers (v1.7 Phase 38.1 D-11/D-12/D-13/D-14 + v1.6 Phase 34 D-09/D-10):
+      0. **UUID short-circuit** (when ``credential_id`` is supplied) — look up
+         the entry by UUID via :func:`credential_store.find_credential_by_id`.
+         UUID wins (D-13): ``host`` is used only for log/error context; hostname
+         mismatch between sitemap row and registry entry is the WHOLE POINT of
+         the binding. NEVER falls back to per-node hostname-exact-match (D-11)
+         — that would mask rotation cleanup bugs.
       1. **Per-node registry entry exists for host** → return its token+scope="node"+None.
          ``/cluster/status`` is NEVER called in this tier (D-10 bullet 1; Success Criterion 5).
       2. **Cluster walk** — iterate registry entries with scope=="cluster", probing
@@ -206,6 +215,14 @@ async def resolve_proxmox_credentials(
          Successful ``host → cluster_name`` mapping is cached in ``_HOST_CLUSTER_CACHE``
          for the lifetime of the process (D-05a).
 
+    Args:
+        host: Hostname (used for lookup in tier-1/tier-2; only log/error context
+            in tier-0).
+        session: Optional shared aiohttp.ClientSession (now keyword-only, D-14).
+        credential_id: Optional UUID from a sitemap row's
+            ``proxmox_credential_id`` column. When supplied, triggers the
+            tier-0 UUID short-circuit (keyword-only, D-14).
+
     Returns:
         (api_token, scope, cluster_name) — api_token is the full
         ``"user@realm!tokenid=SECRET"`` form ProxmoxAPIClient expects. scope is
@@ -213,10 +230,76 @@ async def resolve_proxmox_credentials(
         cluster-scope results, None for node-scope results.
 
     Raises:
-        CredentialNotFoundError: when neither tier matches. Message names every
-            cluster entry that was tried and includes the ``credentials add
-            --type proxmox`` CLI pointer (D-05, D-15).
+        CredentialNotFoundError: when no tier matches. Tier-0 raises with
+            ``.reason_hint`` set to ``"binding_stale"`` (UUID not in registry
+            or wrong credential_type — D-11) or ``"keyring_desync"`` (UUID
+            found but keyring miss — D-12). Tier-1/Tier-2 paths leave
+            ``.reason_hint`` unset (drift maps these to ``"unbound"``).
     """
+    # Phase 38.1 Tier-0: UUID short-circuit (D-11/D-12/D-13).
+    if credential_id is not None:
+        # T-38.1-05-01: validate UUID format defensively. Hand-edited registry
+        # entries with malformed credential_id would otherwise pass string
+        # equality in find_credential_by_id.
+        try:
+            uuid.UUID(credential_id)
+        except (ValueError, AttributeError) as exc:
+            raise CredentialNotFoundError(
+                f"binding stale: malformed credential_id {credential_id!r}"
+            ) from exc
+
+        entry = find_credential_by_id(credential_id)
+        if entry is None:
+            # D-11: never fall back to hostname-exact-match (would mask
+            # rotation cleanup bugs — the same silent-skip class we are closing).
+            exc_inst = CredentialNotFoundError(
+                f"binding stale: UUID {credential_id} not in registry. "
+                f"Run `homelab-mcp credentials add --type proxmox {host} <username>` "
+                f"to register, or `homelab-mcp credentials unlink {host} --type proxmox` "
+                f"to clear the stale binding."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+        if entry.get("credential_type") != "proxmox":
+            # T-38.1-05-02 defensive: caller passed an SSH UUID to the proxmox resolver.
+            exc_inst = CredentialNotFoundError(
+                f"binding type mismatch: credential_id {credential_id} is type "
+                f"{entry.get('credential_type')!r}, expected 'proxmox'."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+
+        scope_str = "cluster" if entry.get("scope") == "cluster" else "node"
+        entry_cluster_name = entry.get("cluster_name") or None
+        secret = get_credential(
+            entry["hostname"],
+            entry["username"],
+            credential_type="proxmox",
+            scope=scope_str,
+            cluster_name=entry.get("cluster_name", ""),
+        )
+        if secret is None:
+            # D-12: keyring desync (registry hit, keyring miss).
+            exc_inst = CredentialNotFoundError(
+                f"keyring desync for credential_id={credential_id}: "
+                f"registry entry exists but keyring returned None — "
+                f"re-run `homelab-mcp credentials add --type proxmox "
+                f"{entry['hostname']} {entry['username']}` to restore."
+            )
+            exc_inst.reason_hint = "keyring_desync"
+            raise exc_inst
+        logger.debug(
+            "proxmox resolve host=%s source=tier0_uuid credential_id=%s scope=%s",
+            host,
+            credential_id,
+            scope_str,
+        )
+        # Narrow scope_str back to Literal for the function return type.
+        scope_literal: Literal["node", "cluster"] = (
+            "cluster" if scope_str == "cluster" else "node"
+        )
+        return (f"{entry['username']}={secret}", scope_literal, entry_cluster_name)
+
     entries = list_credentials(credential_type="proxmox")
 
     # Tier 1: per-node short-circuit (D-10 bullet 1; SC-5 requires /cluster/status is never called here).
@@ -337,6 +420,8 @@ async def get_proxmox_client(
     password: str | None = None,
     api_token: str | None = None,
     session: aiohttp.ClientSession | None = None,
+    *,
+    credential_id: str | None = None,
 ) -> ProxmoxAPIClient:
     """
     Get a Proxmox API client with credentials from environment or parameters.
@@ -349,6 +434,10 @@ async def get_proxmox_client(
         password: Password (defaults to PROXMOX_PASSWORD env var)
         api_token: API token (defaults to PROXMOX_API_TOKEN env var)
         session: Optional shared aiohttp.ClientSession (from ResourceManager)
+        credential_id: Optional UUID from a sitemap row's
+            ``proxmox_credential_id`` column (Phase 38.1 D-14 keyword-only).
+            When supplied and ``host`` is set with no explicit auth,
+            triggers the tier-0 UUID short-circuit on the resolver.
 
     Returns:
         Configured ProxmoxAPIClient instance
@@ -368,7 +457,9 @@ async def get_proxmox_client(
     # bypasses the resolver entirely — preserves SC-5 back-compat for environments
     # that have always configured Proxmox via PROXMOX_* env vars.
     if host and not api_token and not (username and password):
-        resolved_token, scope, cluster_name = await resolve_proxmox_credentials(host, session=session)
+        resolved_token, scope, cluster_name = await resolve_proxmox_credentials(
+            host, session=session, credential_id=credential_id,
+        )
         api_token = resolved_token
         logger.debug(
             "Proxmox credential resolved for host=%s via source=%s cluster=%s",

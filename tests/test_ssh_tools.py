@@ -979,3 +979,88 @@ def test_resolve_ssh_legacy_positional_backward_compat_phase381(
             result = resolve_ssh_credentials("legacy-host", username="legacy-user")
 
     assert result is not None
+
+
+def test_resolve_ssh_with_uuid_of_wrong_type_raises_type_mismatch_phase381() -> None:
+    """T-38.1-05-02: caller passes proxmox UUID to SSH resolver → 'binding type mismatch'."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "22222222-2222-4222-8222-222222222222"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",  # WRONG TYPE
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials("host", credential_id=test_uuid)
+
+    error_msg = str(exc_info.value)
+    assert "binding type mismatch" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02 SSH: expected 'binding type mismatch', got: {error_msg!r}"
+    )
+    assert "expected 'ssh'" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02 SSH: expected target type in message, got: {error_msg!r}"
+    )
+
+
+def test_resolve_ssh_with_malformed_credential_id_phase381() -> None:
+    """T-38.1-05-01 SSH: malformed (non-UUID) credential_id → 'binding stale: malformed'."""
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        resolve_ssh_credentials("host", credential_id="not-a-uuid")
+
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, (
+        f"Phase 38.1 T-38.1-05-01 SSH: expected 'binding stale' for malformed UUID, got: {error_msg!r}"
+    )
+    assert "malformed" in error_msg, (
+        f"Phase 38.1 T-38.1-05-01 SSH: expected 'malformed' marker, got: {error_msg!r}"
+    )
+
+
+def test_resolve_ssh_unknown_uuid_sets_reason_hint_binding_stale_phase381() -> None:
+    """D-08: stale UUID → CredentialNotFoundError with .reason_hint='binding_stale'."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=None):
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(
+                "host",
+                credential_id="00000000-0000-4000-8000-000000000002",
+            )
+
+    assert getattr(exc_info.value, "reason_hint", None) == "binding_stale", (
+        f"Phase 38.1 D-08 SSH: expected reason_hint='binding_stale', got: "
+        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
+
+
+def test_resolve_ssh_keyring_miss_sets_reason_hint_keyring_desync_phase381() -> None:
+    """D-08: keyring desync → CredentialNotFoundError with .reason_hint='keyring_desync'."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "33333333-3333-4333-8333-333333333333"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "host",
+        "username": "root",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value=None):
+            with pytest.raises(CredentialNotFoundError) as exc_info:
+                resolve_ssh_credentials("host", credential_id=test_uuid)
+
+    assert getattr(exc_info.value, "reason_hint", None) == "keyring_desync", (
+        f"Phase 38.1 D-08 SSH: expected reason_hint='keyring_desync', got: "
+        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
