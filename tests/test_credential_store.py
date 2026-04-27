@@ -134,16 +134,19 @@ def test_register_and_list(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
 
     register_credential("host1", "user1", credential_type="ssh")
     entries = list_credentials(credential_type="ssh")
-    assert entries == [
-        {
-            "hostname": "host1",
-            "username": "user1",
-            "credential_type": "ssh",
-            "auth_type": "password",
-            "scope": "node",
-            "cluster_name": "",
-        }
-    ]
+    assert len(entries) == 1
+    entry = dict(entries[0])
+    # Phase 38.1 R1: credential_id is now a UUIDv4 — pop it for the stable-field assertion.
+    cred_id = entry.pop("credential_id", None)
+    assert cred_id is not None, "credential_id must be present (Phase 38.1 R1)"
+    assert entry == {
+        "hostname": "host1",
+        "username": "user1",
+        "credential_type": "ssh",
+        "auth_type": "password",
+        "scope": "node",
+        "cluster_name": "",
+    }
 
 
 def test_unregister_removes_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,27 +206,29 @@ def test_list_filters_by_type(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     register_credential("ssh-host", "ssh-user", credential_type="ssh")
     register_credential("px-host", "px-user", credential_type="proxmox")
     ssh_entries = list_credentials(credential_type="ssh")
-    assert ssh_entries == [
-        {
-            "hostname": "ssh-host",
-            "username": "ssh-user",
-            "credential_type": "ssh",
-            "auth_type": "password",
-            "scope": "node",
-            "cluster_name": "",
-        }
-    ]
+    assert len(ssh_entries) == 1
+    ssh_entry = dict(ssh_entries[0])
+    ssh_entry.pop("credential_id", None)  # Phase 38.1 R1: dynamic UUID
+    assert ssh_entry == {
+        "hostname": "ssh-host",
+        "username": "ssh-user",
+        "credential_type": "ssh",
+        "auth_type": "password",
+        "scope": "node",
+        "cluster_name": "",
+    }
     proxmox_entries = list_credentials(credential_type="proxmox")
-    assert proxmox_entries == [
-        {
-            "hostname": "px-host",
-            "username": "px-user",
-            "credential_type": "proxmox",
-            "auth_type": "password",
-            "scope": "node",
-            "cluster_name": "",
-        }
-    ]
+    assert len(proxmox_entries) == 1
+    px_entry = dict(proxmox_entries[0])
+    px_entry.pop("credential_id", None)  # Phase 38.1 R1: dynamic UUID
+    assert px_entry == {
+        "hostname": "px-host",
+        "username": "px-user",
+        "credential_type": "proxmox",
+        "auth_type": "password",
+        "scope": "node",
+        "cluster_name": "",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -438,3 +443,77 @@ def test_store_credential_cluster_scope_headless_fallback(mocker) -> None:
         cluster_name="homelab-prod",
     )
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Plan 02 Wave 1 RED tests: credential_id UUIDv4 generation (R1)
+# ---------------------------------------------------------------------------
+
+UUID4_RE = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+
+
+def test_register_credential_returns_uuid_phase381(
+    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    """register_credential must return a UUIDv4 string (Phase 38.1 R1).
+
+    Currently returns None — this test is RED until Plan 02 implements the change.
+    """
+    import re  # noqa: PLC0415
+
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import register_credential  # noqa: PLC0415
+
+    result = register_credential("host1", "user1", credential_type="ssh")
+    assert isinstance(result, str), f"register_credential must return str, got {type(result)!r}"
+    assert re.match(UUID4_RE, result), f"Return value is not a UUIDv4: {result!r}"
+
+
+def test_register_then_remove_then_register_yields_fresh_uuid_phase381(
+    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    """Rotation (remove + re-add same hostname/username) produces two different UUIDs (R1 acceptance).
+
+    Currently fails because register_credential returns None.
+    """
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import register_credential, unregister_credential  # noqa: PLC0415
+
+    uuid1 = register_credential("host1", "user1", credential_type="ssh")
+    unregister_credential("host1", credential_type="ssh")
+    uuid2 = register_credential("host1", "user1", credential_type="ssh")
+    assert isinstance(uuid1, str) and isinstance(uuid2, str), "register_credential must return str"
+    assert uuid1 != uuid2, f"Rotation must produce a fresh UUID; got identical UUIDs: {uuid1!r}"
+
+
+def test_find_credential_by_id_returns_entry_phase381(
+    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    """find_credential_by_id returns the registry entry for a known credential_id (R1).
+
+    Currently fails because find_credential_by_id does not exist.
+    """
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import find_credential_by_id, register_credential  # noqa: PLC0415
+
+    cred_id = register_credential("host1", "user1", credential_type="ssh")
+    assert isinstance(cred_id, str), "register_credential must return str first"
+    entry = find_credential_by_id(cred_id)
+    assert entry is not None, f"find_credential_by_id({cred_id!r}) returned None; expected an entry"
+    assert entry["credential_id"] == cred_id
+    assert entry["hostname"] == "host1"
+    assert entry["username"] == "user1"
+
+
+def test_find_credential_by_id_returns_none_for_unknown_phase381(
+    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
+) -> None:
+    """find_credential_by_id returns None for an unknown UUID (R1).
+
+    Currently fails because find_credential_by_id does not exist.
+    """
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json")
+    from homelab_mcp.credential_store import find_credential_by_id  # noqa: PLC0415
+
+    result = find_credential_by_id("00000000-0000-4000-8000-000000000000")
+    assert result is None, f"Expected None for unknown UUID, got {result!r}"
