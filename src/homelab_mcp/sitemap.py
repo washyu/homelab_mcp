@@ -421,16 +421,31 @@ async def discover_and_store(
     keyring-registered user for ``hostname`` is resolved inside
     :func:`ssh_tools.resolve_ssh_credentials` via the Plan-01 registry-scan
     helper — no hardcoded-default fallback.
+
+    Phase 38.1 R3: when discovery uses a registry-resolved credential, the
+    upsert sets ``ssh_credential_id`` on the new sitemap row. When no
+    registry entry matches the hostname (genuine Tier-1 explicit-args path),
+    ``used_credential_id`` is None and the binding write is skipped.
     """
-    from .ssh_tools import ssh_discover_system
+    from .ssh_tools import ssh_discover_system_with_binding
 
-    # Perform discovery
-    discovery_result = await ssh_discover_system(hostname, username, password, key_path, port)
+    # Phase 38.1 R3: resolver+discovery wrapper captures the matched
+    # registry entry's credential_id (None when no registry entry matches).
+    discovery_result, used_credential_id = await ssh_discover_system_with_binding(
+        hostname, username, password, key_path, port,
+    )
 
-    # Parse and store the result
+    # Parse and store the result (existing flow unchanged)
     device = sitemap.parse_discovery_output(discovery_result)
     device_id = sitemap.store_device(device)
     sitemap.store_discovery_history(device_id, discovery_result)
+
+    # Phase 38.1 R3: wire the binding column post-upsert. Skipped when no
+    # registry entry matched the hostname/username pair (used_credential_id
+    # is None) — degenerate / failed discoveries also fall here because
+    # the resolver scan only records UUIDs for unambiguous single-match.
+    if used_credential_id is not None:
+        sitemap.db_adapter.set_device_credential_binding(device_id, "ssh", used_credential_id)
 
     return json.dumps(
         {
@@ -439,6 +454,10 @@ async def discover_and_store(
             "hostname": device.hostname,
             "discovery_status": device.status,
             "stored_at": datetime.now().isoformat(),
+            # Phase 38.1 R3: surface the binding in the discover response
+            # for agent visibility (NOT a SPEC requirement, but cheap and
+            # useful for the round-trip integration test).
+            "ssh_credential_id": used_credential_id,
         },
         indent=2,
     )
