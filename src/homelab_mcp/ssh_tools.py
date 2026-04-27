@@ -301,6 +301,87 @@ def resolve_ssh_credentials(
     )
 
 
+def _resolve_ssh_credentials_with_binding(
+    hostname: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+    *,
+    credential_id: str | None = None,
+) -> tuple[SSHCredentials, str | None]:
+    """Phase 38.1 R3 helper — resolves SSH credentials AND returns the registry
+    entry's credential_id (when keyring-resolved or registry-matched) or None.
+
+    Discovery's auto-bind side effect calls this instead of
+    :func:`resolve_ssh_credentials` so the upsert path can record
+    ``ssh_credential_id`` on the new sitemap row.
+
+    Behaviour:
+      * When ``credential_id`` is supplied: Tier-0 short-circuit; returns
+        that UUID alongside the credentials.
+      * Otherwise (Tier-1 explicit-args OR Tier-2 keyring path): scans the
+        registry for an entry matching ``hostname`` (and ``username`` when
+        supplied) BEFORE delegating to :func:`resolve_ssh_credentials`. When
+        exactly one entry matches, returns its ``credential_id``. On
+        zero-match or ambiguous multi-match, returns ``None`` so the caller
+        can skip the binding write.
+
+    The registry scan is a single JSON file read (already cached at the OS
+    page level) — acceptable cost on the discovery path. This wrapper exists
+    purely to surface the matched UUID for R3 auto-bind without restructuring
+    :func:`resolve_ssh_credentials` to return a tuple (which would break every
+    existing caller).
+
+    Args:
+        hostname, username, password, key_path, port: standard resolver args
+            forwarded verbatim to :func:`resolve_ssh_credentials`.
+        credential_id: Optional Tier-0 UUID short-circuit (D-14 keyword-only).
+
+    Returns:
+        ``(SSHCredentials, used_credential_id_or_None)``. Used by
+        :func:`ssh_discover_system_with_binding` (Plan 08) and
+        :func:`sitemap.discover_and_store` (Plan 08) for auto-bind.
+    """
+    # Tier-0: caller-supplied UUID short-circuit. resolve_ssh_credentials
+    # handles all D-11/D-12/D-13 logic; return the same UUID back.
+    if credential_id is not None:
+        creds = resolve_ssh_credentials(
+            hostname,
+            username,
+            password,
+            key_path,
+            port,
+            credential_id=credential_id,
+        )
+        return creds, credential_id
+
+    # Tier-1 / Tier-2: scan the registry up-front for the matching entry's
+    # credential_id. The match logic mirrors resolve_ssh_credentials's internal
+    # scan — hostname-exact, then optional username narrowing. We deliberately
+    # ALSO surface the UUID when explicit args (password/key_path) are passed
+    # AND a registry entry matches: the auto-bind side effect should still
+    # link the sitemap row to the registered credential entry, even when this
+    # specific call used a fresh secret. A genuine "no registry hit" (zero
+    # matches) leaves used_id=None and the caller skips the binding write.
+    entries = list_credentials(credential_type="ssh")
+    matching = [e for e in entries if e.get("hostname") == hostname]
+    if username is not None:
+        matching = [e for e in matching if e.get("username") == username]
+    used_id: str | None = None
+    if len(matching) == 1:
+        # Unambiguous single match — capture its UUID. Legacy entries written
+        # before Phase 38.1-02 lack credential_id; .get(...) returns None,
+        # which correctly signals "no UUID to bind".
+        used_id = matching[0].get("credential_id")
+    # Ambiguous multi-match (>=2) is conservative-default-safe: leave
+    # used_id=None so set_device_credential_binding is skipped. Discovery
+    # itself still proceeds via resolve_ssh_credentials's existing handling.
+
+    creds = resolve_ssh_credentials(hostname, username, password, key_path, port)
+    return creds, used_id
+
+
 def get_mcp_ssh_key_path() -> Path:
     """Get the path to the MCP SSH private key."""
     return SSH_KEY_DIR / "mcp_admin_key"
@@ -694,6 +775,46 @@ async def ssh_discover_system(
         payload["partial"] = True
         payload["timed_out_commands"] = list(timed_out_commands)
     return json.dumps(payload, indent=2)
+
+
+async def ssh_discover_system_with_binding(
+    hostname: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+) -> tuple[str, str | None]:
+    """Phase 38.1 R3 wrapper — runs SSH discovery and ALSO returns the
+    credential_id of the registry entry that produced the secret (None when
+    no registry entry matches the hostname / username).
+
+    Used by :func:`sitemap.discover_and_store` to wire R3 auto-bind on the
+    upsert. Existing callers of :func:`ssh_discover_system` are unaffected —
+    they continue to receive only the discovery JSON.
+
+    The wrapper resolves credentials via
+    :func:`_resolve_ssh_credentials_with_binding` to capture the matched
+    registry UUID (if any), then runs the existing discovery flow. The
+    discovery function internally re-resolves credentials too — that
+    duplication is intentional for Phase 38.1 (keeps the public
+    ``ssh_discover_system`` signature stable). Optimizing away the duplicate
+    resolution is a v1.8 refactor.
+    """
+    # Resolve and capture the binding UUID before connecting. _creds is
+    # intentionally unused here — ssh_discover_system does its own resolve
+    # internally. This wrapper exists ONLY to capture used_credential_id for
+    # the auto-bind side effect.
+    _creds, used_credential_id = _resolve_ssh_credentials_with_binding(
+        hostname,
+        username,
+        password,
+        key_path,
+        port,
+    )
+    discovery_result = await ssh_discover_system(
+        hostname, username, password, key_path, port,
+    )
+    return discovery_result, used_credential_id
 
 
 async def _run_with_timeout(
