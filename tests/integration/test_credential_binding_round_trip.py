@@ -44,6 +44,7 @@ pytestmark = pytest.mark.integration
 # Shared setup helper
 # ──────────────────────────────────────────────────────────────────────────
 
+
 def _setup_isolated_environment(tmp_path: Any, monkeypatch: Any) -> Any:
     """Create an isolated SQLiteAdapter + redirect keyring/registry/migration to tmp_path.
 
@@ -58,25 +59,15 @@ def _setup_isolated_environment(tmp_path: Any, monkeypatch: Any) -> Any:
     # alias on the same isolated path.
     registry_path = tmp_path / "credential_registry.json"
     migration_state_path = tmp_path / "migration_state.json"
-    monkeypatch.setattr(
-        "src.homelab_mcp.credential_store._REGISTRY_PATH", registry_path
-    )
-    monkeypatch.setattr(
-        "homelab_mcp.credential_store._REGISTRY_PATH", registry_path
-    )
-    monkeypatch.setattr(
-        "src.homelab_mcp.migration._MIGRATION_STATE_PATH", migration_state_path
-    )
-    monkeypatch.setattr(
-        "homelab_mcp.migration._MIGRATION_STATE_PATH", migration_state_path
-    )
+    monkeypatch.setattr("src.homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
+    monkeypatch.setattr("src.homelab_mcp.migration._MIGRATION_STATE_PATH", migration_state_path)
+    monkeypatch.setattr("homelab_mcp.migration._MIGRATION_STATE_PATH", migration_state_path)
     # Pre-stamp the Phase 38.1 R10 migration as already-applied so it does not
     # fire mid-test on the freshly-initialised tmp_path DB. Without this stamp
     # the migration would attempt to backup the registry + drop the freshly-
     # created devices table (idempotency check fires only AFTER the first run).
-    migration_state_path.write_text(
-        json.dumps({"phase_38_1_credential_binding_applied": True})
-    )
+    migration_state_path.write_text(json.dumps({"phase_38_1_credential_binding_applied": True}))
 
     # ── Keyring monkeypatch (W3 fix from Plan 09 plan) ───────────────────
     # store_credential / get_credential lazy-import keyring INSIDE the function
@@ -115,29 +106,19 @@ def _setup_isolated_environment(tmp_path: Any, monkeypatch: Any) -> Any:
     def _get_rows(hostname: str) -> list[dict[str, Any]]:
         return adapter.find_devices_by_hostname_or_ip(hostname)
 
-    def _set_binding(
-        hostname: str, credential_type: str, credential_id: str | None
-    ) -> None:
+    def _set_binding(hostname: str, credential_type: str, credential_id: str | None) -> None:
         matches = adapter.find_devices_by_hostname_or_ip(hostname)
         matches = [r for r in matches if r["hostname"] == hostname]
         if not matches:
             raise ValueError(f"No sitemap row found for hostname {hostname!r}")
         if len(matches) > 1:
-            raise ValueError(
-                f"Multiple sitemap rows match hostname {hostname!r}"
-            )
-        adapter.set_device_credential_binding(
-            matches[0]["id"], credential_type, credential_id
-        )
+            raise ValueError(f"Multiple sitemap rows match hostname {hostname!r}")
+        adapter.set_device_credential_binding(matches[0]["id"], credential_type, credential_id)
 
-    def _null_bindings(
-        credential_id: str, credential_type: str
-    ) -> list[str]:
+    def _null_bindings(credential_id: str, credential_type: str) -> list[str]:
         if not credential_id:
             return []
-        return adapter.bulk_null_credential_binding(
-            [credential_id], credential_type
-        )
+        return adapter.bulk_null_credential_binding([credential_id], credential_type)
 
     # Patch the wrapper seams in BOTH module namespaces. The production module
     # is loaded under src.homelab_mcp.server (since `from src.homelab_mcp...`
@@ -145,15 +126,9 @@ def _setup_isolated_environment(tmp_path: Any, monkeypatch: Any) -> Any:
     # importable module — patch both so behaviour is predictable regardless
     # of import path.
     for module_path in ("src.homelab_mcp.server", "homelab_mcp.server"):
-        monkeypatch.setattr(
-            f"{module_path}.get_sitemap_rows_for_hostname", _get_rows
-        )
-        monkeypatch.setattr(
-            f"{module_path}.set_device_credential_binding", _set_binding
-        )
-        monkeypatch.setattr(
-            f"{module_path}.null_bindings_for_credential_id", _null_bindings
-        )
+        monkeypatch.setattr(f"{module_path}.get_sitemap_rows_for_hostname", _get_rows)
+        monkeypatch.setattr(f"{module_path}.set_device_credential_binding", _set_binding)
+        monkeypatch.setattr(f"{module_path}.null_bindings_for_credential_id", _null_bindings)
 
     return adapter
 
@@ -161,8 +136,7 @@ def _setup_isolated_environment(tmp_path: Any, monkeypatch: Any) -> Any:
 def _insert_device_row(adapter: Any, hostname: str, connection_ip: str) -> None:
     """Insert a sitemap row simulating a successful discover_and_map."""
     adapter.execute_query(
-        "INSERT INTO devices (hostname, connection_ip, last_seen, status) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status) VALUES (?, ?, ?, ?)",
         (hostname, connection_ip, datetime.now().isoformat(), "success"),
     )
 
@@ -176,9 +150,7 @@ def _make_proxmox_mocks(expected_credential_id: str) -> tuple[Any, Any]:
     AssertionError with a clear message.
     """
     fake_client = AsyncMock()
-    fake_client.get = AsyncMock(
-        return_value=[{"type": "cluster", "name": "homelab", "version": 13}]
-    )
+    fake_client.get = AsyncMock(return_value=[{"type": "cluster", "name": "homelab", "version": 13}])
 
     async def fake_get_proxmox_client(
         host: str | None = None,
@@ -213,10 +185,9 @@ def _make_proxmox_mocks(expected_credential_id: str) -> tuple[Any, Any]:
 # Test 1: Add-first happy path with IP identifier
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_add_then_discover_then_drift_succeeds_with_ip_phase381(
-    tmp_path: Any, monkeypatch: Any
-) -> None:
+async def test_add_then_discover_then_drift_succeeds_with_ip_phase381(tmp_path: Any, monkeypatch: Any) -> None:
     """SPEC §Acceptance: register by IP → discover_and_map → scan_drift sees probed_ok >= 1."""
     adapter = _setup_isolated_environment(tmp_path, monkeypatch)
     try:
@@ -284,15 +255,13 @@ async def test_add_then_discover_then_drift_succeeds_with_ip_phase381(
         # ── Assertions ────────────────────────────────────────────────────
         assert result["status"] == "success"
         assert result["counts"]["probed_ok"] >= 1, (
-            f"SPEC headline acceptance: counts.probed_ok must be >= 1; "
-            f"got counts={result['counts']!r}"
+            f"SPEC headline acceptance: counts.probed_ok must be >= 1; got counts={result['counts']!r}"
         )
         # T-38.1-09-01 mitigation: verify hostname matches AND not_eligible == 0,
         # so the test cannot accidentally pass on a stale row.
         assert result["probed_ok"][0]["hostname"] == "192.168.10.20"
         assert result["counts"]["not_eligible"] == 0, (
-            "Bound row must NOT land in not_eligible; "
-            f"got not_eligible bucket: {result['not_eligible']!r}"
+            f"Bound row must NOT land in not_eligible; got not_eligible bucket: {result['not_eligible']!r}"
         )
     finally:
         adapter.close()
@@ -301,6 +270,7 @@ async def test_add_then_discover_then_drift_succeeds_with_ip_phase381(
 # ──────────────────────────────────────────────────────────────────────────
 # Test 2: Identifier-form independence — short hostname
 # ──────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_add_then_discover_then_drift_succeeds_with_short_hostname_phase381(
@@ -314,9 +284,7 @@ async def test_add_then_discover_then_drift_succeeds_with_short_hostname_phase38
             store_credential,
         )
 
-        store_credential(
-            "pve", "root@pam!tok", "fake-secret-token", credential_type="proxmox"
-        )
+        store_credential("pve", "root@pam!tok", "fake-secret-token", credential_type="proxmox")
         new_uuid = register_credential(
             "pve",
             "root@pam!tok",
@@ -358,8 +326,7 @@ async def test_add_then_discover_then_drift_succeeds_with_short_hostname_phase38
             result = await scan_drift(session=None, db_adapter=adapter)
 
         assert result["counts"]["probed_ok"] >= 1, (
-            f"Phase 38.1 SPEC: short-hostname round-trip must produce probed_ok >= 1; "
-            f"got {result['counts']!r}"
+            f"Phase 38.1 SPEC: short-hostname round-trip must produce probed_ok >= 1; got {result['counts']!r}"
         )
         assert result["probed_ok"][0]["hostname"] == "pve"
         assert result["counts"]["not_eligible"] == 0
@@ -371,10 +338,9 @@ async def test_add_then_discover_then_drift_succeeds_with_short_hostname_phase38
 # Test 3: Identifier-form independence — FQDN
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_add_then_discover_then_drift_succeeds_with_fqdn_phase381(
-    tmp_path: Any, monkeypatch: Any
-) -> None:
+async def test_add_then_discover_then_drift_succeeds_with_fqdn_phase381(tmp_path: Any, monkeypatch: Any) -> None:
     """Identifier-form independence: register by FQDN round-trips."""
     adapter = _setup_isolated_environment(tmp_path, monkeypatch)
     try:
@@ -426,8 +392,7 @@ async def test_add_then_discover_then_drift_succeeds_with_fqdn_phase381(
             result = await scan_drift(session=None, db_adapter=adapter)
 
         assert result["counts"]["probed_ok"] >= 1, (
-            f"Phase 38.1 SPEC: FQDN round-trip must produce probed_ok >= 1; "
-            f"got {result['counts']!r}"
+            f"Phase 38.1 SPEC: FQDN round-trip must produce probed_ok >= 1; got {result['counts']!r}"
         )
         assert result["probed_ok"][0]["hostname"] == "pve.home.lab"
         assert result["counts"]["not_eligible"] == 0
@@ -439,10 +404,9 @@ async def test_add_then_discover_then_drift_succeeds_with_fqdn_phase381(
 # Test 4: Order independence — discover_first_then_add
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_discover_first_then_add_phase381(
-    tmp_path: Any, monkeypatch: Any
-) -> None:
+async def test_discover_first_then_add_phase381(tmp_path: Any, monkeypatch: Any) -> None:
     """Order independence: discover_and_map first, credentials add second, still GREEN."""
     adapter = _setup_isolated_environment(tmp_path, monkeypatch)
     try:
@@ -480,8 +444,7 @@ async def test_discover_first_then_add_phase381(
         rows = adapter.find_devices_by_hostname_or_ip("192.168.10.20")
         assert len(rows) == 1
         assert rows[0]["proxmox_credential_id"] == new_uuid, (
-            "Order independence: auto-bind must find the pre-existing row "
-            "from discover_and_map and write the binding"
+            "Order independence: auto-bind must find the pre-existing row from discover_and_map and write the binding"
         )
 
         # ── Step 3: drift sees the host ───────────────────────────────────
@@ -513,10 +476,9 @@ async def test_discover_first_then_add_phase381(
 # Test 5 (W4): CLI-handler-driven round-trip
 # ──────────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
-async def test_round_trip_via_cli_handler_phase381(
-    tmp_path: Any, monkeypatch: Any
-) -> None:
+async def test_round_trip_via_cli_handler_phase381(tmp_path: Any, monkeypatch: Any) -> None:
     """W4: drive the real ``_cmd_credentials_add`` handler via argparse.Namespace.
 
     The other four tests bypass the handler and call ``_auto_bind_credential``
@@ -533,9 +495,7 @@ async def test_round_trip_via_cli_handler_phase381(
         _insert_device_row(adapter, "192.168.10.20", "192.168.10.20")
 
         # Simulate stdin secret entry for getpass.getpass.
-        monkeypatch.setattr(
-            "getpass.getpass", lambda prompt="": "fake-secret-token"
-        )
+        monkeypatch.setattr("getpass.getpass", lambda prompt="": "fake-secret-token")
         # Simulate non-TTY so the auto-bind D-04 prompt does NOT fire (and the
         # D-05 non-TTY skip path is also OK because no existing binding is
         # present on the freshly-inserted row).
@@ -586,8 +546,7 @@ async def test_round_trip_via_cli_handler_phase381(
             result = await scan_drift(session=None, db_adapter=adapter)
 
         assert result["counts"]["probed_ok"] >= 1, (
-            f"W4: handler-driven round-trip must produce probed_ok >= 1; "
-            f"got {result['counts']!r}"
+            f"W4: handler-driven round-trip must produce probed_ok >= 1; got {result['counts']!r}"
         )
         assert result["probed_ok"][0]["hostname"] == "192.168.10.20"
         assert result["counts"]["not_eligible"] == 0
