@@ -4,8 +4,8 @@ milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
 stopped_at: Phase 38 plan 06 complete (end-to-end Docker fingerprint integration test in tests/integration/test_sitemap_integration.py). Phase 38 plans 01-06 all done; SC-1 + SC-2 have end-to-end live-discovery proof; SC-3 covered by Plan 02 migration test; SC-4 covered by Phase 35 D-15 AST guard.
-last_updated: "2026-04-27T04:53:23.563Z"
-last_activity: 2026-04-27 -- Phase 38.1 planning complete
+last_updated: "2026-04-27T05:08:06.476Z"
+last_activity: 2026-04-27 -- Phase 38.1 execution started
 progress:
   total_phases: 15
   completed_phases: 3
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 38 — sitemap-fingerprint-schema
+**Current focus:** Phase 38.1 — sitemap-keystore-credential-binding
 
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 39
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-27 -- Phase 38.1 planning complete
+Phase: 38.1 (sitemap-keystore-credential-binding) — EXECUTING
+Plan: 1 of 9
+Status: Executing Phase 38.1
+Last activity: 2026-04-27 -- Phase 38.1 execution started
 
 Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 plans 6/6 complete (awaiting verifier)
 
