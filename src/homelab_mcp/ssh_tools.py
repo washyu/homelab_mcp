@@ -25,7 +25,21 @@ SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
 
 
 class CredentialNotFoundError(RuntimeError):
-    """Raised when no credentials are found for a hostname in any tier."""
+    """Raised when no credentials are found for a hostname in any tier.
+
+    Phase 38.1 attribute: ``reason_hint`` is set by the Tier-0 UUID short-circuit
+    paths in :func:`resolve_proxmox_credentials` and :func:`resolve_ssh_credentials`
+    to indicate which D-08 reason enum value drift should map this to.
+
+    Possible values:
+      * ``"binding_stale"`` (D-11) — UUID not in registry, or registry entry has
+        wrong ``credential_type`` for the resolver, or malformed UUID format.
+      * ``"keyring_desync"`` (D-12) — UUID found in registry but keyring fetch
+        returned ``None``.
+      * ``None`` (Tier-1/Tier-2 paths) — drift maps these to ``"unbound"``.
+    """
+
+    reason_hint: str | None = None
 
 
 @dataclass

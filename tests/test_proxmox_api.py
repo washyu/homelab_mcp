@@ -1373,7 +1373,8 @@ class TestGetProxmoxClientAsync:
 
         assert isinstance(client, ProxmoxAPIClient)
         assert client.api_token == "root@pam!tok=uuid"
-        mock_resolver.assert_awaited_once_with("pve1", session=None)
+        # Phase 38.1 D-14: get_proxmox_client now threads credential_id (default None)
+        mock_resolver.assert_awaited_once_with("pve1", session=None, credential_id=None)
 
     @pytest.mark.asyncio
     @patch(
