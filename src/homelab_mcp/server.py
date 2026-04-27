@@ -516,6 +516,151 @@ def _parse_scope_arg(scope_arg: str | None) -> tuple[str, str]:
     raise ValueError(f"Unknown --scope value {scope_arg!r} — expected 'node' (default) or 'cluster:<name>'")
 
 
+def get_sitemap_rows_for_hostname(hostname: str) -> list[dict[str, Any]]:
+    """Phase 38.1 R4/R8/R9: return sitemap rows whose hostname or connection_ip matches.
+
+    Thin wrapper over ``DatabaseAdapter.find_devices_by_hostname_or_ip`` so that
+    callers and unit tests can patch a single seam at the server module level
+    (``homelab_mcp.server.get_sitemap_rows_for_hostname``). Internally calls the
+    typed adapter method that encapsulates SQLite ``?`` vs Postgres ``%s``
+    placeholder differences (Blocker B2 mitigation from /gsd-check-work).
+
+    Returned dicts contain ``id``, ``hostname``, ``connection_ip``,
+    ``ssh_credential_id``, ``proxmox_credential_id``.
+    """
+    from .sitemap import NetworkSiteMap  # noqa: PLC0415
+
+    sitemap = NetworkSiteMap()
+    return sitemap.db_adapter.find_devices_by_hostname_or_ip(hostname)
+
+
+def set_device_credential_binding(
+    hostname: str, credential_type: str, credential_id: str | None
+) -> None:
+    """Phase 38.1 R4/R8: write the credential binding column for a single sitemap row.
+
+    Resolves the row by hostname (must be exactly one match — caller is
+    responsible for narrowing if needed), then delegates to the typed adapter
+    method ``DatabaseAdapter.set_device_credential_binding`` keyed by
+    ``device_id``. Wrapping at the server module level provides a single
+    monkeypatch seam for tests AND keeps raw SQL placeholders out of server.py
+    (Blocker B2 mitigation).
+    """
+    from .sitemap import NetworkSiteMap  # noqa: PLC0415
+
+    sitemap = NetworkSiteMap()
+    matches = sitemap.db_adapter.find_devices_by_hostname_or_ip(hostname)
+    matches = [r for r in matches if r["hostname"] == hostname]
+    if not matches:
+        raise ValueError(f"No sitemap row found for hostname {hostname!r}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"Multiple sitemap rows match hostname {hostname!r} — caller must narrow"
+        )
+    sitemap.db_adapter.set_device_credential_binding(
+        matches[0]["id"], credential_type, credential_id,
+    )
+
+
+def null_bindings_for_credential_id(credential_id: str, credential_type: str) -> list[str]:
+    """Phase 38.1 R9: null every sitemap row whose binding equals the given UUID.
+
+    Single-UUID convenience around the typed adapter's bulk method. Returns
+    affected hostnames so callers can surface them via D-26 stderr feedback.
+    Encapsulates SQLite ``IN (?,?,...)`` vs Postgres ``= ANY(%s)`` placeholder
+    differences inside the adapter (Blocker B2 mitigation).
+    """
+    from .sitemap import NetworkSiteMap  # noqa: PLC0415
+
+    if not credential_id:
+        return []
+    sitemap = NetworkSiteMap()
+    return sitemap.db_adapter.bulk_null_credential_binding(
+        [credential_id], credential_type,
+    )
+
+
+def _auto_bind_credential(
+    *,
+    hostname: str,
+    credential_type: str,
+    new_credential_id: str,
+) -> None:
+    """Phase 38.1 R4 / D-01..D-07: auto-bind side effect for `credentials add`.
+
+    Match cases:
+      - 0 matches → silent no-op (D-01: add-before-discover is the canonical workflow)
+      - 1 match, no existing binding → bind silently
+      - 1 match, existing binding → TTY prompts (D-04); non-TTY skips + warns (D-05)
+      - N matches → TTY shows numbered menu (D-06); non-TTY skips + warns (D-05)
+
+    Cluster-scope callers (``--scope cluster:<name>``) MUST NOT call this helper —
+    per-node binding doesn't apply to cluster credentials (D-07).
+
+    Adapter access goes through ``get_sitemap_rows_for_hostname`` and
+    ``set_device_credential_binding`` server-module wrappers, which delegate
+    to typed adapter methods (``find_devices_by_hostname_or_ip``,
+    ``DatabaseAdapter.set_device_credential_binding``). server.py NEVER
+    constructs raw ``?`` / ``%s`` SQL placeholders (Blocker B2 mitigation
+    from /gsd-check-work).
+    """
+    import sys  # noqa: PLC0415
+
+    column_key = f"{credential_type}_credential_id"
+    matches = get_sitemap_rows_for_hostname(hostname)
+    if not matches:
+        # D-01: silent — add-before-discover is the EXPECTED state
+        return
+    if len(matches) == 1:
+        row = matches[0]
+        current_binding = row.get(column_key)
+        if current_binding is None:
+            # Single match, no existing binding → bind silently
+            set_device_credential_binding(
+                row["hostname"], credential_type, new_credential_id,
+            )
+            return
+        # D-04: existing binding → prompt unless non-TTY (D-05)
+        if not sys.stdin.isatty():
+            print(
+                f"Warning: sitemap row {row['hostname']!r} is already bound to "
+                f"a different {credential_type} credential; skipping auto-bind "
+                f"(non-interactive — re-run with `credentials link` to override).",
+                file=sys.stderr,
+            )
+            return
+        answer = input(
+            f"Sitemap row {row['hostname']!r} is already bound to a different "
+            f"{credential_type} credential. Overwrite the mapping? [y/N]: "
+        ).strip().lower()
+        if answer == "y":
+            set_device_credential_binding(
+                row["hostname"], credential_type, new_credential_id,
+            )
+        # Empty input or anything else → keep existing binding (D-04 default-no)
+        return
+    # D-06: multi-match
+    if not sys.stdin.isatty():
+        print(
+            f"Warning: multiple sitemap rows match {hostname!r}; "
+            f"skipping auto-bind (non-interactive — re-run with `credentials link` "
+            f"to bind a specific row).",
+            file=sys.stderr,
+        )
+        return
+    print(f"Multiple sitemap rows match {hostname!r}:")
+    for i, row in enumerate(matches, start=1):
+        print(f"  [{i}] {row['hostname']} (ip={row.get('connection_ip', '')})")
+    print("  [s] skip auto-bind")
+    choice = input("Which row should this credential bind to? ").strip().lower()
+    if choice.isdigit() and 1 <= int(choice) <= len(matches):
+        picked = matches[int(choice) - 1]
+        set_device_credential_binding(
+            picked["hostname"], credential_type, new_credential_id,
+        )
+    # 's' or any other input → skip silently
+
+
 def _cmd_credentials_add(args: argparse.Namespace) -> None:
     """Handle `homelab-mcp credentials add ...`.
 
@@ -631,11 +776,22 @@ def _cmd_credentials_add(args: argparse.Namespace) -> None:
 
     ok = store_credential(hostname, args.username, secret, credential_type=credential_type)
     if ok:
-        register_credential(
+        # Phase 38.1 R1: capture the UUID emitted by register_credential so
+        # the auto-bind side effect (R4) can write it onto the matching
+        # sitemap row.
+        new_credential_id = register_credential(
             hostname,
             args.username,
             credential_type=credential_type,
             auth_type=auth_type,
+        )
+        # Phase 38.1 R4 / D-01..D-07: per-node auto-bind side effect.
+        # Cluster-scope path returned early above (D-07 — cluster credentials
+        # are not per-row-bindable).
+        _auto_bind_credential(
+            hostname=hostname,
+            credential_type=credential_type,
+            new_credential_id=new_credential_id,
         )
         if auth_type == "key":
             print(f"Stored {credential_type} credential (key-path) for {args.username}@{hostname}")
