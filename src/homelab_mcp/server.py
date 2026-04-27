@@ -877,6 +877,13 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
+        # Phase 38.1 R9 / D-26 + Blocker B2: capture cluster UUIDs BEFORE delete
+        # so we can null any sitemap rows that pointed at them. Cluster-scope
+        # rows should never have bindings (D-07), but a manually-link'd row
+        # could exist — defensive cleanup.
+        cluster_removed_uuids: list[str] = [
+            e["credential_id"] for e in cluster_entries if e.get("credential_id")
+        ]
         for entry in cluster_entries:
             delete_credential(
                 "",
@@ -886,7 +893,18 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
                 cluster_name=cluster_name,
             )
         unregister_cluster_credential(cluster_name, credential_type=credential_type)
+        cluster_unlinked: list[str] = []
+        for removed_uuid in cluster_removed_uuids:
+            result = null_bindings_for_credential_id(removed_uuid, credential_type)
+            if result:
+                cluster_unlinked.extend(result)
         print(f"Removed {credential_type} credential for cluster:{cluster_name}")
+        if cluster_unlinked:
+            # D-26: hostname-only feedback to stderr
+            print(
+                f"Unlinked sitemap row(s): {', '.join(cluster_unlinked)}",
+                file=sys.stderr,
+            )
         return
 
     # Per-node path — hostname is required.
@@ -905,10 +923,32 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
+    # Phase 38.1 R9 / D-26 + Blocker B2: capture UUIDs BEFORE delete (registry
+    # entries still present) so the rotation cleanup can null any sitemap row
+    # whose binding pointed at them. Adapter access goes through the typed
+    # bulk method via null_bindings_for_credential_id — server.py never
+    # constructs raw '?' or '%s' placeholders.
+    removed_uuids: list[str] = [
+        e["credential_id"] for e in entries if e.get("credential_id")
+    ]
+
     for entry in entries:
         delete_credential(entry["hostname"], entry["username"], credential_type=credential_type)
     unregister_credential(hostname, credential_type=credential_type)
+
+    unlinked_hostnames: list[str] = []
+    for removed_uuid in removed_uuids:
+        result = null_bindings_for_credential_id(removed_uuid, credential_type)
+        if result:
+            unlinked_hostnames.extend(result)
+
     print(f"Removed {credential_type} credential for {hostname}")
+    if unlinked_hostnames:
+        # D-26: hostname-only feedback to stderr
+        print(
+            f"Unlinked sitemap row(s): {', '.join(unlinked_hostnames)}",
+            file=sys.stderr,
+        )
 
 
 def _cmd_credentials_link(args: argparse.Namespace) -> None:
