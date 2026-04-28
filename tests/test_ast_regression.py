@@ -831,3 +831,95 @@ class TestPhase381CredBinding:
             "`not_eligible.append(...)` call (degenerate-row routing per D-17 + "
             "credential-failure routing per D-15). Current source has none."
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 39 AST regression guards (D-11 / D-12)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase39DriftCases:
+    """Phase 39 D-11/D-12: helpers added in Phase 39 stay loop-free.
+
+    Recommended path D-11(b): rather than extending an allowlist, the new
+    helpers (``_diff_fingerprints``, ``_enumerate_unknown_vms``,
+    ``_classify_unreachable``) are written without ``continue`` inside any
+    loop body that appends to a bucket-shaped list. This keeps the AST guard
+    scope unchanged from Phase 38.1.
+
+    D-12 carve-out: ``_enumerate_proxmox_vms`` is OUT of guard scope — it
+    builds enumeration TARGETS (does not iterate sitemap rows feeding bucket
+    appends), so its defensive ``continue`` for empty hostname is allowed.
+    """
+
+    PHASE_39_NEW_HELPERS = (
+        "_diff_fingerprints",
+        "_enumerate_unknown_vms",
+        "_classify_unreachable",
+    )
+
+    def test_phase39_helpers_no_continue(self) -> None:
+        """Each helper named in PHASE_39_NEW_HELPERS has zero ``ast.Continue``
+        nodes (D-11(b))."""
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        for helper_name in self.PHASE_39_NEW_HELPERS:
+            target = next(
+                (
+                    n for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+                    and n.name == helper_name
+                ),
+                None,
+            )
+            assert target is not None, (
+                f"Phase 39 D-11: helper {helper_name!r} not found in "
+                f"drift_detection.py"
+            )
+            violations = [
+                n.lineno for n in ast.walk(target) if isinstance(n, ast.Continue)
+            ]
+            assert not violations, (
+                f"Phase 39 D-11 regression — `continue` in {helper_name} at "
+                f"line(s): {violations}. Recommended: refactor to comprehension "
+                f"or early-return."
+            )
+
+    def test_phase381_d15_still_green(self) -> None:
+        """D-12 sibling guard: re-asserts the Phase 38.1 D-15 invariant locally
+        so a Phase 39 row-loop edit can't slip a ``continue`` past the existing
+        ``test_scan_drift_no_continue_in_row_loop_phase38_1`` check.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        target = next(
+            (
+                n for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+                and n.name == "scan_drift"
+            ),
+            None,
+        )
+        assert target is not None, "Phase 39 D-12: scan_drift not found"
+
+        row_loops = [
+            n for n in ast.walk(target)
+            if isinstance(n, ast.For)
+            and isinstance(n.target, ast.Name)
+            and n.target.id == "row"
+        ]
+        assert len(row_loops) == 1, (
+            f"Phase 39 D-12: expected one `for row in rows:` loop in "
+            f"scan_drift, found {len(row_loops)}"
+        )
+        violations = [
+            n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)
+        ]
+        assert not violations, (
+            f"Phase 39 D-12 regression — `continue` slipped into scan_drift's "
+            f"row loop at line(s): {violations}"
+        )
