@@ -385,6 +385,16 @@ async def _bulk_universal_core_probes(
 
     Loop-free w.r.t. bucket appends (D-11(b)): only loop is a list-comprehension
     over rows; per-row work happens inside ``_probe_one`` (no ``continue``).
+
+    BL-01: the result map is keyed on ``hostname``, so two rows that
+    legitimately share a hostname (migration overlap, stale-row purge race,
+    same host discovered under two connection_ips, or a degenerate row with
+    hostname="") collapse into a single entry whose value is whichever
+    probe finished last. The row loop in ``scan_drift`` then attributes
+    that probe to BOTH rows, which produces phantom ``changed[]`` entries
+    when row A's stored fingerprint is diffed against row B's probe
+    result. Dedupe on hostname here so duplicate rows are silently dropped
+    rather than overwriting each other.
     """
     semaphore = asyncio.Semaphore(10)
 
@@ -429,8 +439,22 @@ async def _bulk_universal_core_probes(
         # an except branch returns). Present so mypy can prove all paths return.
         return (hostname, {"_error": "unreachable_fallthrough"})
 
+    # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
+    # hostname; if two rows share a hostname, only one probe survives in
+    # the result dict, which then gets attributed to both rows in the
+    # scan_drift row loop (phantom changed[] entries). Skip duplicates.
+    # Empty/None hostnames are dropped here too — they would all collide
+    # on the same "" key.
+    seen_hostnames: set[str] = set()
+    eligible: list[dict[str, Any]] = []
+    for r in rows:
+        h = r.get("hostname") or ""
+        if not h or not r.get("ssh_credential_id") or h in seen_hostnames:
+            continue
+        seen_hostnames.add(h)
+        eligible.append(r)
     pairs = await asyncio.gather(
-        *[_probe_one(r) for r in rows if r.get("ssh_credential_id")],
+        *[_probe_one(r) for r in eligible],
         return_exceptions=False,
     )
     return dict(pairs)
