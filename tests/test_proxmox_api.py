@@ -498,6 +498,172 @@ class TestGetProxmoxVMStatus:
         assert result["type"] == "qemu"
         mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/status/current")
 
+    # ── POL-01: structured vm_not_found classification (Phase 40 D-01/D-02) ──
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_returns_structured_vm_not_found_on_500(self, mock_get_client):
+        """POL-01 D-01/D-02: HTTP 500 with 'does not exist' body → vm_not_found dict."""
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        # GIVEN: Mock client that raises ClientResponseError(500, "VM 999 does not exist")
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        request_info = MagicMock()
+        request_info.url = "https://leak-this-url.example.invalid/api2/json/nodes/pve/qemu/999/status/current"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=500,
+            message="VM 999 does not exist",
+        )
+        mock_client.get.side_effect = exc
+
+        # WHEN: Getting status of non-existent VM via the public function
+        result = await get_proxmox_vm_status(
+            node="pve", vmid=999, host="proxmox.example", vm_type="qemu"
+        )
+
+        # THEN: Should return the structured vm_not_found dict (D-02)
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "pve"
+        assert result["vmid"] == 999
+        assert result["vm_type"] == "qemu"
+        assert result["host"] == "proxmox.example"
+        # AND: message must NOT contain the URL (URL-leak guard / Bug I)
+        assert "leak-this-url" not in result["message"]
+        assert "/api2/json" not in result["message"]
+        # AND: message echoes inputs back per D-02 template
+        assert "999" in result["message"]
+        assert "pve" in result["message"]
+
+        # AND: helper called directly should also yield the same structured dict
+        classified = _classify_vm_status_error(
+            exc, node="pve", vmid=999, vm_type="qemu", host="proxmox.example"
+        )
+        assert classified is not None
+        assert classified["error_kind"] == "vm_not_found"
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_404_missing_node(self):
+        """POL-01 D-01: HTTP 404 (defensive: missing-node case) also classifies as vm_not_found."""
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        request_info = MagicMock()
+        request_info.url = "https://secret/api2/json/nodes/missing-node/qemu/100/status/current"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=404,
+            message="Not Found - 100",  # contains str(vmid)
+        )
+
+        result = _classify_vm_status_error(
+            exc, node="missing-node", vmid=100, vm_type="lxc", host="proxmox.example"
+        )
+
+        assert result is not None
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "missing-node"
+        assert result["vmid"] == 100
+        assert result["vm_type"] == "lxc"
+        # URL never echoed
+        assert "secret" not in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_returns_none_on_non_response_error(self):
+        """POL-01 D-01: Non-ClientResponseError exceptions → None (legacy fallback)."""
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        # ValueError is not a ClientResponseError → must return None
+        result = _classify_vm_status_error(
+            ValueError("oops"), node="pve", vmid=100, vm_type="qemu", host="h"
+        )
+        assert result is None
+
+        # ClientError without status field also → None
+        from aiohttp import ClientError as PlainClientError
+
+        result2 = _classify_vm_status_error(
+            PlainClientError("VM 100 does not exist"),
+            node="pve",
+            vmid=100,
+            vm_type="qemu",
+            host="h",
+        )
+        assert result2 is None
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_returns_none_on_unrelated_status(self):
+        """POL-01 D-01: ClientResponseError with status not in (500, 404) → None."""
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        request_info = MagicMock()
+        request_info.url = "https://secret/api"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=502,
+            message="Bad Gateway",
+        )
+        result = _classify_vm_status_error(
+            exc, node="pve", vmid=100, vm_type="qemu", host="h"
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_returns_none_on_unmatched_wording(self):
+        """POL-01 D-01: 500 with neither 'does not exist' nor vmid substring → None.
+
+        Falls through to legacy fallback (graceful degradation if Proxmox changes wording).
+        """
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        request_info = MagicMock()
+        request_info.url = "https://secret/api"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=500,
+            message="Internal Server Error",
+        )
+        # vmid=42, body has neither "does not exist" nor "42"
+        result = _classify_vm_status_error(
+            exc, node="pve", vmid=42, vm_type="qemu", host="h"
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_legacy_fallback_when_helper_returns_none(self, mock_get_client):
+        """POL-01: Legacy generic-error path retained for non-matching exceptions."""
+        # GIVEN: Mock client that raises a plain ClientError (helper returns None)
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = ClientError("Connection timeout")
+
+        # WHEN: Getting VM status
+        result = await get_proxmox_vm_status(node="pve", vmid=100)
+
+        # THEN: Should fall back to legacy {status:"error", message:"Failed to get VM status: ..."}
+        assert result["status"] == "error"
+        assert "Failed to get VM status" in result["message"]
+        # AND: structured fields should be absent on the legacy path
+        assert "error_kind" not in result
+
 
 class TestGetProxmoxVMConfig:
     """Test get_proxmox_vm_config function."""
