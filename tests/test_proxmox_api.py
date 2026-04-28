@@ -204,17 +204,20 @@ class TestGetProxmoxClient:
     @patch.dict(
         os.environ,
         {
-            "PROXMOX_HOST": "192.168.1.100",
             "PROXMOX_USER": "root@pam",
             "PROXMOX_PASSWORD": "secret",
         },
     )
     async def test_client_from_env_vars(self):
-        """Test creating client from environment variables (explicit auth via env bypasses resolver)."""
-        # WHEN: Creating client without parameters (env vars supply host+auth → resolver bypassed)
-        client = await get_proxmox_client()
+        """Test creating client with auth from env vars (explicit host required after POL-03 D-04).
 
-        # THEN: Should use environment variables
+        PROXMOX_USER/PASSWORD/API_TOKEN env vars remain supported per CONTEXT D-04
+        (resolver-bypass fallback for SC-5 back-compat); only PROXMOX_HOST was removed.
+        """
+        # WHEN: Creating client with explicit host; env supplies auth → resolver bypassed
+        client = await get_proxmox_client(host="192.168.1.100")
+
+        # THEN: Should use environment variables for auth
         assert client.host == "192.168.1.100"
         assert client.username == "root@pam"
         assert client.password == "secret"
@@ -224,36 +227,67 @@ class TestGetProxmoxClient:
         "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
-    @patch.dict(os.environ, {"PROXMOX_HOST": "192.168.1.100"}, clear=True)
+    @patch.dict(os.environ, {}, clear=True)
     async def test_client_missing_credentials(self, mock_resolver):
-        """Test client creation with host but no auth — resolver is called, raises on miss."""
+        """Test client creation with explicit host but no auth — resolver is called, raises on miss."""
         from src.homelab_mcp.ssh_tools import CredentialNotFoundError
 
         mock_resolver.side_effect = CredentialNotFoundError("No credentials for 192.168.1.100")
         # WHEN/THEN: Should raise CredentialNotFoundError (resolver finds nothing)
+        # POL-03 D-04: host must be passed explicitly now (env-var fallback removed)
         with pytest.raises(CredentialNotFoundError):
-            await get_proxmox_client()
+            await get_proxmox_client(host="192.168.1.100")
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {}, clear=True)
     async def test_client_missing_host(self):
-        """Test client creation without host."""
-        # WHEN/THEN: Should raise ValueError if no host (resolver not called — no host to resolve)
-        with pytest.raises(ValueError, match="Proxmox host must be provided or set in PROXMOX_HOST"):
+        """Test client creation without host.
+
+        POL-03 D-04: ValueError text now references the credentials-add CLI command
+        and contains zero references to the deprecated PROXMOX_HOST env var.
+        """
+        # WHEN/THEN: Should raise ValueError if no host
+        with pytest.raises(ValueError) as exc_info:
             await get_proxmox_client()
+
+        msg = str(exc_info.value)
+        # New canonical wording — credentials-add CLI pointer
+        assert "Proxmox host required" in msg
+        assert "homelab-mcp credentials add --type proxmox" in msg
+        assert "--scope cluster:" in msg
+        # POL-03 D-04 invariant: zero references to PROXMOX_HOST
+        assert "PROXMOX_HOST" not in msg
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"PROXMOX_HOST": "should-be-ignored.example"}, clear=True)
+    async def test_client_no_longer_reads_proxmox_host_env_var(self):
+        """POL-03 D-04: PROXMOX_HOST env var is no longer consulted.
+
+        Setting PROXMOX_HOST in the environment with no explicit host argument
+        must NOT auto-populate host. The function must fail with the new
+        credentials-add ValueError, proving the env-var fallback is gone.
+        """
+        with pytest.raises(ValueError) as exc_info:
+            await get_proxmox_client()
+
+        msg = str(exc_info.value)
+        assert "Proxmox host required" in msg
+        assert "PROXMOX_HOST" not in msg
 
     @pytest.mark.asyncio
     @patch.dict(
         os.environ,
         {
-            "PROXMOX_HOST": "proxmox.local",
             "PROXMOX_API_TOKEN": "root@pam!token=secret",
         },
     )
     async def test_client_with_api_token_from_env(self):
-        """Test creating client with API token from environment (explicit token bypasses resolver)."""
-        # WHEN: Creating client
-        client = await get_proxmox_client()
+        """Test creating client with API token from environment (explicit token bypasses resolver).
+
+        POL-03 D-04: host must now be passed explicitly; API token env var still honored.
+        """
+        # WHEN: Creating client with explicit host; env supplies token → resolver bypassed
+        client = await get_proxmox_client(host="proxmox.local")
 
         # THEN: Should use API token
         assert client.api_token == "root@pam!token=secret"
@@ -262,18 +296,20 @@ class TestGetProxmoxClient:
 
     @pytest.mark.asyncio
     async def test_client_with_explicit_params_override_env(self):
-        """Test that explicit parameters override environment variables."""
-        # GIVEN: Environment has one host
-        with patch.dict(os.environ, {"PROXMOX_HOST": "env-host.local"}):
-            # WHEN: Creating client with explicit host+auth (bypasses resolver)
-            client = await get_proxmox_client(
-                host="explicit-host.local",
-                username="admin@pam",
-                password="test",
-            )
+        """Test that explicit parameters control client construction.
 
-            # THEN: Should use explicit parameters
-            assert client.host == "explicit-host.local"
+        POL-03 D-04: PROXMOX_HOST env var no longer affects host; the explicit
+        host argument is the only source of truth.
+        """
+        # WHEN: Creating client with explicit host+auth (bypasses resolver)
+        client = await get_proxmox_client(
+            host="explicit-host.local",
+            username="admin@pam",
+            password="test",
+        )
+
+        # THEN: Should use explicit parameters
+        assert client.host == "explicit-host.local"
 
 
 class TestListProxmoxResources:
