@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import aiohttp
+import asyncssh
 
 from .database import DatabaseAdapter
 from .log_filter import sanitize_error
@@ -41,6 +42,8 @@ from .proxmox_api import (
     get_resolution_telemetry,
     resolve_proxmox_credentials,
 )
+from .ssh_connection import ssh_connect
+from .ssh_tools import _probe_universal_core, resolve_ssh_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +324,77 @@ async def _enumerate_proxmox_vms(
     return dict(results)
 
 
+async def _bulk_universal_core_probes(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """SSH pre-pass: run universal-core probes against rows with ssh_credential_id.
+
+    Phase 35 D-02 pattern: per-scan ``Semaphore(10)`` + ``asyncio.gather``. Each
+    per-host probe is bounded by ``asyncio.wait_for(45s)`` to cap worst-case
+    when the remote conn hangs (Pitfall 3 outer-bound). Returns a mapping
+    ``{hostname: probe_result_dict}`` where ``probe_result_dict`` is either:
+
+      - ``{"fingerprint": dict, "partial": bool, "timed_out_commands": list}``
+        on success, OR
+      - ``{"_error": str}`` (sanitize_error-redacted) on failure.
+
+    Rows without ``ssh_credential_id`` are filtered out by the caller and do
+    NOT appear in the result. The whole call is wrapped in
+    ``asyncio.wait_for(120s)`` by ``scan_drift`` per Phase 39 D-04a.
+
+    Loop-free w.r.t. bucket appends (D-11(b)): only loop is a list-comprehension
+    over rows; per-row work happens inside ``_probe_one`` (no ``continue``).
+    """
+    semaphore = asyncio.Semaphore(10)
+
+    async def _probe_one(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        hostname = row.get("hostname", "")
+        binding = row.get("ssh_credential_id")
+        # Caller filters by ssh_credential_id, but be defensive against
+        # external callers that don't.
+        if binding is None:
+            return (hostname, {"_error": "no_ssh_credential_id"})
+        async with semaphore:
+            try:
+                creds = resolve_ssh_credentials(hostname, credential_id=binding)
+                async with await ssh_connect(
+                    hostname=creds.hostname,
+                    username=creds.username,
+                    port=creds.port,
+                    password=creds.password,
+                    key_path=creds.key_path,
+                ) as conn:
+                    timed_out: list[str] = []
+                    fp = await asyncio.wait_for(
+                        _probe_universal_core(conn, timed_out),
+                        timeout=45.0,
+                    )
+                    return (
+                        hostname,
+                        {
+                            "fingerprint": fp,
+                            "partial": bool(timed_out),
+                            "timed_out_commands": timed_out,
+                        },
+                    )
+            except (asyncssh.Error, OSError, TimeoutError, ValueError) as exc:
+                return (hostname, {"_error": sanitize_error(exc)})
+            except Exception as exc:  # CredentialNotFoundError + defensive
+                # CredentialNotFoundError is a sibling of Exception (raised by
+                # resolve_ssh_credentials); catching here keeps drift's SSH
+                # pre-pass non-fatal when a row's binding is stale or desynced.
+                return (hostname, {"_error": sanitize_error(exc)})
+        # Defensive fallthrough — should never execute (try-block returns or
+        # an except branch returns). Present so mypy can prove all paths return.
+        return (hostname, {"_error": "unreachable_fallthrough"})
+
+    pairs = await asyncio.gather(
+        *[_probe_one(r) for r in rows if r.get("ssh_credential_id")],
+        return_exceptions=False,
+    )
+    return dict(pairs)
+
+
 async def scan_drift(
     session: aiohttp.ClientSession | None,
     db_adapter: DatabaseAdapter,
@@ -433,6 +507,26 @@ async def scan_drift(
     # No-match (zero remaining rows) is a successful empty-result, NOT an error.
     if node is not None:
         rows = [row for row in rows if row.get("hostname") == node]
+
+    # Phase 39 D-04/D-04a: SSH pre-pass for universal-core fingerprint probes.
+    # Bulk Semaphore(10) + gather (Phase 35 D-02 pattern) bounded by
+    # asyncio.wait_for(120.0) — Phase 35 D-02 ceiling per CONTEXT D-04a-narrowed.
+    # Per-host probe bounded internally by wait_for(45.0); per-probe by
+    # _run_with_timeout(10.0). On outer-timeout, proceed with empty probe
+    # results so the row loop still classifies every row.
+    try:
+        ssh_probe_results: dict[str, dict[str, Any]] = await asyncio.wait_for(
+            _bulk_universal_core_probes(rows),
+            timeout=120.0,
+        )
+    except TimeoutError:
+        logger.warning(
+            "scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results"
+        )
+        ssh_probe_results = {}
+    # Read in Plan 03 Task 3: per-row diff classification consults
+    # ``ssh_probe_results.get(hostname)`` inside the row loop's success branch.
+    _ = ssh_probe_results  # noqa: F841 — wired by next commit
 
     for row in rows:
         hostname = row.get("hostname")
