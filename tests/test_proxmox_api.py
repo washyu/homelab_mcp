@@ -1583,12 +1583,17 @@ class TestGetProxmoxClientAsync:
         "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
-    async def test_get_proxmox_client_no_host_raises_proxmox_host_valueerror(
+    async def test_get_proxmox_client_no_host_raises_credentials_add_valueerror(
         self,
         mock_resolver: AsyncMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-12: when no host can be determined, ValueError names PROXMOX_HOST env var."""
+        """POL-03 D-04: when no host is provided, ValueError points at credentials-add CLI.
+
+        Supersedes the prior D-12 test which asserted PROXMOX_HOST wording.
+        Phase 40 hard-removed the PROXMOX_HOST env var fallback; the new
+        canonical wording references the credentials-add CLI.
+        """
         monkeypatch.delenv("PROXMOX_HOST", raising=False)
         monkeypatch.delenv("PROXMOX_API_TOKEN", raising=False)
         monkeypatch.delenv("PROXMOX_USER", raising=False)
@@ -1597,7 +1602,12 @@ class TestGetProxmoxClientAsync:
         with pytest.raises(ValueError) as exc_info:
             await get_proxmox_client()
 
-        assert "PROXMOX_HOST" in str(exc_info.value)
+        msg = str(exc_info.value)
+        assert "Proxmox host required" in msg
+        assert "homelab-mcp credentials add --type proxmox" in msg
+        assert "--scope cluster:" in msg
+        # POL-03 D-04 invariant: zero references to PROXMOX_HOST
+        assert "PROXMOX_HOST" not in msg
         mock_resolver.assert_not_called()
 
 
@@ -1812,28 +1822,33 @@ class TestProxmoxSSLVerification:
 
     @pytest.mark.asyncio
     async def test_ssl_verify_false_override_via_env(self):
-        """Test get_proxmox_client with PROXMOX_VERIFY_SSL=false sets verify_ssl=False."""
+        """Test get_proxmox_client with PROXMOX_VERIFY_SSL=false sets verify_ssl=False.
+
+        POL-03 D-04: host now passed explicitly (env-var fallback removed); verify-SSL
+        env var still honored.
+        """
         with patch.dict(
             os.environ,
             {
-                "PROXMOX_HOST": "pve.local",
                 "PROXMOX_VERIFY_SSL": "false",
                 "PROXMOX_API_TOKEN": "root@pam!token=secret",
             },
         ):
             # explicit api_token in env → resolver bypassed
-            client = await get_proxmox_client()
+            client = await get_proxmox_client(host="pve.local")
 
             # THEN: verify_ssl should be False
             assert client.verify_ssl is False
 
     @pytest.mark.asyncio
     async def test_get_proxmox_client_default_verify_ssl_true(self):
-        """Test get_proxmox_client defaults to verify_ssl=True."""
+        """Test get_proxmox_client defaults to verify_ssl=True.
+
+        POL-03 D-04: host now passed explicitly (env-var fallback removed).
+        """
         with patch.dict(
             os.environ,
             {
-                "PROXMOX_HOST": "pve.local",
                 "PROXMOX_API_TOKEN": "root@pam!token=secret",
             },
             clear=False,
@@ -1842,11 +1857,10 @@ class TestProxmoxSSLVerification:
             env = os.environ.copy()
             env.pop("PROXMOX_VERIFY_SSL", None)
             with patch.dict(os.environ, env, clear=True):
-                # Also ensure our test vars are present
-                os.environ["PROXMOX_HOST"] = "pve.local"
+                # Also ensure auth env var is present
                 os.environ["PROXMOX_API_TOKEN"] = "root@pam!token=secret"
                 # explicit api_token in env → resolver bypassed
-                client = await get_proxmox_client()
+                client = await get_proxmox_client(host="pve.local")
 
                 # THEN: verify_ssl should default to True
                 assert client.verify_ssl is True
@@ -2125,8 +2139,9 @@ class TestHandlerSessionThreading:
 # The test_get_proxmox_client_keyring_fallback test that verified the INJECT-03
 # "first registry entry" shortcut has been removed because D-12 intentionally
 # deletes that shortcut. The new behavior is: get_proxmox_client() with no host
-# raises ValueError naming PROXMOX_HOST (see test_client_missing_host above).
-# The resolver path is covered by TestGetProxmoxClientAsync.
+# raises ValueError pointing at the credentials-add CLI (see
+# test_client_missing_host above; POL-03 D-04 superseded the prior PROXMOX_HOST
+# wording). The resolver path is covered by TestGetProxmoxClientAsync.
 
 
 # ---------------------------------------------------------------------------

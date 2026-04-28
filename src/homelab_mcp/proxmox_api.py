@@ -455,7 +455,9 @@ async def get_proxmox_client(
     Get a Proxmox API client with credentials from environment or parameters.
 
     Args:
-        host: Proxmox host (defaults to PROXMOX_HOST env var)
+        host: Proxmox host. Required — register via
+            ``homelab-mcp credentials add --type proxmox <host> <username>`` (per-node)
+            or ``... --scope cluster:<name> <token_id>`` (cluster scope).
         port: API port (default: 8006)
         verify_ssl: Verify SSL (defaults to PROXMOX_VERIFY_SSL env var)
         username: Username (defaults to PROXMOX_USER env var)
@@ -470,9 +472,6 @@ async def get_proxmox_client(
     Returns:
         Configured ProxmoxAPIClient instance
     """
-    # Get from environment if not provided
-    host = host or os.getenv("PROXMOX_HOST")
-
     if verify_ssl is None:
         verify_ssl = os.getenv("PROXMOX_VERIFY_SSL", "true").lower() != "false"
 
@@ -516,9 +515,18 @@ async def get_proxmox_client(
                 cluster_name,
             )
 
-    # Validation gates
+    # Validation gates (POL-03 D-04: env-var fallback removed; host is mandatory.
+    # Wording mirrors `resolve_proxmox_credentials` raise at lines 431-440 for
+    # cross-error consistency — same canonical phrasing for "no creds, here's the
+    # CLI to fix it".)
     if not host:
-        raise ValueError("Proxmox host must be provided or set in PROXMOX_HOST env var")
+        raise ValueError(
+            "Proxmox host required. "
+            "Run `homelab-mcp credentials add --type proxmox <host> <username>` "
+            "in your terminal to register a node, or "
+            "`homelab-mcp credentials add --type proxmox --scope cluster:<name> <token_id>` "
+            "for cluster tokens."
+        )
 
     # Must have either API token or username+password
     if not api_token and not (username and password):
