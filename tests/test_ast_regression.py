@@ -620,71 +620,83 @@ class TestPhase37DriftHygiene:
     enforcement at server startup is not worth the production cost.
     """
 
-    # ── D-11: PROXMOX_HOST forbidden in drift surface ──────────────────
+    # ── D-11 + Phase 40 D-06: PROXMOX_HOST forbidden in drift + proxmox surface ──
 
-    # Drift-family source files that must contain ZERO PROXMOX_HOST references.
-    # NOTE: openapi_app.py is intentionally NOT in this list — it contains a
-    # legitimate "Proxmox" PROXMOX_HOST reference (Phase 40 POL-03 territory).
-    # The "Drift Detection" entry in openapi_app.py is checked separately via
-    # dict access below.
+    # PROXMOX_HOST-hygiene source files (Phase 37 D-11 + Phase 40 D-06).
+    # Drift surface (Phase 37) + Proxmox surface (Phase 40 POL-03 hard-
+    # removed the env-var fallback at proxmox_api.py:474). openapi_app.py
+    # is NOT in this file list — its PROXMOX_HOST hygiene is verified via
+    # the INFRA_REQUIREMENTS dict-value scans below.
     _DRIFT_SURFACE_FILES: tuple[str, ...] = (
         "drift_detection.py",
         "tool_handlers/drift_handlers.py",
         "tool_schemas/drift_tools_schema.py",
+        "proxmox_api.py",  # Phase 40 D-06 / POL-03
+        "tool_schemas/proxmox_tools_schema.py",  # Phase 40 D-06 / POL-02 + D-05
     )
 
     def test_no_proxmox_host_in_drift_files(self) -> None:
-        """Phase 37 D-11: drift surface files contain no PROXMOX_HOST references.
+        """Phase 37 D-11 + Phase 40 D-06: PROXMOX_HOST-surface files contain no PROXMOX_HOST references.
 
         Scans each of:
           - src/homelab_mcp/drift_detection.py
           - src/homelab_mcp/tool_handlers/drift_handlers.py
           - src/homelab_mcp/tool_schemas/drift_tools_schema.py
+          - src/homelab_mcp/proxmox_api.py                       (Phase 40 D-06 / POL-03)
+          - src/homelab_mcp/tool_schemas/proxmox_tools_schema.py (Phase 40 D-06 / POL-02 + D-05)
 
         for the substring `PROXMOX_HOST` (must be zero matches per file). Then
-        imports INFRA_REQUIREMENTS from openapi_app and verifies that the
-        "Drift Detection" entry's value does not contain PROXMOX_HOST.
-
-        The "Proxmox" entry in INFRA_REQUIREMENTS is intentionally NOT checked —
-        it is Phase 40 POL-03 territory per CONTEXT.md D-08.
+        imports INFRA_REQUIREMENTS from openapi_app and verifies that BOTH the
+        "Drift Detection" entry (Phase 37) AND the "Proxmox" entry (Phase 40)
+        lack PROXMOX_HOST.
         """
         src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
         violations: list[str] = []
 
-        # File scan: each drift-surface file must have zero PROXMOX_HOST.
+        # File scan: each PROXMOX_HOST-surface file must have zero PROXMOX_HOST.
         for relative_path in self._DRIFT_SURFACE_FILES:
             file_path = src_root / relative_path
             assert file_path.exists(), (
-                f"Phase 37 D-11 setup error: {file_path} does not exist. "
+                f"Phase 37 D-11 / Phase 40 D-06 setup error: {file_path} does not exist. "
                 f"_DRIFT_SURFACE_FILES is out of sync with the source tree."
             )
             source = file_path.read_text(encoding="utf-8")
             if "PROXMOX_HOST" in source:
                 violations.append(
-                    f"{relative_path}: contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15 — "
-                    f"drift surface must reference sitemap CRUD tools + credentials CLI, "
-                    f"not the deprecated env var)"
+                    f"{relative_path}: contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15 + "
+                    f"Phase 40 D-06 / POL-03 — surface must reference the credentials "
+                    f"CLI (`homelab-mcp credentials add --type proxmox`) and sitemap "
+                    f"CRUD tools, not the deprecated env var)"
                 )
 
-        # Dict-value scan: openapi_app.py "Drift Detection" INFRA_REQUIREMENTS
-        # entry must lack PROXMOX_HOST. Done via import to avoid fragile line-
-        # number coupling; the "Proxmox" entry on the previous line is
-        # intentionally not checked (Phase 40 POL-03).
+        # Dict-value scans: openapi_app.py INFRA_REQUIREMENTS entries must lack
+        # PROXMOX_HOST. Done via import to avoid fragile line-number coupling.
         from homelab_mcp.openapi_app import INFRA_REQUIREMENTS
 
         drift_entry = INFRA_REQUIREMENTS.get("Drift Detection", "")
         if "PROXMOX_HOST" in drift_entry:
             violations.append(
-                "openapi_app.py INFRA_REQUIREMENTS['Drift Detection']: "
-                "contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15)"
+                "openapi_app.py INFRA_REQUIREMENTS['Drift Detection']: contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15)"
+            )
+
+        # Phase 40 D-06: openapi_app.py "Proxmox" INFRA_REQUIREMENTS entry must
+        # also lack PROXMOX_HOST (POL-03 D-04 + D-05 ripple). Pre-Phase-40 this
+        # entry contained "Set PROXMOX_HOST..."; Phase 40 Plan 02 rewrote it to
+        # point at `homelab-mcp credentials add --type proxmox`.
+        proxmox_entry = INFRA_REQUIREMENTS.get("Proxmox", "")
+        if "PROXMOX_HOST" in proxmox_entry:
+            violations.append(
+                "openapi_app.py INFRA_REQUIREMENTS['Proxmox']: contains PROXMOX_HOST (Phase 40 D-06 / POL-03)"
             )
 
         assert not violations, (
-            "Phase 37 D-11 regression — PROXMOX_HOST reintroduced in drift surface:\n"
+            "Phase 37 D-11 + Phase 40 D-06 regression — PROXMOX_HOST reintroduced "
+            "in drift/proxmox surface:\n"
             + "\n".join(f"  - {v}" for v in violations)
-            + "\n\nDrift-family text should reference discover_and_map / "
-            "get_network_sitemap / purge_failed_discoveries / decommission_device "
-            "and the 'homelab-mcp credentials add --type proxmox' CLI instead."
+            + "\n\nText should reference 'homelab-mcp credentials add --type proxmox' "
+            "(per-node) or '--scope cluster:<name>' (cluster-wide), and sitemap CRUD "
+            "tools (discover_and_map / get_network_sitemap / purge_failed_discoveries "
+            "/ decommission_device) — never the deprecated PROXMOX_HOST env var."
         )
 
     # ── D-12: no baseline-lifecycle MCP tool names anywhere in src/ ─────
@@ -723,8 +735,7 @@ class TestPhase37DriftHygiene:
             for forbidden in self._FORBIDDEN_BASELINE_TOOL_NAMES:
                 if forbidden in source:
                     violations.append(
-                        f"{py_file.relative_to(src_root.parent.parent)}: "
-                        f"contains forbidden tool name {forbidden!r}"
+                        f"{py_file.relative_to(src_root.parent.parent)}: contains forbidden tool name {forbidden!r}"
                     )
 
         assert not violations, (
@@ -772,9 +783,9 @@ class TestPhase381CredBinding:
 
         target = next(
             (
-                n for n in ast.walk(tree)
-                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-                and n.name == "scan_drift"
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"
             ),
             None,
         )
@@ -785,10 +796,9 @@ class TestPhase381CredBinding:
 
         # Find the row-iter for-loop ("for row in rows:")
         row_loops = [
-            n for n in ast.walk(target)
-            if isinstance(n, ast.For)
-            and isinstance(n.target, ast.Name)
-            and n.target.id == "row"
+            n
+            for n in ast.walk(target)
+            if isinstance(n, ast.For) and isinstance(n.target, ast.Name) and n.target.id == "row"
         ]
         assert len(row_loops) == 1, (
             f"Phase 38.1 D-15: expected one `for row in rows:` loop in scan_drift, "
@@ -796,9 +806,7 @@ class TestPhase381CredBinding:
             f"this guard's row-loop discovery shape."
         )
 
-        violations = [
-            n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)
-        ]
+        violations = [n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)]
         assert not violations, (
             f"Phase 38.1 D-15 regression — `continue` reappeared in scan_drift row "
             f"loop at line(s): {violations}. Every row must land in one of five "
@@ -813,13 +821,17 @@ class TestPhase381CredBinding:
         source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
         tree = ast.parse(source, filename="drift_detection.py")
         target = next(
-            (n for n in ast.walk(tree)
-             if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"),
+            (
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"
+            ),
             None,
         )
         assert target is not None, "Phase 38.1 D-15: scan_drift not found"
         not_eligible_appends = [
-            n for n in ast.walk(target)
+            n
+            for n in ast.walk(target)
             if isinstance(n, ast.Call)
             and isinstance(n.func, ast.Attribute)
             and isinstance(n.func.value, ast.Name)
@@ -868,19 +880,14 @@ class TestPhase39DriftCases:
         for helper_name in self.PHASE_39_NEW_HELPERS:
             target = next(
                 (
-                    n for n in ast.walk(tree)
-                    if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-                    and n.name == helper_name
+                    n
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == helper_name
                 ),
                 None,
             )
-            assert target is not None, (
-                f"Phase 39 D-11: helper {helper_name!r} not found in "
-                f"drift_detection.py"
-            )
-            violations = [
-                n.lineno for n in ast.walk(target) if isinstance(n, ast.Continue)
-            ]
+            assert target is not None, f"Phase 39 D-11: helper {helper_name!r} not found in drift_detection.py"
+            violations = [n.lineno for n in ast.walk(target) if isinstance(n, ast.Continue)]
             assert not violations, (
                 f"Phase 39 D-11 regression — `continue` in {helper_name} at "
                 f"line(s): {violations}. Recommended: refactor to comprehension "
@@ -898,28 +905,23 @@ class TestPhase39DriftCases:
 
         target = next(
             (
-                n for n in ast.walk(tree)
-                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-                and n.name == "scan_drift"
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"
             ),
             None,
         )
         assert target is not None, "Phase 39 D-12: scan_drift not found"
 
         row_loops = [
-            n for n in ast.walk(target)
-            if isinstance(n, ast.For)
-            and isinstance(n.target, ast.Name)
-            and n.target.id == "row"
+            n
+            for n in ast.walk(target)
+            if isinstance(n, ast.For) and isinstance(n.target, ast.Name) and n.target.id == "row"
         ]
         assert len(row_loops) == 1, (
-            f"Phase 39 D-12: expected one `for row in rows:` loop in "
-            f"scan_drift, found {len(row_loops)}"
+            f"Phase 39 D-12: expected one `for row in rows:` loop in scan_drift, found {len(row_loops)}"
         )
-        violations = [
-            n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)
-        ]
+        violations = [n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)]
         assert not violations, (
-            f"Phase 39 D-12 regression — `continue` slipped into scan_drift's "
-            f"row loop at line(s): {violations}"
+            f"Phase 39 D-12 regression — `continue` slipped into scan_drift's row loop at line(s): {violations}"
         )
