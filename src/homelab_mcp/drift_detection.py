@@ -151,13 +151,23 @@ def _missing_threshold_days() -> int:
     return v if v > 0 else _DEFAULT_THRESHOLD_DAYS
 
 
-def _parse_last_seen(raw: str | None) -> datetime | None:
+def _parse_last_seen(raw: str | datetime | None) -> datetime | None:
     """RESEARCH Pitfall 4: sitemap writes ``datetime.now().isoformat()`` (naive,
     no tzinfo). Drift compares against ``datetime.now(UTC)`` (aware). Normalize
     parse to UTC-aware; return ``None`` for missing / malformed values so the
     caller defaults to ``unreachable`` (not ``missing``) — defensive default
     per T-39-02.
+
+    WR-01: accepts ``datetime`` objects directly so Postgres adapters that
+    type-map ``last_seen`` to a ``datetime`` (rather than the raw ISO
+    string SQLite returns) are normalized through the same UTC-coercion
+    path. The downstream ``record["last_seen"]`` field is then guaranteed
+    to flow through ``isoformat()`` regardless of adapter.
     """
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo is not None else raw.replace(tzinfo=UTC)
     if not raw:
         return None
     try:
@@ -657,7 +667,16 @@ async def scan_drift(
                     "scan_timestamp": scan_timestamp,
                 }
                 if substatus == "missing":
-                    record["last_seen"] = row.get("last_seen")
+                    # WR-01: normalize last_seen to ISO-8601 string. SQLite
+                    # adapters return strings, but Postgres adapters may
+                    # return datetime objects depending on type-mapping.
+                    # The drift response is downstream JSON-serialized;
+                    # mixed types break clients that assume the field is
+                    # always a string. Fall through to the raw value only
+                    # when parse fails (preserves the previous behaviour
+                    # for unparseable inputs).
+                    parsed = _parse_last_seen(row.get("last_seen"))
+                    record["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
                     record["message"] = classify_msg
                 unreachable.append(record)
             else:
@@ -755,7 +774,13 @@ async def scan_drift(
                             "scan_timestamp": scan_timestamp,
                         }
                         if substatus == "missing":
-                            record_inner["last_seen"] = row.get("last_seen")
+                            # WR-01: normalize last_seen to ISO-8601 string.
+                            # See sibling site above for full rationale —
+                            # DB adapters can return datetime objects;
+                            # JSON-serialize-to-string clients break on
+                            # mixed types.
+                            parsed = _parse_last_seen(row.get("last_seen"))
+                            record_inner["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
                             record_inner["message"] = classify_msg
                         unreachable.append(record_inner)
 
