@@ -27,7 +27,7 @@ buckets empty and a top-level "guidance" field pointing to the sitemap CRUD tool
 import asyncio
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import aiohttp
@@ -210,7 +210,15 @@ def _classify_unreachable(
     substrings.
     """
     parsed = _parse_last_seen(row.get("last_seen"))
-    if parsed is not None and (now - parsed).days > threshold_days:
+    # WR-07 (Phase 39 review): use a full timedelta comparison rather than
+    # ``(now - parsed).days``. ``timedelta.days`` floors to integer days,
+    # so a host last seen exactly 7 days + 23 hours ago yields ``.days == 7``
+    # and the boundary check ``7 > 7`` is False — the host stays
+    # ``unreachable`` for nearly an extra day. Operators with
+    # ``HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS=1`` saw promotion delays of
+    # up to 47 hours. Comparing the raw ``timedelta`` objects gives
+    # second-level precision instead of day-floor.
+    if parsed is not None and (now - parsed) > timedelta(days=threshold_days):
         hostname = row.get("hostname", "")
         message = (
             f"Host last seen {parsed.isoformat()} (>{threshold_days}d ago). "
