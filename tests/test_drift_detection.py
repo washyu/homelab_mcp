@@ -475,7 +475,14 @@ class TestScanDrift4Bucket:
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter, node="pve1")
 
-        assert called_hosts == ["pve1"], f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
+        # D-01 filter intent: filtered-out rows are never probed. The number of
+        # calls to get_proxmox_client per surviving host is an implementation
+        # detail (Phase 39 DRFT-17 added a post-loop /cluster/resources call,
+        # so probed_ok hosts get a second call for VM enumeration). The
+        # invariant is the *set* of called hosts, not the count.
+        assert set(called_hosts) == {"pve1"}, (
+            f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
+        )
         assert result["scanned"] == 1
         assert len(result["probed_ok"]) == 1
         assert result["probed_ok"][0]["hostname"] == "pve1"
@@ -537,7 +544,12 @@ class TestScanDrift4Bucket:
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter, node=None)
 
-        assert sorted(called_hosts) == ["pve1", "pve2"]
+        # Phase 39 DRFT-17: probed_ok hosts get a second get_proxmox_client
+        # call from the /cluster/resources enumeration pre-pass. Assert on the
+        # *set* of hosts probed, not the call count.
+        assert set(called_hosts) == {"pve1", "pve2"}, (
+            f"node=None should iterate every sitemap row; got: {called_hosts}"
+        )
         assert result["scanned"] == 2
         all_hostnames = {r["hostname"] for r in result["probed_ok"]}
         assert all_hostnames == {"pve1", "pve2"}
