@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 import aiohttp
+import asyncssh
 
 from .database import DatabaseAdapter
 from .log_filter import sanitize_error
@@ -41,6 +42,8 @@ from .proxmox_api import (
     get_resolution_telemetry,
     resolve_proxmox_credentials,
 )
+from .ssh_connection import ssh_connect
+from .ssh_tools import _probe_universal_core, resolve_ssh_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +324,77 @@ async def _enumerate_proxmox_vms(
     return dict(results)
 
 
+async def _bulk_universal_core_probes(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """SSH pre-pass: run universal-core probes against rows with ssh_credential_id.
+
+    Phase 35 D-02 pattern: per-scan ``Semaphore(10)`` + ``asyncio.gather``. Each
+    per-host probe is bounded by ``asyncio.wait_for(45s)`` to cap worst-case
+    when the remote conn hangs (Pitfall 3 outer-bound). Returns a mapping
+    ``{hostname: probe_result_dict}`` where ``probe_result_dict`` is either:
+
+      - ``{"fingerprint": dict, "partial": bool, "timed_out_commands": list}``
+        on success, OR
+      - ``{"_error": str}`` (sanitize_error-redacted) on failure.
+
+    Rows without ``ssh_credential_id`` are filtered out by the caller and do
+    NOT appear in the result. The whole call is wrapped in
+    ``asyncio.wait_for(120s)`` by ``scan_drift`` per Phase 39 D-04a.
+
+    Loop-free w.r.t. bucket appends (D-11(b)): only loop is a list-comprehension
+    over rows; per-row work happens inside ``_probe_one`` (no ``continue``).
+    """
+    semaphore = asyncio.Semaphore(10)
+
+    async def _probe_one(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        hostname = row.get("hostname", "")
+        binding = row.get("ssh_credential_id")
+        # Caller filters by ssh_credential_id, but be defensive against
+        # external callers that don't.
+        if binding is None:
+            return (hostname, {"_error": "no_ssh_credential_id"})
+        async with semaphore:
+            try:
+                creds = resolve_ssh_credentials(hostname, credential_id=binding)
+                async with await ssh_connect(
+                    hostname=creds.hostname,
+                    username=creds.username,
+                    port=creds.port,
+                    password=creds.password,
+                    key_path=creds.key_path,
+                ) as conn:
+                    timed_out: list[str] = []
+                    fp = await asyncio.wait_for(
+                        _probe_universal_core(conn, timed_out),
+                        timeout=45.0,
+                    )
+                    return (
+                        hostname,
+                        {
+                            "fingerprint": fp,
+                            "partial": bool(timed_out),
+                            "timed_out_commands": timed_out,
+                        },
+                    )
+            except (asyncssh.Error, OSError, TimeoutError, ValueError) as exc:
+                return (hostname, {"_error": sanitize_error(exc)})
+            except Exception as exc:  # CredentialNotFoundError + defensive
+                # CredentialNotFoundError is a sibling of Exception (raised by
+                # resolve_ssh_credentials); catching here keeps drift's SSH
+                # pre-pass non-fatal when a row's binding is stale or desynced.
+                return (hostname, {"_error": sanitize_error(exc)})
+        # Defensive fallthrough — should never execute (try-block returns or
+        # an except branch returns). Present so mypy can prove all paths return.
+        return (hostname, {"_error": "unreachable_fallthrough"})
+
+    pairs = await asyncio.gather(
+        *[_probe_one(r) for r in rows if r.get("ssh_credential_id")],
+        return_exceptions=False,
+    )
+    return dict(pairs)
+
+
 async def scan_drift(
     session: aiohttp.ClientSession | None,
     db_adapter: DatabaseAdapter,
@@ -434,6 +508,23 @@ async def scan_drift(
     if node is not None:
         rows = [row for row in rows if row.get("hostname") == node]
 
+    # Phase 39 D-04/D-04a: SSH pre-pass for universal-core fingerprint probes.
+    # Bulk Semaphore(10) + gather (Phase 35 D-02 pattern) bounded by
+    # asyncio.wait_for(120.0) — Phase 35 D-02 ceiling per CONTEXT D-04a-narrowed.
+    # Per-host probe bounded internally by wait_for(45.0); per-probe by
+    # _run_with_timeout(10.0). On outer-timeout, proceed with empty probe
+    # results so the row loop still classifies every row.
+    try:
+        ssh_probe_results: dict[str, dict[str, Any]] = await asyncio.wait_for(
+            _bulk_universal_core_probes(rows),
+            timeout=120.0,
+        )
+    except TimeoutError:
+        logger.warning(
+            "scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results"
+        )
+        ssh_probe_results = {}
+
     for row in rows:
         hostname = row.get("hostname")
         binding = row.get("proxmox_credential_id")  # Phase 38.1 R6
@@ -475,17 +566,23 @@ async def scan_drift(
                 )
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 # Resolver-during-cluster-walk failure — surface as unreachable
-                unreachable.append(
-                    {
-                        "hostname": hostname,
-                        "connection_ip": row.get("connection_ip", ""),
-                        "scope": "unknown",
-                        "cluster_name": None,
-                        "status": "unreachable",
-                        "error": sanitize_error(exc),
-                        "scan_timestamp": scan_timestamp,
-                    }
+                # OR missing per Phase 39 D-01/D-02 _classify_unreachable.
+                substatus, classify_msg = _classify_unreachable(
+                    row, exc, _missing_threshold_days(), datetime.now(UTC)
                 )
+                record: dict[str, Any] = {
+                    "hostname": hostname,
+                    "connection_ip": row.get("connection_ip", ""),
+                    "scope": "unknown",
+                    "cluster_name": None,
+                    "status": substatus,
+                    "error": sanitize_error(exc),
+                    "scan_timestamp": scan_timestamp,
+                }
+                if substatus == "missing":
+                    record["last_seen"] = row.get("last_seen")
+                    record["message"] = classify_msg
+                unreachable.append(record)
             else:
                 # WR-04 (Phase 38.1 review): use the resolution telemetry cache
                 # populated by resolve_proxmox_credentials on the just-completed
@@ -526,42 +623,86 @@ async def scan_drift(
                         status = await client.get("/cluster/status")
                         if not isinstance(status, list):
                             raise ValueError(f"unexpected /cluster/status payload type: {type(status).__name__}")
-                        probed_ok.append(
-                            {
-                                "hostname": hostname,
-                                "connection_ip": row.get("connection_ip", ""),
-                                "scope": scope,
-                                "cluster_name": cluster_name,
-                                "status": "probed-ok",
-                                "error": None,
-                                "scan_timestamp": scan_timestamp,
-                            }
+                        # Phase 39 DRFT-19 (D-08/D-09a/D-10): consult SSH
+                        # pre-pass result; if a non-empty diff vs stored
+                        # fingerprint exists, route to changed[]; otherwise
+                        # probed_ok[]. D-04b: drift never updates the stored
+                        # fingerprint — diff is read-only.
+                        probe = ssh_probe_results.get(hostname or "", {})
+                        stored_fp = row.get("fingerprint", {}) or {}
+                        current_fp = (
+                            probe.get("fingerprint", {})
+                            if "fingerprint" in probe
+                            else {}
                         )
+                        diff = (
+                            _diff_fingerprints(stored_fp, current_fp)
+                            if (stored_fp and current_fp)
+                            else {}
+                        )
+                        if diff:
+                            changed.append(
+                                {
+                                    "hostname": hostname,
+                                    "connection_ip": row.get("connection_ip", ""),
+                                    "scope": scope,
+                                    "cluster_name": cluster_name,
+                                    "status": "changed",
+                                    "changed_fields": diff,
+                                    "scan_timestamp": scan_timestamp,
+                                    "message": (
+                                        "Universal-core fingerprint changed; "
+                                        "re-run `configure_host_fingerprint` to "
+                                        "refresh capability tracking, then "
+                                        "`discover_and_map` to accept."
+                                    ),
+                                }
+                            )
+                        else:
+                            probed_ok.append(
+                                {
+                                    "hostname": hostname,
+                                    "connection_ip": row.get("connection_ip", ""),
+                                    "scope": scope,
+                                    "cluster_name": cluster_name,
+                                    "status": "probed-ok",
+                                    "error": None,
+                                    "scan_timestamp": scan_timestamp,
+                                }
+                            )
                     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-                        unreachable.append(
-                            {
-                                "hostname": hostname,
-                                "connection_ip": row.get("connection_ip", ""),
-                                "scope": scope,
-                                "cluster_name": cluster_name,
-                                "status": "unreachable",
-                                "error": sanitize_error(exc),
-                                "scan_timestamp": scan_timestamp,
-                            }
+                        # Phase 39 DRFT-18 (D-01/D-02): classify unreachable
+                        # vs missing sub-status using last_seen + threshold.
+                        substatus, classify_msg = _classify_unreachable(
+                            row, exc, _missing_threshold_days(), datetime.now(UTC)
                         )
+                        record_inner: dict[str, Any] = {
+                            "hostname": hostname,
+                            "connection_ip": row.get("connection_ip", ""),
+                            "scope": scope,
+                            "cluster_name": cluster_name,
+                            "status": substatus,
+                            "error": sanitize_error(exc),
+                            "scan_timestamp": scan_timestamp,
+                        }
+                        if substatus == "missing":
+                            record_inner["last_seen"] = row.get("last_seen")
+                            record_inner["message"] = classify_msg
+                        unreachable.append(record_inner)
 
     # Phase 39 DRFT-17 (D-05/D-06/D-07): enumerate unknown VMs across every
-    # probed_ok host. Cluster-scope rows that share a cluster_name de-dupe to
-    # one /cluster/resources call total; standalone hosts hit the same endpoint
-    # keyed by themselves. Per D-10 the unknown[] surface is parallel to host
-    # buckets — a probed_ok host can still emit unknown VM rows, and an
-    # enumeration failure on the host does not move it out of probed_ok.
+    # successfully-probed host (probed_ok OR changed — Phase 39 D-10 keeps
+    # unknown[] as a parallel per-VM surface independent of host bucket).
+    # Cluster-scope rows that share a cluster_name de-dupe to one
+    # /cluster/resources call total; standalone hosts hit the same endpoint
+    # keyed by themselves. An enumeration failure on the host does not move
+    # it out of its host bucket.
     sitemap_hostnames: set[str] = {
         (row.get("hostname") or "").lower()
         for row in rows
         if row.get("hostname")
     }
-    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok, session)
+    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session)
     unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
 
     # D-07: counts sub-dict mirrors bucket sizes.

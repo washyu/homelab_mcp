@@ -1516,3 +1516,669 @@ class TestPhase39Unknown:
         assert result["counts"]["unknown"] == 1
         assert result["unknown"][0]["vm_name"] == "rogue-vm"
         assert result["unknown"][0]["hypervisor_hostname"] == "pve1"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 39 Plan 03 — Wave 0 RED tests for DRFT-18 (missing) and DRFT-19 (changed)
+# Plus D-10 bucket invariants. All functional tests are RED until Plan 03 Task 3
+# wires _classify_unreachable + _diff_fingerprints into scan_drift's row loop.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase39Missing:
+    """Phase 39 D-01/D-02 + DRFT-18: missing-bucket sub-status under unreachable.
+
+    A sitemap host that fails to probe AND has ``last_seen`` older than the
+    threshold (``HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS``, default 7) lands in
+    ``unreachable[]`` with ``status: "missing"`` (not a 6th bucket — sub-state
+    only) plus a ``last_seen`` field and a recovery pointer to
+    ``decommission_device`` / ``purge_failed_discoveries``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_old_last_seen_promotes_to_missing(
+        self,
+        sitemap_row_old_last_seen: dict[str, object],
+    ) -> None:
+        """Probe fails AND last_seen 12d > 7d threshold → status='missing'."""
+        db_adapter = MagicMock()
+        # Plan 03 wires _classify_unreachable on the existing aiohttp.ClientError
+        # branch — give the row a proxmox_credential_id so the row enters that branch
+        # (rather than not_eligible/unbound).
+        row = dict(sitemap_row_old_last_seen)
+        row["proxmox_credential_id"] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        row["ssh_credential_id"] = None  # SSH pre-pass skips this row.
+        db_adapter.get_all_devices.return_value = [row]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["unreachable"] == 1
+        record = result["unreachable"][0]
+        assert record["status"] == "missing", (
+            f"DRFT-18: 12d-old last_seen + probe failure must promote to 'missing'; "
+            f"got status={record['status']!r}"
+        )
+        assert "last_seen" in record, "missing record must surface last_seen field"
+        assert "decommission_device" in record["message"], (
+            f"missing message must point at decommission_device; got: {record['message']!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_recent_unreachable_not_promoted(
+        self,
+        sitemap_row_recent_last_seen: dict[str, object],
+    ) -> None:
+        """Probe fails BUT last_seen 1d < 7d threshold → status='unreachable'."""
+        db_adapter = MagicMock()
+        row = dict(sitemap_row_recent_last_seen)
+        row["proxmox_credential_id"] = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        row["ssh_credential_id"] = None
+        db_adapter.get_all_devices.return_value = [row]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["unreachable"] == 1
+        assert result["unreachable"][0]["status"] == "unreachable", (
+            f"DRFT-18: recent last_seen must NOT promote to missing; "
+            f"got: {result['unreachable'][0]['status']!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_threshold_env_var_override(
+        self,
+        freeze_now: datetime,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS=3`` + 5d-old last_seen → missing."""
+        from datetime import timedelta
+
+        monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "3")
+        naive_now = freeze_now.replace(tzinfo=None)
+        row = {
+            "hostname": "stale-host",
+            "connection_ip": "10.0.0.50",
+            "status": "success",
+            "proxmox_credential_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "ssh_credential_id": None,
+            "last_seen": (naive_now - timedelta(days=5)).isoformat(),
+            "fingerprint": {},
+        }
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [row]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["unreachable"][0]["status"] == "missing", (
+            f"D-02: env override threshold=3 + 5d last_seen must promote; "
+            f"got: {result['unreachable'][0]['status']!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_threshold_env_var_invalid_uses_default(
+        self,
+        freeze_now: datetime,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Invalid env var → falls back to default 7d; 5d-old stays unreachable."""
+        from datetime import timedelta
+
+        monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "abc")
+        naive_now = freeze_now.replace(tzinfo=None)
+        row = {
+            "hostname": "stale-host",
+            "connection_ip": "10.0.0.50",
+            "status": "success",
+            "proxmox_credential_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "ssh_credential_id": None,
+            "last_seen": (naive_now - timedelta(days=5)).isoformat(),
+            "fingerprint": {},
+        }
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [row]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        # Invalid env → default 7d; 5d-old < 7d → unreachable, NOT missing.
+        assert result["unreachable"][0]["status"] == "unreachable", (
+            f"T-39-01: invalid threshold env var must fall back to 7d default; "
+            f"got: {result['unreachable'][0]['status']!r}"
+        )
+
+
+class TestPhase39Changed:
+    """Phase 39 D-08/D-09a + DRFT-19: changed-bucket via universal-core diff.
+
+    A host whose live universal-core fingerprint (kernel/os/package, optionally
+    capabilities) differs from its stored sitemap fingerprint lands in
+    ``changed[]`` with per-field diffs in a ``changed_fields`` dict-of-dicts
+    (dotted-path keys). Hosts whose probe matches stored stay in ``probed_ok``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_kernel_change_in_changed_bucket(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_drifted: dict[str, object],
+    ) -> None:
+        """Stored 6.5.13-1-pve vs current 6.8.4-2-pve → host in changed[]."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return []
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": mock_universal_core_probe_drifted,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["changed"] == 1, (
+            f"DRFT-19: drifted fingerprint must land host in changed[]; got "
+            f"changed={result['changed']}, probed_ok={result['probed_ok']}"
+        )
+        assert result["counts"]["probed_ok"] == 0, "host must NOT be in probed_ok"
+        record = result["changed"][0]
+        assert record["status"] == "changed"
+        assert record["changed_fields"]["kernel_version"] == {
+            "stored": "6.5.13-1-pve",
+            "current": "6.8.4-2-pve",
+        }, f"unexpected kernel_version diff: {record['changed_fields']}"
+
+    @pytest.mark.asyncio
+    async def test_no_diff_stays_probed_ok(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_response: dict[str, object],
+    ) -> None:
+        """Probe returns IDENTICAL fingerprint → host stays in probed_ok."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return []
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": mock_universal_core_probe_response,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["changed"] == 0
+        assert result["counts"]["probed_ok"] == 1
+
+    @pytest.mark.asyncio
+    async def test_capability_only_in_stored_does_not_diff(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_response: dict[str, object],
+    ) -> None:
+        """Stored has capabilities.vulkan; current has universal-core only.
+
+        D-09a: leaf-level present-in-both check — capability sub-keys absent
+        from current must NOT appear in changed_fields. Host stays in
+        probed_ok with empty changed_fields.
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return []
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        # Universal-core only — no `capabilities` sub-tree.
+                        "fingerprint": mock_universal_core_probe_response,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["changed"] == 0, (
+            f"D-09a: capabilities present only in stored must not surface as diff; "
+            f"got changed={result['changed']}"
+        )
+        assert result["counts"]["probed_ok"] == 1
+
+    @pytest.mark.asyncio
+    async def test_drift_does_not_update_fingerprint(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_drifted: dict[str, object],
+    ) -> None:
+        """D-04b: drift NEVER calls db_adapter.update_device_fingerprint."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return []
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": mock_universal_core_probe_drifted,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert db_adapter.update_device_fingerprint.call_count == 0, (
+            "D-04b: drift must NEVER write to devices.fingerprint; "
+            f"got call_count={db_adapter.update_device_fingerprint.call_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_changed_field_dotted_path_for_capabilities(
+        self,
+        mock_universal_core_probe_response: dict[str, object],
+    ) -> None:
+        """Stored AND current both have capabilities.vulkan.available — diff
+        emits the dotted-path key with stored=True, current=False."""
+        stored_fp = dict(mock_universal_core_probe_response)
+        stored_fp["capabilities"] = {"vulkan": {"available": True}}
+        current_fp = dict(mock_universal_core_probe_response)
+        current_fp["capabilities"] = {"vulkan": {"available": False}}
+
+        row = {
+            "hostname": "pve1",
+            "connection_ip": "10.0.0.10",
+            "status": "success",
+            "proxmox_credential_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            "ssh_credential_id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            "last_seen": "2026-04-27T11:00:00",
+            "fingerprint": stored_fp,
+        }
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [row]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return []
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": current_fp,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["changed"] == 1
+        diffs = result["changed"][0]["changed_fields"]
+        assert "capabilities.vulkan.available" in diffs, (
+            f"D-08: dotted-path key must appear when both sides have leaf; "
+            f"got keys: {list(diffs.keys())}"
+        )
+        assert diffs["capabilities.vulkan.available"]["stored"] is True
+        assert diffs["capabilities.vulkan.available"]["current"] is False
+
+
+class TestPhase39Bucket:
+    """Phase 39 D-10: bucket-priority + scanned-invariant guarantees.
+
+    - ``scanned == sum(counts.values())`` holds across all 5 buckets + unknown.
+    - ``unknown[]`` is a parallel per-VM surface independent of host buckets.
+    - Bucket priority preserved: not_eligible > unreachable (sub-states) >
+      changed > probed_ok.
+    """
+
+    @pytest.mark.asyncio
+    async def test_scanned_equals_counts_sum(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_drifted: dict[str, object],
+    ) -> None:
+        """Mixed sitemap covering changed + probed_ok + unreachable + not_eligible
+        plus 1 unknown VM → scanned == sum(counts.values())."""
+        # 4-row sitemap touching 4 host buckets.
+        rows = [
+            # 1) probed_ok with NO drift (same fingerprint) and 1 unknown VM in cluster
+            {
+                "hostname": "pve-ok",
+                "connection_ip": "10.0.0.10",
+                "status": "success",
+                "proxmox_credential_id": "11111111-1111-4111-8111-111111111111",
+                "ssh_credential_id": None,
+                "fingerprint": {},
+            },
+            # 2) changed (stored fingerprint differs from probe)
+            sitemap_row_with_stored_fingerprint,
+            # 3) unreachable (probe raises aiohttp.ClientError; recent last_seen)
+            {
+                "hostname": "pve-down",
+                "connection_ip": "10.0.0.20",
+                "status": "success",
+                "proxmox_credential_id": "33333333-3333-4333-8333-333333333333",
+                "ssh_credential_id": None,
+                "last_seen": "2026-04-27T10:00:00",
+                "fingerprint": {},
+            },
+            # 4) not_eligible (no proxmox binding → unbound)
+            {
+                "hostname": "truenas",
+                "connection_ip": "10.0.0.30",
+                "status": "success",
+                "proxmox_credential_id": None,
+                "ssh_credential_id": None,
+                "fingerprint": {},
+            },
+        ]
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = rows
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            if host == "pve-down":
+                client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
+                return client
+            if host == "truenas":
+                raise CredentialNotFoundError("no creds for truenas")
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    if host == "pve-ok":
+                        return [{
+                            "type": "qemu",
+                            "vmid": 100,
+                            "name": "rogue-vm",
+                            "node": "pve-ok",
+                            "status": "running",
+                        }]
+                    return []
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": mock_universal_core_probe_drifted,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["scanned"] == sum(result["counts"].values()), (
+            f"D-10 invariant: scanned must equal sum(counts); "
+            f"scanned={result['scanned']}, counts={result['counts']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_changed_host_with_unknown_vms(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_drifted: dict[str, object],
+    ) -> None:
+        """Drifted host yields counts.changed=1 AND counts.unknown=1 — parallel
+        surfaces per D-10."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return [
+                        {
+                            "type": "qemu",
+                            "vmid": 999,
+                            "name": "rogue-vm",
+                            "node": "pve1",
+                            "status": "running",
+                        },
+                    ]
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": mock_universal_core_probe_drifted,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["changed"] == 1
+        assert result["counts"]["unknown"] == 1, (
+            f"D-10: unknown[] must be populated independently of changed[]; "
+            f"got: {result['unknown']}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_bucket_priority_unreachable_over_changed(
+        self,
+        sitemap_row_with_stored_fingerprint: dict[str, object],
+        mock_universal_core_probe_drifted: dict[str, object],
+    ) -> None:
+        """Probe fails (aiohttp.ClientError) AND stored fingerprint exists →
+        host lands in unreachable[], NOT changed[] (D-10 priority)."""
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=aiohttp.ClientError("api down"))
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        # Even though SSH pre-pass would offer a drifted fingerprint, the probe
+        # failure on /cluster/status takes priority — host must be unreachable.
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={
+                    "pve1": {
+                        "fingerprint": mock_universal_core_probe_drifted,
+                        "partial": False,
+                        "timed_out_commands": [],
+                    }
+                }),
+            ),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["unreachable"] == 1
+        assert result["counts"]["changed"] == 0, (
+            f"D-10 priority: probe failure must dominate fingerprint diff; "
+            f"got changed={result['changed']}"
+        )
