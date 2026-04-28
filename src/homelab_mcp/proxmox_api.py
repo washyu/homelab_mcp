@@ -609,6 +609,60 @@ async def get_proxmox_node_status(
         }
 
 
+def _classify_vm_status_error(
+    exc: Exception,
+    *,
+    node: str,
+    vmid: int,
+    vm_type: Literal["qemu", "lxc"],
+    host: str,
+) -> dict[str, Any] | None:
+    """POL-01 D-01/D-02: classify a Proxmox VM-status failure as `vm_not_found`.
+
+    Detects ``aiohttp.ClientResponseError`` with ``status`` 500 (Proxmox's
+    quirk for missing-VMID) or 404 (defensive: missing-node case) whose
+    rendered message contains either the literal substring ``"does not
+    exist"`` or the supplied ``vmid`` as a substring (covers both QEMU and
+    LXC error wording variants).
+
+    On match → returns the structured ``vm_not_found`` dict per D-02.
+    On no-match → returns ``None``; caller falls through to the existing
+    generic-error response shape (graceful degradation if Proxmox changes
+    its error format).
+
+    The returned ``message`` is constructed from the input parameters only.
+    The exception's URL fields are never read, which is what closes the
+    URL-leak in this code path (Bug I).
+    """
+    if not isinstance(exc, aiohttp.ClientResponseError):
+        return None
+    if exc.status not in (500, 404):
+        return None
+    rendered = f"{getattr(exc, 'message', '')} {exc!s}"
+    if "does not exist" not in rendered and str(vmid) not in rendered:
+        logger.warning(
+            "Proxmox VM-status error did not match vm_not_found heuristic "
+            "(status=%s, vmid=%s, message-snippet=%r); falling through to "
+            "generic error path. May indicate Proxmox error-format drift.",
+            exc.status,
+            vmid,
+            rendered[:120],
+        )
+        return None
+    return {
+        "status": "error",
+        "error_kind": "vm_not_found",
+        "node": node,
+        "vmid": vmid,
+        "vm_type": vm_type,
+        "host": host,
+        "message": (
+            f"VM {vmid} ({vm_type}) not found on node {node!r} at host {host!r}. "
+            f"Run list_proxmox_resources to see available VMs."
+        ),
+    }
+
+
 async def get_proxmox_vm_status(
     node: str,
     vmid: int,
@@ -644,6 +698,15 @@ async def get_proxmox_vm_status(
 
     except (aiohttp.ClientError, ValueError) as e:
         logger.error("Error getting VM status: %s", str(e))
+        classified = _classify_vm_status_error(
+            e,
+            node=node,
+            vmid=vmid,
+            vm_type=vm_type,  # type: ignore[arg-type]
+            host=host or "",
+        )
+        if classified is not None:
+            return classified
         return {
             "status": "error",
             "message": f"Failed to get VM status: {sanitize_error(e)}",
