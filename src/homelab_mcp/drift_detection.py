@@ -524,9 +524,6 @@ async def scan_drift(
             "scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results"
         )
         ssh_probe_results = {}
-    # Read in Plan 03 Task 3: per-row diff classification consults
-    # ``ssh_probe_results.get(hostname)`` inside the row loop's success branch.
-    _ = ssh_probe_results  # noqa: F841 — wired by next commit
 
     for row in rows:
         hostname = row.get("hostname")
@@ -569,17 +566,23 @@ async def scan_drift(
                 )
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 # Resolver-during-cluster-walk failure — surface as unreachable
-                unreachable.append(
-                    {
-                        "hostname": hostname,
-                        "connection_ip": row.get("connection_ip", ""),
-                        "scope": "unknown",
-                        "cluster_name": None,
-                        "status": "unreachable",
-                        "error": sanitize_error(exc),
-                        "scan_timestamp": scan_timestamp,
-                    }
+                # OR missing per Phase 39 D-01/D-02 _classify_unreachable.
+                substatus, classify_msg = _classify_unreachable(
+                    row, exc, _missing_threshold_days(), datetime.now(UTC)
                 )
+                record: dict[str, Any] = {
+                    "hostname": hostname,
+                    "connection_ip": row.get("connection_ip", ""),
+                    "scope": "unknown",
+                    "cluster_name": None,
+                    "status": substatus,
+                    "error": sanitize_error(exc),
+                    "scan_timestamp": scan_timestamp,
+                }
+                if substatus == "missing":
+                    record["last_seen"] = row.get("last_seen")
+                    record["message"] = classify_msg
+                unreachable.append(record)
             else:
                 # WR-04 (Phase 38.1 review): use the resolution telemetry cache
                 # populated by resolve_proxmox_credentials on the just-completed
@@ -620,42 +623,86 @@ async def scan_drift(
                         status = await client.get("/cluster/status")
                         if not isinstance(status, list):
                             raise ValueError(f"unexpected /cluster/status payload type: {type(status).__name__}")
-                        probed_ok.append(
-                            {
-                                "hostname": hostname,
-                                "connection_ip": row.get("connection_ip", ""),
-                                "scope": scope,
-                                "cluster_name": cluster_name,
-                                "status": "probed-ok",
-                                "error": None,
-                                "scan_timestamp": scan_timestamp,
-                            }
+                        # Phase 39 DRFT-19 (D-08/D-09a/D-10): consult SSH
+                        # pre-pass result; if a non-empty diff vs stored
+                        # fingerprint exists, route to changed[]; otherwise
+                        # probed_ok[]. D-04b: drift never updates the stored
+                        # fingerprint — diff is read-only.
+                        probe = ssh_probe_results.get(hostname or "", {})
+                        stored_fp = row.get("fingerprint", {}) or {}
+                        current_fp = (
+                            probe.get("fingerprint", {})
+                            if "fingerprint" in probe
+                            else {}
                         )
+                        diff = (
+                            _diff_fingerprints(stored_fp, current_fp)
+                            if (stored_fp and current_fp)
+                            else {}
+                        )
+                        if diff:
+                            changed.append(
+                                {
+                                    "hostname": hostname,
+                                    "connection_ip": row.get("connection_ip", ""),
+                                    "scope": scope,
+                                    "cluster_name": cluster_name,
+                                    "status": "changed",
+                                    "changed_fields": diff,
+                                    "scan_timestamp": scan_timestamp,
+                                    "message": (
+                                        "Universal-core fingerprint changed; "
+                                        "re-run `configure_host_fingerprint` to "
+                                        "refresh capability tracking, then "
+                                        "`discover_and_map` to accept."
+                                    ),
+                                }
+                            )
+                        else:
+                            probed_ok.append(
+                                {
+                                    "hostname": hostname,
+                                    "connection_ip": row.get("connection_ip", ""),
+                                    "scope": scope,
+                                    "cluster_name": cluster_name,
+                                    "status": "probed-ok",
+                                    "error": None,
+                                    "scan_timestamp": scan_timestamp,
+                                }
+                            )
                     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-                        unreachable.append(
-                            {
-                                "hostname": hostname,
-                                "connection_ip": row.get("connection_ip", ""),
-                                "scope": scope,
-                                "cluster_name": cluster_name,
-                                "status": "unreachable",
-                                "error": sanitize_error(exc),
-                                "scan_timestamp": scan_timestamp,
-                            }
+                        # Phase 39 DRFT-18 (D-01/D-02): classify unreachable
+                        # vs missing sub-status using last_seen + threshold.
+                        substatus, classify_msg = _classify_unreachable(
+                            row, exc, _missing_threshold_days(), datetime.now(UTC)
                         )
+                        record_inner: dict[str, Any] = {
+                            "hostname": hostname,
+                            "connection_ip": row.get("connection_ip", ""),
+                            "scope": scope,
+                            "cluster_name": cluster_name,
+                            "status": substatus,
+                            "error": sanitize_error(exc),
+                            "scan_timestamp": scan_timestamp,
+                        }
+                        if substatus == "missing":
+                            record_inner["last_seen"] = row.get("last_seen")
+                            record_inner["message"] = classify_msg
+                        unreachable.append(record_inner)
 
     # Phase 39 DRFT-17 (D-05/D-06/D-07): enumerate unknown VMs across every
-    # probed_ok host. Cluster-scope rows that share a cluster_name de-dupe to
-    # one /cluster/resources call total; standalone hosts hit the same endpoint
-    # keyed by themselves. Per D-10 the unknown[] surface is parallel to host
-    # buckets — a probed_ok host can still emit unknown VM rows, and an
-    # enumeration failure on the host does not move it out of probed_ok.
+    # successfully-probed host (probed_ok OR changed — Phase 39 D-10 keeps
+    # unknown[] as a parallel per-VM surface independent of host bucket).
+    # Cluster-scope rows that share a cluster_name de-dupe to one
+    # /cluster/resources call total; standalone hosts hit the same endpoint
+    # keyed by themselves. An enumeration failure on the host does not move
+    # it out of its host bucket.
     sitemap_hostnames: set[str] = {
         (row.get("hostname") or "").lower()
         for row in rows
         if row.get("hostname")
     }
-    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok, session)
+    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session)
     unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
 
     # D-07: counts sub-dict mirrors bucket sizes.
