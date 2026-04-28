@@ -183,7 +183,10 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. When a sitemap-known host stops responding (powered off, network outage, decommissioned but not purged), `scan_infrastructure_drift` reports it in the **missing infrastructure** bucket with last-seen timestamp and a pointer to `decommission_device` or `purge_failed_discoveries`
   3. When a host's kernel version, package fingerprint, or capability probe (e.g., Vulkan availability) differs from the stored sitemap row, `scan_infrastructure_drift` reports it in the **changed infrastructure** bucket with a per-field diff showing stored-vs-current values
   4. The unknown-detection path enumerates Proxmox VMs/LXC via the API; the missing- and changed-detection paths use SSH probes that respect the per-subprocess `_run_with_timeout(10s)` pattern from Phase 35 — no scan hangs longer than the documented bulk timeout when a host is unresponsive
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 39-01-PLAN.md — Helper extraction (universal-core probe, diff/classify/threshold helpers) + Wave 0 fixtures + unit tests
+  - [ ] 39-02-PLAN.md — DRFT-17 unknown VM detection via /cluster/resources de-dupe
+  - [ ] 39-03-PLAN.md — DRFT-18 missing + DRFT-19 changed bucket wiring + AST guard + 120s outer timeout
 
 ### Phase 40: Proxmox VM Lifecycle Polish
 **Goal**: A user hitting Bug I (querying a nonexistent VMID) or Bug G (calling `create_proxmox_vm` without configured credentials) gets a clean structured error that tells them what to do next, never a raw HTTP 500 leak or a pointer to a deprecated env var.
@@ -230,7 +233,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
-| 39. Drift Detection Cases | v1.7 | 0/0 | Not started | - |
+| 39. Drift Detection Cases | v1.7 | 0/3 | Planned     | - |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
