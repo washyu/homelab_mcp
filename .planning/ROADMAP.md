@@ -199,7 +199,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 **Plans**: 3 plans
   - [x] 40-01-PLAN.md — proxmox_api.py: vm_not_found classifier (POL-01) + PROXMOX_HOST env-var hard-removal + ValueError rewrite (POL-03)
   - [x] 40-02-PLAN.md — proxmox_tools_schema.py: host required on create_proxmox_vm + D-05 description sweep (POL-02); openapi_app.py INFRA_REQUIREMENTS rewrite
-  - [ ] 40-03-PLAN.md — Tests + AST guard extension (POL-01/02/03 functional tests + D-06)
+  - [x] 40-03-PLAN.md — Tests + AST guard extension (POL-01/02/03 functional tests + D-06)
 
 ## Progress
 
@@ -237,7 +237,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
-| 40. Proxmox VM Lifecycle Polish | v1.7 | 2/3 | In Progress|  |
+| 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete   | 2026-04-28 |
 
 ## Backlog
 
@@ -245,7 +245,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
