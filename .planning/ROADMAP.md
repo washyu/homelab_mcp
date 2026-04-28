@@ -196,7 +196,10 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   1. A user calling `get_proxmox_vm_status` with a VMID that doesn't exist on the target node sees a structured `VM not found` error with hostname and VMID echoed back — no raw HTTP 500, no internal Proxmox API URL leaked into the message (closes Bug I)
   2. The `create_proxmox_vm` tool schema declares its `host` parameter as optional or required in a way that matches runtime behavior under cluster-scope keyring resolution — schema and runtime agree, no schema lie (closes Bug G schema half)
   3. When `create_proxmox_vm` cannot resolve credentials, the error message points the user to `homelab-mcp credentials add --type proxmox` (with a note about `--scope cluster:<name>` for cluster tokens) — no message mentions `PROXMOX_HOST` (closes Bug G error half)
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 40-01-PLAN.md — proxmox_api.py: vm_not_found classifier (POL-01) + PROXMOX_HOST env-var hard-removal + ValueError rewrite (POL-03)
+  - [ ] 40-02-PLAN.md — proxmox_tools_schema.py: host required on create_proxmox_vm + D-05 description sweep (POL-02); openapi_app.py INFRA_REQUIREMENTS rewrite
+  - [ ] 40-03-PLAN.md — Tests + AST guard extension (POL-01/02/03 functional tests + D-06)
 
 ## Progress
 
