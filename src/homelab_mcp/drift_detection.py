@@ -27,7 +27,7 @@ buckets empty and a top-level "guidance" field pointing to the sitemap CRUD tool
 import asyncio
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import aiohttp
@@ -151,13 +151,39 @@ def _missing_threshold_days() -> int:
     return v if v > 0 else _DEFAULT_THRESHOLD_DAYS
 
 
-def _parse_last_seen(raw: str | None) -> datetime | None:
+def _parse_last_seen(raw: str | datetime | None) -> datetime | None:
     """RESEARCH Pitfall 4: sitemap writes ``datetime.now().isoformat()`` (naive,
     no tzinfo). Drift compares against ``datetime.now(UTC)`` (aware). Normalize
     parse to UTC-aware; return ``None`` for missing / malformed values so the
     caller defaults to ``unreachable`` (not ``missing``) — defensive default
     per T-39-02.
+
+    WR-01: accepts ``datetime`` objects directly so Postgres adapters that
+    type-map ``last_seen`` to a ``datetime`` (rather than the raw ISO
+    string SQLite returns) are normalized through the same UTC-coercion
+    path. The downstream ``record["last_seen"]`` field is then guaranteed
+    to flow through ``isoformat()`` regardless of adapter.
+
+    WR-03 (Phase 39 review): the unconditional ``replace(tzinfo=UTC)`` is
+    a known imprecision. ``sitemap.py`` writes
+    ``datetime.now().isoformat()`` — *local* wall-clock time, no offset
+    suffix. On a server whose local time is not UTC, a 6-hour-old record
+    looks 6 hours into the future or 30 hours in the past depending on
+    direction; on a host that crosses a DST boundary the offset shifts
+    by 1 hour mid-scan. The practical effect: a configured threshold of
+    7 days has a true tolerance of "7 days +/- machine TZ offset" (and
+    similarly for any other threshold), so a 1-day threshold can take
+    up to 47 hours to fire on a UTC-12 server.
+
+    The proper fix is in sitemap.py — switch the writer to
+    ``datetime.now(UTC).isoformat()`` (a follow-up phase) and treat naive
+    timestamps as malformed here. Until that ships, operators relying on
+    sub-day precision should run the server in UTC.
     """
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo is not None else raw.replace(tzinfo=UTC)
     if not raw:
         return None
     try:
@@ -184,7 +210,15 @@ def _classify_unreachable(
     substrings.
     """
     parsed = _parse_last_seen(row.get("last_seen"))
-    if parsed is not None and (now - parsed).days > threshold_days:
+    # WR-07 (Phase 39 review): use a full timedelta comparison rather than
+    # ``(now - parsed).days``. ``timedelta.days`` floors to integer days,
+    # so a host last seen exactly 7 days + 23 hours ago yields ``.days == 7``
+    # and the boundary check ``7 > 7`` is False — the host stays
+    # ``unreachable`` for nearly an extra day. Operators with
+    # ``HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS=1`` saw promotion delays of
+    # up to 47 hours. Comparing the raw ``timedelta`` objects gives
+    # second-level precision instead of day-floor.
+    if parsed is not None and (now - parsed) > timedelta(days=threshold_days):
         hostname = row.get("hostname", "")
         message = (
             f"Host last seen {parsed.isoformat()} (>{threshold_days}d ago). "
@@ -195,27 +229,62 @@ def _classify_unreachable(
     return ("unreachable", sanitize_error(exc))
 
 
+_MISSING = object()  # WR-05 sentinel for "key not present on this side"
+
+
 def _diff_fingerprints(
     stored: dict[str, Any],
     current: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     """D-08, D-09a: walk two fingerprint dicts and emit per-leaf diffs with
-    dotted-path keys. Only leaves present in BOTH sides are diffed —
-    capability sub-keys absent from ``current`` (drift never re-probes
-    capabilities, D-09) silently skip rather than fire spurious "removed"
-    diffs every scan.
+    dotted-path keys.
 
-    Returns ``{path: {"stored": s, "current": c}}`` for each differing leaf.
+    WR-05 (Phase 39 review): drift surfaces ASYMMETRIC one-sided keys.
+      - keys present in ``stored`` but absent from ``current``  → SUPPRESSED
+        (per D-09a — drift never re-probes capabilities, so a missing
+        capability sub-key is expected, not a drift signal)
+      - keys present in ``current`` but absent from ``stored``  → EMITTED
+        (a freshly-added probe field, e.g., a host that just got dpkg
+        installed and now reports ``package_fingerprint``, IS a drift
+        signal — the user needs to know the host's capability surface
+        grew so they can re-run ``configure_host_fingerprint``)
+      - keys present in BOTH with differing values                → EMITTED
+
+    The previous implementation walked only ``stored.keys() & current.keys()``,
+    which suppressed BOTH directions and missed legitimate
+    capability-additions on the first scan after a host's probe surface
+    grew.
+
+    Returns ``{path: {"stored": s, "current": c}}`` for each emitted leaf.
+    For current-only keys, ``stored`` is ``None`` in the emitted record
+    (clients can detect the asymmetric add via ``"stored": None``).
     Empty dict when fingerprints are equal.
     """
     diffs: dict[str, dict[str, Any]] = {}
 
     def _walk(s: Any, c: Any, path: list[str]) -> None:
         if isinstance(s, dict) and isinstance(c, dict):
-            # Leaf-level "present in both": only recurse on the key
-            # intersection. One-sided keys silently skip (D-09a).
-            for k in s.keys() & c.keys():
-                _walk(s[k], c[k], path + [k])
+            # WR-05: walk the union of keys. For each key:
+            #   - present in stored only  -> suppress (D-09a capability drop)
+            #   - present in current only -> recurse with stored=_MISSING
+            #     so the leaf branch emits stored=None
+            #   - present in both         -> recurse normally
+            # AST guard scope (Phase 39 D-11(b)) forbids ``continue`` in
+            # this helper body, so use a comprehension that filters
+            # out the suppressed case before iterating.
+            keys_to_walk = [k for k in s.keys() | c.keys() if k in c]
+            for k in keys_to_walk:
+                _walk(s.get(k, _MISSING), c[k], path + [k])
+        elif s is _MISSING:
+            # WR-05: current-only leaf — emit with stored=None so clients
+            # can detect the asymmetric add. Equality check is moot
+            # because there's no stored value.
+            diffs[".".join(path)] = {"stored": None, "current": c}
+        elif c is _MISSING:
+            # Defensive — comprehension above strips current-missing keys
+            # at the dict level, so this branch only fires if a non-dict
+            # call passes _MISSING for current. Suppress per D-09a.
+            return
         elif s != c:
             diffs[".".join(path)] = {"stored": s, "current": c}
 
@@ -242,17 +311,49 @@ def _enumerate_unknown_vms(
     Loop-free w.r.t. bucket appends (D-11(b)): the only loop is
     ``for hypervisor, vms in cluster_vm_map.items():`` and its body is a
     single ``unknown.extend(filter(None, ...))``. No ``continue`` statements.
+
+    BL-03: when ``_HOST_CLUSTER_CACHE`` is cold (e.g., first scan after a
+    server restart), ``_enumerate_proxmox_vms`` cannot dedupe per cluster
+    and instead enumerates ``/cluster/resources`` once per host, producing
+    N copies of every VM in an N-node cluster. Defend at the consumer by
+    deduping on ``(vm_name_lower, vmid)``. The closure-captured ``seen``
+    set keeps this loop-free with respect to ``continue`` (locked by the
+    Phase 39 D-11(b) AST guard) — duplicates are suppressed by
+    ``_make_row`` returning ``None`` to ``filter(None, ...)``.
     """
     unknown: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, int]] = set()
 
     def _make_row(vm: dict[str, Any], hypervisor: str) -> dict[str, Any] | None:
         name = (vm.get("name") or "").strip()
         if not name or name.lower() in sitemap_hostnames:
             return None
+        # BL-02: guard against malformed vmid (non-numeric, None, list, ...).
+        # Without this, a single garbage VM record raises TypeError/ValueError
+        # out of the generator and aborts the whole scan_drift call —
+        # violating the D-10 contract that enumeration failures don't move
+        # hosts out of their bucket.
+        try:
+            vmid = int(vm.get("vmid", 0))
+        except (ValueError, TypeError):
+            logger.debug(
+                "Skipping malformed vmid in /cluster/resources for %s: %r",
+                hypervisor,
+                vm.get("vmid"),
+            )
+            return None
+        # BL-03: dedupe by (vm_name_lower, vmid). Cold-cache scans hit
+        # /cluster/resources from every cluster member and return the same
+        # VM list from each; collapse to one record so the operator sees a
+        # single unknown[] entry per VM rather than N.
+        key = (name.lower(), vmid)
+        if key in seen_keys:
+            return None
+        seen_keys.add(key)
         return {
             "hypervisor_hostname": hypervisor,
             "node": vm.get("node", ""),
-            "vmid": int(vm.get("vmid", 0)),
+            "vmid": vmid,
             "vm_type": vm.get("type", "qemu"),  # qemu | lxc
             "vm_name": name,
             "vm_status": vm.get("status", "unknown"),
@@ -315,7 +416,16 @@ async def _enumerate_proxmox_vms(
             vms = [r for r in resources if isinstance(r, dict) and r.get("type") in ("qemu", "lxc")]
             return (h, vms)
         except (aiohttp.ClientError, TimeoutError, ValueError, CredentialNotFoundError) as exc:
-            logger.debug("VM enum failed for %s: %s", h, sanitize_error(exc))
+            # BL-04: enumeration failures must be visible to operators. The
+            # host stays in probed_ok (D-10), unknown[] gains no entries from
+            # this host, and there's otherwise no observable signal that
+            # VM-level drift detection silently broke. sanitize_error redacts
+            # secrets so warning-level logging is safe.
+            logger.warning(
+                "VM enumeration failed for %s; unknown[] will not include VMs from this host: %s",
+                h,
+                sanitize_error(exc),
+            )
             return (h, [])
 
     if not targets:
@@ -344,6 +454,16 @@ async def _bulk_universal_core_probes(
 
     Loop-free w.r.t. bucket appends (D-11(b)): only loop is a list-comprehension
     over rows; per-row work happens inside ``_probe_one`` (no ``continue``).
+
+    BL-01: the result map is keyed on ``hostname``, so two rows that
+    legitimately share a hostname (migration overlap, stale-row purge race,
+    same host discovered under two connection_ips, or a degenerate row with
+    hostname="") collapse into a single entry whose value is whichever
+    probe finished last. The row loop in ``scan_drift`` then attributes
+    that probe to BOTH rows, which produces phantom ``changed[]`` entries
+    when row A's stored fingerprint is diffed against row B's probe
+    result. Dedupe on hostname here so duplicate rows are silently dropped
+    rather than overwriting each other.
     """
     semaphore = asyncio.Semaphore(10)
 
@@ -384,12 +504,39 @@ async def _bulk_universal_core_probes(
                 # resolve_ssh_credentials); catching here keeps drift's SSH
                 # pre-pass non-fatal when a row's binding is stale or desynced.
                 return (hostname, {"_error": sanitize_error(exc)})
-        # Defensive fallthrough — should never execute (try-block returns or
-        # an except branch returns). Present so mypy can prove all paths return.
-        return (hostname, {"_error": "unreachable_fallthrough"})
+        # WR-04 (Phase 39 review): mypy requires a terminal statement
+        # after the ``async with semaphore`` block (it can't prove
+        # exhaustiveness across try/except inside an async-with). The
+        # previous return value was a literal sentinel string that never
+        # reached a logger, so a future regression hitting this line
+        # would have vanished silently. Log loudly AND return a clearly
+        # diagnostic error so downstream callers see the problem in
+        # both logs and the probe map. Raising here would crash the
+        # whole asyncio.gather (return_exceptions=False) and break the
+        # SSH pre-pass for every other row — undesirable.
+        logger.error(
+            "_probe_one fell through all try/except branches for hostname=%r; "
+            "this indicates an unreachable code path that fired. Investigate.",
+            hostname,
+        )
+        return (hostname, {"_error": "probe_one_unreachable_fallthrough"})
 
+    # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
+    # hostname; if two rows share a hostname, only one probe survives in
+    # the result dict, which then gets attributed to both rows in the
+    # scan_drift row loop (phantom changed[] entries). Skip duplicates.
+    # Empty/None hostnames are dropped here too — they would all collide
+    # on the same "" key.
+    seen_hostnames: set[str] = set()
+    eligible: list[dict[str, Any]] = []
+    for r in rows:
+        h = r.get("hostname") or ""
+        if not h or not r.get("ssh_credential_id") or h in seen_hostnames:
+            continue
+        seen_hostnames.add(h)
+        eligible.append(r)
     pairs = await asyncio.gather(
-        *[_probe_one(r) for r in rows if r.get("ssh_credential_id")],
+        *[_probe_one(r) for r in eligible],
         return_exceptions=False,
     )
     return dict(pairs)
@@ -473,7 +620,8 @@ async def scan_drift(
             "message": str,                    # discover_and_map adoption pointer
         }
 
-    Per-row record shape (probed_ok and unreachable, unchanged from Phase 36 D-02):
+    Per-row record shape (probed_ok and unreachable.status == "unreachable",
+    unchanged from Phase 36 D-02 — 7 canonical keys):
         {
             "hostname": str,
             "connection_ip": str,
@@ -483,6 +631,24 @@ async def scan_drift(
             "error": str | None,               # sanitize_error() on unreachable
             "scan_timestamp": str,             # same value across all records
         }
+
+    Per-row record shape extension (unreachable.status == "missing", Phase 39
+    DRFT-18 — adds two keys to the 7-key base for a total of 9 keys):
+        {
+            ... (all 7 keys above), plus:
+            "last_seen": str | None,           # ISO-8601 string; None when
+                                               #   row's last_seen was unparseable
+            "message": str,                    # human-readable, includes
+                                               #   decommission_device /
+                                               #   purge_failed_discoveries pointer
+        }
+    Clients iterating the unreachable[] bucket should branch on
+    ``record.get("status")`` to distinguish the two shapes; the 7-key
+    "unreachable" sub-shape remains stable for backward compatibility,
+    and the 9-key "missing" sub-shape is additive (does not remove or
+    rename existing keys). WR-02 (Phase 39 review): drove this docstring
+    correction — the original Phase 36 D-02 7-key contract did not
+    acknowledge the conditional missing-extension shipped in Phase 39.
 
     Per-row record shape (not_eligible, Phase 38.1 D-08):
         {
@@ -514,20 +680,43 @@ async def scan_drift(
     # Per-host probe bounded internally by wait_for(45.0); per-probe by
     # _run_with_timeout(10.0). On outer-timeout, proceed with empty probe
     # results so the row loop still classifies every row.
+    #
+    # WR-08: degenerate rows (hostname None/''/'unknown' or status=='error')
+    # must be filtered out BEFORE the bulk probe call. Otherwise a stale
+    # ssh_credential_id on a degenerate row triggers an unintended SSH
+    # connect attempt — worst case to a wrong host (the credential's stored
+    # hostname rather than the row's empty hostname), best case extra
+    # latency equal to the SSH connection timeout. The row loop below still
+    # routes these rows to not_eligible (D-17); we just don't probe them.
+    ssh_eligible_rows = [
+        r
+        for r in rows
+        if r.get("hostname")
+        and r.get("hostname") not in ("", "unknown")
+        and r.get("status") != "error"
+        and r.get("ssh_credential_id")
+    ]
     try:
         ssh_probe_results: dict[str, dict[str, Any]] = await asyncio.wait_for(
-            _bulk_universal_core_probes(rows),
+            _bulk_universal_core_probes(ssh_eligible_rows),
             timeout=120.0,
         )
     except TimeoutError:
-        logger.warning(
-            "scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results"
-        )
+        logger.warning("scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results")
         ssh_probe_results = {}
 
     for row in rows:
         hostname = row.get("hostname")
         binding = row.get("proxmox_credential_id")  # Phase 38.1 R6
+        # WR-06 (Phase 39 review): reset scope / cluster_name explicitly
+        # at the top of each iteration. Python doesn't scope variables
+        # to ``for`` blocks, so without this reset a future refactor
+        # that forgets to re-bind these names in the resolver-success
+        # ``else`` branch could attach the *previous* row's cluster_name
+        # to the current row's record. Make the per-iteration default
+        # audible.
+        scope: str = "unknown"
+        cluster_name: str | None = None
 
         # D-17: degenerate rows route to not_eligible (no continue — D-15 invariant).
         # These are legitimate sitemap rows for failed discoveries / non-Proxmox
@@ -567,9 +756,7 @@ async def scan_drift(
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 # Resolver-during-cluster-walk failure — surface as unreachable
                 # OR missing per Phase 39 D-01/D-02 _classify_unreachable.
-                substatus, classify_msg = _classify_unreachable(
-                    row, exc, _missing_threshold_days(), datetime.now(UTC)
-                )
+                substatus, classify_msg = _classify_unreachable(row, exc, _missing_threshold_days(), datetime.now(UTC))
                 record: dict[str, Any] = {
                     "hostname": hostname,
                     "connection_ip": row.get("connection_ip", ""),
@@ -580,7 +767,16 @@ async def scan_drift(
                     "scan_timestamp": scan_timestamp,
                 }
                 if substatus == "missing":
-                    record["last_seen"] = row.get("last_seen")
+                    # WR-01: normalize last_seen to ISO-8601 string. SQLite
+                    # adapters return strings, but Postgres adapters may
+                    # return datetime objects depending on type-mapping.
+                    # The drift response is downstream JSON-serialized;
+                    # mixed types break clients that assume the field is
+                    # always a string. Fall through to the raw value only
+                    # when parse fails (preserves the previous behaviour
+                    # for unparseable inputs).
+                    parsed = _parse_last_seen(row.get("last_seen"))
+                    record["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
                     record["message"] = classify_msg
                 unreachable.append(record)
             else:
@@ -630,16 +826,8 @@ async def scan_drift(
                         # fingerprint — diff is read-only.
                         probe = ssh_probe_results.get(hostname or "", {})
                         stored_fp = row.get("fingerprint", {}) or {}
-                        current_fp = (
-                            probe.get("fingerprint", {})
-                            if "fingerprint" in probe
-                            else {}
-                        )
-                        diff = (
-                            _diff_fingerprints(stored_fp, current_fp)
-                            if (stored_fp and current_fp)
-                            else {}
-                        )
+                        current_fp = probe.get("fingerprint", {}) if "fingerprint" in probe else {}
+                        diff = _diff_fingerprints(stored_fp, current_fp) if (stored_fp and current_fp) else {}
                         if diff:
                             changed.append(
                                 {
@@ -686,7 +874,13 @@ async def scan_drift(
                             "scan_timestamp": scan_timestamp,
                         }
                         if substatus == "missing":
-                            record_inner["last_seen"] = row.get("last_seen")
+                            # WR-01: normalize last_seen to ISO-8601 string.
+                            # See sibling site above for full rationale —
+                            # DB adapters can return datetime objects;
+                            # JSON-serialize-to-string clients break on
+                            # mixed types.
+                            parsed = _parse_last_seen(row.get("last_seen"))
+                            record_inner["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
                             record_inner["message"] = classify_msg
                         unreachable.append(record_inner)
 
@@ -697,11 +891,7 @@ async def scan_drift(
     # /cluster/resources call total; standalone hosts hit the same endpoint
     # keyed by themselves. An enumeration failure on the host does not move
     # it out of its host bucket.
-    sitemap_hostnames: set[str] = {
-        (row.get("hostname") or "").lower()
-        for row in rows
-        if row.get("hostname")
-    }
+    sitemap_hostnames: set[str] = {(row.get("hostname") or "").lower() for row in rows if row.get("hostname")}
     cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session)
     unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
 

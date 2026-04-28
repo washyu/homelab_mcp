@@ -480,9 +480,7 @@ class TestScanDrift4Bucket:
         # detail (Phase 39 DRFT-17 added a post-loop /cluster/resources call,
         # so probed_ok hosts get a second call for VM enumeration). The
         # invariant is the *set* of called hosts, not the count.
-        assert set(called_hosts) == {"pve1"}, (
-            f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
-        )
+        assert set(called_hosts) == {"pve1"}, f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
         assert result["scanned"] == 1
         assert len(result["probed_ok"]) == 1
         assert result["probed_ok"][0]["hostname"] == "pve1"
@@ -547,9 +545,7 @@ class TestScanDrift4Bucket:
         # Phase 39 DRFT-17: probed_ok hosts get a second get_proxmox_client
         # call from the /cluster/resources enumeration pre-pass. Assert on the
         # *set* of hosts probed, not the call count.
-        assert set(called_hosts) == {"pve1", "pve2"}, (
-            f"node=None should iterate every sitemap row; got: {called_hosts}"
-        )
+        assert set(called_hosts) == {"pve1", "pve2"}, f"node=None should iterate every sitemap row; got: {called_hosts}"
         assert result["scanned"] == 2
         all_hostnames = {r["hostname"] for r in result["probed_ok"]}
         assert all_hostnames == {"pve1", "pve2"}
@@ -776,6 +772,58 @@ class TestScanDrift4Bucket:
         )
         assert record["status"] == "unreachable"
         assert isinstance(record["error"], str) and len(record["error"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_per_row_record_shape_for_missing_substatus_phase39(self):
+        """WR-02 (Phase 39 review): unreachable[] records with status=='missing'
+        carry the 7-key base shape PLUS ``last_seen`` and ``message``,
+        for a total of 9 canonical keys. Locks the docstring contract:
+        7 keys for unreachable, 9 keys for missing.
+        """
+        old_ts = "2020-01-01T00:00:00"  # >7 days ago by any reasonable threshold
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pi-lab",
+                "connection_ip": "10.0.0.12",
+                "status": "success",
+                "last_seen": old_ts,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+            client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@cluster", "cluster", "homelab-prod")
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert len(result["unreachable"]) == 1
+        record = result["unreachable"][0]
+        expected_keys = {
+            "hostname",
+            "connection_ip",
+            "scope",
+            "cluster_name",
+            "status",
+            "error",
+            "scan_timestamp",
+            "last_seen",
+            "message",
+        }
+        assert set(record.keys()) == expected_keys, (
+            f"missing record key set drifted from Phase 39 D-01; expected {expected_keys}, got {set(record.keys())}"
+        )
+        assert record["status"] == "missing"
+        assert isinstance(record["last_seen"], str) and record["last_seen"]
+        assert isinstance(record["message"], str) and "decommission_device" in record["message"]
 
     # ───────────────────────────────────────────────────────────────────────
     # Phase 37 reserved-empty bucket tests (D-05 / D-06)
@@ -1020,9 +1068,7 @@ class TestScanDriftNotEligible:
             if host == "pve-unbound":
                 raise CredentialNotFoundError(f"No Proxmox credentials found for {host}.")
             if host == "pve-stale":
-                raise CredentialNotFoundError(
-                    f"binding stale: UUID {stale_uuid} not in registry."
-                )
+                raise CredentialNotFoundError(f"binding stale: UUID {stale_uuid} not in registry.")
             raise AssertionError(f"unexpected host in fake_get_client: {host}")
 
         async def fake_resolve(host, session=None, *, credential_id=None):
@@ -1083,6 +1129,44 @@ class TestPhase39Helpers:
         current = {"kernel_version": "6.5.13", "os_name": "Proxmox VE"}
         assert _diff_fingerprints(stored, current) == {}
 
+    def test_diff_fingerprints_current_only_top_level_emits_phase39_wr05(self) -> None:
+        """WR-05: a top-level key present only in ``current`` emits a diff
+        with stored=None. Models a host that just gained dpkg and now
+        reports ``package_fingerprint`` for the first time.
+        """
+        stored: dict = {"kernel_version": "6.5.13"}
+        current = {
+            "kernel_version": "6.5.13",
+            "package_fingerprint": "deadbeef",
+        }
+        assert _diff_fingerprints(stored, current) == {
+            "package_fingerprint": {"stored": None, "current": "deadbeef"},
+        }
+
+    def test_diff_fingerprints_current_only_nested_emits_phase39_wr05(self) -> None:
+        """WR-05: a nested capability sub-key present only in ``current``
+        emits a dotted-path diff with stored=None.
+        """
+        stored = {"capabilities": {"vulkan": {"available": True}}}
+        current = {
+            "capabilities": {
+                "vulkan": {"available": True},
+                "rocm": {"available": True},
+            }
+        }
+        assert _diff_fingerprints(stored, current) == {
+            "capabilities.rocm": {"stored": None, "current": {"available": True}},
+        }
+
+    def test_diff_fingerprints_stored_only_still_suppressed_phase39_wr05(self) -> None:
+        """WR-05 / D-09a: stored-only keys remain suppressed (capability
+        drop is expected, not drift). Lock the asymmetry.
+        """
+        stored = {"capabilities": {"vulkan": {"available": True}, "rocm": {"available": True}}}
+        current = {"capabilities": {"vulkan": {"available": True}}}
+        # rocm appears only in stored → suppressed.
+        assert _diff_fingerprints(stored, current) == {}
+
     # -- _classify_unreachable (D-01, D-02) -------------------------------
 
     def test_classify_unreachable_old_last_seen_returns_missing(
@@ -1108,36 +1192,31 @@ class TestPhase39Helpers:
         )
         assert status == "unreachable"
 
-    def test_classify_unreachable_timezone_normalization(
-        self, freeze_now: datetime
-    ) -> None:
+    def test_classify_unreachable_timezone_normalization(self, freeze_now: datetime) -> None:
         """Pitfall 4: naive ``last_seen`` string must not raise TypeError."""
         row = {
             "hostname": "pi-lab",
             "last_seen": "2026-04-10T10:00:00",  # naive, >7d before frozen now
         }
         status, _msg = _classify_unreachable(
-            row, TimeoutError(), threshold_days=7, now=freeze_now,
+            row,
+            TimeoutError(),
+            threshold_days=7,
+            now=freeze_now,
         )
         assert status == "missing"
 
     # -- _missing_threshold_days (D-02) -----------------------------------
 
-    def test_missing_threshold_days_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_threshold_days_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", raising=False)
         assert _missing_threshold_days() == 7
 
-    def test_missing_threshold_days_env_override(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_threshold_days_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "3")
         assert _missing_threshold_days() == 3
 
-    def test_missing_threshold_days_invalid_falls_back(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_threshold_days_invalid_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "abc")
         assert _missing_threshold_days() == 7
         monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "-1")
@@ -1166,13 +1245,14 @@ class TestPhase39Helpers:
         """
         cluster_vm_map = {
             "pve1": [
-                {"type": "qemu", "name": "Plex-Server", "vmid": 100,
-                 "node": "pve1", "status": "running"},
+                {"type": "qemu", "name": "Plex-Server", "vmid": 100, "node": "pve1", "status": "running"},
             ],
         }
         sitemap_hostnames = {"plex-server"}
         result = _enumerate_unknown_vms(
-            cluster_vm_map, sitemap_hostnames, "2026-04-27T12:00:00+00:00",
+            cluster_vm_map,
+            sitemap_hostnames,
+            "2026-04-27T12:00:00+00:00",
         )
         assert result == []
 
@@ -1181,13 +1261,14 @@ class TestPhase39Helpers:
         recovery pointer."""
         cluster_vm_map = {
             "pve1": [
-                {"type": "qemu", "name": "ubuntu-test", "vmid": 110,
-                 "node": "pve1", "status": "stopped"},
+                {"type": "qemu", "name": "ubuntu-test", "vmid": 110, "node": "pve1", "status": "stopped"},
             ],
         }
         sitemap_hostnames = {"pve1"}
         result = _enumerate_unknown_vms(
-            cluster_vm_map, sitemap_hostnames, "2026-04-27T12:00:00+00:00",
+            cluster_vm_map,
+            sitemap_hostnames,
+            "2026-04-27T12:00:00+00:00",
         )
         assert len(result) == 1
         row = result[0]
@@ -1217,18 +1298,11 @@ class TestPhase39Helpers:
             "uname -r": MagicMock(exit_status=0, stdout="6.5.13-1-pve\n"),
             "/etc/os-release": MagicMock(
                 exit_status=0,
-                stdout=(
-                    'PRETTY_NAME="Proxmox VE 8.2.4"\n'
-                    'NAME="Proxmox VE"\n'
-                    'VERSION_ID="8.2.4"\n'
-                ),
+                stdout=('PRETTY_NAME="Proxmox VE 8.2.4"\nNAME="Proxmox VE"\nVERSION_ID="8.2.4"\n'),
             ),
             "dpkg -l": MagicMock(
                 exit_status=0,
-                stdout=(
-                    "abc123def456abc123def456abc123def456"
-                    "abc123def456abc123def456abc123defab  -\n"
-                ),
+                stdout=("abc123def456abc123def456abc123def456abc123def456abc123def456abc123defab  -\n"),
             ),
         }
 
@@ -1310,9 +1384,7 @@ class TestPhase39Unknown:
         # Host stayed in probed_ok (D-10: unknown[] is parallel surface).
         assert result["counts"]["probed_ok"] == 1
         # Two unmatched VMs (ubuntu-test, pi-hole); ubuntu-prod matched, node-type filtered.
-        assert result["counts"]["unknown"] == 2, (
-            f"expected 2 unknown VMs, got: {result['unknown']}"
-        )
+        assert result["counts"]["unknown"] == 2, f"expected 2 unknown VMs, got: {result['unknown']}"
         vmids = sorted(row["vmid"] for row in result["unknown"])
         assert vmids == [110, 200], f"unexpected vmids: {vmids}"
         for row in result["unknown"]:
@@ -1568,8 +1640,7 @@ class TestPhase39Missing:
         assert result["counts"]["unreachable"] == 1
         record = result["unreachable"][0]
         assert record["status"] == "missing", (
-            f"DRFT-18: 12d-old last_seen + probe failure must promote to 'missing'; "
-            f"got status={record['status']!r}"
+            f"DRFT-18: 12d-old last_seen + probe failure must promote to 'missing'; got status={record['status']!r}"
         )
         assert "last_seen" in record, "missing record must surface last_seen field"
         assert "decommission_device" in record["message"], (
@@ -1605,8 +1676,7 @@ class TestPhase39Missing:
 
         assert result["counts"]["unreachable"] == 1
         assert result["unreachable"][0]["status"] == "unreachable", (
-            f"DRFT-18: recent last_seen must NOT promote to missing; "
-            f"got: {result['unreachable'][0]['status']!r}"
+            f"DRFT-18: recent last_seen must NOT promote to missing; got: {result['unreachable'][0]['status']!r}"
         )
 
     @pytest.mark.asyncio
@@ -1648,8 +1718,7 @@ class TestPhase39Missing:
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
         assert result["unreachable"][0]["status"] == "missing", (
-            f"D-02: env override threshold=3 + 5d last_seen must promote; "
-            f"got: {result['unreachable'][0]['status']!r}"
+            f"D-02: env override threshold=3 + 5d last_seen must promote; got: {result['unreachable'][0]['status']!r}"
         )
 
     @pytest.mark.asyncio
@@ -1737,13 +1806,15 @@ class TestPhase39Changed:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": mock_universal_core_probe_drifted,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": mock_universal_core_probe_drifted,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
@@ -1792,13 +1863,15 @@ class TestPhase39Changed:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": mock_universal_core_probe_response,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": mock_universal_core_probe_response,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
@@ -1843,22 +1916,23 @@ class TestPhase39Changed:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        # Universal-core only — no `capabilities` sub-tree.
-                        "fingerprint": mock_universal_core_probe_response,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            # Universal-core only — no `capabilities` sub-tree.
+                            "fingerprint": mock_universal_core_probe_response,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
         assert result["counts"]["changed"] == 0, (
-            f"D-09a: capabilities present only in stored must not surface as diff; "
-            f"got changed={result['changed']}"
+            f"D-09a: capabilities present only in stored must not surface as diff; got changed={result['changed']}"
         )
         assert result["counts"]["probed_ok"] == 1
 
@@ -1893,13 +1967,15 @@ class TestPhase39Changed:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": mock_universal_core_probe_drifted,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": mock_universal_core_probe_drifted,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
@@ -1955,13 +2031,15 @@ class TestPhase39Changed:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": current_fp,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": current_fp,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
@@ -1970,8 +2048,7 @@ class TestPhase39Changed:
         assert result["counts"]["changed"] == 1
         diffs = result["changed"][0]["changed_fields"]
         assert "capabilities.vulkan.available" in diffs, (
-            f"D-08: dotted-path key must appear when both sides have leaf; "
-            f"got keys: {list(diffs.keys())}"
+            f"D-08: dotted-path key must appear when both sides have leaf; got keys: {list(diffs.keys())}"
         )
         assert diffs["capabilities.vulkan.available"]["stored"] is True
         assert diffs["capabilities.vulkan.available"]["current"] is False
@@ -2043,13 +2120,15 @@ class TestPhase39Bucket:
                     return [{"type": "node", "name": host}]
                 if path == "/cluster/resources":
                     if host == "pve-ok":
-                        return [{
-                            "type": "qemu",
-                            "vmid": 100,
-                            "name": "rogue-vm",
-                            "node": "pve-ok",
-                            "status": "running",
-                        }]
+                        return [
+                            {
+                                "type": "qemu",
+                                "vmid": 100,
+                                "name": "rogue-vm",
+                                "node": "pve-ok",
+                                "status": "running",
+                            }
+                        ]
                     return []
                 raise AssertionError(f"unexpected path: {path}")
 
@@ -2064,21 +2143,22 @@ class TestPhase39Bucket:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": mock_universal_core_probe_drifted,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": mock_universal_core_probe_drifted,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter)
 
         assert result["scanned"] == sum(result["counts"].values()), (
-            f"D-10 invariant: scanned must equal sum(counts); "
-            f"scanned={result['scanned']}, counts={result['counts']}"
+            f"D-10 invariant: scanned must equal sum(counts); scanned={result['scanned']}, counts={result['counts']}"
         )
 
     @pytest.mark.asyncio
@@ -2121,13 +2201,15 @@ class TestPhase39Bucket:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": mock_universal_core_probe_drifted,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": mock_universal_core_probe_drifted,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
@@ -2135,8 +2217,7 @@ class TestPhase39Bucket:
 
         assert result["counts"]["changed"] == 1
         assert result["counts"]["unknown"] == 1, (
-            f"D-10: unknown[] must be populated independently of changed[]; "
-            f"got: {result['unknown']}"
+            f"D-10: unknown[] must be populated independently of changed[]; got: {result['unknown']}"
         )
 
     @pytest.mark.asyncio
@@ -2165,13 +2246,15 @@ class TestPhase39Bucket:
             patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
             patch(
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
-                AsyncMock(return_value={
-                    "pve1": {
-                        "fingerprint": mock_universal_core_probe_drifted,
-                        "partial": False,
-                        "timed_out_commands": [],
+                AsyncMock(
+                    return_value={
+                        "pve1": {
+                            "fingerprint": mock_universal_core_probe_drifted,
+                            "partial": False,
+                            "timed_out_commands": [],
+                        }
                     }
-                }),
+                ),
             ),
             patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
         ):
@@ -2179,6 +2262,5 @@ class TestPhase39Bucket:
 
         assert result["counts"]["unreachable"] == 1
         assert result["counts"]["changed"] == 0, (
-            f"D-10 priority: probe failure must dominate fingerprint diff; "
-            f"got changed={result['changed']}"
+            f"D-10 priority: probe failure must dominate fingerprint diff; got changed={result['changed']}"
         )
