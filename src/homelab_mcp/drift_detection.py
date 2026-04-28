@@ -548,7 +548,8 @@ async def scan_drift(
             "message": str,                    # discover_and_map adoption pointer
         }
 
-    Per-row record shape (probed_ok and unreachable, unchanged from Phase 36 D-02):
+    Per-row record shape (probed_ok and unreachable.status == "unreachable",
+    unchanged from Phase 36 D-02 — 7 canonical keys):
         {
             "hostname": str,
             "connection_ip": str,
@@ -558,6 +559,24 @@ async def scan_drift(
             "error": str | None,               # sanitize_error() on unreachable
             "scan_timestamp": str,             # same value across all records
         }
+
+    Per-row record shape extension (unreachable.status == "missing", Phase 39
+    DRFT-18 — adds two keys to the 7-key base for a total of 9 keys):
+        {
+            ... (all 7 keys above), plus:
+            "last_seen": str | None,           # ISO-8601 string; None when
+                                               #   row's last_seen was unparseable
+            "message": str,                    # human-readable, includes
+                                               #   decommission_device /
+                                               #   purge_failed_discoveries pointer
+        }
+    Clients iterating the unreachable[] bucket should branch on
+    ``record.get("status")`` to distinguish the two shapes; the 7-key
+    "unreachable" sub-shape remains stable for backward compatibility,
+    and the 9-key "missing" sub-shape is additive (does not remove or
+    rename existing keys). WR-02 (Phase 39 review): drove this docstring
+    correction — the original Phase 36 D-02 7-key contract did not
+    acknowledge the conditional missing-extension shipped in Phase 39.
 
     Per-row record shape (not_eligible, Phase 38.1 D-08):
         {
