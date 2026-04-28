@@ -236,4 +236,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-26 — Phase 38 (Sitemap Fingerprint Schema) complete: DRFT-20 validated.*
+*Last updated: 2026-04-28 — Phase 39 (Drift Detection Cases) complete: DRFT-17, DRFT-18, DRFT-19 validated end-to-end in `scan_drift` (unknown / missing / changed buckets).*
