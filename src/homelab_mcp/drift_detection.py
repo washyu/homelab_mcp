@@ -798,6 +798,19 @@ async def scan_drift(
                 # just populated it via the same code path).
                 telemetry = get_resolution_telemetry(hostname, binding)
                 resolver_exc: CredentialNotFoundError | None = None
+                # WR-C (Phase 39 re-review): the resolver's cluster-walk path
+                # can raise aiohttp.ClientError / TimeoutError / ValueError as
+                # well as CredentialNotFoundError. The prior except clause
+                # caught only the credential variant, so any transient
+                # network/timeout failure on the fallback path would
+                # propagate uncaught all the way out of scan_drift,
+                # aborting the entire scan and losing every other row's
+                # classification (the BL-02 contract). Widen the except to
+                # cover the same exception family that the surrounding
+                # /cluster/status block handles, and route to unreachable
+                # via a parallel sentinel — keeping the D-15 "no continue
+                # in row loop" invariant.
+                transient_resolver_exc: aiohttp.ClientError | TimeoutError | ValueError | None = None
                 if telemetry is not None:
                     scope, cluster_name = telemetry
                 else:
@@ -809,6 +822,8 @@ async def scan_drift(
                         )
                     except CredentialNotFoundError as exc:
                         resolver_exc = exc
+                    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                        transient_resolver_exc = exc
                 if resolver_exc is not None:
                     # Defensive — should not happen after get_proxmox_client succeeded.
                     # Route to not_eligible (NOT continue) per D-15 invariant.
@@ -822,6 +837,38 @@ async def scan_drift(
                             "message": _reason_message(reason, hostname, "proxmox"),
                         }
                     )
+                elif transient_resolver_exc is not None:
+                    # WR-C: transient resolver-fallback failure — treat
+                    # as if /cluster/status itself had failed. Route to
+                    # unreachable (with possible 'missing' promotion) so
+                    # the row remains classified rather than crashing
+                    # the scan. cluster_name is unknown here because the
+                    # resolver didn't complete; record None.
+                    substatus_r, classify_msg_r = _classify_unreachable(
+                        row, transient_resolver_exc, _missing_threshold_days(), datetime.now(UTC)
+                    )
+                    record_resolver: dict[str, Any] = {
+                        "hostname": hostname,
+                        "connection_ip": row.get("connection_ip", ""),
+                        "scope": "unknown",
+                        "cluster_name": None,
+                        "status": substatus_r,
+                        "error": sanitize_error(transient_resolver_exc),
+                        "scan_timestamp": scan_timestamp,
+                    }
+                    if substatus_r == "missing":
+                        # WR-01 + WR-E: normalize last_seen and stringify
+                        # the fallback so JSON serialization cannot fail.
+                        parsed_r = _parse_last_seen(row.get("last_seen"))
+                        raw_last_seen_r = row.get("last_seen")
+                        if parsed_r is not None:
+                            record_resolver["last_seen"] = parsed_r.isoformat()
+                        elif raw_last_seen_r is not None:
+                            record_resolver["last_seen"] = str(raw_last_seen_r)
+                        else:
+                            record_resolver["last_seen"] = None
+                        record_resolver["message"] = classify_msg_r
+                    unreachable.append(record_resolver)
                 else:
                     try:
                         status = await client.get("/cluster/status")
