@@ -608,9 +608,14 @@ async def _bulk_universal_core_probes(
 | A7 | `set_latest_drift_report` (server.py:85, 456) automatically surfaces new bucket fields via `homelab://drift/latest` | CONTEXT Deferred Ideas | Resource readers might filter the payload. **VERIFIED**: resource_readers.py:138 returns `report` verbatim — no filtering. New buckets surface automatically. |
 | A8 | `asyncssh.Error` covers connection-refused / auth-failure / timeout exceptions for SSH probes | Code Examples | If a different exception class escapes, drift returns 500 instead of `unreachable`. [CITED: asyncssh docs — `asyncssh.Error` is the base class; `ConnectionLost`, `PermissionDenied`, `ProcessError` all subclass it.] |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Outer scan timeout enforcement.** Does `scan_drift` currently wrap its body in `asyncio.wait_for(scan_drift_body, timeout=120)`? Phase 35 D-02 set the precedent for `bulk_discover_and_store` (sitemap.py:466) but a quick scan of drift_detection.py:124-372 shows no outer `wait_for`. The Phase 35 ceiling is documented but might not be enforced.
+> All five questions below are answered inline (Recommendation / What we know).
+> Q1 in particular is locked by CONTEXT D-04a-narrowed (added 2026-04-27): the
+> 120s `asyncio.wait_for` wraps the SSH pre-pass only. Plan 03 Task 2
+> implements per the narrowed decision.
+
+1. **Outer scan timeout enforcement.** [RESOLVED — see CONTEXT D-04a-narrowed] Does `scan_drift` currently wrap its body in `asyncio.wait_for(scan_drift_body, timeout=120)`? Phase 35 D-02 set the precedent for `bulk_discover_and_store` (sitemap.py:466) but a quick scan of drift_detection.py:124-372 shows no outer `wait_for`. The Phase 35 ceiling is documented but might not be enforced.
    - What we know: `_run_with_timeout(10s)` is per-probe; no outer scan timeout in current code.
    - What's unclear: whether to add it in Phase 39 (might be CONTEXT D-04a's literal intent: "Outer scan timeout follows Phase 35's 120s ceiling").
    - Recommendation: Plan adds `asyncio.wait_for(... , timeout=120)` around the SSH pre-pass + main loop block. Confirm in plan-check.
