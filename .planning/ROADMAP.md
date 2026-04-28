@@ -233,7 +233,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
-| 39. Drift Detection Cases | v1.7 | 3/3 | Complete   | 2026-04-28 |
+| 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
