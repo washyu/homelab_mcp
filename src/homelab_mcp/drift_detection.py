@@ -511,22 +511,23 @@ async def _bulk_universal_core_probes(
                 # resolve_ssh_credentials); catching here keeps drift's SSH
                 # pre-pass non-fatal when a row's binding is stale or desynced.
                 return (hostname, {"_error": sanitize_error(exc)})
-        # WR-04 (Phase 39 review): mypy requires a terminal statement
-        # after the ``async with semaphore`` block (it can't prove
-        # exhaustiveness across try/except inside an async-with). The
-        # previous return value was a literal sentinel string that never
-        # reached a logger, so a future regression hitting this line
-        # would have vanished silently. Log loudly AND return a clearly
-        # diagnostic error so downstream callers see the problem in
-        # both logs and the probe map. Raising here would crash the
-        # whole asyncio.gather (return_exceptions=False) and break the
-        # SSH pre-pass for every other row — undesirable.
-        logger.error(
-            "_probe_one fell through all try/except branches for hostname=%r; "
-            "this indicates an unreachable code path that fired. Investigate.",
-            hostname,
-        )
-        return (hostname, {"_error": "probe_one_unreachable_fallthrough"})
+        # WR-B (Phase 39 re-review): every branch of the inner try/except
+        # returns, so this point is genuinely unreachable. The prior
+        # ``logger.error`` + sentinel-return reframing was itself dead
+        # code — a future regression that DID make this reachable would
+        # silently emit ``probe_one_unreachable_fallthrough`` into the
+        # probe map, where the row loop would then treat it like a real
+        # ``_error`` and route the host to probed_ok with no fingerprint
+        # diff (the exact silent-failure mode the prior comment claimed
+        # to prevent). ``raise AssertionError`` ensures a regression
+        # crashes loudly with a stack trace instead of vanishing into
+        # the probe map. The bare ``except Exception`` above already
+        # makes mypy's exhaustiveness check satisfied without this line,
+        # but we keep the explicit ``raise`` as a defensive belt: if a
+        # future refactor splits the broad except into narrower clauses
+        # without re-establishing exhaustiveness, this line will both
+        # satisfy mypy AND fail loudly at runtime.
+        raise AssertionError(f"_probe_one reached unreachable fallthrough for hostname={hostname!r}")
 
     # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
     # hostname; if two rows share a hostname, only one probe survives in
