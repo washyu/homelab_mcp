@@ -7,6 +7,7 @@ Tests the Proxmox VE API client and all Proxmox management tools.
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from aiohttp import ClientError
 from aioresponses import aioresponses
@@ -559,9 +560,7 @@ class TestGetProxmoxVMStatus:
         mock_client.get.side_effect = exc
 
         # WHEN: Getting status of non-existent VM via the public function
-        result = await get_proxmox_vm_status(
-            node="pve", vmid=999, host="proxmox.example", vm_type="qemu"
-        )
+        result = await get_proxmox_vm_status(node="pve", vmid=999, host="proxmox.example", vm_type="qemu")
 
         # THEN: Should return the structured vm_not_found dict (D-02)
         assert result["status"] == "error"
@@ -578,9 +577,7 @@ class TestGetProxmoxVMStatus:
         assert "pve" in result["message"]
 
         # AND: helper called directly should also yield the same structured dict
-        classified = _classify_vm_status_error(
-            exc, node="pve", vmid=999, vm_type="qemu", host="proxmox.example"
-        )
+        classified = _classify_vm_status_error(exc, node="pve", vmid=999, vm_type="qemu", host="proxmox.example")
         assert classified is not None
         assert classified["error_kind"] == "vm_not_found"
 
@@ -601,9 +598,7 @@ class TestGetProxmoxVMStatus:
             message="Not Found - 100",  # contains str(vmid)
         )
 
-        result = _classify_vm_status_error(
-            exc, node="missing-node", vmid=100, vm_type="lxc", host="proxmox.example"
-        )
+        result = _classify_vm_status_error(exc, node="missing-node", vmid=100, vm_type="lxc", host="proxmox.example")
 
         assert result is not None
         assert result["error_kind"] == "vm_not_found"
@@ -619,9 +614,7 @@ class TestGetProxmoxVMStatus:
         from src.homelab_mcp.proxmox_api import _classify_vm_status_error
 
         # ValueError is not a ClientResponseError → must return None
-        result = _classify_vm_status_error(
-            ValueError("oops"), node="pve", vmid=100, vm_type="qemu", host="h"
-        )
+        result = _classify_vm_status_error(ValueError("oops"), node="pve", vmid=100, vm_type="qemu", host="h")
         assert result is None
 
         # ClientError without status field also → None
@@ -652,9 +645,7 @@ class TestGetProxmoxVMStatus:
             status=502,
             message="Bad Gateway",
         )
-        result = _classify_vm_status_error(
-            exc, node="pve", vmid=100, vm_type="qemu", host="h"
-        )
+        result = _classify_vm_status_error(exc, node="pve", vmid=100, vm_type="qemu", host="h")
         assert result is None
 
     @pytest.mark.asyncio
@@ -677,9 +668,7 @@ class TestGetProxmoxVMStatus:
             message="Internal Server Error",
         )
         # vmid=42, body has neither "does not exist" nor "42"
-        result = _classify_vm_status_error(
-            exc, node="pve", vmid=42, vm_type="qemu", host="h"
-        )
+        result = _classify_vm_status_error(exc, node="pve", vmid=42, vm_type="qemu", host="h")
         assert result is None
 
     @pytest.mark.asyncio
@@ -2201,15 +2190,12 @@ async def test_resolve_proxmox_credentials_with_unknown_uuid_raises_binding_stal
             credential_id="00000000-0000-4000-8000-000000000000",
         )
     error_msg = str(exc_info.value)
-    assert "binding stale" in error_msg, (
-        f"Phase 38.1 D-11: expected 'binding stale' in error, got: {error_msg!r}"
-    )
+    assert "binding stale" in error_msg, f"Phase 38.1 D-11: expected 'binding stale' in error, got: {error_msg!r}"
     assert "credentials add --type proxmox pve" in error_msg, (
         f"Phase 38.1 D-11: error must include recovery command, got: {error_msg!r}"
     )
     assert getattr(exc_info.value, "reason_hint", None) == "binding_stale", (
-        f"Phase 38.1 D-08: expected reason_hint='binding_stale', got: "
-        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+        f"Phase 38.1 D-08: expected reason_hint='binding_stale', got: {getattr(exc_info.value, 'reason_hint', None)!r}"
     )
 
 
@@ -2244,12 +2230,9 @@ async def test_resolve_proxmox_credentials_with_uuid_keyring_miss_raises_desync_
     error_msg = str(exc_info.value)
     # Must not fall back silently — must surface desync
     assert exc_info.type is CredentialNotFoundError
-    assert "keyring desync" in error_msg, (
-        f"Phase 38.1 D-12: expected 'keyring desync' in error, got: {error_msg!r}"
-    )
+    assert "keyring desync" in error_msg, f"Phase 38.1 D-12: expected 'keyring desync' in error, got: {error_msg!r}"
     assert getattr(exc_info.value, "reason_hint", None) == "keyring_desync", (
-        f"Phase 38.1 D-08: expected reason_hint='keyring_desync', got: "
-        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+        f"Phase 38.1 D-08: expected reason_hint='keyring_desync', got: {getattr(exc_info.value, 'reason_hint', None)!r}"
     )
 
 
@@ -2360,6 +2343,151 @@ async def test_resolve_proxmox_credentials_with_malformed_credential_id_phase381
     assert "binding stale" in error_msg, (
         f"Phase 38.1 T-38.1-05-01: expected 'binding stale' for malformed UUID, got: {error_msg!r}"
     )
-    assert "malformed" in error_msg, (
-        f"Phase 38.1 T-38.1-05-01: expected 'malformed' marker, got: {error_msg!r}"
-    )
+    assert "malformed" in error_msg, f"Phase 38.1 T-38.1-05-01: expected 'malformed' marker, got: {error_msg!r}"
+
+
+class TestPhase40VmNotFoundShape:
+    """POL-01 D-01/D-02: vm_not_found classifier returns structured error.
+
+    Phase 40 — closes Bug I (HTTP 500 leak with internal API URL on
+    nonexistent VMID). Asserts the new response shape from
+    _classify_vm_status_error and the URL-leak guard.
+    """
+
+    @staticmethod
+    def _make_response_error(*, status: int, message: str) -> aiohttp.ClientResponseError:
+        """Build a ClientResponseError for fixture injection.
+
+        ``request_info`` is a MagicMock — the helper under test must NOT
+        read from it (URL-leak guard). The fixture deliberately stuffs
+        a sentinel URL into the mock so any test asserting URL absence
+        in the rendered message has a non-empty target to fail against.
+        """
+        fake_request_info = MagicMock()
+        fake_request_info.url = "https://internal-proxmox.local/api2/json/nodes/pve/qemu/9999/status/current"
+        return aiohttp.ClientResponseError(
+            request_info=fake_request_info,
+            history=(),
+            status=status,
+            message=message,
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_returns_vm_not_found_shape(self, mock_get_client):
+        """POL-01 D-02: 500 + 'does not exist' body → vm_not_found shape with all inputs echoed."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=500,
+            message="VM 9999 does not exist",
+        )
+
+        result = await get_proxmox_vm_status(node="pve1", vmid=9999, vm_type="qemu", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "pve1"
+        assert result["vmid"] == 9999
+        assert result["vm_type"] == "qemu"
+        assert result["host"] == "homelab-pve1"
+        assert "list_proxmox_resources" in result["message"]
+        # URL-leak guard: message constructed from inputs, not from exception's request_info.url
+        assert "/api2/" not in result["message"]
+        assert "internal-proxmox.local" not in result["message"]
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_lxc_variant_classified_via_vmid_substring(self, mock_get_client):
+        """POL-01 D-01: LXC error wording differs but vmid-as-substring match still classifies."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=500,
+            message="Configuration file '/etc/pve/lxc/8888.conf' missing",
+        )
+
+        result = await get_proxmox_vm_status(node="pve1", vmid=8888, vm_type="lxc", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["vm_type"] == "lxc"
+        assert result["vmid"] == 8888
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_404_classified_as_vm_not_found(self, mock_get_client):
+        """POL-01 D-01 defensive: status=404 also classifies as vm_not_found (missing-node case)."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=404,
+            message="Node 'typo-pve' does not exist",
+        )
+
+        result = await get_proxmox_vm_status(node="typo-pve", vmid=100, vm_type="qemu", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "typo-pve"
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_unmatched_error_falls_through_to_legacy_shape(self, mock_get_client):
+        """POL-01 D-01 graceful degradation: unmatched body → legacy `{status, message}` fallback."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=500,
+            message="Internal server error",
+        )
+
+        result = await get_proxmox_vm_status(node="pve1", vmid=100, vm_type="qemu", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        # Critically: the legacy shape lacks `error_kind`
+        assert "error_kind" not in result
+        # And keeps the legacy "Failed to get VM status: ..." prefix
+        assert "Failed to get VM status" in result["message"]
+
+
+class TestPhase40CreateProxmoxVmSchema:
+    """POL-02 D-03: create_proxmox_vm schema declares host as required."""
+
+    def test_create_proxmox_vm_schema_requires_host(self):
+        """POL-02 D-03: 'host' is in the create_proxmox_vm required list."""
+        from src.homelab_mcp.tool_schemas.proxmox_tools_schema import PROXMOX_TOOLS
+
+        schema = PROXMOX_TOOLS["create_proxmox_vm"]["inputSchema"]
+        assert "host" in schema["required"], (
+            f"POL-02 D-03 regression: 'host' missing from create_proxmox_vm required list. Got: {schema['required']!r}"
+        )
+        assert schema["properties"]["host"]["type"] == "string"
+        host_desc = schema["properties"]["host"]["description"]
+        assert "homelab-mcp credentials add --type proxmox" in host_desc, (
+            f"POL-02 D-03 regression: host description lost credentials-add CLI pointer. Got: {host_desc!r}"
+        )
+        assert "PROXMOX_HOST" not in host_desc
+
+
+class TestPhase40GetProxmoxClientNoHost:
+    """POL-03 D-04: get_proxmox_client(host=None) → actionable ValueError, no PROXMOX_HOST."""
+
+    @pytest.mark.asyncio
+    async def test_get_proxmox_client_no_host_raises_actionable_error(self):
+        """POL-03 D-04: missing host → ValueError with credentials-add CLI hint, no PROXMOX_HOST."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError) as exc_info:
+                await get_proxmox_client(host=None)
+
+        msg = str(exc_info.value)
+        assert "homelab-mcp credentials add --type proxmox" in msg, (
+            f"POL-03 D-04 regression: ValueError text lost credentials-add CLI pointer. Got: {msg!r}"
+        )
+        assert "--scope cluster:" in msg, (
+            f"POL-03 D-04 regression: ValueError text lost cluster-scope hint. Got: {msg!r}"
+        )
+        assert "PROXMOX_HOST" not in msg, (
+            f"POL-03 D-04 regression: ValueError text mentions PROXMOX_HOST (deprecated). Got: {msg!r}"
+        )
+        assert "must be provided or set" not in msg
