@@ -315,7 +315,16 @@ async def _enumerate_proxmox_vms(
             vms = [r for r in resources if isinstance(r, dict) and r.get("type") in ("qemu", "lxc")]
             return (h, vms)
         except (aiohttp.ClientError, TimeoutError, ValueError, CredentialNotFoundError) as exc:
-            logger.debug("VM enum failed for %s: %s", h, sanitize_error(exc))
+            # BL-04: enumeration failures must be visible to operators. The
+            # host stays in probed_ok (D-10), unknown[] gains no entries from
+            # this host, and there's otherwise no observable signal that
+            # VM-level drift detection silently broke. sanitize_error redacts
+            # secrets so warning-level logging is safe.
+            logger.warning(
+                "VM enumeration failed for %s; unknown[] will not include VMs from this host: %s",
+                h,
+                sanitize_error(exc),
+            )
             return (h, [])
 
     if not targets:
@@ -520,9 +529,7 @@ async def scan_drift(
             timeout=120.0,
         )
     except TimeoutError:
-        logger.warning(
-            "scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results"
-        )
+        logger.warning("scan_drift: SSH pre-pass exceeded 120s; proceeding with empty probe results")
         ssh_probe_results = {}
 
     for row in rows:
@@ -567,9 +574,7 @@ async def scan_drift(
             except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
                 # Resolver-during-cluster-walk failure — surface as unreachable
                 # OR missing per Phase 39 D-01/D-02 _classify_unreachable.
-                substatus, classify_msg = _classify_unreachable(
-                    row, exc, _missing_threshold_days(), datetime.now(UTC)
-                )
+                substatus, classify_msg = _classify_unreachable(row, exc, _missing_threshold_days(), datetime.now(UTC))
                 record: dict[str, Any] = {
                     "hostname": hostname,
                     "connection_ip": row.get("connection_ip", ""),
@@ -630,16 +635,8 @@ async def scan_drift(
                         # fingerprint — diff is read-only.
                         probe = ssh_probe_results.get(hostname or "", {})
                         stored_fp = row.get("fingerprint", {}) or {}
-                        current_fp = (
-                            probe.get("fingerprint", {})
-                            if "fingerprint" in probe
-                            else {}
-                        )
-                        diff = (
-                            _diff_fingerprints(stored_fp, current_fp)
-                            if (stored_fp and current_fp)
-                            else {}
-                        )
+                        current_fp = probe.get("fingerprint", {}) if "fingerprint" in probe else {}
+                        diff = _diff_fingerprints(stored_fp, current_fp) if (stored_fp and current_fp) else {}
                         if diff:
                             changed.append(
                                 {
@@ -697,11 +694,7 @@ async def scan_drift(
     # /cluster/resources call total; standalone hosts hit the same endpoint
     # keyed by themselves. An enumeration failure on the host does not move
     # it out of its host bucket.
-    sitemap_hostnames: set[str] = {
-        (row.get("hostname") or "").lower()
-        for row in rows
-        if row.get("hostname")
-    }
+    sitemap_hostnames: set[str] = {(row.get("hostname") or "").lower() for row in rows if row.get("hostname")}
     cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session)
     unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
 
