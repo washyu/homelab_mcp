@@ -579,9 +579,25 @@ async def scan_drift(
     # Per-host probe bounded internally by wait_for(45.0); per-probe by
     # _run_with_timeout(10.0). On outer-timeout, proceed with empty probe
     # results so the row loop still classifies every row.
+    #
+    # WR-08: degenerate rows (hostname None/''/'unknown' or status=='error')
+    # must be filtered out BEFORE the bulk probe call. Otherwise a stale
+    # ssh_credential_id on a degenerate row triggers an unintended SSH
+    # connect attempt — worst case to a wrong host (the credential's stored
+    # hostname rather than the row's empty hostname), best case extra
+    # latency equal to the SSH connection timeout. The row loop below still
+    # routes these rows to not_eligible (D-17); we just don't probe them.
+    ssh_eligible_rows = [
+        r
+        for r in rows
+        if r.get("hostname")
+        and r.get("hostname") not in ("", "unknown")
+        and r.get("status") != "error"
+        and r.get("ssh_credential_id")
+    ]
     try:
         ssh_probe_results: dict[str, dict[str, Any]] = await asyncio.wait_for(
-            _bulk_universal_core_probes(rows),
+            _bulk_universal_core_probes(ssh_eligible_rows),
             timeout=120.0,
         )
     except TimeoutError:
