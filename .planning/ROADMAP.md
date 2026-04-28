@@ -186,7 +186,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 **Plans**: 3 plans
   - [x] 39-01-PLAN.md — Helper extraction (universal-core probe, diff/classify/threshold helpers) + Wave 0 fixtures + unit tests
   - [x] 39-02-PLAN.md — DRFT-17 unknown VM detection via /cluster/resources de-dupe
-  - [ ] 39-03-PLAN.md — DRFT-18 missing + DRFT-19 changed bucket wiring + AST guard + 120s outer timeout
+  - [x] 39-03-PLAN.md — DRFT-18 missing + DRFT-19 changed bucket wiring + AST guard + 120s outer timeout
 
 ### Phase 40: Proxmox VM Lifecycle Polish
 **Goal**: A user hitting Bug I (querying a nonexistent VMID) or Bug G (calling `create_proxmox_vm` without configured credentials) gets a clean structured error that tells them what to do next, never a raw HTTP 500 leak or a pointer to a deprecated env var.
@@ -233,7 +233,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
-| 39. Drift Detection Cases | v1.7 | 2/3 | In Progress|  |
+| 39. Drift Detection Cases | v1.7 | 3/3 | Complete   | 2026-04-28 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
@@ -242,7 +242,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
