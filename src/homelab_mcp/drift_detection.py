@@ -25,8 +25,9 @@ buckets empty and a top-level "guidance" field pointing to the sitemap CRUD tool
 """
 
 import logging
+import os
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 import aiohttp
 
@@ -119,6 +120,149 @@ def _reason_message(reason: str, hostname: str, credential_type: str) -> str:
             "`homelab-mcp purge_failed_discoveries` to clean up."
         )
     return f"Unknown not_eligible reason: {reason!r}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 39 helpers (DRFT-17/18/19) — pure functions composed by scan_drift in
+# Plans 02 and 03. Each helper is loop-free with respect to bucket-list appends
+# (D-11(b)): the existing Phase 38.1 D-15 AST guard ("no `continue` inside
+# scan_drift row loop") stays unaffected because these helpers are siblings,
+# not nested inside scan_drift.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DEFAULT_THRESHOLD_DAYS: int = 7
+
+
+def _missing_threshold_days() -> int:
+    """D-02: read ``HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS`` (env), clamp to a
+    positive int, default 7. Garbage / negative / zero values fall back to
+    ``_DEFAULT_THRESHOLD_DAYS`` rather than crashing the scan (T-39-01).
+    """
+    raw = os.getenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", str(_DEFAULT_THRESHOLD_DAYS))
+    try:
+        v = int(raw)
+    except (ValueError, TypeError):
+        return _DEFAULT_THRESHOLD_DAYS
+    return v if v > 0 else _DEFAULT_THRESHOLD_DAYS
+
+
+def _parse_last_seen(raw: str | None) -> datetime | None:
+    """RESEARCH Pitfall 4: sitemap writes ``datetime.now().isoformat()`` (naive,
+    no tzinfo). Drift compares against ``datetime.now(UTC)`` (aware). Normalize
+    parse to UTC-aware; return ``None`` for missing / malformed values so the
+    caller defaults to ``unreachable`` (not ``missing``) — defensive default
+    per T-39-02.
+    """
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+    except (ValueError, TypeError):
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
+def _classify_unreachable(
+    row: dict[str, Any],
+    exc: Exception,
+    threshold_days: int,
+    now: datetime,
+) -> tuple[Literal["unreachable", "missing"], str]:
+    """D-01: classify a probe failure into ``unreachable`` (transient) or
+    ``missing`` (host gone — last_seen older than threshold). ``missing`` is
+    a sub-status of the unreachable bucket, NOT a 6th bucket.
+
+    The ``missing`` branch's message points the user at the sitemap CRUD
+    cleanup tools (``decommission_device`` / ``purge_failed_discoveries``)
+    per Phase 37 D-08 conventions. The ``unreachable`` branch's message is
+    routed through ``sanitize_error`` (T-39-03) to redact secret-shaped
+    substrings.
+    """
+    parsed = _parse_last_seen(row.get("last_seen"))
+    if parsed is not None and (now - parsed).days > threshold_days:
+        hostname = row.get("hostname", "")
+        message = (
+            f"Host last seen {parsed.isoformat()} (>{threshold_days}d ago). "
+            f"If decommissioned, run `decommission_device {hostname}` or "
+            f"`purge_failed_discoveries` to clean up."
+        )
+        return ("missing", message)
+    return ("unreachable", sanitize_error(exc))
+
+
+def _diff_fingerprints(
+    stored: dict[str, Any],
+    current: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """D-08, D-09a: walk two fingerprint dicts and emit per-leaf diffs with
+    dotted-path keys. Only leaves present in BOTH sides are diffed —
+    capability sub-keys absent from ``current`` (drift never re-probes
+    capabilities, D-09) silently skip rather than fire spurious "removed"
+    diffs every scan.
+
+    Returns ``{path: {"stored": s, "current": c}}`` for each differing leaf.
+    Empty dict when fingerprints are equal.
+    """
+    diffs: dict[str, dict[str, Any]] = {}
+
+    def _walk(s: Any, c: Any, path: list[str]) -> None:
+        if isinstance(s, dict) and isinstance(c, dict):
+            # Leaf-level "present in both": only recurse on the key
+            # intersection. One-sided keys silently skip (D-09a).
+            for k in s.keys() & c.keys():
+                _walk(s[k], c[k], path + [k])
+        elif s != c:
+            diffs[".".join(path)] = {"stored": s, "current": c}
+
+    _walk(stored, current, [])
+    return diffs
+
+
+def _enumerate_unknown_vms(
+    cluster_vm_map: dict[str, list[dict[str, Any]]],
+    sitemap_hostnames: set[str],  # caller pre-lowercases
+    scan_timestamp: str,
+) -> list[dict[str, Any]]:
+    """D-05/D-06/D-07: build the unknown[] per-VM rows. Caller pre-computes
+    ``sitemap_hostnames`` (lowercased) so the helper does no sitemap-row
+    iteration of its own — it only flattens the cluster_vm_map output of the
+    ``/cluster/resources`` enumeration pre-pass into per-VM rows that don't
+    match a known sitemap hostname.
+
+    Match key: case-insensitive ``vm.name == sitemap.hostname`` (D-06). Each
+    unmatched VM produces a record with ``hypervisor_hostname / node / vmid /
+    vm_type / vm_name / vm_status / scan_timestamp / message``. The message
+    points the user at ``discover_and_map`` per Phase 37 D-08.
+
+    Loop-free w.r.t. bucket appends (D-11(b)): the only loop is
+    ``for hypervisor, vms in cluster_vm_map.items():`` and its body is a
+    single ``unknown.extend(filter(None, ...))``. No ``continue`` statements.
+    """
+    unknown: list[dict[str, Any]] = []
+
+    def _make_row(vm: dict[str, Any], hypervisor: str) -> dict[str, Any] | None:
+        name = (vm.get("name") or "").strip()
+        if not name or name.lower() in sitemap_hostnames:
+            return None
+        return {
+            "hypervisor_hostname": hypervisor,
+            "node": vm.get("node", ""),
+            "vmid": int(vm.get("vmid", 0)),
+            "vm_type": vm.get("type", "qemu"),  # qemu | lxc
+            "vm_name": name,
+            "vm_status": vm.get("status", "unknown"),
+            "scan_timestamp": scan_timestamp,
+            "message": (
+                f"VM '{name}' (vmid={vm.get('vmid')}) on node "
+                f"'{vm.get('node')}' not in sitemap; run "
+                f"`discover_and_map <ip-or-hostname>` to adopt."
+            ),
+        }
+
+    for hypervisor, vms in cluster_vm_map.items():
+        unknown.extend(filter(None, (_make_row(vm, hypervisor) for vm in vms)))
+
+    return unknown
 
 
 async def scan_drift(
