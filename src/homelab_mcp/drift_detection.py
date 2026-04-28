@@ -322,7 +322,7 @@ def _enumerate_unknown_vms(
     ``_make_row`` returning ``None`` to ``filter(None, ...)``.
     """
     unknown: list[dict[str, Any]] = []
-    seen_keys: set[tuple[str, int]] = set()
+    seen_keys: set[tuple[str, str, int]] = set()
 
     def _make_row(vm: dict[str, Any], hypervisor: str) -> dict[str, Any] | None:
         name = (vm.get("name") or "").strip()
@@ -342,11 +342,18 @@ def _enumerate_unknown_vms(
                 vm.get("vmid"),
             )
             return None
-        # BL-03: dedupe by (vm_name_lower, vmid). Cold-cache scans hit
-        # /cluster/resources from every cluster member and return the same
-        # VM list from each; collapse to one record so the operator sees a
-        # single unknown[] entry per VM rather than N.
-        key = (name.lower(), vmid)
+        # BL-03 + WR-A: dedupe by (hypervisor, vm_name_lower, vmid). The
+        # cold-cache N-copy case (BL-03) collapses because all N copies
+        # come from the SAME hypervisor representative — caller dedupes
+        # ``_enumerate_proxmox_vms`` keys by (cluster_name OR hostname),
+        # so cluster_vm_map carries one entry per cluster, not per node.
+        # Including ``hypervisor`` in the dedupe key prevents WR-A:
+        # multi-cluster homelabs where two unrelated VMs in different
+        # clusters legitimately share both name and vmid (Proxmox vmids
+        # are only unique within a cluster, not across) used to collapse
+        # to a single unknown[] entry. With the hypervisor component,
+        # each distinct cluster surfaces its own row.
+        key = (hypervisor, name.lower(), vmid)
         if key in seen_keys:
             return None
         seen_keys.add(key)
@@ -504,22 +511,23 @@ async def _bulk_universal_core_probes(
                 # resolve_ssh_credentials); catching here keeps drift's SSH
                 # pre-pass non-fatal when a row's binding is stale or desynced.
                 return (hostname, {"_error": sanitize_error(exc)})
-        # WR-04 (Phase 39 review): mypy requires a terminal statement
-        # after the ``async with semaphore`` block (it can't prove
-        # exhaustiveness across try/except inside an async-with). The
-        # previous return value was a literal sentinel string that never
-        # reached a logger, so a future regression hitting this line
-        # would have vanished silently. Log loudly AND return a clearly
-        # diagnostic error so downstream callers see the problem in
-        # both logs and the probe map. Raising here would crash the
-        # whole asyncio.gather (return_exceptions=False) and break the
-        # SSH pre-pass for every other row — undesirable.
-        logger.error(
-            "_probe_one fell through all try/except branches for hostname=%r; "
-            "this indicates an unreachable code path that fired. Investigate.",
-            hostname,
-        )
-        return (hostname, {"_error": "probe_one_unreachable_fallthrough"})
+        # WR-B (Phase 39 re-review): every branch of the inner try/except
+        # returns, so this point is genuinely unreachable. The prior
+        # ``logger.error`` + sentinel-return reframing was itself dead
+        # code — a future regression that DID make this reachable would
+        # silently emit ``probe_one_unreachable_fallthrough`` into the
+        # probe map, where the row loop would then treat it like a real
+        # ``_error`` and route the host to probed_ok with no fingerprint
+        # diff (the exact silent-failure mode the prior comment claimed
+        # to prevent). ``raise AssertionError`` ensures a regression
+        # crashes loudly with a stack trace instead of vanishing into
+        # the probe map. The bare ``except Exception`` above already
+        # makes mypy's exhaustiveness check satisfied without this line,
+        # but we keep the explicit ``raise`` as a defensive belt: if a
+        # future refactor splits the broad except into narrower clauses
+        # without re-establishing exhaustiveness, this line will both
+        # satisfy mypy AND fail loudly at runtime.
+        raise AssertionError(f"_probe_one reached unreachable fallthrough for hostname={hostname!r}")
 
     # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
     # hostname; if two rows share a hostname, only one probe survives in
@@ -772,11 +780,25 @@ async def scan_drift(
                     # return datetime objects depending on type-mapping.
                     # The drift response is downstream JSON-serialized;
                     # mixed types break clients that assume the field is
-                    # always a string. Fall through to the raw value only
-                    # when parse fails (preserves the previous behaviour
-                    # for unparseable inputs).
+                    # always a string.
+                    # WR-E (Phase 39 re-review): when _parse_last_seen
+                    # fails, coerce the raw adapter value to ``str(...)``
+                    # rather than returning it as-is. The fallback used
+                    # to emit whatever type the adapter returned —
+                    # integer epoch timestamps, ``date`` objects, vendor-
+                    # format strings — and downstream JSON encoders
+                    # either serialize them as numbers (breaking string-
+                    # expecting clients) or fail outright (date objects
+                    # are not JSON-encodable). Stringify here so JSON
+                    # serialization is total regardless of adapter.
                     parsed = _parse_last_seen(row.get("last_seen"))
-                    record["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
+                    raw_last_seen = row.get("last_seen")
+                    if parsed is not None:
+                        record["last_seen"] = parsed.isoformat()
+                    elif raw_last_seen is not None:
+                        record["last_seen"] = str(raw_last_seen)
+                    else:
+                        record["last_seen"] = None
                     record["message"] = classify_msg
                 unreachable.append(record)
             else:
@@ -790,6 +812,19 @@ async def scan_drift(
                 # just populated it via the same code path).
                 telemetry = get_resolution_telemetry(hostname, binding)
                 resolver_exc: CredentialNotFoundError | None = None
+                # WR-C (Phase 39 re-review): the resolver's cluster-walk path
+                # can raise aiohttp.ClientError / TimeoutError / ValueError as
+                # well as CredentialNotFoundError. The prior except clause
+                # caught only the credential variant, so any transient
+                # network/timeout failure on the fallback path would
+                # propagate uncaught all the way out of scan_drift,
+                # aborting the entire scan and losing every other row's
+                # classification (the BL-02 contract). Widen the except to
+                # cover the same exception family that the surrounding
+                # /cluster/status block handles, and route to unreachable
+                # via a parallel sentinel — keeping the D-15 "no continue
+                # in row loop" invariant.
+                transient_resolver_exc: aiohttp.ClientError | TimeoutError | ValueError | None = None
                 if telemetry is not None:
                     scope, cluster_name = telemetry
                 else:
@@ -801,6 +836,8 @@ async def scan_drift(
                         )
                     except CredentialNotFoundError as exc:
                         resolver_exc = exc
+                    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                        transient_resolver_exc = exc
                 if resolver_exc is not None:
                     # Defensive — should not happen after get_proxmox_client succeeded.
                     # Route to not_eligible (NOT continue) per D-15 invariant.
@@ -814,6 +851,38 @@ async def scan_drift(
                             "message": _reason_message(reason, hostname, "proxmox"),
                         }
                     )
+                elif transient_resolver_exc is not None:
+                    # WR-C: transient resolver-fallback failure — treat
+                    # as if /cluster/status itself had failed. Route to
+                    # unreachable (with possible 'missing' promotion) so
+                    # the row remains classified rather than crashing
+                    # the scan. cluster_name is unknown here because the
+                    # resolver didn't complete; record None.
+                    substatus_r, classify_msg_r = _classify_unreachable(
+                        row, transient_resolver_exc, _missing_threshold_days(), datetime.now(UTC)
+                    )
+                    record_resolver: dict[str, Any] = {
+                        "hostname": hostname,
+                        "connection_ip": row.get("connection_ip", ""),
+                        "scope": "unknown",
+                        "cluster_name": None,
+                        "status": substatus_r,
+                        "error": sanitize_error(transient_resolver_exc),
+                        "scan_timestamp": scan_timestamp,
+                    }
+                    if substatus_r == "missing":
+                        # WR-01 + WR-E: normalize last_seen and stringify
+                        # the fallback so JSON serialization cannot fail.
+                        parsed_r = _parse_last_seen(row.get("last_seen"))
+                        raw_last_seen_r = row.get("last_seen")
+                        if parsed_r is not None:
+                            record_resolver["last_seen"] = parsed_r.isoformat()
+                        elif raw_last_seen_r is not None:
+                            record_resolver["last_seen"] = str(raw_last_seen_r)
+                        else:
+                            record_resolver["last_seen"] = None
+                        record_resolver["message"] = classify_msg_r
+                    unreachable.append(record_resolver)
                 else:
                     try:
                         status = await client.get("/cluster/status")
@@ -827,6 +896,28 @@ async def scan_drift(
                         probe = ssh_probe_results.get(hostname or "", {})
                         stored_fp = row.get("fingerprint", {}) or {}
                         current_fp = probe.get("fingerprint", {}) if "fingerprint" in probe else {}
+                        # WR-D (Phase 39 re-review): when the SSH pre-pass
+                        # records ``_error`` for a host that has a stored
+                        # fingerprint, drift comparison silently degrades
+                        # to "no diff" and the host lands in probed_ok
+                        # indistinguishable from a clean match. This
+                        # quietly disables drift detection on every
+                        # subsequent scan until SSH is fixed. The
+                        # 7-key probed_ok shape is locked by the
+                        # ``test_per_row_record_shape_preserved_for_probed_ok``
+                        # AST contract so we cannot expand the record
+                        # itself; surface the failure to operators via
+                        # warning-level logging instead. ``sanitize_error``
+                        # has already redacted secrets in the probe map.
+                        if stored_fp and "_error" in probe and "fingerprint" not in probe:
+                            logger.warning(
+                                "SSH probe failed for %r with a non-empty stored "
+                                "fingerprint; drift comparison skipped and host "
+                                "routes to probed_ok with no diff signal. SSH "
+                                "error: %s",
+                                hostname,
+                                probe.get("_error"),
+                            )
                         diff = _diff_fingerprints(stored_fp, current_fp) if (stored_fp and current_fp) else {}
                         if diff:
                             changed.append(
@@ -874,13 +965,21 @@ async def scan_drift(
                             "scan_timestamp": scan_timestamp,
                         }
                         if substatus == "missing":
-                            # WR-01: normalize last_seen to ISO-8601 string.
-                            # See sibling site above for full rationale —
-                            # DB adapters can return datetime objects;
-                            # JSON-serialize-to-string clients break on
-                            # mixed types.
+                            # WR-01 + WR-E: normalize last_seen to ISO-8601
+                            # string. See sibling site above for full
+                            # rationale — DB adapters can return datetime
+                            # objects, integer epochs, or date objects;
+                            # stringifying the parse-fail fallback ensures
+                            # JSON serialization is total regardless of
+                            # adapter type-mapping.
                             parsed = _parse_last_seen(row.get("last_seen"))
-                            record_inner["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
+                            raw_last_seen_inner = row.get("last_seen")
+                            if parsed is not None:
+                                record_inner["last_seen"] = parsed.isoformat()
+                            elif raw_last_seen_inner is not None:
+                                record_inner["last_seen"] = str(raw_last_seen_inner)
+                            else:
+                                record_inner["last_seen"] = None
                             record_inner["message"] = classify_msg
                         unreachable.append(record_inner)
 
