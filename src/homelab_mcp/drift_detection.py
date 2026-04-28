@@ -882,6 +882,28 @@ async def scan_drift(
                         probe = ssh_probe_results.get(hostname or "", {})
                         stored_fp = row.get("fingerprint", {}) or {}
                         current_fp = probe.get("fingerprint", {}) if "fingerprint" in probe else {}
+                        # WR-D (Phase 39 re-review): when the SSH pre-pass
+                        # records ``_error`` for a host that has a stored
+                        # fingerprint, drift comparison silently degrades
+                        # to "no diff" and the host lands in probed_ok
+                        # indistinguishable from a clean match. This
+                        # quietly disables drift detection on every
+                        # subsequent scan until SSH is fixed. The
+                        # 7-key probed_ok shape is locked by the
+                        # ``test_per_row_record_shape_preserved_for_probed_ok``
+                        # AST contract so we cannot expand the record
+                        # itself; surface the failure to operators via
+                        # warning-level logging instead. ``sanitize_error``
+                        # has already redacted secrets in the probe map.
+                        if stored_fp and "_error" in probe and "fingerprint" not in probe:
+                            logger.warning(
+                                "SSH probe failed for %r with a non-empty stored "
+                                "fingerprint; drift comparison skipped and host "
+                                "routes to probed_ok with no diff signal. SSH "
+                                "error: %s",
+                                hostname,
+                                probe.get("_error"),
+                            )
                         diff = _diff_fingerprints(stored_fp, current_fp) if (stored_fp and current_fp) else {}
                         if diff:
                             changed.append(
