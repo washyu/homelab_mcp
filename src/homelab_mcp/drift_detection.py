@@ -249,10 +249,24 @@ def _enumerate_unknown_vms(
         name = (vm.get("name") or "").strip()
         if not name or name.lower() in sitemap_hostnames:
             return None
+        # BL-02: guard against malformed vmid (non-numeric, None, list, ...).
+        # Without this, a single garbage VM record raises TypeError/ValueError
+        # out of the generator and aborts the whole scan_drift call —
+        # violating the D-10 contract that enumeration failures don't move
+        # hosts out of their bucket.
+        try:
+            vmid = int(vm.get("vmid", 0))
+        except (ValueError, TypeError):
+            logger.debug(
+                "Skipping malformed vmid in /cluster/resources for %s: %r",
+                hypervisor,
+                vm.get("vmid"),
+            )
+            return None
         return {
             "hypervisor_hostname": hypervisor,
             "node": vm.get("node", ""),
-            "vmid": int(vm.get("vmid", 0)),
+            "vmid": vmid,
             "vm_type": vm.get("type", "qemu"),  # qemu | lxc
             "vm_name": name,
             "vm_status": vm.get("status", "unknown"),
