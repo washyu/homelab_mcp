@@ -322,7 +322,7 @@ def _enumerate_unknown_vms(
     ``_make_row`` returning ``None`` to ``filter(None, ...)``.
     """
     unknown: list[dict[str, Any]] = []
-    seen_keys: set[tuple[str, int]] = set()
+    seen_keys: set[tuple[str, str, int]] = set()
 
     def _make_row(vm: dict[str, Any], hypervisor: str) -> dict[str, Any] | None:
         name = (vm.get("name") or "").strip()
@@ -342,11 +342,18 @@ def _enumerate_unknown_vms(
                 vm.get("vmid"),
             )
             return None
-        # BL-03: dedupe by (vm_name_lower, vmid). Cold-cache scans hit
-        # /cluster/resources from every cluster member and return the same
-        # VM list from each; collapse to one record so the operator sees a
-        # single unknown[] entry per VM rather than N.
-        key = (name.lower(), vmid)
+        # BL-03 + WR-A: dedupe by (hypervisor, vm_name_lower, vmid). The
+        # cold-cache N-copy case (BL-03) collapses because all N copies
+        # come from the SAME hypervisor representative — caller dedupes
+        # ``_enumerate_proxmox_vms`` keys by (cluster_name OR hostname),
+        # so cluster_vm_map carries one entry per cluster, not per node.
+        # Including ``hypervisor`` in the dedupe key prevents WR-A:
+        # multi-cluster homelabs where two unrelated VMs in different
+        # clusters legitimately share both name and vmid (Proxmox vmids
+        # are only unique within a cluster, not across) used to collapse
+        # to a single unknown[] entry. With the hypervisor component,
+        # each distinct cluster surfaces its own row.
+        key = (hypervisor, name.lower(), vmid)
         if key in seen_keys:
             return None
         seen_keys.add(key)
