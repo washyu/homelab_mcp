@@ -1129,6 +1129,44 @@ class TestPhase39Helpers:
         current = {"kernel_version": "6.5.13", "os_name": "Proxmox VE"}
         assert _diff_fingerprints(stored, current) == {}
 
+    def test_diff_fingerprints_current_only_top_level_emits_phase39_wr05(self) -> None:
+        """WR-05: a top-level key present only in ``current`` emits a diff
+        with stored=None. Models a host that just gained dpkg and now
+        reports ``package_fingerprint`` for the first time.
+        """
+        stored: dict = {"kernel_version": "6.5.13"}
+        current = {
+            "kernel_version": "6.5.13",
+            "package_fingerprint": "deadbeef",
+        }
+        assert _diff_fingerprints(stored, current) == {
+            "package_fingerprint": {"stored": None, "current": "deadbeef"},
+        }
+
+    def test_diff_fingerprints_current_only_nested_emits_phase39_wr05(self) -> None:
+        """WR-05: a nested capability sub-key present only in ``current``
+        emits a dotted-path diff with stored=None.
+        """
+        stored = {"capabilities": {"vulkan": {"available": True}}}
+        current = {
+            "capabilities": {
+                "vulkan": {"available": True},
+                "rocm": {"available": True},
+            }
+        }
+        assert _diff_fingerprints(stored, current) == {
+            "capabilities.rocm": {"stored": None, "current": {"available": True}},
+        }
+
+    def test_diff_fingerprints_stored_only_still_suppressed_phase39_wr05(self) -> None:
+        """WR-05 / D-09a: stored-only keys remain suppressed (capability
+        drop is expected, not drift). Lock the asymmetry.
+        """
+        stored = {"capabilities": {"vulkan": {"available": True}, "rocm": {"available": True}}}
+        current = {"capabilities": {"vulkan": {"available": True}}}
+        # rocm appears only in stored → suppressed.
+        assert _diff_fingerprints(stored, current) == {}
+
     # -- _classify_unreachable (D-01, D-02) -------------------------------
 
     def test_classify_unreachable_old_last_seen_returns_missing(

@@ -221,27 +221,62 @@ def _classify_unreachable(
     return ("unreachable", sanitize_error(exc))
 
 
+_MISSING = object()  # WR-05 sentinel for "key not present on this side"
+
+
 def _diff_fingerprints(
     stored: dict[str, Any],
     current: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     """D-08, D-09a: walk two fingerprint dicts and emit per-leaf diffs with
-    dotted-path keys. Only leaves present in BOTH sides are diffed —
-    capability sub-keys absent from ``current`` (drift never re-probes
-    capabilities, D-09) silently skip rather than fire spurious "removed"
-    diffs every scan.
+    dotted-path keys.
 
-    Returns ``{path: {"stored": s, "current": c}}`` for each differing leaf.
+    WR-05 (Phase 39 review): drift surfaces ASYMMETRIC one-sided keys.
+      - keys present in ``stored`` but absent from ``current``  → SUPPRESSED
+        (per D-09a — drift never re-probes capabilities, so a missing
+        capability sub-key is expected, not a drift signal)
+      - keys present in ``current`` but absent from ``stored``  → EMITTED
+        (a freshly-added probe field, e.g., a host that just got dpkg
+        installed and now reports ``package_fingerprint``, IS a drift
+        signal — the user needs to know the host's capability surface
+        grew so they can re-run ``configure_host_fingerprint``)
+      - keys present in BOTH with differing values                → EMITTED
+
+    The previous implementation walked only ``stored.keys() & current.keys()``,
+    which suppressed BOTH directions and missed legitimate
+    capability-additions on the first scan after a host's probe surface
+    grew.
+
+    Returns ``{path: {"stored": s, "current": c}}`` for each emitted leaf.
+    For current-only keys, ``stored`` is ``None`` in the emitted record
+    (clients can detect the asymmetric add via ``"stored": None``).
     Empty dict when fingerprints are equal.
     """
     diffs: dict[str, dict[str, Any]] = {}
 
     def _walk(s: Any, c: Any, path: list[str]) -> None:
         if isinstance(s, dict) and isinstance(c, dict):
-            # Leaf-level "present in both": only recurse on the key
-            # intersection. One-sided keys silently skip (D-09a).
-            for k in s.keys() & c.keys():
-                _walk(s[k], c[k], path + [k])
+            # WR-05: walk the union of keys. For each key:
+            #   - present in stored only  -> suppress (D-09a capability drop)
+            #   - present in current only -> recurse with stored=_MISSING
+            #     so the leaf branch emits stored=None
+            #   - present in both         -> recurse normally
+            # AST guard scope (Phase 39 D-11(b)) forbids ``continue`` in
+            # this helper body, so use a comprehension that filters
+            # out the suppressed case before iterating.
+            keys_to_walk = [k for k in s.keys() | c.keys() if k in c]
+            for k in keys_to_walk:
+                _walk(s.get(k, _MISSING), c[k], path + [k])
+        elif s is _MISSING:
+            # WR-05: current-only leaf — emit with stored=None so clients
+            # can detect the asymmetric add. Equality check is moot
+            # because there's no stored value.
+            diffs[".".join(path)] = {"stored": None, "current": c}
+        elif c is _MISSING:
+            # Defensive — comprehension above strips current-missing keys
+            # at the dict level, so this branch only fires if a non-dict
+            # call passes _MISSING for current. Suppress per D-09a.
+            return
         elif s != c:
             diffs[".".join(path)] = {"stored": s, "current": c}
 
