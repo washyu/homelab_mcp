@@ -780,11 +780,25 @@ async def scan_drift(
                     # return datetime objects depending on type-mapping.
                     # The drift response is downstream JSON-serialized;
                     # mixed types break clients that assume the field is
-                    # always a string. Fall through to the raw value only
-                    # when parse fails (preserves the previous behaviour
-                    # for unparseable inputs).
+                    # always a string.
+                    # WR-E (Phase 39 re-review): when _parse_last_seen
+                    # fails, coerce the raw adapter value to ``str(...)``
+                    # rather than returning it as-is. The fallback used
+                    # to emit whatever type the adapter returned —
+                    # integer epoch timestamps, ``date`` objects, vendor-
+                    # format strings — and downstream JSON encoders
+                    # either serialize them as numbers (breaking string-
+                    # expecting clients) or fail outright (date objects
+                    # are not JSON-encodable). Stringify here so JSON
+                    # serialization is total regardless of adapter.
                     parsed = _parse_last_seen(row.get("last_seen"))
-                    record["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
+                    raw_last_seen = row.get("last_seen")
+                    if parsed is not None:
+                        record["last_seen"] = parsed.isoformat()
+                    elif raw_last_seen is not None:
+                        record["last_seen"] = str(raw_last_seen)
+                    else:
+                        record["last_seen"] = None
                     record["message"] = classify_msg
                 unreachable.append(record)
             else:
@@ -951,13 +965,21 @@ async def scan_drift(
                             "scan_timestamp": scan_timestamp,
                         }
                         if substatus == "missing":
-                            # WR-01: normalize last_seen to ISO-8601 string.
-                            # See sibling site above for full rationale —
-                            # DB adapters can return datetime objects;
-                            # JSON-serialize-to-string clients break on
-                            # mixed types.
+                            # WR-01 + WR-E: normalize last_seen to ISO-8601
+                            # string. See sibling site above for full
+                            # rationale — DB adapters can return datetime
+                            # objects, integer epochs, or date objects;
+                            # stringifying the parse-fail fallback ensures
+                            # JSON serialization is total regardless of
+                            # adapter type-mapping.
                             parsed = _parse_last_seen(row.get("last_seen"))
-                            record_inner["last_seen"] = parsed.isoformat() if parsed else row.get("last_seen")
+                            raw_last_seen_inner = row.get("last_seen")
+                            if parsed is not None:
+                                record_inner["last_seen"] = parsed.isoformat()
+                            elif raw_last_seen_inner is not None:
+                                record_inner["last_seen"] = str(raw_last_seen_inner)
+                            else:
+                                record_inner["last_seen"] = None
                             record_inner["message"] = classify_msg
                         unreachable.append(record_inner)
 
