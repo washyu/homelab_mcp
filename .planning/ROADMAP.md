@@ -184,7 +184,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   3. When a host's kernel version, package fingerprint, or capability probe (e.g., Vulkan availability) differs from the stored sitemap row, `scan_infrastructure_drift` reports it in the **changed infrastructure** bucket with a per-field diff showing stored-vs-current values
   4. The unknown-detection path enumerates Proxmox VMs/LXC via the API; the missing- and changed-detection paths use SSH probes that respect the per-subprocess `_run_with_timeout(10s)` pattern from Phase 35 — no scan hangs longer than the documented bulk timeout when a host is unresponsive
 **Plans**: 3 plans
-  - [ ] 39-01-PLAN.md — Helper extraction (universal-core probe, diff/classify/threshold helpers) + Wave 0 fixtures + unit tests
+  - [x] 39-01-PLAN.md — Helper extraction (universal-core probe, diff/classify/threshold helpers) + Wave 0 fixtures + unit tests
   - [ ] 39-02-PLAN.md — DRFT-17 unknown VM detection via /cluster/resources de-dupe
   - [ ] 39-03-PLAN.md — DRFT-18 missing + DRFT-19 changed bucket wiring + AST guard + 120s outer timeout
 
@@ -233,7 +233,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 37. Drift Output Shape & Error Hygiene | v1.7 | 0/0 | Not started | - |
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
-| 39. Drift Detection Cases | v1.7 | 0/3 | Planned     | - |
+| 39. Drift Detection Cases | v1.7 | 1/3 | In Progress|  |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
@@ -242,7 +242,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 6/6 plans complete
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
