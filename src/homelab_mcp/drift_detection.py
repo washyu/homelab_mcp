@@ -700,6 +700,15 @@ async def scan_drift(
     for row in rows:
         hostname = row.get("hostname")
         binding = row.get("proxmox_credential_id")  # Phase 38.1 R6
+        # WR-06 (Phase 39 review): reset scope / cluster_name explicitly
+        # at the top of each iteration. Python doesn't scope variables
+        # to ``for`` blocks, so without this reset a future refactor
+        # that forgets to re-bind these names in the resolver-success
+        # ``else`` branch could attach the *previous* row's cluster_name
+        # to the current row's record. Make the per-iteration default
+        # audible.
+        scope: str = "unknown"
+        cluster_name: str | None = None
 
         # D-17: degenerate rows route to not_eligible (no continue — D-15 invariant).
         # These are legitimate sitemap rows for failed discoveries / non-Proxmox
