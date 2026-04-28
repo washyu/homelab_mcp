@@ -242,8 +242,18 @@ def _enumerate_unknown_vms(
     Loop-free w.r.t. bucket appends (D-11(b)): the only loop is
     ``for hypervisor, vms in cluster_vm_map.items():`` and its body is a
     single ``unknown.extend(filter(None, ...))``. No ``continue`` statements.
+
+    BL-03: when ``_HOST_CLUSTER_CACHE`` is cold (e.g., first scan after a
+    server restart), ``_enumerate_proxmox_vms`` cannot dedupe per cluster
+    and instead enumerates ``/cluster/resources`` once per host, producing
+    N copies of every VM in an N-node cluster. Defend at the consumer by
+    deduping on ``(vm_name_lower, vmid)``. The closure-captured ``seen``
+    set keeps this loop-free with respect to ``continue`` (locked by the
+    Phase 39 D-11(b) AST guard) — duplicates are suppressed by
+    ``_make_row`` returning ``None`` to ``filter(None, ...)``.
     """
     unknown: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, int]] = set()
 
     def _make_row(vm: dict[str, Any], hypervisor: str) -> dict[str, Any] | None:
         name = (vm.get("name") or "").strip()
@@ -263,6 +273,14 @@ def _enumerate_unknown_vms(
                 vm.get("vmid"),
             )
             return None
+        # BL-03: dedupe by (vm_name_lower, vmid). Cold-cache scans hit
+        # /cluster/resources from every cluster member and return the same
+        # VM list from each; collapse to one record so the operator sees a
+        # single unknown[] entry per VM rather than N.
+        key = (name.lower(), vmid)
+        if key in seen_keys:
+            return None
+        seen_keys.add(key)
         return {
             "hypervisor_hostname": hypervisor,
             "node": vm.get("node", ""),
