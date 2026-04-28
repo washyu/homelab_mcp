@@ -475,7 +475,14 @@ class TestScanDrift4Bucket:
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter, node="pve1")
 
-        assert called_hosts == ["pve1"], f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
+        # D-01 filter intent: filtered-out rows are never probed. The number of
+        # calls to get_proxmox_client per surviving host is an implementation
+        # detail (Phase 39 DRFT-17 added a post-loop /cluster/resources call,
+        # so probed_ok hosts get a second call for VM enumeration). The
+        # invariant is the *set* of called hosts, not the count.
+        assert set(called_hosts) == {"pve1"}, (
+            f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
+        )
         assert result["scanned"] == 1
         assert len(result["probed_ok"]) == 1
         assert result["probed_ok"][0]["hostname"] == "pve1"
@@ -537,7 +544,12 @@ class TestScanDrift4Bucket:
         ):
             result = await scan_drift(session=None, db_adapter=db_adapter, node=None)
 
-        assert sorted(called_hosts) == ["pve1", "pve2"]
+        # Phase 39 DRFT-17: probed_ok hosts get a second get_proxmox_client
+        # call from the /cluster/resources enumeration pre-pass. Assert on the
+        # *set* of hosts probed, not the call count.
+        assert set(called_hosts) == {"pve1", "pve2"}, (
+            f"node=None should iterate every sitemap row; got: {called_hosts}"
+        )
         assert result["scanned"] == 2
         all_hostnames = {r["hostname"] for r in result["probed_ok"]}
         assert all_hostnames == {"pve1", "pve2"}
@@ -1236,3 +1248,271 @@ class TestPhase39Helpers:
         assert result.get("os_name") == "Proxmox VE 8.2.4"
         assert result.get("os_version") == "8.2.4"
         assert result.get("package_fingerprint", "").startswith("sha256:")
+
+
+class TestPhase39Unknown:
+    """Phase 39 D-05/D-06/D-07 + DRFT-17: unknown VM detection via /cluster/resources.
+
+    Wave 2 functional tests covering the post-loop VM-enumeration pre-pass that
+    feeds scan_drift's ``unknown[]`` bucket. Each test mocks
+    ``homelab_mcp.drift_detection.get_proxmox_client`` to return a client whose
+    ``.get`` is wired up per-test to (a) succeed for ``/cluster/status`` (so the
+    host lands in ``probed_ok``) and (b) return / raise per-test on
+    ``/cluster/resources``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_unmatched_vm_in_unknown_bucket(
+        self,
+        mock_cluster_resources_response: list[dict[str, object]],
+    ) -> None:
+        """D-06 / D-07: a single sitemap row whose Proxmox cluster reports two
+        unmatched VMs (``ubuntu-test`` qemu, ``pi-hole`` lxc) → both surface in
+        ``unknown[]`` with the per-VM record shape and ``discover_and_map``
+        message. The matched ``ubuntu-prod`` VM is filtered out by the
+        case-insensitive sitemap match. The ``node``-type record from
+        ``/cluster/resources`` is filtered to VM-types only.
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "ubuntu-prod",
+                "connection_ip": "10.0.0.10",
+                "status": "success",
+                "proxmox_credential_id": "11111111-1111-4111-8111-111111111111",
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return mock_cluster_resources_response
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        # Host stayed in probed_ok (D-10: unknown[] is parallel surface).
+        assert result["counts"]["probed_ok"] == 1
+        # Two unmatched VMs (ubuntu-test, pi-hole); ubuntu-prod matched, node-type filtered.
+        assert result["counts"]["unknown"] == 2, (
+            f"expected 2 unknown VMs, got: {result['unknown']}"
+        )
+        vmids = sorted(row["vmid"] for row in result["unknown"])
+        assert vmids == [110, 200], f"unexpected vmids: {vmids}"
+        for row in result["unknown"]:
+            assert row["hypervisor_hostname"] == "ubuntu-prod"
+            assert row["vm_type"] in ("qemu", "lxc")
+            assert "discover_and_map" in row["message"]
+            assert "scan_timestamp" in row
+
+    @pytest.mark.asyncio
+    async def test_cluster_dedup_single_enumeration(self) -> None:
+        """D-05: 5 sitemap rows for the same cluster → exactly ONE
+        ``/cluster/resources`` call across the whole scan (de-dupe via
+        ``_HOST_CLUSTER_CACHE`` cluster_name).
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": f"pve{n}",
+                "connection_ip": f"10.0.0.{10 + n}",
+                "status": "success",
+                "proxmox_credential_id": "22222222-2222-4222-8222-222222222222",
+                "ssh_credential_id": None,
+            }
+            for n in range(1, 6)
+        ]
+
+        # Counter recording how many times /cluster/resources is hit.
+        resources_call_count = 0
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                nonlocal resources_call_count
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    resources_call_count += 1
+                    # Return only matched VMs so unknown[] stays empty.
+                    return [
+                        {"type": "qemu", "vmid": 100, "name": "pve1", "node": "pve1", "status": "running"},
+                    ]
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@cluster", "cluster", "homelab-prod")
+
+        # Pre-populate cluster cache so all 5 hosts resolve to the same cluster_name.
+        cache_seed = {f"pve{n}": "homelab-prod" for n in range(1, 6)}
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", cache_seed, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["probed_ok"] == 5
+        assert resources_call_count == 1, (
+            f"expected exactly 1 /cluster/resources call (dedup); got {resources_call_count}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_case_insensitive_match(self) -> None:
+        """D-06: VM name ``Plex-Server`` (capitals) matches sitemap hostname
+        ``plex-server`` (lowercase) — VM does NOT appear in unknown[].
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "plex-server",
+                "connection_ip": "10.0.0.20",
+                "status": "success",
+                "proxmox_credential_id": "33333333-3333-4333-8333-333333333333",
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return [
+                        {"type": "qemu", "vmid": 101, "name": "Plex-Server", "node": "pve1", "status": "running"},
+                    ]
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["unknown"] == 0, (
+            f"case-insensitive match should suppress unknown; got: {result['unknown']}"
+        )
+        assert result["counts"]["probed_ok"] == 1
+
+    @pytest.mark.asyncio
+    async def test_enumeration_failure_keeps_host_in_probed_ok(self) -> None:
+        """T-39-07 / D-10: ``/cluster/resources`` raising aiohttp.ClientError does
+        NOT promote the host out of ``probed_ok`` — host stays where the
+        ``/cluster/status`` probe placed it; just contributes no unknown[] rows.
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pve1",
+                "connection_ip": "10.0.0.30",
+                "status": "success",
+                "proxmox_credential_id": "44444444-4444-4444-8444-444444444444",
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    raise aiohttp.ClientError("api 500")
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert result["counts"]["probed_ok"] == 1
+        assert result["counts"]["unreachable"] == 0
+        assert result["counts"]["unknown"] == 0
+        assert result["unknown"] == []
+
+    @pytest.mark.asyncio
+    async def test_unknown_independent_of_host_bucket(self) -> None:
+        """D-10: ``unknown[]`` is a parallel per-VM surface — a probed_ok host
+        can still contribute unknown[] entries for VMs missing from sitemap.
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pve1",
+                "connection_ip": "10.0.0.40",
+                "status": "success",
+                "proxmox_credential_id": "55555555-5555-4555-8555-555555555555",
+                "ssh_credential_id": None,
+            },
+        ]
+
+        async def fake_get_client(host, *, session=None, credential_id=None):
+            client = MagicMock()
+
+            async def _get(path: str) -> object:
+                if path == "/cluster/status":
+                    return [{"type": "node", "name": host}]
+                if path == "/cluster/resources":
+                    return [
+                        # One unmatched VM (sitemap only has pve1).
+                        {"type": "qemu", "vmid": 444, "name": "rogue-vm", "node": "pve1", "status": "running"},
+                    ]
+                raise AssertionError(f"unexpected path: {path}")
+
+            client.get = AsyncMock(side_effect=_get)
+            return client
+
+        async def fake_resolve(host, session=None, *, credential_id=None):
+            return ("token@node", "node", None)
+
+        with (
+            patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client),
+            patch("homelab_mcp.drift_detection.resolve_proxmox_credentials", side_effect=fake_resolve),
+            patch.dict("homelab_mcp.proxmox_api._HOST_CLUSTER_CACHE", {}, clear=True),
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        # Host is in probed_ok AND unknown[] has the rogue VM — both at once.
+        assert result["counts"]["probed_ok"] == 1
+        assert result["counts"]["unknown"] == 1
+        assert result["unknown"][0]["vm_name"] == "rogue-vm"
+        assert result["unknown"][0]["hypervisor_hostname"] == "pve1"

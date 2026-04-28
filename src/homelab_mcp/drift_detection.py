@@ -24,6 +24,7 @@ filter scope. Filters that match zero rows return status="success" with all five
 buckets empty and a top-level "guidance" field pointing to the sitemap CRUD tools.
 """
 
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime
@@ -34,6 +35,7 @@ import aiohttp
 from .database import DatabaseAdapter
 from .log_filter import sanitize_error
 from .proxmox_api import (
+    _HOST_CLUSTER_CACHE,
     CredentialNotFoundError,
     get_proxmox_client,
     get_resolution_telemetry,
@@ -265,6 +267,60 @@ def _enumerate_unknown_vms(
     return unknown
 
 
+async def _enumerate_proxmox_vms(
+    probed_ok_records: list[dict[str, Any]],
+    session: aiohttp.ClientSession | None,
+) -> dict[str, list[dict[str, Any]]]:
+    """D-05: enumerate VMs/LXC across every probed_ok Proxmox host, deduping by
+    ``cluster_name`` so each cluster yields exactly one ``/cluster/resources``
+    call per scan. Standalone (non-cluster) hosts hit
+    ``/cluster/resources`` keyed by their hostname (no cached cluster name).
+
+    Returns ``{representative_hostname: [vm_record, ...]}``. Filters the
+    response to ``type in ("qemu", "lxc")`` only — ``node`` / ``storage`` /
+    ``sdn`` records are not VMs (D-07 implicit).
+
+    Enumeration failure on any host (T-39-07): logged via ``sanitize_error`` at
+    debug level and returns ``(host, [])``. The host stays in ``probed_ok``;
+    just contributes no unknown[] entries (D-10).
+
+    Loop-free w.r.t. bucket appends (D-11(b)): the only mutation is via the
+    final ``dict(results)``. The inner ``for record in probed_ok_records:`` is
+    target-building, NOT bucket-feeding — it lives outside the AST guard's
+    targeted scope (Phase 38.1 D-15 covers ``scan_drift``'s row loop only;
+    Phase 39 D-12 keeps the guard scope targeted).
+    """
+    pairs: list[tuple[str, str | None]] = []
+    for record in probed_ok_records:
+        hostname = record.get("hostname") or ""
+        if not hostname:
+            continue  # NOTE: outside scan_drift row loop; outside Phase 38.1 D-15 guard.
+        cluster_name = _HOST_CLUSTER_CACHE.get(hostname)
+        pairs.append((hostname, cluster_name))
+
+    # Loop-free de-dupe: one entry per (cluster_name OR hostname). When two
+    # hosts share a cluster_name, only the second-seen pair survives — both
+    # would have produced identical /cluster/resources output anyway.
+    targets = list({(c or h): (h, c) for h, c in pairs}.values())
+
+    async def _enum_one(h: str, _c: str | None) -> tuple[str, list[dict[str, Any]]]:
+        try:
+            client = await get_proxmox_client(host=h, session=session)
+            resources = await client.get("/cluster/resources")
+            if not isinstance(resources, list):
+                return (h, [])
+            vms = [r for r in resources if isinstance(r, dict) and r.get("type") in ("qemu", "lxc")]
+            return (h, vms)
+        except (aiohttp.ClientError, TimeoutError, ValueError, CredentialNotFoundError) as exc:
+            logger.debug("VM enum failed for %s: %s", h, sanitize_error(exc))
+            return (h, [])
+
+    if not targets:
+        return {}
+    results = await asyncio.gather(*[_enum_one(h, c) for h, c in targets])
+    return dict(results)
+
+
 async def scan_drift(
     session: aiohttp.ClientSession | None,
     db_adapter: DatabaseAdapter,
@@ -320,15 +376,27 @@ async def scan_drift(
                 "probed_ok": int,
                 "unreachable": int,
                 "not_eligible": int,           # Phase 38.1 R7
-                "unknown": int,                # always 0 in Phase 38.1
+                "unknown": int,                # Phase 39 DRFT-17: per-VM unmatched count
                 "changed": int,                # always 0 in Phase 38.1
             },
             "guidance": str,                   # PRESENT only when scanned == 0
             "probed_ok": [<per-row record>, ...],
             "unreachable": [<per-row record>, ...],
             "not_eligible": [<per-row record>, ...],   # Phase 38.1 R7
-            "unknown": [],                     # reserved for Phase 39 DRFT-17
+            "unknown": [<per-VM record>, ...],         # Phase 39 DRFT-17 (D-07 shape)
             "changed": [],                     # reserved for Phase 39 DRFT-19
+        }
+
+    Per-VM record shape (unknown, Phase 39 D-07):
+        {
+            "hypervisor_hostname": str,        # Proxmox host that reported the VM
+            "node": str,                       # Proxmox node name (cluster member)
+            "vmid": int,
+            "vm_type": "qemu" | "lxc",
+            "vm_name": str,                    # Proxmox-reported `name` field
+            "vm_status": str,                  # e.g., "running" | "stopped"
+            "scan_timestamp": str,             # same value across all records
+            "message": str,                    # discover_and_map adoption pointer
         }
 
     Per-row record shape (probed_ok and unreachable, unchanged from Phase 36 D-02):
@@ -355,7 +423,7 @@ async def scan_drift(
     probed_ok: list[dict[str, Any]] = []
     unreachable: list[dict[str, Any]] = []
     not_eligible: list[dict[str, Any]] = []
-    unknown: list[dict[str, Any]] = []  # reserved for Phase 39 DRFT-17
+    unknown: list[dict[str, Any]] = []  # Phase 39 DRFT-17: populated by post-loop enumeration
     changed: list[dict[str, Any]] = []  # reserved for Phase 39 DRFT-19
 
     rows = db_adapter.get_all_devices()
@@ -482,12 +550,26 @@ async def scan_drift(
                             }
                         )
 
+    # Phase 39 DRFT-17 (D-05/D-06/D-07): enumerate unknown VMs across every
+    # probed_ok host. Cluster-scope rows that share a cluster_name de-dupe to
+    # one /cluster/resources call total; standalone hosts hit the same endpoint
+    # keyed by themselves. Per D-10 the unknown[] surface is parallel to host
+    # buckets — a probed_ok host can still emit unknown VM rows, and an
+    # enumeration failure on the host does not move it out of probed_ok.
+    sitemap_hostnames: set[str] = {
+        (row.get("hostname") or "").lower()
+        for row in rows
+        if row.get("hostname")
+    }
+    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok, session)
+    unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
+
     # D-07: counts sub-dict mirrors bucket sizes.
     counts: dict[str, int] = {
         "probed_ok": len(probed_ok),
         "unreachable": len(unreachable),
         "not_eligible": len(not_eligible),
-        "unknown": len(unknown),  # always 0 in Phase 38.1
+        "unknown": len(unknown),  # Phase 39 DRFT-17: per-VM unmatched count
         "changed": len(changed),  # always 0 in Phase 38.1
     }
     # scanned = sum across all five buckets (defensive vs. Phase 39 expansion).
