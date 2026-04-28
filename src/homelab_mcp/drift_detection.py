@@ -461,9 +461,22 @@ async def _bulk_universal_core_probes(
                 # resolve_ssh_credentials); catching here keeps drift's SSH
                 # pre-pass non-fatal when a row's binding is stale or desynced.
                 return (hostname, {"_error": sanitize_error(exc)})
-        # Defensive fallthrough — should never execute (try-block returns or
-        # an except branch returns). Present so mypy can prove all paths return.
-        return (hostname, {"_error": "unreachable_fallthrough"})
+        # WR-04 (Phase 39 review): mypy requires a terminal statement
+        # after the ``async with semaphore`` block (it can't prove
+        # exhaustiveness across try/except inside an async-with). The
+        # previous return value was a literal sentinel string that never
+        # reached a logger, so a future regression hitting this line
+        # would have vanished silently. Log loudly AND return a clearly
+        # diagnostic error so downstream callers see the problem in
+        # both logs and the probe map. Raising here would crash the
+        # whole asyncio.gather (return_exceptions=False) and break the
+        # SSH pre-pass for every other row — undesirable.
+        logger.error(
+            "_probe_one fell through all try/except branches for hostname=%r; "
+            "this indicates an unreachable code path that fired. Investigate.",
+            hostname,
+        )
+        return (hostname, {"_error": "probe_one_unreachable_fallthrough"})
 
     # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
     # hostname; if two rows share a hostname, only one probe survives in
