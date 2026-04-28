@@ -1,12 +1,21 @@
 """Tests for drift detection — Phase 36/37 (sitemap-as-baseline, 4-bucket stable shape)."""
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
 
-from homelab_mcp.drift_detection import scan_drift
+from homelab_mcp.drift_detection import (
+    _classify_unreachable,
+    _diff_fingerprints,
+    _enumerate_unknown_vms,
+    _missing_threshold_days,
+    _parse_last_seen,
+    scan_drift,
+)
 from homelab_mcp.proxmox_api import CredentialNotFoundError
+from homelab_mcp.ssh_tools import _probe_universal_core
 
 
 class TestScanDrift4Bucket:
@@ -1024,3 +1033,206 @@ class TestScanDriftNotEligible:
             f"I7 scanned invariant violated: scanned={result['scanned']} but "
             f"sum(bucket lengths)={sum(len(result[b]) for b in buckets)}"
         )
+
+
+class TestPhase39Helpers:
+    """Phase 39 helpers (Plan 01) — diff/enumerate/classify/threshold/parse +
+    universal-core probe extraction. RED in Plan 01 Task 1; GREEN in Tasks 2/3.
+
+    D-08, D-09a, D-01, D-02, D-05, D-06, D-07 — see 39-CONTEXT.md.
+    """
+
+    # -- _diff_fingerprints (D-08, D-09a) ---------------------------------
+
+    def test_diff_fingerprints_per_leaf_present_in_both(self) -> None:
+        """D-09a: a stored leaf absent from current is NOT diffed."""
+        stored = {"capabilities": {"vulkan": {"available": True}}}
+        current: dict = {"capabilities": {}}
+        assert _diff_fingerprints(stored, current) == {}
+
+    def test_diff_fingerprints_dotted_path(self) -> None:
+        """D-08: nested capability sub-keys emit dotted-path entries."""
+        stored = {"capabilities": {"vulkan": {"available": True}}}
+        current = {"capabilities": {"vulkan": {"available": False}}}
+        assert _diff_fingerprints(stored, current) == {
+            "capabilities.vulkan.available": {"stored": True, "current": False},
+        }
+
+    def test_diff_fingerprints_top_level_kernel(self) -> None:
+        """Top-level kernel field diff uses bare key (no dotted prefix)."""
+        stored = {"kernel_version": "6.5.13"}
+        current = {"kernel_version": "6.8.4"}
+        assert _diff_fingerprints(stored, current) == {
+            "kernel_version": {"stored": "6.5.13", "current": "6.8.4"},
+        }
+
+    def test_diff_fingerprints_empty_when_equal(self) -> None:
+        stored = {"kernel_version": "6.5.13", "os_name": "Proxmox VE"}
+        current = {"kernel_version": "6.5.13", "os_name": "Proxmox VE"}
+        assert _diff_fingerprints(stored, current) == {}
+
+    # -- _classify_unreachable (D-01, D-02) -------------------------------
+
+    def test_classify_unreachable_old_last_seen_returns_missing(
+        self, freeze_now: datetime, sitemap_row_old_last_seen: dict
+    ) -> None:
+        status, message = _classify_unreachable(
+            sitemap_row_old_last_seen,
+            TimeoutError("connection timeout"),
+            threshold_days=7,
+            now=freeze_now,
+        )
+        assert status == "missing"
+        assert "decommission_device" in message
+
+    def test_classify_unreachable_recent_last_seen_returns_unreachable(
+        self, freeze_now: datetime, sitemap_row_recent_last_seen: dict
+    ) -> None:
+        status, _msg = _classify_unreachable(
+            sitemap_row_recent_last_seen,
+            aiohttp.ClientError("connection refused"),
+            threshold_days=7,
+            now=freeze_now,
+        )
+        assert status == "unreachable"
+
+    def test_classify_unreachable_timezone_normalization(
+        self, freeze_now: datetime
+    ) -> None:
+        """Pitfall 4: naive ``last_seen`` string must not raise TypeError."""
+        row = {
+            "hostname": "pi-lab",
+            "last_seen": "2026-04-10T10:00:00",  # naive, >7d before frozen now
+        }
+        status, _msg = _classify_unreachable(
+            row, TimeoutError(), threshold_days=7, now=freeze_now,
+        )
+        assert status == "missing"
+
+    # -- _missing_threshold_days (D-02) -----------------------------------
+
+    def test_missing_threshold_days_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", raising=False)
+        assert _missing_threshold_days() == 7
+
+    def test_missing_threshold_days_env_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "3")
+        assert _missing_threshold_days() == 3
+
+    def test_missing_threshold_days_invalid_falls_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "abc")
+        assert _missing_threshold_days() == 7
+        monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "-1")
+        assert _missing_threshold_days() == 7
+        monkeypatch.setenv("HOMELAB_DRIFT_MISSING_THRESHOLD_DAYS", "0")
+        assert _missing_threshold_days() == 7
+
+    # -- _parse_last_seen (Pitfall 4) -------------------------------------
+
+    def test_parse_last_seen_naive_string(self) -> None:
+        result = _parse_last_seen("2026-04-15T10:00:00")
+        assert result is not None
+        assert result.tzinfo is UTC
+
+    def test_parse_last_seen_none_or_malformed(self) -> None:
+        assert _parse_last_seen(None) is None
+        assert _parse_last_seen("") is None
+        assert _parse_last_seen("not-a-date") is None
+
+    # -- _enumerate_unknown_vms (D-05, D-06, D-07) ------------------------
+
+    def test_enumerate_unknown_case_insensitive(self) -> None:
+        """D-06: case-insensitive VM-name vs sitemap-hostname match.
+
+        VM ``Plex-Server`` matches sitemap ``plex-server`` -> not in unknown.
+        """
+        cluster_vm_map = {
+            "pve1": [
+                {"type": "qemu", "name": "Plex-Server", "vmid": 100,
+                 "node": "pve1", "status": "running"},
+            ],
+        }
+        sitemap_hostnames = {"plex-server"}
+        result = _enumerate_unknown_vms(
+            cluster_vm_map, sitemap_hostnames, "2026-04-27T12:00:00+00:00",
+        )
+        assert result == []
+
+    def test_enumerate_unknown_unmatched_vm_in_result(self) -> None:
+        """D-07: unmatched VM produces a per-VM record with discover_and_map
+        recovery pointer."""
+        cluster_vm_map = {
+            "pve1": [
+                {"type": "qemu", "name": "ubuntu-test", "vmid": 110,
+                 "node": "pve1", "status": "stopped"},
+            ],
+        }
+        sitemap_hostnames = {"pve1"}
+        result = _enumerate_unknown_vms(
+            cluster_vm_map, sitemap_hostnames, "2026-04-27T12:00:00+00:00",
+        )
+        assert len(result) == 1
+        row = result[0]
+        assert row["vmid"] == 110
+        assert row["vm_type"] == "qemu"
+        assert row["vm_name"] == "ubuntu-test"
+        assert row["hypervisor_hostname"] == "pve1"
+        assert row["scan_timestamp"] == "2026-04-27T12:00:00+00:00"
+        assert "discover_and_map" in row["message"]
+
+    # -- _probe_universal_core (D-03, extracted from ssh_discover_system) -
+
+    @pytest.mark.asyncio
+    async def test_probe_universal_core_extraction_parity(self) -> None:
+        """D-03: extracted helper returns the same Phase 38 fingerprint shape
+        as the ssh_discover_system inline block (lines 614-691).
+
+        Mocks ``conn.run`` per cmd_name to canned stdouts; asserts dict
+        contains all 5 universal-core keys.
+        """
+        timed_out: list[str] = []
+
+        # Map command-string substrings to canned stdouts (matches the
+        # production order: uname-s, uname-r, os-release-full, dpkg).
+        responses = {
+            "uname -s": MagicMock(exit_status=0, stdout="Linux\n"),
+            "uname -r": MagicMock(exit_status=0, stdout="6.5.13-1-pve\n"),
+            "/etc/os-release": MagicMock(
+                exit_status=0,
+                stdout=(
+                    'PRETTY_NAME="Proxmox VE 8.2.4"\n'
+                    'NAME="Proxmox VE"\n'
+                    'VERSION_ID="8.2.4"\n'
+                ),
+            ),
+            "dpkg -l": MagicMock(
+                exit_status=0,
+                stdout=(
+                    "abc123def456abc123def456abc123def456"
+                    "abc123def456abc123def456abc123defab  -\n"
+                ),
+            ),
+        }
+
+        async def _run(cmd: str, *args: object, **kwargs: object) -> MagicMock:
+            for needle, response in responses.items():
+                if needle in cmd:
+                    return response
+            return MagicMock(exit_status=0, stdout="")
+
+        conn = MagicMock()
+        conn.run = AsyncMock(side_effect=_run)
+
+        result = await _probe_universal_core(conn, timed_out)
+
+        assert result.get("kernel_name") == "Linux"
+        assert result.get("kernel_version") == "6.5.13-1-pve"
+        assert result.get("os_name") == "Proxmox VE 8.2.4"
+        assert result.get("os_version") == "8.2.4"
+        assert result.get("package_fingerprint", "").startswith("sha256:")
