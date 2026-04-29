@@ -27,6 +27,7 @@ buckets empty and a top-level "guidance" field pointing to the sitemap CRUD tool
 import asyncio
 import logging
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -381,6 +382,7 @@ def _enumerate_unknown_vms(
 async def _enumerate_proxmox_vms(
     probed_ok_records: list[dict[str, Any]],
     session: aiohttp.ClientSession | None,
+    host_to_binding: Mapping[str, str | None],
 ) -> dict[str, list[dict[str, Any]]]:
     """D-05: enumerate VMs/LXC across every probed_ok Proxmox host, deduping by
     ``cluster_name`` so each cluster yields exactly one ``/cluster/resources``
@@ -400,6 +402,14 @@ async def _enumerate_proxmox_vms(
     target-building, NOT bucket-feeding — it lives outside the AST guard's
     targeted scope (Phase 38.1 D-15 covers ``scan_drift``'s row loop only;
     Phase 39 D-12 keeps the guard scope targeted).
+
+    Phase 39.1 R6-regression closure: ``host_to_binding`` is the
+    hostname→credential_id side-map built by ``scan_drift`` from
+    ``row.get('proxmox_credential_id')``. ``_enum_one`` threads it as
+    ``credential_id=`` into ``get_proxmox_client(...)`` so the Phase 38.1 R6
+    binding contract holds inside the VM-enumeration helper too. ``None``
+    values are legitimate (cluster-served rows fall through to Tier-1/Tier-2
+    walk, matching scan_drift row-loop semantics at lines 744-752).
     """
     pairs: list[tuple[str, str | None]] = []
     for record in probed_ok_records:
@@ -415,8 +425,9 @@ async def _enumerate_proxmox_vms(
     targets = list({(c or h): (h, c) for h, c in pairs}.values())
 
     async def _enum_one(h: str, _c: str | None) -> tuple[str, list[dict[str, Any]]]:
+        binding = host_to_binding.get(h)  # None for cluster-served rows
         try:
-            client = await get_proxmox_client(host=h, session=session)
+            client = await get_proxmox_client(host=h, session=session, credential_id=binding)
             resources = await client.get("/cluster/resources")
             if not isinstance(resources, list):
                 return (h, [])
@@ -991,7 +1002,17 @@ async def scan_drift(
     # keyed by themselves. An enumeration failure on the host does not move
     # it out of its host bucket.
     sitemap_hostnames: set[str] = {(row.get("hostname") or "").lower() for row in rows if row.get("hostname")}
-    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session)
+    # Phase 39.1 R6-regression closure: build hostname→binding side-map from the
+    # SAME source-of-truth used at line 718 in the row loop (row.get("proxmox_credential_id")).
+    # Passed to _enumerate_proxmox_vms so _enum_one threads credential_id=binding into
+    # get_proxmox_client, matching the row-loop binding contract (Phase 38.1 R6).
+    # None values for cluster-served rows are legitimate — get_proxmox_client falls through
+    # to Tier-1/Tier-2 cluster walk in that case, identical to scan_drift's row-loop
+    # binding-NULL semantics at lines 744-752.
+    host_to_binding: dict[str, str | None] = {
+        (row.get("hostname") or ""): row.get("proxmox_credential_id") for row in rows if row.get("hostname")
+    }
+    cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session, host_to_binding)
     unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
 
     # D-07: counts sub-dict mirrors bucket sizes.
