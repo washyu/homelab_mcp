@@ -914,13 +914,22 @@ class TestPhase39_1NoSkipInDriftEnum:
             f"why credential_id= is not needed."
         )
 
-    def test_phase39_1_guard_catches_added_helper(self) -> None:
-        """Defensive: verify the guard ENUMERATES at least 2 call sites
+    def test_phase39_1_guard_call_site_floor(self) -> None:
+        """WR-02 (Phase 39.1 review): rename of
+        ``test_phase39_1_guard_catches_added_helper``. The original name
+        promised behavior the test does not deliver — it does NOT exercise
+        an "added helper" scenario, only enumerates call-site count.
+
+        Defensive sanity check: the guard ENUMERATES at least 2 call sites
         (row-loop in scan_drift + _enum_one in _enumerate_proxmox_vms).
-        If a future refactor consolidates these to a single helper, this
-        count drops — at which point the guard remains correct (every
-        remaining call must still thread credential_id=) but the test
-        shape may need updating to reflect the new structure.
+        This protects against a refactor that accidentally drops one of
+        the known call sites entirely (e.g., inlining _enum_one and
+        forgetting to re-add the get_proxmox_client call) — the primary
+        guard above would then become vacuous on a 1-call file. If a
+        future refactor LEGITIMATELY consolidates these to a single
+        helper, this count drops and the floor must be updated to match
+        the new structure (or this test removed if the consolidation
+        eliminates the regression risk it was added to defend against).
         """
         src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
         source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
