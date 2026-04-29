@@ -1,9 +1,8 @@
 """Phase 41.1 SC-1 / SC-3 / SC-4 unit tests.
 
-Tests in this file rely on the session-autouse ``_isolate_keyring`` fixture
-that lands in ``tests/conftest.py`` in Plan 02 (Wave 1). Wave 0 commits this
-file RED with ``@pytest.mark.xfail(strict=True)`` markers; Plan 02 removes
-the markers once the fixture is in place.
+Plan 02 (Wave 1) wired the session-autouse ``_isolate_keyring`` fixture
+in ``tests/conftest.py`` and removed the Wave-0 xfail markers; these
+tests now pass GREEN.
 
 Coverage map:
 * ``test_in_memory_backend_active_session_scope`` — SC-1 Layer 1 verification
@@ -17,17 +16,7 @@ from __future__ import annotations
 import hashlib
 import pathlib
 
-import pytest
 
-_WAVE1_REASON = (
-    "Phase 41.1 Wave 1 (Plan 02) installs the session-autouse "
-    "_isolate_keyring fixture in tests/conftest.py. This test FAILS in "
-    "Wave 0 and FLIPS to passing in Wave 1. Plan 02 acceptance includes "
-    "removing the xfail marker."
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_WAVE1_REASON)
 def test_in_memory_backend_active_session_scope() -> None:
     """SC-1 Layer 1: keyring.get_keyring() returns an in-memory backend.
 
@@ -47,7 +36,6 @@ def test_in_memory_backend_active_session_scope() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_WAVE1_REASON)
 def test_set_password_routes_to_in_memory() -> None:
     """SC-1 Layer 2: keyring.set_password / get_password round-trip through
     the in-memory store, confirming the function-level monkeypatch is active.
@@ -80,7 +68,6 @@ def test_set_password_routes_to_in_memory() -> None:
     assert keyring.get_password("homelab-mcp-test-svc", "test-user-isolation") is None
 
 
-@pytest.mark.xfail(strict=True, reason=_WAVE1_REASON)
 def test_no_test_host_test_user_leak(tmp_path: pathlib.Path) -> None:
     """SC-3 regression pin: driving register_credential("test-host",
     "test-user", credential_type="ssh") through the dual-alias-fixed call
@@ -107,7 +94,6 @@ def test_no_test_host_test_user_leak(tmp_path: pathlib.Path) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_WAVE1_REASON)
 def test_pre_post_snapshot_helper() -> None:
     """SC-4 snapshot helper: the conftest exposes a ``_capture_real_state()``
     helper that returns a stable, hashable representation of the developer's
