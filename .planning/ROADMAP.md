@@ -103,6 +103,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 - [ ] **Phase 37: Drift Output Shape & Error Hygiene** — Consistent shape across all filter scopes; four-bucket coverage transparency; error messages reference sitemap CRUD tools, never `PROXMOX_HOST`
 - [x] **Phase 38: Sitemap Fingerprint Schema** — Sitemap rows capture kernel version, package fingerprint, and capability probes (GPU passthrough, Vulkan/ML library availability) so OS-level changes surface as drift (completed 2026-04-26)
 - [ ] **Phase 39: Drift Detection Cases** — Detect unknown (manually-created VMs not in sitemap), missing (sitemap rows that no longer probe-respond), and changed (fingerprint differs from stored) infrastructure
+- [ ] **Phase 39.1: Thread credential_id through drift enum** (INSERTED) — Close the Phase 38.1 R6 regression introduced by Phase 39 DRFT-17 (`_enumerate_proxmox_vms._enum_one` missing `credential_id=`)
 - [ ] **Phase 40: Proxmox VM Lifecycle Polish** — `get_proxmox_vm_status` clean "VM not found" error; `create_proxmox_vm` schema accuracy + cred-error guidance pointing to `credentials add`, never `PROXMOX_HOST`
 
 </details>
@@ -188,7 +189,18 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   - [x] 39-02-PLAN.md — DRFT-17 unknown VM detection via /cluster/resources de-dupe
   - [x] 39-03-PLAN.md — DRFT-18 missing + DRFT-19 changed bucket wiring + AST guard + 120s outer timeout
 
-### Phase 40: Proxmox VM Lifecycle Polish
+### Phase 39.1: Thread credential_id through drift enum (INSERTED)
+
+**Goal**: Phase 38.1's headline R6 integration suite — the 5 round-trip tests pinning "register-by-IP/short/FQDN + discover_and_map + scan_drift sees probed_ok ≥ 1" — passes end-to-end again. The Phase 39 DRFT-17 unknown-VM enumeration (`_enumerate_proxmox_vms._enum_one`) currently calls `get_proxmox_client(host=h, session=session)` without `credential_id=`, regressing the binding contract Phase 38.1 was built to close.
+**Depends on**: Phase 38.1, Phase 39
+**Requirements**: Closes the Phase 38.1 R6 verification gap surfaced in `38.1-VERIFICATION.md` (2026-04-28). Bisected to Phase 39 commit `e05df24` (DRFT-17 cluster/resources enumeration).
+**Success Criteria** (what must be TRUE):
+  1. `drift_detection.py:419` (`_enumerate_proxmox_vms._enum_one`) threads `credential_id` from the sitemap row through to `get_proxmox_client(...)`, matching the binding contract enforced everywhere else on the drift call chain.
+  2. The 5 round-trip integration tests in `tests/integration/test_credential_binding_round_trip.py` pass on a real Docker target — Phase 38.1's headline acceptance suite is end-to-end verifiable again.
+  3. The Phase 38.1 AST regression guard is extended to cover `_enumerate_proxmox_vms` (per 38.1 D-16 anticipation), so any future Proxmox-touching helper that omits `credential_id=` blocks CI.
+**Plans**: 1 plan
+  - [ ] 39.1-01-PLAN.md — Thread credential_id through _enumerate_proxmox_vms / _enum_one (Option B side-map) + extend AST regression guard + verify round-trip suite GREEN
+
 **Goal**: A user hitting Bug I (querying a nonexistent VMID) or Bug G (calling `create_proxmox_vm` without configured credentials) gets a clean structured error that tells them what to do next, never a raw HTTP 500 leak or a pointer to a deprecated env var.
 **Depends on**: Nothing (independent of drift work; can run in parallel with Phase 37/38/39)
 **Requirements**: POL-01, POL-02, POL-03
@@ -237,6 +249,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
+| 39.1 Thread credential_id through drift enum | v1.7 | 0/0 | Not started | - |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 
 ## Backlog

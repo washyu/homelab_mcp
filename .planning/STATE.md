@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
-status: ready_to_plan
+status: planning
 stopped_at: Phase 40 context gathered
-last_updated: "2026-04-28T17:31:37.722Z"
-last_activity: 2026-04-28 -- Phase 40 execution started
+last_updated: "2026-04-28T18:53:24.012Z"
+last_activity: 2026-04-28
 progress:
   total_phases: 15
   completed_phases: 5
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 999.1
+Phase: 39.1
 Plan: Not started
 Status: Ready to plan
 Last activity: 2026-04-28
@@ -88,6 +88,7 @@ Bug I (`get_proxmox_vm_status` HTTP 500 leak) bundled into v1.7 as adjacent poli
 ### Roadmap Evolution
 
 - Phase 38.1 inserted after Phase 38: Sitemap-keystore credential binding (URGENT) — Claude Desktop UAT on 2026-04-26 surfaced Bug O (sitemap stores hostnames, keyring keyed by IP/FQDN, no normalization → drift returns scanned: 0 on documented happy path) and Bug N (drift eligibility heuristic invisible to users). Architectural decision: each sitemap row carries a stable `keystore_id` reference rather than relying on hostname/IP join inference. Blocks Phase 39 — drift detection cases depend on credential resolution working end-to-end.
+- Phase 39.1 inserted after Phase 39: Thread credential_id through drift_detection._enum_one + extend Phase 38.1 AST guard. Closes Phase 38.1 R6 regression surfaced in 38.1-VERIFICATION.md. Bisected to Phase 39 commit e05df24 (DRFT-17). (URGENT)
 
 ### Decisions
 
