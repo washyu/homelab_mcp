@@ -199,7 +199,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. The 5 round-trip integration tests in `tests/integration/test_credential_binding_round_trip.py` pass on a real Docker target — Phase 38.1's headline acceptance suite is end-to-end verifiable again.
   3. The Phase 38.1 AST regression guard is extended to cover `_enumerate_proxmox_vms` (per 38.1 D-16 anticipation), so any future Proxmox-touching helper that omits `credential_id=` blocks CI.
 **Plans**: 1 plan
-  - [ ] 39.1-01-PLAN.md — Thread credential_id through _enumerate_proxmox_vms / _enum_one (Option B side-map) + extend AST regression guard + verify round-trip suite GREEN
+  - [x] 39.1-01-PLAN.md — Thread credential_id through _enumerate_proxmox_vms / _enum_one (Option B side-map) + extend AST regression guard + verify round-trip suite GREEN
 
 **Goal**: A user hitting Bug I (querying a nonexistent VMID) or Bug G (calling `create_proxmox_vm` without configured credentials) gets a clean structured error that tells them what to do next, never a raw HTTP 500 leak or a pointer to a deprecated env var.
 **Depends on**: Nothing (independent of drift work; can run in parallel with Phase 37/38/39)
@@ -249,7 +249,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 38. Sitemap Fingerprint Schema | v1.7 | 6/6 | Complete    | 2026-04-26 |
 | 38.1 Sitemap-keystore Credential Binding | v1.7 | 9/9 | Complete   | 2026-04-27 |
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
-| 39.1 Thread credential_id through drift enum | v1.7 | 0/0 | Not started | - |
+| 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete   | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 
 ## Backlog
@@ -258,7 +258,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
