@@ -867,6 +867,10 @@ class TestPhase39_1NoSkipInDriftEnum:
       * Covers ONLY direct ``get_proxmox_client(...)`` calls inside
         ``src/homelab_mcp/drift_detection.py``. Other modules and
         ``getattr(...)``-indirected calls are NOT in scope.
+      * Import aliasing (``from .proxmox_api import get_proxmox_client as
+        <other>``) is BLOCKED by an explicit canonical-name assertion at
+        the top of the guard (WR-03 mitigation) — an alias rebinding
+        would otherwise be invisible to the ast.Name match.
       * A future ``/version`` ping helper that intentionally does NOT need
         credentials (e.g., capability-discovery before binding) would need
         an explicit allowlist entry — but no such helper exists today, and
@@ -883,6 +887,36 @@ class TestPhase39_1NoSkipInDriftEnum:
         src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
         source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
         tree = ast.parse(source, filename="drift_detection.py")
+
+        # WR-03 (Phase 39.1 review): guard against import aliasing. The
+        # ast.Call match below keys on `func.id == "get_proxmox_client"`,
+        # which silently drops any call site bound to a different local
+        # name (e.g., `from .proxmox_api import get_proxmox_client as gpc`
+        # makes the call site `await gpc(...)` invisible to this guard).
+        # Pin the canonical name here so a future refactor that aliases
+        # the import fails LOUDLY at this assertion instead of silently
+        # weakening the guard's coverage. Option (b) — extending the
+        # guard to track aliased local names — is more permissive but
+        # requires walking ImportFrom nodes and resolving call.func.id
+        # back to its originating import; option (a) below is simpler
+        # and matches the project's "make implicit assumptions explicit"
+        # convention.
+        imports = [
+            a
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom) and (n.module or "").endswith("proxmox_api")
+            for a in n.names
+            if a.name == "get_proxmox_client"
+        ]
+        assert imports and all(a.asname is None for a in imports), (
+            "Phase 39.1 guard (WR-03): get_proxmox_client must be imported "
+            "under its canonical name in drift_detection.py — aliasing "
+            "(`from .proxmox_api import get_proxmox_client as <other>`) "
+            "would bypass the ast.Name match below and silently drop call "
+            "sites from this guard's coverage. If you have a legitimate "
+            "reason to alias, either rewrite this guard to track aliased "
+            "local names or remove the alias."
+        )
 
         calls = [
             n
