@@ -1008,10 +1008,26 @@ async def scan_drift(
     # get_proxmox_client, matching the row-loop binding contract (Phase 38.1 R6).
     # None values for cluster-served rows are legitimate — get_proxmox_client falls through
     # to Tier-1/Tier-2 cluster walk in that case, identical to scan_drift's row-loop
-    # binding-NULL semantics at lines 744-752.
-    host_to_binding: dict[str, str | None] = {
-        (row.get("hostname") or ""): row.get("proxmox_credential_id") for row in rows if row.get("hostname")
-    }
+    # binding-NULL semantics at the row loop's get_proxmox_client call (which passes
+    # credential_id=binding and falls through to Tier-1/Tier-2 cluster walk when binding is None).
+    #
+    # WR-01 (Phase 39.1 review): "first-write-wins" policy on duplicate hostnames.
+    # Phase 35 D-14 (store_device hostname-only match) makes true duplicates rare,
+    # but a transient race during discover_and_map (concurrent inserts both passing
+    # the unique constraint, or a not-yet-purged failed-discovery row sharing a
+    # hostname with a fresh row) can yield two rows with the same hostname and
+    # potentially different proxmox_credential_id values. Match the dedupe policy
+    # of _bulk_universal_core_probes (above) so the side-map and SSH probe map
+    # agree on which row each hostname maps to — without this, the cluster-dedupe
+    # in _enumerate_proxmox_vms (which picks ONE representative per cluster) could
+    # pick a different row's hostname than the side-map's last-write-wins entry,
+    # yielding a quietly-mis-attributed credential.
+    host_to_binding: dict[str, str | None] = {}
+    for binding_row in rows:
+        binding_hostname = binding_row.get("hostname")
+        if not binding_hostname or binding_hostname in host_to_binding:
+            continue
+        host_to_binding[binding_hostname] = binding_row.get("proxmox_credential_id")
     cluster_vm_map = await _enumerate_proxmox_vms(probed_ok + changed, session, host_to_binding)
     unknown = _enumerate_unknown_vms(cluster_vm_map, sitemap_hostnames, scan_timestamp)
 
