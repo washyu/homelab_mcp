@@ -1067,3 +1067,248 @@ class TestPhase39DriftCases:
         assert not violations, (
             f"Phase 39 D-12 regression — `continue` slipped into scan_drift's row loop at line(s): {violations}"
         )
+
+
+class TestPhase41_1KeyringHygiene:
+    """Phase 41.1 SC-2: any test that calls ``store_credential`` or
+    ``register_credential`` outside the audited allowlist fails CI.
+
+    The session-autouse ``_isolate_keyring`` fixture in
+    ``tests/conftest.py`` (Plan 02 / Wave 1) is the load-bearing safety
+    net — it installs an in-memory keyring backend AND redirects
+    ``_REGISTRY_PATH`` for the entire session, so most callers do not
+    need per-test monkeypatching. The allowlist below documents which
+    test files were AUDITED in Phase 41.1 and confirmed safe under the
+    session fixture.
+
+    A new test that calls ``store_credential`` or ``register_credential``
+    must be either:
+      1. Added to the allowlist with a one-line comment explaining why
+         the session-autouse fixture is sufficient (default case), OR
+      2. Refactored to use ``mocker.patch("keyring.set_password", ...)``
+         per-test (the existing ``tests/test_credential_store.py``
+         pattern) and any per-test ``_REGISTRY_PATH`` redirect must use
+         the dual-alias form.
+
+    Scope (per threat model T-41.1-02 — precise carve-out):
+      * Covers ONLY direct ``store_credential(...)`` and
+        ``register_credential(...)`` Name-bound calls under ``tests/``.
+      * ``getattr(...)``-indirected calls and aliased imports are
+        BLOCKED by the canonical-name pin in
+        ``test_guarded_symbols_not_aliased_in_tests``.
+      * The two read-only helpers (``find_credential_by_id``,
+        ``list_credentials``, etc.) are NOT in scope — they do not
+        write to the keyring or registry (RESEARCH §Open Question 3).
+      * Eager-binding via ``from keyring import set_password`` is
+        BLOCKED by ``test_no_eager_keyring_function_imports``
+        (RESEARCH §Pitfall 4 — eager binding defeats the session
+        fixture's Layer 2 monkeypatch).
+
+    Threat model T-41.1-02 mitigation: deny-by-default. Allowlist
+    entries must cite a fixture path or CONTEXT decision. New entries
+    require explicit Phase 41.1 audit.
+    """
+
+    # Symbols that WRITE to the keyring or registry. Read-only helpers
+    # (find_credential_by_id, list_credentials, get_credential, etc.)
+    # are intentionally NOT included — they cannot leak.
+    _GUARDED_SYMBOLS = ("store_credential", "register_credential")
+
+    # Test files audited in Phase 41.1 and confirmed safe under the
+    # session-autouse ``_isolate_keyring`` fixture installed in
+    # ``tests/conftest.py``.
+    #
+    # Each entry is the path RELATIVE TO THE REPO ROOT in posix form
+    # (use ``Path.as_posix()`` for the comparison key — this works on
+    # Windows + macOS + Linux without backslash drama).
+    #
+    # To add a new entry: confirm the file is covered by the session
+    # fixture (default), then add the path with a one-line citation
+    # comment. CI fails if a non-allowlisted file calls a guarded
+    # symbol.
+    _ALLOWLIST: frozenset[str] = frozenset(
+        {
+            # Owns the session-autouse fixture itself; safe by definition.
+            "tests/conftest.py",
+            # Uses mocker.patch + per-test _REGISTRY_PATH dual-alias
+            # redirect (existing pattern from v1.6 Phase 33).
+            "tests/test_credential_store.py",
+            # Phase 38.1 integration round-trip — already has dual-alias
+            # _REGISTRY_PATH + per-test keyring monkeypatch in
+            # _setup_isolated_environment (lines 48-90). Belt-and-braces
+            # under the session fixture.
+            "tests/integration/test_credential_binding_round_trip.py",
+            # Phase 41.1 Plan 02 fixed the test_R3 path (lines 947-952)
+            # to use dual-alias _REGISTRY_PATH; runs under session fixture.
+            "tests/test_sitemap.py",
+            # CLI coverage — calls server.store_credential indirectly via
+            # _cmd_credentials_add; covered by session-autouse fixture.
+            "tests/test_credentials_cli.py",
+            # Phase 41.1 SC-3 regression pin — drives register_credential
+            # ("test-host", "test-user") through the dual-alias-fixed call
+            # site to verify the leak is closed. Covered by session fixture.
+            "tests/test_keyring_isolation_phase41_1.py",
+        }
+    )
+
+    def test_no_unprotected_credential_writes_in_tests(self) -> None:
+        """Phase 41.1 SC-2: every direct call to a guarded symbol under
+        ``tests/`` must be in an allowlisted file.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        violations: list[str] = []
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            if rel in self._ALLOWLIST:
+                continue
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                # Skip files that genuinely fail to parse — the broader
+                # test suite covers syntax validation.
+                continue
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id in self._GUARDED_SYMBOLS
+                ):
+                    violations.append(f"{rel}:{node.lineno} — {node.func.id}(...) in non-allowlisted file")
+
+        assert not violations, (
+            "Phase 41.1 SC-2: unprotected store_credential / "
+            "register_credential call sites in tests/. The session-"
+            "autouse fixture in tests/conftest.py covers most callers, "
+            "but each new test file must be explicitly added to the "
+            "allowlist in TestPhase41_1KeyringHygiene._ALLOWLIST with "
+            "a one-line comment explaining why the session fixture is "
+            "sufficient. If a per-test monkeypatch is required, follow "
+            "the dual-alias pattern from "
+            "tests/integration/test_credential_binding_round_trip.py:"
+            "62-65.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+    def test_no_eager_keyring_function_imports(self) -> None:
+        """Phase 41.1 SC-2 + RESEARCH §Pitfall 4: forbid
+        ``from keyring import set_password`` / ``get_password`` /
+        ``delete_password`` in ``tests/``. Eager binding captures the
+        function reference at import time, BEFORE the session-autouse
+        ``_isolate_keyring`` fixture's Layer 2 monkeypatch runs —
+        silently leaking writes to the real OS keyring.
+
+        Production code is exempt — it does ``import keyring`` lazy
+        inside function bodies (``credential_store.py:58``) and
+        accesses ``keyring.set_password`` via attribute lookup, which
+        the monkeypatch covers.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        forbidden = {"set_password", "get_password", "delete_password"}
+        violations: list[str] = []
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and (node.module or "") == "keyring":
+                    for alias in node.names:
+                        if alias.name in forbidden:
+                            violations.append(f"{rel}:{node.lineno} — from keyring import {alias.name}")
+
+        assert not violations, (
+            "Phase 41.1 SC-2 + RESEARCH §Pitfall 4: eager-bound keyring "
+            "imports defeat the session fixture. Use lazy imports "
+            "(``import keyring`` inside the function body, then "
+            "``keyring.set_password(...)``) so the monkeypatch covers "
+            "the call.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+    def test_guarded_symbols_not_aliased_in_tests(self) -> None:
+        """Phase 41.1 SC-2 + RESEARCH WR-03: forbid aliasing of
+        ``store_credential`` and ``register_credential`` on import in
+        ``tests/``. The AST guard above keys on
+        ``func.id == "<symbol>"``, so aliasing
+        (``from homelab_mcp.credential_store import store_credential
+        as foo``) silently bypasses the guard.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        violations: list[str] = []
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("credential_store"):
+                    for alias in node.names:
+                        if alias.name in self._GUARDED_SYMBOLS and alias.asname is not None:
+                            violations.append(
+                                f"{rel}:{node.lineno} — from ...credential_store import {alias.name} as {alias.asname}"
+                            )
+
+        assert not violations, (
+            "Phase 41.1 SC-2 + RESEARCH WR-03: aliased imports of "
+            "store_credential/register_credential bypass the AST guard "
+            "(it keys on func.id, which sees the alias). Remove the "
+            "``as <other>`` from the import.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+    def test_phase41_1_guard_call_site_floor(self) -> None:
+        """Defensive sanity check: the guard ENUMERATES at least one
+        guarded-symbol call across the allowlist files. If the count
+        drops to zero, the entire credential test suite has been gutted
+        and the guard is vacuous — fail loudly so a future refactor
+        cannot silently weaken coverage.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        total_calls = 0
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            if rel not in self._ALLOWLIST:
+                continue
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id in self._GUARDED_SYMBOLS
+                ):
+                    total_calls += 1
+
+        assert total_calls >= 1, (
+            "Phase 41.1 guard floor: zero store_credential / "
+            "register_credential calls found across the allowlist files "
+            f"({sorted(self._ALLOWLIST)}). Either the credential test "
+            "suite has been deleted (legitimate consolidation — update "
+            "this floor) or the allowlist no longer reflects reality "
+            "(stale entries — audit and trim)."
+        )
