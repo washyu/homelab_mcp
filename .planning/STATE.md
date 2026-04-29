@@ -4,8 +4,8 @@ milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
 stopped_at: Phase 40 context gathered
-last_updated: "2026-04-29T02:13:14.361Z"
-last_activity: 2026-04-29 -- Phase 39.1 planning complete
+last_updated: "2026-04-29T02:47:00.182Z"
+last_activity: 2026-04-29 -- Phase 39.1 execution started
 progress:
   total_phases: 15
   completed_phases: 5
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 40 — proxmox-vm-lifecycle-polish
+**Current focus:** Phase 39.1 — thread-credential-id-through-drift-enum
 
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 39.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-29 -- Phase 39.1 planning complete
+Phase: 39.1 (thread-credential-id-through-drift-enum) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 39.1
+Last activity: 2026-04-29 -- Phase 39.1 execution started
 
 Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 plans 6/6 complete (awaiting verifier)
 

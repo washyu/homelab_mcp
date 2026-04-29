@@ -846,6 +846,101 @@ class TestPhase381CredBinding:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Phase 39.1 AST regression guard (R6-regression closure; D-16 anticipated extension)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase39_1NoSkipInDriftEnum:
+    """Phase 39.1 R6-regression: every get_proxmox_client(...) call inside
+    drift_detection.py threads credential_id= as a keyword.
+
+    Regression closed: Phase 39 commit e05df24 introduced
+    ``_enumerate_proxmox_vms._enum_one`` which called
+    ``get_proxmox_client(host=h, session=session)`` WITHOUT ``credential_id=``,
+    regressing the Phase 38.1 R6 binding contract on the unknown-VM
+    enumeration path. The Phase 38.1 D-15 guard covered only ``scan_drift``'s
+    row loop body — D-16 explicitly anticipated this extension point:
+    "Phase 39's unknown/changed detection helpers will likely extend the
+    guard's target list when they land."
+
+    Scope (per threat model T-39.1-02 — precise carve-out):
+      * Covers ONLY direct ``get_proxmox_client(...)`` calls inside
+        ``src/homelab_mcp/drift_detection.py``. Other modules and
+        ``getattr(...)``-indirected calls are NOT in scope.
+      * A future ``/version`` ping helper that intentionally does NOT need
+        credentials (e.g., capability-discovery before binding) would need
+        an explicit allowlist entry — but no such helper exists today, and
+        the cost of adding one is minimal.
+
+    Threat model T-39.1-03 mitigation: walk the AST (match
+    ``ast.Call`` where ``func.id == 'get_proxmox_client'``), do NOT regex
+    source text. Source-text matching misses ``getattr`` indirection.
+    """
+
+    def test_get_proxmox_client_calls_thread_credential_id_phase39_1(self) -> None:
+        """Every direct get_proxmox_client(...) call inside drift_detection.py
+        includes credential_id= as a keyword argument."""
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        calls = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "get_proxmox_client"
+        ]
+        assert calls, (
+            "Phase 39.1 guard: zero get_proxmox_client(...) calls found in "
+            "drift_detection.py — either the file was renamed/refactored "
+            "(update this guard) or all calls were removed (the guard is "
+            "now vacuous and should be re-evaluated)."
+        )
+
+        violations: list[int] = []
+        for call in calls:
+            kw_names = {kw.arg for kw in call.keywords if kw.arg is not None}
+            if "credential_id" not in kw_names:
+                violations.append(call.lineno)
+
+        assert not violations, (
+            f"Phase 39.1 R6-regression — get_proxmox_client(...) called "
+            f"WITHOUT credential_id= keyword inside drift_detection.py at "
+            f"line(s): {violations}. This is the Phase 38.1 R6 binding "
+            f"contract: every Proxmox-touching call on the drift call chain "
+            f"must thread the binding UUID via credential_id=. If you have "
+            f"a legitimate non-credentialed call (e.g., a /version ping "
+            f"helper that intentionally bypasses the resolver), add it to "
+            f"an explicit allowlist in this guard with a comment explaining "
+            f"why credential_id= is not needed."
+        )
+
+    def test_phase39_1_guard_catches_added_helper(self) -> None:
+        """Defensive: verify the guard ENUMERATES at least 2 call sites
+        (row-loop in scan_drift + _enum_one in _enumerate_proxmox_vms).
+        If a future refactor consolidates these to a single helper, this
+        count drops — at which point the guard remains correct (every
+        remaining call must still thread credential_id=) but the test
+        shape may need updating to reflect the new structure.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        calls = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "get_proxmox_client"
+        ]
+        assert len(calls) >= 2, (
+            f"Phase 39.1 guard discovery: expected >= 2 get_proxmox_client(...) "
+            f"call sites in drift_detection.py (scan_drift row loop + "
+            f"_enumerate_proxmox_vms._enum_one), found {len(calls)}. If you "
+            f"intentionally consolidated, update this floor or remove the "
+            f"defensive test."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Phase 39 AST regression guards (D-11 / D-12)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -859,9 +954,13 @@ class TestPhase39DriftCases:
     loop body that appends to a bucket-shaped list. This keeps the AST guard
     scope unchanged from Phase 38.1.
 
-    D-12 carve-out: ``_enumerate_proxmox_vms`` is OUT of guard scope — it
-    builds enumeration TARGETS (does not iterate sitemap rows feeding bucket
-    appends), so its defensive ``continue`` for empty hostname is allowed.
+    D-12 carve-out (continue invariant only): ``_enumerate_proxmox_vms`` is
+    OUT of the ``continue``-invariant guard scope — it builds enumeration
+    TARGETS (does not iterate sitemap rows feeding bucket appends), so its
+    defensive ``continue`` for empty hostname is allowed. Phase 39.1 added
+    ``TestPhase39_1NoSkipInDriftEnum`` which DOES cover
+    ``_enumerate_proxmox_vms`` for a different invariant — every
+    ``get_proxmox_client(...)`` call must thread ``credential_id=``.
     """
 
     PHASE_39_NEW_HELPERS = (
