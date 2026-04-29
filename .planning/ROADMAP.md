@@ -281,7 +281,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete    | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 0/0 | Not started | - |
-| 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete   | 2026-04-29 |
+| 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
 
 ## Backlog
 
