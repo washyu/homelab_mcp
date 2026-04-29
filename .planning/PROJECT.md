@@ -236,4 +236,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-28 — Phase 39 (Drift Detection Cases) complete: DRFT-17, DRFT-18, DRFT-19 validated end-to-end in `scan_drift` (unknown / missing / changed buckets).*
+*Last updated: 2026-04-29 — Phase 41.1 (Test Isolation & Keyring Hygiene) complete: session-autouse `_isolate_keyring` fixture in `tests/conftest.py` swaps the keyring backend + monkeypatches `keyring.{set,get,delete}_password` + dual-aliases `_REGISTRY_PATH` for unit + integration suites; SC-3 leak source fixed at `tests/test_sitemap.py:947`; `TestPhase41_1KeyringHygiene` AST guard prevents regressions. Clean-machine invariant verified live (sha256 pre == post on `~/.homelab_mcp/credential_registry.json`).*
