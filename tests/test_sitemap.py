@@ -897,7 +897,6 @@ def test_purge_failed_discoveries_handler_dry_run_default_false(tmp_path, monkey
 
 def test_eligibility_field_phase381(temp_db):
     """Phase 38.1 R7/D-10: NetworkSiteMap.get_sitemap rows must carry eligibility:{ssh, proxmox}."""
-    import asyncio
     from datetime import datetime
 
     from src.homelab_mcp.database import SQLiteAdapter
@@ -905,12 +904,14 @@ def test_eligibility_field_phase381(temp_db):
     sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
     # Store a device directly via the adapter
     adapter: SQLiteAdapter = sitemap.db_adapter  # type: ignore[assignment]
-    device_id = adapter.store_device({
-        "hostname": "test-node",
-        "connection_ip": "10.1.1.1",
-        "last_seen": datetime.now().isoformat(),
-        "status": "success",
-    })
+    device_id = adapter.store_device(
+        {
+            "hostname": "test-node",
+            "connection_ip": "10.1.1.1",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
 
     # With no credential binding both flags should be False
     devices = adapter.get_all_devices()
@@ -937,16 +938,28 @@ def test_eligibility_field_phase381(temp_db):
 @pytest.mark.asyncio
 @patch("src.homelab_mcp.ssh_tools.ssh_discover_system")
 async def test_discover_writes_credential_id_phase381(
-    mock_ssh_discover, temp_db, sample_ssh_discovery_success, tmp_path, monkeypatch,
+    mock_ssh_discover,
+    temp_db,
+    sample_ssh_discovery_success,
+    tmp_path,
+    monkeypatch,
 ):
     """R3: after discover_and_store, the devices row carries ssh_credential_id from the registry entry.
 
     Plan 08 (Wave 4) wires this side-effect — until then this test fails because
     discover_and_store never calls set_device_credential_binding with the resolver's UUID.
     """
-    monkeypatch.setattr(
-        "homelab_mcp.credential_store._REGISTRY_PATH", tmp_path / "registry.json"
-    )
+    # Phase 41.1 SC-3 fix: dual-alias _REGISTRY_PATH monkeypatch. Without
+    # both, the import below resolves register_credential from
+    # src.homelab_mcp.credential_store whose _REGISTRY_PATH still points at
+    # the developer's real ~/.homelab_mcp/credential_registry.json — a
+    # silent leak. The session-autouse fixture in tests/conftest.py also
+    # covers this, but the per-test patch is kept for clarity and to match
+    # the tests/integration/test_credential_binding_round_trip.py:62-65
+    # canonical dual-alias pattern.
+    registry_path = tmp_path / "registry.json"
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
+    monkeypatch.setattr("src.homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
     from src.homelab_mcp.credential_store import register_credential
 
     cred_id = register_credential("test-host", "test-user", credential_type="ssh")
@@ -955,9 +968,7 @@ async def test_discover_writes_credential_id_phase381(
     mock_ssh_discover.return_value = sample_ssh_discovery_success
     sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
 
-    await discover_and_store(
-        sitemap, hostname="test-host", username="test-user", password="test-pass"
-    )
+    await discover_and_store(sitemap, hostname="test-host", username="test-user", password="test-pass")
 
     devices = sitemap.get_all_devices()
     assert len(devices) == 1
