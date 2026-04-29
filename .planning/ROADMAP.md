@@ -237,7 +237,10 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. All `tests/` callers of `store_credential` and `register_credential` are audited; any caller outside a fixture that monkeypatches both `_REGISTRY_PATH` and the keyring is flagged by an AST guard or pytest collect-time assertion.
   3. The leaked `test-host`/`test-user` SSH entry source is identified, fixed at the leak site, and a regression test added.
   4. Running `uv run pytest tests/` against a clean machine leaves `~/.homelab_mcp/credential_registry.json` and the OS keyring exactly as they were before the run (verified via fixture pre/post snapshot).
-**Plans**: TBD (run `/gsd-plan-phase 41.1`)
+**Plans**: 3 plans
+  - [ ] 41.1-01-PLAN.md — Wave-0 forensic instrumentation + SC-1/SC-3/SC-4 RED test scaffolds (xfail-strict until Plan 02)
+  - [ ] 41.1-02-PLAN.md — Wave-1 session-autouse `_isolate_keyring` fixture in tests/conftest.py (3-layer defence) + SC-3 leak fix at tests/test_sitemap.py:947 (dual-alias `_REGISTRY_PATH`) + flip Plan 01 RED scaffolds GREEN + delete forensic harness
+  - [ ] 41.1-03-PLAN.md — Wave-2 SC-2 AST guard `TestPhase41_1KeyringHygiene` in tests/test_ast_regression.py (allowlist + eager-binding ban + alias ban + call-site floor)
 
 ## Progress
 
@@ -278,7 +281,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete    | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 0/0 | Not started | - |
-| 41.1 Test Isolation & Keyring Hygiene | v1.7 | 0/0 | Not started | - |
+| 41.1 Test Isolation & Keyring Hygiene | v1.7 | 0/3 | Not started | - |
 
 ## Backlog
 
