@@ -9,7 +9,7 @@
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
 - ✅ **v1.5 Critical Bug Fixes** — Phases 31-32 (shipped 2026-04-20)
 - ✅ **v1.6 Credential Architecture Cleanup** — Phases 33, 33.1, 34, 35 (shipped 2026-04-24)
-- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-40 (in progress)
+- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-41.1 (in progress)
 
 ## Phases
 
@@ -97,7 +97,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 </details>
 
 <details>
-<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-40) — IN PROGRESS</summary>
+<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-41.1) — IN PROGRESS</summary>
 
 - [ ] **Phase 36: Drift ↔ Sitemap Foundation** — Drop parallel `drift_baselines` table; wire `scan_infrastructure_drift` to iterate sitemap rows; resolve Proxmox creds via `resolve_proxmox_credentials`
 - [ ] **Phase 37: Drift Output Shape & Error Hygiene** — Consistent shape across all filter scopes; four-bucket coverage transparency; error messages reference sitemap CRUD tools, never `PROXMOX_HOST`
@@ -105,6 +105,8 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 - [ ] **Phase 39: Drift Detection Cases** — Detect unknown (manually-created VMs not in sitemap), missing (sitemap rows that no longer probe-respond), and changed (fingerprint differs from stored) infrastructure
 - [ ] **Phase 39.1: Thread credential_id through drift enum** (INSERTED) — Close the Phase 38.1 R6 regression introduced by Phase 39 DRFT-17 (`_enumerate_proxmox_vms._enum_one` missing `credential_id=`)
 - [ ] **Phase 40: Proxmox VM Lifecycle Polish** — `get_proxmox_vm_status` clean "VM not found" error; `create_proxmox_vm` schema accuracy + cred-error guidance pointing to `credentials add`, never `PROXMOX_HOST`
+- [ ] **Phase 41: Binding-Aware Resolver Hygiene** (UAT — INSERTED) — Bugs AA + BB + V from 2026-04-28 Claude Desktop UAT: `discover_and_map` shares the same row-binding-aware credential helper as drift scan; sitemap-known hosts dial `connection_ip` not hostname; failed discoveries write errors to the requested-identifier row, never collapse onto degenerate zombie rows
+- [ ] **Phase 41.1: Test Isolation & Keyring Hygiene** (INSERTED) — Integration tests stop leaking real-keyring writes; session-scoped keyring monkeypatch fixture; AST guard against future regressions
 
 </details>
 
@@ -213,6 +215,30 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   - [x] 40-02-PLAN.md — proxmox_tools_schema.py: host required on create_proxmox_vm + D-05 description sweep (POL-02); openapi_app.py INFRA_REQUIREMENTS rewrite
   - [x] 40-03-PLAN.md — Tests + AST guard extension (POL-01/02/03 functional tests + D-06)
 
+### Phase 41: Binding-Aware Resolver Hygiene (UAT — INSERTED)
+
+**Goal**: A user calling `discover_and_map hostname=pve` against a sitemap-known host succeeds via the same UUID-binding path that drift scan already uses; sitemap-known hosts dial `connection_ip` rather than `hostname`; failed discoveries write errors to a row tagged with the requested identifier and never collapse onto degenerate-hostname zombie rows. Three UAT bugs in one focused PR — they share a conceptual root: the sitemap row should be the resolver for both credentials and connection targets, and a failure in either path shouldn't poison row identity.
+**Depends on**: Phase 38.1, Phase 39.1
+**Requirements**: Closes UAT bugs AA, BB, V (surfaced in 2026-04-28 Claude Desktop session against the v1.7 candidate). No new REQ-IDs — these are gaps where shipped requirements aren't fully wired through every call path.
+**Success Criteria** (what must be TRUE):
+  1. **Bug AA closed**: `discover_and_map hostname=<sitemap-row-hostname>` resolves SSH credentials via the same row-binding-aware helper that drift scan uses. Both call sites share one helper, locked by an AST guard so future tools that resolve SSH creds against a known sitemap row cannot drift back to direct hostname-keyring lookups. Workaround `hostname=<connection_ip>` is no longer required.
+  2. **Bug V closed**: When a sitemap row exists for the target identifier, the Proxmox API client and SSH dial target use `row.connection_ip`, not `row.hostname`. `/etc/hosts` and external DNS are not required to scan sitemap-known hosts.
+  3. **Bug BB closed**: A failed `discover_and_map` writes the error to a row matching the requested identifier (input hostname, IP, or whatever the user passed). Errors never fall through to a degenerate-hostname row. Regression test asserts that a failed call against a fresh hostname creates/updates the correct row, and that the empty-hostname zombie never collects errors from unrelated hosts.
+  4. AST guard locks the shared-helper invariant for both `discover_and_map` and `_drift_probe_one` (or successor symbols).
+**Plans**: TBD (run `/gsd-plan-phase 41`)
+
+### Phase 41.1: Test Isolation & Keyring Hygiene (INSERTED)
+
+**Goal**: The integration test suite never writes credentials to the developer's real OS keyring or registry file. Test runs are idempotent and leave no `~/.homelab_mcp/credential_registry.json` mutations or Windows Credential Manager / macOS keychain / Linux secret-service entries behind.
+**Depends on**: None (orthogonal to Phase 41 binding work; can run in parallel)
+**Requirements**: Closes test isolation gap surfaced in 2026-04-28 UAT session — `tests/integration/test_credential_binding_round_trip.py` calls `store_credential("pve", "root@pam!tok", "fake-secret-token", credential_type="proxmox")` (and similar with `192.168.10.20`, `pve.home.lab`) without keyring monkeypatch. The OS keyring writes persist across test runs; users running the suite end up with `fake-secret-token` entries in their Credential Manager. Plus a leaked `test-host`/`test-user` SSH entry whose source needs identification.
+**Success Criteria** (what must be TRUE):
+  1. A session-scoped pytest fixture patches `keyring.get_password`, `keyring.set_password`, and `keyring.delete_password` to an in-memory dict for the entire test suite (unit + integration). No test path can write to the real OS keyring under any backend.
+  2. All `tests/` callers of `store_credential` and `register_credential` are audited; any caller outside a fixture that monkeypatches both `_REGISTRY_PATH` and the keyring is flagged by an AST guard or pytest collect-time assertion.
+  3. The leaked `test-host`/`test-user` SSH entry source is identified, fixed at the leak site, and a regression test added.
+  4. Running `uv run pytest tests/` against a clean machine leaves `~/.homelab_mcp/credential_registry.json` and the OS keyring exactly as they were before the run (verified via fixture pre/post snapshot).
+**Plans**: TBD (run `/gsd-plan-phase 41.1`)
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -251,6 +277,8 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete    | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
+| 41. Binding-Aware Resolver Hygiene | v1.7 | 0/0 | Not started | - |
+| 41.1 Test Isolation & Keyring Hygiene | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
 
@@ -329,6 +357,105 @@ Plans:
 ### Phase 999.9: `probe_pending_updates` advisory family (BACKLOG)
 
 **Goal:** [Captured during v1.7 scoping 2026-04-25] Sibling concept to drift, not part of it. Advisory probes that surface "this system needs attention" signals that don't fit the sitemap-vs-live-state divergence model: pending OS updates (apt/dnf/zypper), self-hosted-app update notifications (Nextcloud admin API, Plex, etc.), kernel-update-required-for-running-modules state, certificate expiry, etc. Asymmetric across distros — Nextcloud surfaces nag messages because it has an update channel; Ubuntu silently sits with `apt list --upgradable` available only when SSH'd in. Goal is a normalized advisory output across the homelab. Likely a separate top-level tool (`probe_homelab_advisories` or similar) or its own MCP Resource. Could fold into a future "Homelab Health Check" entry point alongside drift output. Out of v1.7/v1.7.1/v1.7.2 scope.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.10: Drift scan distinguishes 403 from unreachable (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28, Bug X] Proxmox 403 (`Permission check failed (/, Sys.Audit)`) currently classifies under the `unreachable` bucket. The host is reachable, the credential is valid, the API is responding — only the RBAC scope is wrong. Lumping permission-denied into unreachable sends users debugging network/firewall when the real fix is granting `PVEAuditor` or disabling token privilege separation. Either add an `unauthorized` bucket or expand `not_eligible` reason enum with `insufficient_privilege`. Remediation message should mention privilege separation / `Sys.Audit` role.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.11: drift_tools_schema.py four-bucket → five-bucket sweep (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28, Bug T; also in v1.7-MILESTONE-AUDIT.md tech_debt] `tool_schemas/drift_tools_schema.py:5-19` description text says "four-bucket" but runtime returns five (probed_ok, unreachable, not_eligible, unknown, changed). Phase 38.1 added not_eligible to envelope; description copy was not updated. Affects agent comprehension only, not output. One-line edit, no behavior change.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.12: drift scan `scanned` count docstring clarity (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28, Bug Y] When the unknown bucket has entries, `scanned` count includes them. Earlier scans without guests showed `scanned == total_devices`; with 10 unknown guests, `scanned = 6 + 10 = 16`. Defensible behavior, but the docstring implies `scanned` reflects sitemap rows only. Update docstring to clarify that `scanned` includes unknown-bucket entries.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.13: probed_ok cluster_name population (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28, Bug Z] Schema has a `cluster_name` field on probed_ok bucket entries. Currently always null even though the test host is part of a configured cluster. Either populate from the `/cluster/status` API response (the resolver Tier-2 cluster walk already discovers cluster_name; just need to surface it on the probe row), or document as reserved.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.14: drift `node=` filter matches connection_ip + better miss guidance (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28, Bug W] `scan_infrastructure_drift(node="192.168.10.20")` returns `scanned: 0` with the generic "no Proxmox hosts in sitemap matched this scan" guidance because the filter is exact-match on hostname only. Users with an IP-centric mental model (natural since credentials may have been registered by IP) get no hint to use the hostname form. Either match the filter against either `hostname` or `connection_ip`, or have the guidance string check whether the filter value matches a known `connection_ip` and suggest the corresponding hostname.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.15: not_eligible.scope field cleanup (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28, Bug S] `not_eligible` records have a `scope: "unknown"` field that's always the literal string "unknown". Either reserved for Phase 39 per-VM scope distinction (in which case document as such), or vestigial and should be dropped. Decide and either document or remove.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.16: Proxmox token entry uses input() instead of getpass() (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28] Proxmox API tokens are long opaque strings users paste rather than secrets they remember. `getpass.getpass()` suppresses TTY echo, so silent paste failures (Ctrl+V didn't fire, clipboard wasn't populated) are indistinguishable from successful paste. Modern CLIs (gh, doctl, op) echo opaque-token input by default. One-line branch in `_cmd_credentials_add`: `input("API Token: ")` for `--type proxmox`, keep `getpass()` for SSH passwords. Optionally also add `--token-file` / `--stdin` for scripted setup (matches existing `--key-path` pattern).
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.17: credentials list tabular columns instead of username@hostname (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28] `credentials list` displays entries as `username@hostname`. Proxmox API token usernames contain `@` (e.g., `root@pam!tok`), making `root@pam!tok@pve` visually unparseable — three `@` signs and no separator. Switch tabular output to columns: `USERNAME | HOSTNAME | SCOPE | AUTH_TYPE`. Optionally show short `credential_id` prefix in tabular output (8 hex chars) to make `credentials remove` and `credentials link` workflows easier without re-running `--json`.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.18: credentials add auto-bind prompt clarity (BACKLOG)
+
+**Goal:** [Captured during v1.7 UAT 2026-04-28] `_auto_bind_credential` prompt `Sitemap row 'pve' is already bound to a different proxmox credential. Overwrite the mapping? [y/N]:` reads like an abort point but the credential is already stored in keyring + registry by the time the prompt fires. Saying `n` keeps the existing binding, leaves the new credential orphaned, and prints "Stored proxmox credential ..." which contradicts user intent. Fixes (cheapest first): reword prompt to make stored-vs-binding distinction explicit; add post-`n` feedback pointing to `credentials link <hostname> <new-uuid> --type proxmox`. Larger fix: ask the binding question before commit, with `[y/N/abort]` third option that rolls back the keyring + registry write.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.19: Phase 39 drift_detection.py review backlog (BACKLOG)
+
+**Goal:** [Captured from v1.7-MILESTONE-AUDIT.md tech_debt] Phase 39 code review surfaced 4 advisory BLOCKERs + 8 WARNINGs, all localized to `src/homelab_mcp/drift_detection.py`. BLOCKERs: duplicate-hostname collapse in `dict(pairs)` (`:391-395`); `int(vmid)` crash on malformed Proxmox payload (`:255`); cold `_HOST_CLUSTER_CACHE` defeats cluster de-dupe on restart (`:296-307`); enumeration failures swallowed at `logger.debug` (`:317-319`). WARNINGs: `last_seen` JSON serialization (`:583,689`), naive timestamp TZ (`:154-167`), per-row docstring shape drift (`:476-485`), dead defensive return (`:387-389`), current-only key skip (`:213-223`), scope/cluster_name reuse across iterations (`:586-691`), `.days` threshold off-by-23h59m (`:187`), SSH pre-pass vs degenerate-row routing order (`:517-526`). None block ROADMAP SC achievement (audit confirms goal-backward), but they are real correctness gaps suitable for a polish phase.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.20: Phase 38 documentation cleanup (BACKLOG)
+
+**Goal:** [Captured from v1.7-MILESTONE-AUDIT.md tech_debt] Phase 38 fingerprint work left documentation gaps: IN-03 `merge_fingerprint` deep-merge docstring is misleading (capabilities sub-dict is one-level overwrite); WR-03 `update_device_fingerprint_preview` doesn't surface that the persistent path mutates `last_seen` and `updated_at`; IN-04 pre-existing prompts (`connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`) absent from `docs/tool-reference.md` MCP Prompts section. Plus `ssh_tools.py:312-401` dead `_resolve_ssh_credentials_with_binding` — retained for plan-acceptance grep per REVIEW-FIX WR-01, decide whether to remove or annotate. Pure docs / cleanup phase, no behavior change.
 **Requirements:** TBD
 **Plans:** 0 plans
 
