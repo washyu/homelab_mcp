@@ -225,7 +225,12 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. **Bug V closed**: When a sitemap row exists for the target identifier, the Proxmox API client and SSH dial target use `row.connection_ip`, not `row.hostname`. `/etc/hosts` and external DNS are not required to scan sitemap-known hosts.
   3. **Bug BB closed**: A failed `discover_and_map` writes the error to a row matching the requested identifier (input hostname, IP, or whatever the user passed). Errors never fall through to a degenerate-hostname row. Regression test asserts that a failed call against a fresh hostname creates/updates the correct row, and that the empty-hostname zombie never collects errors from unrelated hosts.
   4. AST guard locks the shared-helper invariant for both `discover_and_map` and `_drift_probe_one` (or successor symbols).
-**Plans**: TBD (run `/gsd-plan-phase 41`)
+**Plans**: 5 plans
+  - [ ] 41-01-PLAN.md — Wave 0 RED tests (functional regressions for Bugs AA/BB/V + AST guard scaffold; xfail-strict)
+  - [ ] 41-02-PLAN.md — Wave 1 new resolve_ssh_for_sitemap_row helper in ssh_tools.py + 6 unit tests (Bug AA helper)
+  - [ ] 41-03-PLAN.md — Wave 2 wire helper into sitemap.discover_and_store + parse_discovery_output + ssh_connection_wrapper envelopes (Bug AA + BB + V discover side)
+  - [ ] 41-04-PLAN.md — Wave 3 wire helper into drift_detection._probe_one + scan_drift Proxmox loop dials connection_ip (Bug V drift side)
+  - [ ] 41-05-PLAN.md — Wave 4 finalize TestPhase41BindingAwareResolver AST guard (remove xfail markers + audit allowlist)
 
 ### Phase 41.1: Test Isolation & Keyring Hygiene (INSERTED)
 
@@ -280,7 +285,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete    | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
-| 41. Binding-Aware Resolver Hygiene | v1.7 | 0/0 | Not started | - |
+| 41. Binding-Aware Resolver Hygiene | v1.7 | 0/5 | Not started | - |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
 
 ## Backlog
