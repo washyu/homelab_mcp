@@ -20,6 +20,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 # Strings whose presence in source AST (as Name, Attribute, or string literals) indicates regression
 FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "ssh_credentials",  # D-15: DB table name
@@ -1311,4 +1313,143 @@ class TestPhase41_1KeyringHygiene:
             "suite has been deleted (legitimate consolidation — update "
             "this floor) or the allowlist no longer reflects reality "
             "(stale entries — audit and trim)."
+        )
+
+
+class TestPhase41BindingAwareResolver:
+    """Phase 41 SC-4: discover_and_store and drift's _probe_one BOTH call
+    the shared row-binding-aware helper resolve_ssh_for_sitemap_row.
+
+    RED in Wave 0 (xfail strict), flips GREEN when Plans 02-04 land.
+    A future regression that drops one of the call sites or aliases the
+    import re-RED's the test.
+
+    Three checks (mirror TestPhase41_1KeyringHygiene + TestPhase39_1NoSkipInDriftEnum):
+      1. test_resolve_ssh_for_sitemap_row_helper_exists — the new symbol
+         exists in src/homelab_mcp/ssh_tools.py.
+      2. test_shared_helper_used_by_both_call_sites — both sitemap.py and
+         drift_detection.py have at least one direct call to the helper
+         under its canonical name (no `as` aliasing).
+      3. test_no_unguarded_resolve_ssh_credentials_in_call_chain — direct
+         calls to resolve_ssh_credentials in sitemap.py / drift_detection.py
+         must be on the allowlist (intentional bypass) or zero — the
+         post-fix invariant is "go through the new helper, not the
+         underlying resolver."
+
+    Pitfall 5 (function-rename gotcha): the AST guards key on the
+    IMPLEMENTATION symbol names (`discover_and_store`, `_probe_one`) NOT
+    the MCP tool names (`discover_and_map`, `scan_infrastructure_drift`).
+    A future refactor that renames the implementation symbols must
+    update this guard.
+    """
+
+    _SCANNED_FILES = ("sitemap.py", "drift_detection.py")
+    _RESOLVER_CALLS_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+        {
+            # (filename, function_or_module_scope) — intentional bypass call
+            # sites. Empty initially; Plan 04 may add (drift_detection.py, _probe_one)
+            # if the implementation chooses to retain the inline call. Plan 04
+            # SUMMARY must explicitly justify any allowlist addition.
+        }
+    )
+
+    @pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 — flips GREEN when Plan 02 lands resolve_ssh_for_sitemap_row")
+    def test_resolve_ssh_for_sitemap_row_helper_exists(self) -> None:
+        """Phase 41 Bug AA: ssh_tools.py must define resolve_ssh_for_sitemap_row."""
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "ssh_tools.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="ssh_tools.py")
+        targets = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+            and n.name == "resolve_ssh_for_sitemap_row"
+        ]
+        assert targets, (
+            "Phase 41 Bug AA: src/homelab_mcp/ssh_tools.py must define "
+            "function resolve_ssh_for_sitemap_row — the shared row-binding-"
+            "aware credential resolver. RESEARCH §Pattern 1 (lines 175-240) "
+            "is the proposed signature."
+        )
+
+    @pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 — flips GREEN when Plans 03 + 04 wire the helper into both call sites")
+    def test_shared_helper_used_by_both_call_sites(self) -> None:
+        """Phase 41 Bug AA + V: both sitemap.py and drift_detection.py must
+        call resolve_ssh_for_sitemap_row under its canonical name (no aliasing).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        per_file_calls: dict[str, int] = {}
+        for fname in self._SCANNED_FILES:
+            source = (src_root / fname).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=fname)
+            # WR-03 / Phase 39.1 pattern: pin canonical name to defeat aliasing.
+            imports = [
+                a
+                for n in ast.walk(tree)
+                if isinstance(n, ast.ImportFrom) and (n.module or "").endswith("ssh_tools")
+                for a in n.names
+                if a.name == "resolve_ssh_for_sitemap_row"
+            ]
+            if imports:
+                assert all(a.asname is None for a in imports), (
+                    f"Phase 41 guard (canonical-name pin): {fname} imports "
+                    f"resolve_ssh_for_sitemap_row under an alias; aliasing "
+                    f"defeats the ast.Name match below. Drop the alias."
+                )
+            calls = [
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "resolve_ssh_for_sitemap_row"
+            ]
+            per_file_calls[fname] = len(calls)
+        missing = [f for f, c in per_file_calls.items() if c == 0]
+        assert not missing, (
+            f"Phase 41 Bug AA + V: resolve_ssh_for_sitemap_row not called in "
+            f"{missing}. Each of {list(self._SCANNED_FILES)} must call the "
+            f"shared helper at least once. Per-file call counts: {per_file_calls}."
+        )
+        assert sum(per_file_calls.values()) >= 2, (
+            f"Phase 41 call-site floor: expected >= 2 total call sites "
+            f"(at least one per file), found {sum(per_file_calls.values())}. "
+            f"If a refactor consolidated to a helper, update this floor."
+        )
+
+    @pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 — flips GREEN when Plans 03 + 04 replace direct resolve_ssh_credentials calls with the helper")
+    def test_no_unguarded_resolve_ssh_credentials_in_call_chain(self) -> None:
+        """Phase 41 Bug AA: no unguarded direct resolve_ssh_credentials calls
+        in sitemap.py or drift_detection.py — these must go through the helper.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        violations: list[str] = []
+        for fname in self._SCANNED_FILES:
+            source = (src_root / fname).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=fname)
+            # Find every direct ast.Call with func.id == "resolve_ssh_credentials".
+            # These should go through the new helper instead.
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "resolve_ssh_credentials"
+                ):
+                    # Check allowlist (file, enclosing-function) — initially empty.
+                    # The walk does not track enclosing function; record (fname, "<any>")
+                    # for now and rely on the allowlist set membership.
+                    key = (fname, "<call>")
+                    if key in self._RESOLVER_CALLS_ALLOWLIST:
+                        continue
+                    violations.append(
+                        f"{fname}:{node.lineno} — direct resolve_ssh_credentials(...) "
+                        f"call (use resolve_ssh_for_sitemap_row instead)"
+                    )
+        assert not violations, (
+            "Phase 41 Bug AA: direct resolve_ssh_credentials(...) calls in "
+            "the discover/drift call chain. The shared row-binding-aware "
+            "helper resolve_ssh_for_sitemap_row is the only path; if you "
+            "have a legitimate bypass (e.g., the helper itself delegates "
+            "to it; that's in ssh_tools.py and out of scope), add the "
+            "(file, scope) tuple to _RESOLVER_CALLS_ALLOWLIST with a "
+            "one-line justification.\n\nViolations:\n  " + "\n  ".join(violations)
         )
