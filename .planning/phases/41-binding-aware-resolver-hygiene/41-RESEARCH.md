@@ -450,24 +450,28 @@ violations = [
 
 **These assumptions are explicit hypotheses for discuss-phase to confirm or revise.** None are blockers; all have safe defaults.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Multi-match disambiguation policy** — see Assumption A1.
+   - **RESOLVED:** Prefer rows with status='success'; if exactly one healthy row remains, use it. Otherwise raise CredentialNotFoundError with a disambiguation pointer to get_network_sitemap. Encoded in Plan 02 (resolve_ssh_for_sitemap_row body) and Plan 02 unit test test_helper_raises_on_ambiguous_match + test_helper_disambiguates_multi_match_via_status_success.
    - What we know: `find_devices_by_hostname_or_ip` returns all matches; multi-match is a real possibility (e.g., hostname collision across IPs).
    - What's unclear: whether to pick the first healthy row, raise an error, or let the caller decide.
    - Recommendation: lock as discuss-phase question; default to "prefer status='success', else raise."
 
 2. **Should drift's Bug V fix happen in this phase or a follow-up?**
+   - **RESOLVED:** In scope for this phase. Both call sites (sitemap.discover_and_store and drift_detection._probe_one + Proxmox-client loop) use the shared helper. Encoded in Plans 03 + 04; AST guard test_shared_helper_used_by_both_call_sites enforces.
    - What we know: drift symmetrically suffers from Bug V (`drift_detection.py:759, 498`).
    - What's unclear: scope — UAT bug V was filed against `discover_and_map`, so technically drift's version is a separate bug.
    - Recommendation: include both in this phase. They share the helper, and the AST guard naturally covers both.
 
 3. **Backwards compat for `register_server` and `bulk_discover_and_map`** —
+   - **RESOLVED:** bulk_discover_and_store loops discover_and_store and inherits the fix transparently (no separate plan needed). register_server scope deferred — Phase 41 does not modify it; a follow-up phase covers it if UAT surfaces a need. Documented in Plan 03 SUMMARY scope notes.
    - What we know: `register_server` (`ssh_tools.py:997+`) and `bulk_discover_and_store` also resolve SSH credentials.
    - What's unclear: whether they should ALSO use the new helper, or stay on `resolve_ssh_credentials` direct.
    - Recommendation: scope `register_server` IN (it benefits from row-binding too) and `bulk_discover_and_store` IN (it loops `discover_and_store`, inherits the fix). Discuss-phase confirm.
 
 4. **Telemetry / logging on the new path** —
+   - **RESOLVED:** DEBUG-level logs at the three resolution outcomes (zero rows / single row + binding / single row no binding). No log on multi-match raise — exception message is the signal. Encoded in Plan 02 task 1 action under "DEBUG logging".
    - What we know: Phase 38.1 D-12 added `reason_hint` on `CredentialNotFoundError`; drift uses it for bucket routing.
    - What's unclear: whether the helper's row-found / row-not-found / multi-match outcomes need a structured log line.
    - Recommendation: log at DEBUG ("resolved via sitemap row" / "no row matched, fell back to keyring scan") for observability; no error-path log unless multi-match.
