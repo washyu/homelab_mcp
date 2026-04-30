@@ -809,6 +809,99 @@ async def ssh_discover_system(
     return json.dumps(payload, indent=2)
 
 
+def resolve_ssh_for_sitemap_row(
+    identifier: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+) -> tuple[SSHCredentials, dict[str, Any] | None]:
+    """Phase 41 Bug AA + V shared helper — sitemap-row-aware SSH credential resolver.
+
+    Both :func:`sitemap.discover_and_store` and
+    :func:`drift_detection._bulk_universal_core_probes._probe_one` call this so
+    the row-binding contract from Phase 38.1 R3/R6 reaches every SSH credential
+    lookup, not just the drift path.
+
+    Resolution order:
+      1. Look up sitemap row(s) matching ``identifier`` (hostname OR
+         connection_ip) via :meth:`database.DatabaseAdapter.find_devices_by_hostname_or_ip`.
+      2. **Zero matches** → no sitemap row yet (fresh discovery); fall through
+         to standard :func:`resolve_ssh_credentials`. Returns ``(creds, None)``.
+      3. **Single match, ssh_credential_id non-null** →
+         ``resolve_ssh_credentials(identifier, ..., credential_id=row['ssh_credential_id'])``
+         (Tier-0 UUID short-circuit). Returns ``(creds, row)``.
+      4. **Single match, ssh_credential_id null** → degenerate / legacy row;
+         standard :func:`resolve_ssh_credentials` (Tier-1/2). Returns ``(creds, row)``.
+      5. **Multiple matches** → prefer ``status='success'`` rows; if exactly
+         one healthy row remains, use it. Else raise
+         :class:`CredentialNotFoundError` with disambiguation pointer
+         (mirrors :func:`_resolve_username_from_registry`'s multi-match shape).
+
+    The returned ``row`` dict carries ``connection_ip`` for the caller to use
+    as the SSH dial target (Bug V). Callers must guard for empty/None
+    ``connection_ip`` and fall back to ``identifier`` (RESEARCH Pitfall 4).
+
+    Args:
+        identifier: hostname OR connection_ip the user passed.
+        username/password/key_path/port: standard resolver passthrough.
+
+    Returns:
+        Tuple ``(SSHCredentials, sitemap_row_dict | None)``.
+
+    Raises:
+        CredentialNotFoundError: multi-match without unambiguous status='success';
+            also propagated from the underlying :func:`resolve_ssh_credentials`
+            when no creds exist.
+    """
+    db = get_database_adapter()
+    matched_rows = db.find_devices_by_hostname_or_ip(identifier)
+
+    if len(matched_rows) == 0:
+        logger.debug(
+            "resolve_ssh_for_sitemap_row: no row matched %r, falling back to keyring scan",
+            identifier,
+        )
+        creds = resolve_ssh_credentials(identifier, username, password, key_path, port)
+        return creds, None
+
+    if len(matched_rows) >= 2:
+        # RESEARCH §Pitfall 6 / Open Question 1: prefer status='success';
+        # if still ambiguous, raise with a disambiguation pointer.
+        healthy = [r for r in matched_rows if r.get("status") == "success"]
+        if len(healthy) == 1:
+            matched_rows = healthy
+        else:
+            registered = ", ".join(
+                f"{r.get('hostname', '?')}@{r.get('connection_ip', '?')}"
+                for r in matched_rows
+            )
+            raise CredentialNotFoundError(
+                f"Multiple sitemap rows matched {identifier!r}: {registered}. "
+                "Disambiguate by passing the exact hostname or connection_ip, "
+                "or call get_network_sitemap to inspect."
+            )
+
+    row = matched_rows[0]
+    binding = row.get("ssh_credential_id")
+    if binding:
+        logger.debug(
+            "resolve_ssh_for_sitemap_row: row matched %r → credential_id=%s",
+            identifier,
+            binding,
+        )
+        creds = resolve_ssh_credentials(
+            identifier, username, password, key_path, port, credential_id=binding,
+        )
+    else:
+        logger.debug(
+            "resolve_ssh_for_sitemap_row: row matched %r but ssh_credential_id is null",
+            identifier,
+        )
+        creds = resolve_ssh_credentials(identifier, username, password, key_path, port)
+    return creds, row
+
+
 def _scan_registry_for_binding(
     hostname: str,
     username: str | None,
