@@ -4,8 +4,8 @@ milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
 stopped_at: Phase 40 context gathered
-last_updated: "2026-04-30T03:30:28.618Z"
-last_activity: 2026-04-30 -- Phase 41 planning complete
+last_updated: "2026-04-30T21:16:24.337Z"
+last_activity: 2026-04-30 -- Phase 41 execution started
 progress:
   total_phases: 15
   completed_phases: 7
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 41.1 — test-isolation-keyring-hygiene
+**Current focus:** Phase 41 — binding-aware-resolver-hygiene
 
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 999.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-30 -- Phase 41 planning complete
+Phase: 41 (binding-aware-resolver-hygiene) — EXECUTING
+Plan: 1 of 9
+Status: Executing Phase 41
+Last activity: 2026-04-30 -- Phase 41 execution started
 
 Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 plans 6/6 complete (awaiting verifier)
 
