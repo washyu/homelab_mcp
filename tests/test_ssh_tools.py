@@ -6,6 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncssh
 import pytest
 
+from homelab_mcp.ssh_tools import (
+    CredentialNotFoundError,
+    SSHCredentials,
+    resolve_ssh_for_sitemap_row,
+)
 from src.homelab_mcp.ssh_tools import (
     _sudo_run,
     ensure_mcp_ssh_key,
@@ -873,7 +878,7 @@ async def test_ssh_discover_system_hostname_timeout_does_not_suppress_probes_pha
 
 def test_resolve_ssh_credential_id_short_circuit_phase381(monkeypatch: pytest.MonkeyPatch) -> None:
     """D-13: resolve_ssh_credentials(hostname='host', credential_id=<uuid>) short-circuits to UUID lookup."""
-    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415, F401
 
     from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
 
@@ -1064,3 +1069,153 @@ def test_resolve_ssh_keyring_miss_sets_reason_hint_keyring_desync_phase381() -> 
         f"Phase 38.1 D-08 SSH: expected reason_hint='keyring_desync', got: "
         f"{getattr(exc_info.value, 'reason_hint', None)!r}"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 41 Plan 02 — Unit tests for resolve_ssh_for_sitemap_row helper
+# Covers all 5 resolution paths + multi-match disambiguation case (6 tests).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _stub_creds() -> SSHCredentials:
+    """Return a minimal SSHCredentials stub for test mocks."""
+    return SSHCredentials(hostname="stub", username="root", port=22)
+
+
+def test_helper_uses_row_binding_when_single_match_with_binding(mocker):
+    """Phase 41 Bug AA: single match with ssh_credential_id → Tier-0 UUID short-circuit."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "192.168.10.20",
+            "ssh_credential_id": "uuid-abc",
+            "status": "success",
+        }
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("pve")
+
+    assert resolve.call_args.kwargs.get("credential_id") == "uuid-abc"
+    assert row is not None and row["connection_ip"] == "192.168.10.20"
+
+
+def test_helper_falls_back_when_no_row_matches(mocker):
+    """Phase 41 Bug AA: zero row matches → bare resolve_ssh_credentials (no credential_id)."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = []
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("never-seen")
+
+    assert "credential_id" not in resolve.call_args.kwargs
+    assert row is None
+
+
+def test_helper_handles_unbound_row(mocker):
+    """Phase 41: single match with null ssh_credential_id → Tier-1/2 fallback, row returned."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "old-host",
+            "connection_ip": "10.0.0.5",
+            "ssh_credential_id": None,
+            "status": "success",
+        }
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("old-host")
+
+    assert "credential_id" not in resolve.call_args.kwargs
+    assert row is not None and row["connection_ip"] == "10.0.0.5"
+
+
+def test_helper_raises_on_ambiguous_match(mocker):
+    """Phase 41 T-41-02-01: multi-match with no status='success' rows → CredentialNotFoundError."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.10",
+            "ssh_credential_id": "uuid-1",
+            "status": "error",
+        },
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.11",
+            "ssh_credential_id": "uuid-2",
+            "status": "error",
+        },
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+
+    with pytest.raises(CredentialNotFoundError) as exc:
+        resolve_ssh_for_sitemap_row("pve")
+    assert "Multiple sitemap rows matched" in str(exc.value)
+    assert "get_network_sitemap" in str(exc.value)
+
+
+def test_helper_handles_empty_connection_ip(mocker):
+    """Phase 41 Bug V: empty connection_ip → helper does NOT raise; caller's responsibility."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "",
+            "ssh_credential_id": "uuid-abc",
+            "status": "success",
+        }
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("pve")
+
+    # Helper does NOT validate connection_ip — caller's responsibility.
+    assert row is not None and row["connection_ip"] == ""
+
+
+def test_helper_disambiguates_multi_match_via_status_success(mocker):
+    """Phase 41 T-41-02-01: multi-match with exactly one status='success' → picks healthy row."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.10",
+            "ssh_credential_id": "uuid-old",
+            "status": "error",
+        },
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.20",
+            "ssh_credential_id": "uuid-new",
+            "status": "success",
+        },
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("pve")
+
+    assert resolve.call_args.kwargs.get("credential_id") == "uuid-new"
+    assert row is not None and row["status"] == "success"
