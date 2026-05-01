@@ -266,7 +266,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 **Plans**: 3 plans
   - [x] 42-01-PLAN.md — All 12 source fixes (B1-B4, W1-W8) applied to drift_detection.py + sitemap.py (3 tasks: enumeration robustness, TZ/JSON hygiene, dead-code/docstring sweep)
   - [x] 42-02-PLAN.md — Regression tests in tests/test_drift_detection_polish.py covering all 12 findings (2 tasks: BLOCKER tests, WARNING tests)
-  - [ ] 42-03-PLAN.md — Full quality gate (ruff + mypy + AST guards + ≥907 unit tests)
+  - [x] 42-03-PLAN.md — Full quality gate (ruff + mypy + AST guards + ≥907 unit tests)
 
 ### Phase 43: Phase 38 Documentation Cleanup (POLISH)
 
@@ -322,7 +322,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 9/9 | Complete    | 2026-05-01 |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
-| 42. Drift Detection Polish | v1.7 | 2/3 | In Progress|  |
+| 42. Drift Detection Polish | v1.7 | 3/3 | Complete   | 2026-05-01 |
 | 43. Phase 38 Documentation Cleanup | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
@@ -331,7 +331,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
