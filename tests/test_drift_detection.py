@@ -1957,7 +1957,11 @@ class TestPhase39Changed:
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
                 AsyncMock(
                     return_value={
-                        "pve1": {
+                        # Phase 42 B1: probe map keyed on
+                        # (hostname, ssh_credential_id) tuple — matches the
+                        # row's ssh_credential_id from
+                        # sitemap_row_with_stored_fingerprint fixture.
+                        ("pve1", "22222222-2222-2222-2222-222222222222"): {
                             "fingerprint": mock_universal_core_probe_drifted,
                             "partial": False,
                             "timed_out_commands": [],
@@ -2182,7 +2186,10 @@ class TestPhase39Changed:
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
                 AsyncMock(
                     return_value={
-                        "pve1": {
+                        # Phase 42 B1: probe map keyed on
+                        # (hostname, ssh_credential_id) tuple — matches the
+                        # row's ssh_credential_id literal defined inline above.
+                        ("pve1", "ffffffff-ffff-4fff-8fff-ffffffffffff"): {
                             "fingerprint": current_fp,
                             "partial": False,
                             "timed_out_commands": [],
@@ -2352,7 +2359,11 @@ class TestPhase39Bucket:
                 "homelab_mcp.drift_detection._bulk_universal_core_probes",
                 AsyncMock(
                     return_value={
-                        "pve1": {
+                        # Phase 42 B1: probe map keyed on
+                        # (hostname, ssh_credential_id) tuple — matches the
+                        # row's ssh_credential_id from
+                        # sitemap_row_with_stored_fingerprint fixture.
+                        ("pve1", "22222222-2222-2222-2222-222222222222"): {
                             "fingerprint": mock_universal_core_probe_drifted,
                             "partial": False,
                             "timed_out_commands": [],
