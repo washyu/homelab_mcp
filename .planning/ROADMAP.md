@@ -263,7 +263,10 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   2. **WARNING fixes**: `record["last_seen"]` is normalized to ISO 8601 string at the boundary so Postgres `datetime` objects round-trip cleanly through JSON (`:583, :689`); `_parse_last_seen` treats sitemap-written naive timestamps as UTC consistently with the writer side (or sitemap writer switches to `datetime.now(UTC).isoformat()` — pick one canonical convention) (`:154-167`); per-row `unreachable` shape docstring is corrected to match the 9-key missing-record shape (`:476-485`); the dead defensive fallthrough return in `_probe_one` is removed (`:387-389`); `_diff_fingerprints` either documents or fixes the current-only key skip per a deliberate semantic decision (`:213-223`); `scope` / `cluster_name` reuse across iterations is scoped per-row (`:586-691`); the `.days >` threshold is replaced with second-resolution comparison so `THRESHOLD=1` triggers at exactly 24h, not 47h59m (`:187`); SSH pre-pass is gated to skip degenerate-row routing inputs (`:517-526`).
   3. Every fix is covered by a test (functional or unit) that pins the new behavior, including a regression test for the duplicate-hostname phantom that constructs the input shape and asserts the previous bug-shape is gone.
   4. The full unit suite remains green (≥907 passing, no skips introduced); ruff + mypy clean on `drift_detection.py`; existing AST guards (Phase 36 D-12/D-13, Phase 38.1 D-15, Phase 39.1 D-16, Phase 41 host/dial_host hygiene) all still pass.
-**Plans**: TBD (estimated 3-4 plans grouped by concern: enumeration robustness, threshold/TZ hygiene, observability, dead-code/docstring sweep)
+**Plans**: 3 plans
+  - [x] 42-01-PLAN.md — All 12 source fixes (B1-B4, W1-W8) applied to drift_detection.py + sitemap.py (3 tasks: enumeration robustness, TZ/JSON hygiene, dead-code/docstring sweep)
+  - [ ] 42-02-PLAN.md — Regression tests in tests/test_drift_detection_polish.py covering all 12 findings (2 tasks: BLOCKER tests, WARNING tests)
+  - [ ] 42-03-PLAN.md — Full quality gate (ruff + mypy + AST guards + ≥907 unit tests)
 
 ### Phase 43: Phase 38 Documentation Cleanup (POLISH)
 
@@ -319,7 +322,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 9/9 | Complete    | 2026-05-01 |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
-| 42. Drift Detection Polish | v1.7 | 0/0 | Not started | - |
+| 42. Drift Detection Polish | v1.7 | 1/3 | In Progress|  |
 | 43. Phase 38 Documentation Cleanup | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
@@ -328,7 +331,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 9/9 plans complete
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)

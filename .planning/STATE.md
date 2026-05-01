@@ -4,8 +4,8 @@ milestone: v1.7
 milestone_name: Drift Architectural Fix
 status: executing
 stopped_at: Phase 40 context gathered
-last_updated: "2026-05-01T22:31:36.290Z"
-last_activity: 2026-05-01 -- Phase 42 planning complete
+last_updated: "2026-05-01T22:42:29.579Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 15
   completed_phases: 8
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Phase 41 — binding-aware-resolver-hygiene
+**Current focus:** Phase 42 — drift-detection-polish
 
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 41.1
-Plan: Not started
+Phase: 42 (drift-detection-polish) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-05-01 -- Phase 42 planning complete
+Last activity: 2026-05-01
 
-Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 plans 6/6 complete (awaiting verifier)
+Progress: [░░░░░░░░░░] 0%
 
 ## v1.7 Phase Summary
 
@@ -110,6 +110,7 @@ Key constraints carried forward:
 - Every keyring call path must catch `NoKeyringError`, `RuntimeError`, and `Exception` — headless Linux primary deploy target
 - `_sudo_run` helper is the only path for sudo invocation
 - PyPI OIDC trusted publisher registered at pypi.org; `git tag v*` push triggers publish
+- [Phase ?]: Phase 42-01: B1 fix uses (hostname, ssh_credential_id) tuple key for SSH probe map — preserves multi-credential attribution; B3 verified-already-done via three existing dedupe layers (no warm-up loop needed)
 
 ### Pending Todos
 
@@ -131,6 +132,6 @@ None at v1.7 ROADMAP-complete. Will be populated as phase planning progresses.
 
 ## Session Continuity
 
-Last session: 2026-04-28T05:34:54.465Z
+Last session: 2026-05-01T22:42:11.588Z
 Stopped at: Phase 40 context gathered
 Resume command: `/gsd-verify-work 38` to run the Phase 38 verifier
