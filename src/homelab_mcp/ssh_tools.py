@@ -12,6 +12,7 @@ import asyncssh
 
 from .credential_store import find_credential_by_id, get_credential, list_credentials
 from .database import (
+    DatabaseAdapter,
     get_database_adapter,  # noqa: F401 — module-level attr for test monkeypatch (tests assert not-called)
 )
 from .error_handling import retry_on_failure, ssh_connection_wrapper
@@ -815,6 +816,8 @@ def resolve_ssh_for_sitemap_row(
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
+    *,
+    db_adapter: DatabaseAdapter | None = None,
 ) -> tuple[SSHCredentials, dict[str, Any] | None]:
     """Phase 41 Bug AA + V shared helper — sitemap-row-aware SSH credential resolver.
 
@@ -845,6 +848,12 @@ def resolve_ssh_for_sitemap_row(
     Args:
         identifier: hostname OR connection_ip the user passed.
         username/password/key_path/port: standard resolver passthrough.
+        db_adapter: Optional DatabaseAdapter to use for row lookup. When
+            provided (e.g., a test-fixture in-memory adapter) this takes
+            precedence over the module-level ``get_database_adapter()`` call.
+            Callers that share a sitemap instance (e.g., ``discover_and_store``)
+            should pass ``sitemap.db_adapter`` so the row lookup sees the same
+            data the sitemap writes to.
 
     Returns:
         Tuple ``(SSHCredentials, sitemap_row_dict | None)``.
@@ -854,7 +863,7 @@ def resolve_ssh_for_sitemap_row(
             also propagated from the underlying :func:`resolve_ssh_credentials`
             when no creds exist.
     """
-    db = get_database_adapter()
+    db = db_adapter if db_adapter is not None else get_database_adapter()
     matched_rows = db.find_devices_by_hostname_or_ip(identifier)
 
     if len(matched_rows) == 0:
@@ -902,6 +911,10 @@ def resolve_ssh_for_sitemap_row(
     return creds, row
 
 
+# Phase 41 — SUPERSEDED by resolve_ssh_for_sitemap_row.
+# Retained for backward-compat / grep-pin protection per
+# RESEARCH §"State of the Art" Assumption A3. Plan 41-05 AST guard
+# verifies no NEW callers in sitemap.py / drift_detection.py.
 def _scan_registry_for_binding(
     hostname: str,
     username: str | None,
@@ -928,6 +941,10 @@ def _scan_registry_for_binding(
     return None
 
 
+# Phase 41 — SUPERSEDED by resolve_ssh_for_sitemap_row.
+# Retained for backward-compat / grep-pin protection per
+# RESEARCH §"State of the Art" Assumption A3. Plan 41-05 AST guard
+# verifies no NEW callers in sitemap.py / drift_detection.py.
 async def ssh_discover_system_with_binding(
     hostname: str,
     username: str | None = None,

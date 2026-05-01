@@ -61,7 +61,6 @@ def _seed_row(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 RED — flips GREEN when Plans 02-04 land")
 @pytest.mark.asyncio
 async def test_discover_and_map_uses_row_binding_when_row_exists(sitemap):
     """Bug AA: discover_and_store passes ssh_credential_id from the sitemap
@@ -69,15 +68,20 @@ async def test_discover_and_map_uses_row_binding_when_row_exists(sitemap):
 
     Pre-seed a row with ssh_credential_id="uuid-abc" for hostname="pve".
     Assert the resolver is called with credential_id="uuid-abc".
-    Currently the code does NOT pass credential_id; Plan 03 will fix.
+    Plan 03 fix: resolve_ssh_for_sitemap_row passes the row's credential_id.
     """
     _seed_row(sitemap, hostname="pve", connection_ip="192.168.10.20", ssh_credential_id="uuid-abc")
 
+    # Phase 41 Plan 03: fake_creds must carry a non-None password/key_path so
+    # the inner resolve_ssh_credentials call inside ssh_discover_system takes
+    # the Tier-1 short-circuit (password supplied) instead of falling to Tier-2
+    # registry-scan.  Without this, ssh_discover_system raises ValueError
+    # ("No credentials found") before ssh_connect is called.
     fake_creds = SimpleNamespace(
         hostname="192.168.10.20",
         username="root",
         port=22,
-        password=None,
+        password="fake-password",
         key_path=None,
     )
 
@@ -102,14 +106,19 @@ async def test_discover_and_map_uses_row_binding_when_row_exists(sitemap):
         await discover_and_store(sitemap, hostname="pve")
 
     assert mock_resolver.called, "resolve_ssh_credentials was never called"
-    got_credential_id = mock_resolver.call_args.kwargs.get("credential_id")
+    # Phase 41 Plan 03: check the FIRST call to the resolver (from
+    # resolve_ssh_for_sitemap_row) carries credential_id="uuid-abc".
+    # A second call may occur inside ssh_discover_system (Tier-1 short-circuit
+    # since fake_creds.password is non-None) — call_args_list[0] isolates the
+    # first call.
+    first_call_kwargs = mock_resolver.call_args_list[0].kwargs
+    got_credential_id = first_call_kwargs.get("credential_id")
     assert got_credential_id == "uuid-abc", (
-        f"Bug AA: resolver called without credential_id='uuid-abc'; "
-        f"kwargs were {mock_resolver.call_args.kwargs!r}"
+        f"Bug AA: resolver first call did not carry credential_id='uuid-abc'; "
+        f"first call kwargs were {first_call_kwargs!r}"
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 RED — flips GREEN when Plans 02-04 land")
 @pytest.mark.asyncio
 async def test_failed_discover_writes_to_requested_identifier_row(sitemap):
     """Bug BB: a failed discovery should upsert to the existing row for
@@ -156,7 +165,6 @@ async def test_failed_discover_writes_to_requested_identifier_row(sitemap):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 RED — flips GREEN when Plans 02-04 land")
 @pytest.mark.asyncio
 async def test_failed_discover_does_not_collapse_to_empty_hostname(sitemap):
     """Bug BB: when parse_discovery_output gets a JSONDecodeError, the
@@ -188,7 +196,6 @@ async def test_failed_discover_does_not_collapse_to_empty_hostname(sitemap):
         )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 RED — flips GREEN when Plans 02-04 land")
 @pytest.mark.asyncio
 async def test_dial_target_uses_row_connection_ip(sitemap):
     """Bug V (discover side): ssh_connect must be called with the row's
@@ -196,6 +203,11 @@ async def test_dial_target_uses_row_connection_ip(sitemap):
 
     Pre-seed a row with connection_ip="192.168.10.20".  Assert ssh_connect
     sees hostname="192.168.10.20".
+
+    Plan 03 fix: discover_and_store derives dial_target from row.connection_ip
+    and passes it to ssh_discover_system. fake_creds carries a non-None
+    password to trigger Tier-1 short-circuit inside ssh_discover_system so
+    ssh_connect is actually reached.
     """
     _seed_row(sitemap, hostname="pve", connection_ip="192.168.10.20", ssh_credential_id="uuid-abc")
 
@@ -203,7 +215,7 @@ async def test_dial_target_uses_row_connection_ip(sitemap):
         hostname="192.168.10.20",
         username="root",
         port=22,
-        password=None,
+        password="fake-password",
         key_path=None,
     )
 
@@ -283,7 +295,6 @@ async def test_drift_dials_connection_ip_not_hostname():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 RED — flips GREEN when Plans 02-04 land")
 @pytest.mark.asyncio
 async def test_error_envelope_carries_hostname():
     """Bug BB (envelope layer): ssh_connection_wrapper error envelopes must

@@ -73,8 +73,19 @@ class NetworkSiteMap:
         """Initialize the database schema."""
         self.db_adapter.init_schema()
 
-    def parse_discovery_output(self, discovery_json: str) -> NetworkDevice:
-        """Parse SSH discovery output into a NetworkDevice object."""
+    def parse_discovery_output(
+        self,
+        discovery_json: str,
+        requested_identifier: str | None = None,
+    ) -> NetworkDevice:
+        """Parse SSH discovery output into a NetworkDevice object.
+
+        Phase 41 Bug BB: ``requested_identifier`` is the input identifier the
+        caller passed to discover_and_map (hostname or IP). Used on error paths
+        so failed discoveries write to a row matching the requested identifier
+        instead of collapsing onto a degenerate (hostname="", ...) or
+        (hostname="unknown", ...) zombie row.
+        """
         try:
             data = json.loads(discovery_json)
 
@@ -137,14 +148,23 @@ class NetworkSiteMap:
 
             elif data.get("status") == "error":
                 device.error_message = data.get("error", "Unknown error")
+                # Phase 41 Bug BB: preserve the requested identifier so the upsert
+                # lands on the correct row, not a degenerate (hostname="") zombie.
+                if not device.hostname and requested_identifier:
+                    device.hostname = requested_identifier
+                if not device.connection_ip and requested_identifier:
+                    device.connection_ip = requested_identifier
 
             return device
 
         except json.JSONDecodeError as e:
-            # Create error device for invalid JSON
+            # Phase 41 Bug BB Pitfall 3: use requested_identifier instead of
+            # literal "unknown" so malformed JSON does NOT collapse onto a
+            # canonical zombie row.
+            fallback = requested_identifier or "unknown"
             return NetworkDevice(
-                hostname="unknown",
-                connection_ip="unknown",
+                hostname=fallback,
+                connection_ip=fallback,
                 last_seen=datetime.now().isoformat(),
                 status="error",
                 error_message=f"JSON parse error: {sanitize_error(e)}",
@@ -417,33 +437,96 @@ async def discover_and_store(
 ) -> str:
     """Discover a device and store it in the site map.
 
-    Phase 33.1 D-06: ``username`` defaults to ``None``. When omitted, the
-    keyring-registered user for ``hostname`` is resolved inside
-    :func:`ssh_tools.resolve_ssh_credentials` via the Plan-01 registry-scan
-    helper — no hardcoded-default fallback.
+    Phase 41 Bug AA / V / BB unified fix:
+      - Bug AA: SSH credentials resolved via ``resolve_ssh_for_sitemap_row``,
+        the same row-binding-aware helper drift uses. When a sitemap row
+        exists for ``hostname``, its ``ssh_credential_id`` is used (Tier-0
+        UUID short-circuit).
+      - Bug V: when the matched row carries a non-empty ``connection_ip``,
+        SSH dials that IP rather than the input identifier — eliminates the
+        /etc/hosts dependency for sitemap-known hosts.
+      - Bug BB: on failure, the upsert reuses the existing row's identity
+        (``hostname`` + ``connection_ip``) so errors NEVER collapse onto a
+        degenerate zombie row.
 
-    Phase 38.1 R3: when discovery uses a registry-resolved credential, the
-    upsert sets ``ssh_credential_id`` on the new sitemap row. When no
-    registry entry matches the hostname (genuine Tier-1 explicit-args path),
-    ``used_credential_id`` is None and the binding write is skipped.
+    Phase 33.1 D-06 (preserved): ``username`` defaults to ``None``. When
+    omitted, the keyring-registered user for ``hostname`` is resolved
+    inside :func:`ssh_tools.resolve_ssh_credentials`.
+
+    Phase 38.1 R3 (preserved): when discovery uses a row-bound credential,
+    the upsert sets ``ssh_credential_id`` on the new sitemap row.
     """
-    from .ssh_tools import ssh_discover_system_with_binding
-
-    # Phase 38.1 R3: resolver+discovery wrapper captures the matched
-    # registry entry's credential_id (None when no registry entry matches).
-    discovery_result, used_credential_id = await ssh_discover_system_with_binding(
-        hostname, username, password, key_path, port,
+    from .ssh_tools import (
+        CredentialNotFoundError,
+        _scan_registry_for_binding,
+        resolve_ssh_for_sitemap_row,
+        ssh_discover_system,
     )
 
-    # Parse and store the result (existing flow unchanged)
-    device = sitemap.parse_discovery_output(discovery_result)
+    # Phase 41 Bug AA: resolve creds + matched row through the shared
+    # row-binding-aware helper. Pass sitemap.db_adapter so the lookup sees
+    # the same data the sitemap writes to (avoids get_database_adapter()
+    # returning a different adapter than the sitemap's in-memory SQLite).
+    # Multi-match raises CredentialNotFoundError; we capture and surface
+    # as an error row so the user sees it.
+    used_credential_id: str | None = None
+    try:
+        creds, row = resolve_ssh_for_sitemap_row(
+            hostname, username, password, key_path, port,
+            db_adapter=sitemap.db_adapter,
+        )
+        # Phase 41 Bug V: dial row.connection_ip when truthy; Pitfall 4
+        # fallback to input identifier for fresh-discovery / empty-row cases.
+        dial_target = (row.get("connection_ip") if row else None) or hostname
+        # Phase 38.1 R3: capture binding UUID for post-upsert wire.
+        # When a sitemap row matched, use its ssh_credential_id (Phase 41 Bug AA).
+        # When no row matched (first discovery), fall back to a registry scan so
+        # R3 auto-bind still fires for fresh hosts that have a keyring entry.
+        if row is not None:
+            used_credential_id = row.get("ssh_credential_id")
+        else:
+            # Phase 38.1 R3 fallback for first-discovery: scan registry for the
+            # best-effort credential_id. Same logic as _scan_registry_for_binding;
+            # that helper is retained (Phase 41 superseded banner) exactly for this.
+            used_credential_id = _scan_registry_for_binding(hostname, username)
+
+        discovery_result = await ssh_discover_system(
+            dial_target,
+            creds.username,
+            creds.password,
+            creds.key_path,
+            creds.port,
+        )
+    except CredentialNotFoundError as exc:
+        # Surface multi-match / no-creds as an error row keyed on the
+        # requested identifier (Bug BB).
+        discovery_result = json.dumps(
+            {
+                "status": "error",
+                "hostname": hostname,
+                "connection_ip": hostname,
+                "error": str(exc),
+            }
+        )
+
+    # Parse with requested_identifier so error paths preserve row identity.
+    device = sitemap.parse_discovery_output(discovery_result, requested_identifier=hostname)
+
+    # Phase 41 Bug BB: on failure, look up an existing row by the requested
+    # identifier and reuse its (hostname, connection_ip) so the upsert lands
+    # on the correct row instead of creating a zombie sibling.
+    if device.status == "error":
+        matched = sitemap.db_adapter.find_devices_by_hostname_or_ip(hostname)
+        if matched:
+            existing = matched[0]
+            device.hostname = existing.get("hostname") or device.hostname
+            device.connection_ip = existing.get("connection_ip") or device.connection_ip
+
     device_id = sitemap.store_device(device)
     sitemap.store_discovery_history(device_id, discovery_result)
 
-    # Phase 38.1 R3: wire the binding column post-upsert. Skipped when no
-    # registry entry matched the hostname/username pair (used_credential_id
-    # is None) — degenerate / failed discoveries also fall here because
-    # the resolver scan only records UUIDs for unambiguous single-match.
+    # Phase 38.1 R3 (preserved): wire the binding column post-upsert when
+    # the resolved row carried a non-null ssh_credential_id.
     if used_credential_id is not None:
         sitemap.db_adapter.set_device_credential_binding(device_id, "ssh", used_credential_id)
 
@@ -454,9 +537,6 @@ async def discover_and_store(
             "hostname": device.hostname,
             "discovery_status": device.status,
             "stored_at": datetime.now().isoformat(),
-            # Phase 38.1 R3: surface the binding in the discover response
-            # for agent visibility (NOT a SPEC requirement, but cheap and
-            # useful for the round-trip integration test).
             "ssh_credential_id": used_credential_id,
         },
         indent=2,

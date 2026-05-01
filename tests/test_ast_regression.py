@@ -1353,7 +1353,6 @@ class TestPhase41BindingAwareResolver:
         }
     )
 
-    @pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 — flips GREEN when Plan 02 lands resolve_ssh_for_sitemap_row")
     def test_resolve_ssh_for_sitemap_row_helper_exists(self) -> None:
         """Phase 41 Bug AA: ssh_tools.py must define resolve_ssh_for_sitemap_row."""
         src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"

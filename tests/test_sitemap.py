@@ -391,12 +391,36 @@ class TestAsyncFunctions:
 
     @pytest.mark.asyncio
     async def test_discover_and_store_passes_none_username_when_omitted(self, monkeypatch, temp_db) -> None:
-        """D-06/D-07: omitting username passes None through to ssh_discover_system.
+        """D-06/D-07: omitting username is NOT silently replaced with 'mcp_admin'.
 
-        sitemap.discover_and_store lazy-imports ssh_discover_system from the
-        ssh_tools module, so we monkeypatch the attribute on that module.
+        Phase 41 architecture: discover_and_store resolves credentials via
+        resolve_ssh_for_sitemap_row (which calls resolve_ssh_credentials) BEFORE
+        calling ssh_discover_system. The D-06 contract (no mcp_admin fallback) is
+        enforced inside resolve_ssh_credentials. This test verifies the integration:
+        resolve_ssh_credentials is called with username=None (not "mcp_admin"),
+        and ssh_discover_system receives the resolved credentials from the helper.
+
+        Both resolve_ssh_credentials and ssh_discover_system are monkeypatched so
+        the test controls what flows through without a real keyring or SSH connection.
         """
+        from types import SimpleNamespace
+
         import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        resolved_username = "keyring-user"  # simulates what keyring resolution returns
+        fake_creds = SimpleNamespace(
+            hostname="h.example.com",
+            username=resolved_username,
+            port=22,
+            password="fake-password",
+            key_path=None,
+        )
+
+        resolver_called_with_username: list = []
+
+        def fake_resolve_credentials(hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None):
+            resolver_called_with_username.append(username)
+            return fake_creds
 
         captured: dict = {}
 
@@ -416,23 +440,52 @@ class TestAsyncFunctions:
             )
 
         monkeypatch.setattr(ssh_tools_mod, "ssh_discover_system", fake_ssh_discover)
+        monkeypatch.setattr(ssh_tools_mod, "resolve_ssh_credentials", fake_resolve_credentials)
 
         sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
         await discover_and_store(sitemap, hostname="h.example.com")
 
-        assert captured["username"] is None, f"D-06: expected username=None when omitted; got {captured['username']!r}"
-        assert captured["hostname"] == "h.example.com"
-        assert captured["password"] is None
-        assert captured["key_path"] is None
-        assert captured["port"] == 22
+        # D-06: resolve_ssh_credentials must be called with the original username=None
+        # (NOT "mcp_admin"). Enforcement of D-06 happens inside resolve_ssh_credentials.
+        assert None in resolver_called_with_username, (
+            f"D-06: resolve_ssh_credentials was not called with username=None; "
+            f"got calls with username values: {resolver_called_with_username!r}"
+        )
+        # Verify ssh_discover_system was called (credential resolution succeeded).
+        assert captured.get("hostname") == "h.example.com", (
+            f"D-06: ssh_discover_system was not called or received wrong hostname; "
+            f"captured={captured!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_bulk_discover_and_store_passes_none_username_when_omitted(self, monkeypatch, temp_db) -> None:
-        """D-07: bulk target with no 'username' key flows None down to
-        ssh_discover_system — no silent 'mcp_admin' fallback from
-        ``target.get("username", "mcp_admin")``.
+        """D-07: bulk target with no 'username' key does NOT silently use 'mcp_admin'.
+
+        Phase 41 architecture: discover_and_store resolves credentials via
+        resolve_ssh_credentials (through resolve_ssh_for_sitemap_row) with the
+        original username=None. This test verifies the D-07 contract is preserved:
+        resolve_ssh_credentials is called with username=None (not "mcp_admin").
+
+        Both resolve_ssh_credentials and ssh_discover_system are monkeypatched so
+        the test controls what flows through without a real keyring or SSH connection.
         """
+        from types import SimpleNamespace
+
         import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        fake_creds = SimpleNamespace(
+            hostname="h.example.com",
+            username="keyring-user",
+            port=22,
+            password="fake-password",
+            key_path=None,
+        )
+
+        resolver_called_with_username: list = []
+
+        def fake_resolve_credentials(hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None):
+            resolver_called_with_username.append(username)
+            return fake_creds
 
         captured_calls: list[dict] = []
 
@@ -456,15 +509,20 @@ class TestAsyncFunctions:
             )
 
         monkeypatch.setattr(ssh_tools_mod, "ssh_discover_system", fake_ssh_discover)
+        monkeypatch.setattr(ssh_tools_mod, "resolve_ssh_credentials", fake_resolve_credentials)
 
         sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
-        # Omit 'username' from target — bulk path must pass None, not 'mcp_admin'.
+        # Omit 'username' from target — bulk path must pass None to resolver, not 'mcp_admin'.
         await bulk_discover_and_store(sitemap, [{"hostname": "h.example.com"}])
 
-        assert len(captured_calls) == 1
-        assert captured_calls[0]["username"] is None, (
-            "D-07: bulk_discover_and_store must propagate target.get('username') "
-            f"as None when omitted; got {captured_calls[0]['username']!r}"
+        # D-07: resolve_ssh_credentials must be called with username=None (not "mcp_admin").
+        assert None in resolver_called_with_username, (
+            "D-07: bulk path must propagate username=None to resolve_ssh_credentials; "
+            f"got calls with username values: {resolver_called_with_username!r}"
+        )
+        # Verify ssh_discover_system was called (the bulk path completes the discovery).
+        assert len(captured_calls) == 1, (
+            f"D-07: expected 1 ssh_discover_system call; got {len(captured_calls)}"
         )
 
     @pytest.mark.asyncio
