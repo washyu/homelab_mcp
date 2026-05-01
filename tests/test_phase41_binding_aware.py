@@ -157,12 +157,8 @@ async def test_failed_discover_writes_to_requested_identifier_row(sitemap):
         f"Bug BB: expected exactly 1 row after failed discovery; got {len(all_rows)}: {all_rows!r}"
     )
     row = all_rows[0]
-    assert row["hostname"] == "pve", (
-        f"Bug BB: row hostname should be 'pve'; got {row['hostname']!r}"
-    )
-    assert row["status"] == "error", (
-        f"Bug BB: row status should be 'error'; got {row['status']!r}"
-    )
+    assert row["hostname"] == "pve", f"Bug BB: row hostname should be 'pve'; got {row['hostname']!r}"
+    assert row["status"] == "error", f"Bug BB: row status should be 'error'; got {row['status']!r}"
 
 
 @pytest.mark.asyncio
@@ -186,14 +182,11 @@ async def test_failed_discover_does_not_collapse_to_empty_hostname(sitemap):
     all_rows = sitemap.db_adapter.get_all_devices()
     hostnames = [r["hostname"] for r in all_rows]
     assert "fakehost.local" in hostnames, (
-        f"Bug BB: expected row with hostname='fakehost.local'; "
-        f"got hostnames={hostnames!r}, all_rows={all_rows!r}"
+        f"Bug BB: expected row with hostname='fakehost.local'; got hostnames={hostnames!r}, all_rows={all_rows!r}"
     )
     # No zombie row with blank/unknown hostname should exist
     for row in all_rows:
-        assert row["hostname"] not in ("", "unknown"), (
-            f"Bug BB: degenerate zombie row created: {row!r}"
-        )
+        assert row["hostname"] not in ("", "unknown"), f"Bug BB: degenerate zombie row created: {row!r}"
 
 
 @pytest.mark.asyncio
@@ -248,12 +241,10 @@ async def test_dial_target_uses_row_connection_ip(sitemap):
         await discover_and_store(sitemap, hostname="pve")
 
     assert captured.get("hostname") == "192.168.10.20", (
-        f"Bug V: ssh_connect dialed {captured.get('hostname')!r}, "
-        f"expected row.connection_ip='192.168.10.20'"
+        f"Bug V: ssh_connect dialed {captured.get('hostname')!r}, expected row.connection_ip='192.168.10.20'"
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 RED — flips GREEN when Plans 02-04 land")
 @pytest.mark.asyncio
 async def test_drift_dials_connection_ip_not_hostname():
     """Bug V (drift side): scan_drift must call get_proxmox_client with
@@ -290,8 +281,7 @@ async def test_drift_dials_connection_ip_not_hostname():
         await scan_drift(session=None, db_adapter=db_adapter)
 
     assert captured.get("host") == "192.168.10.20", (
-        f"Bug V: drift dialed {captured.get('host')!r}, "
-        f"expected row.connection_ip='192.168.10.20'"
+        f"Bug V: drift dialed {captured.get('host')!r}, expected row.connection_ip='192.168.10.20'"
     )
 
 
@@ -313,6 +303,4 @@ async def test_error_envelope_carries_hostname():
 
     result = await slow(hostname="pve")
     envelope = json.loads(result)
-    assert envelope.get("hostname") == "pve", (
-        f"Bug BB envelope: missing/wrong hostname field; got {envelope!r}"
-    )
+    assert envelope.get("hostname") == "pve", f"Bug BB envelope: missing/wrong hostname field; got {envelope!r}"

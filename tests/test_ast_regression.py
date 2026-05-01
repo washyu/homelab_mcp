@@ -20,8 +20,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
 # Strings whose presence in source AST (as Name, Attribute, or string literals) indicates regression
 FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "ssh_credentials",  # D-15: DB table name
@@ -1344,14 +1342,11 @@ class TestPhase41BindingAwareResolver:
     """
 
     _SCANNED_FILES = ("sitemap.py", "drift_detection.py")
-    _RESOLVER_CALLS_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
-        {
-            # (filename, function_or_module_scope) — intentional bypass call
-            # sites. Empty initially; Plan 04 may add (drift_detection.py, _probe_one)
-            # if the implementation chooses to retain the inline call. Plan 04
-            # SUMMARY must explicitly justify any allowlist addition.
-        }
-    )
+    _RESOLVER_CALLS_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
+    # Phase 41 audit (post-Plan-04): zero direct resolve_ssh_credentials(...)
+    # call sites in sitemap.py or drift_detection.py. The shared
+    # resolve_ssh_for_sitemap_row helper is the only path. Empty allowlist
+    # = strongest invariant; any future direct call fails the guard.
 
     def test_resolve_ssh_for_sitemap_row_helper_exists(self) -> None:
         """Phase 41 Bug AA: ssh_tools.py must define resolve_ssh_for_sitemap_row."""
@@ -1361,8 +1356,7 @@ class TestPhase41BindingAwareResolver:
         targets = [
             n
             for n in ast.walk(tree)
-            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-            and n.name == "resolve_ssh_for_sitemap_row"
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "resolve_ssh_for_sitemap_row"
         ]
         assert targets, (
             "Phase 41 Bug AA: src/homelab_mcp/ssh_tools.py must define "
@@ -1371,7 +1365,6 @@ class TestPhase41BindingAwareResolver:
             "is the proposed signature."
         )
 
-    @pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 — flips GREEN when Plans 03 + 04 wire the helper into both call sites")
     def test_shared_helper_used_by_both_call_sites(self) -> None:
         """Phase 41 Bug AA + V: both sitemap.py and drift_detection.py must
         call resolve_ssh_for_sitemap_row under its canonical name (no aliasing).
@@ -1415,7 +1408,6 @@ class TestPhase41BindingAwareResolver:
             f"If a refactor consolidated to a helper, update this floor."
         )
 
-    @pytest.mark.xfail(strict=True, reason="Phase 41 Wave 0 — flips GREEN when Plans 03 + 04 replace direct resolve_ssh_credentials calls with the helper")
     def test_no_unguarded_resolve_ssh_credentials_in_call_chain(self) -> None:
         """Phase 41 Bug AA: no unguarded direct resolve_ssh_credentials calls
         in sitemap.py or drift_detection.py — these must go through the helper.
@@ -1425,30 +1417,40 @@ class TestPhase41BindingAwareResolver:
         for fname in self._SCANNED_FILES:
             source = (src_root / fname).read_text(encoding="utf-8")
             tree = ast.parse(source, filename=fname)
-            # Find every direct ast.Call with func.id == "resolve_ssh_credentials".
-            # These should go through the new helper instead.
+            # Build line-number → enclosing function name lookup so allowlist
+            # entries can name the function (more readable than raw line
+            # numbers, more stable across small refactors).
+            line_to_func: dict[int, str] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    start = node.lineno
+                    end = getattr(node, "end_lineno", start) or start
+                    for ln in range(start, end + 1):
+                        # Inner functions overwrite outer; we want the most-specific scope.
+                        line_to_func[ln] = node.name
             for node in ast.walk(tree):
                 if (
                     isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Name)
                     and node.func.id == "resolve_ssh_credentials"
                 ):
-                    # Check allowlist (file, enclosing-function) — initially empty.
-                    # The walk does not track enclosing function; record (fname, "<any>")
-                    # for now and rely on the allowlist set membership.
-                    key = (fname, "<call>")
+                    enclosing = line_to_func.get(node.lineno, "<module>")
+                    key = (fname, enclosing)
                     if key in self._RESOLVER_CALLS_ALLOWLIST:
                         continue
                     violations.append(
-                        f"{fname}:{node.lineno} — direct resolve_ssh_credentials(...) "
-                        f"call (use resolve_ssh_for_sitemap_row instead)"
+                        f"{fname}:{node.lineno} (in {enclosing}) — "
+                        f"direct resolve_ssh_credentials(...) call (use "
+                        f"resolve_ssh_for_sitemap_row instead, or add "
+                        f"{(fname, enclosing)!r} to _RESOLVER_CALLS_ALLOWLIST "
+                        f"with a one-line justification)"
                     )
         assert not violations, (
-            "Phase 41 Bug AA: direct resolve_ssh_credentials(...) calls in "
-            "the discover/drift call chain. The shared row-binding-aware "
-            "helper resolve_ssh_for_sitemap_row is the only path; if you "
-            "have a legitimate bypass (e.g., the helper itself delegates "
-            "to it; that's in ssh_tools.py and out of scope), add the "
-            "(file, scope) tuple to _RESOLVER_CALLS_ALLOWLIST with a "
-            "one-line justification.\n\nViolations:\n  " + "\n  ".join(violations)
+            "Phase 41 Bug AA shared-helper invariant: direct "
+            "resolve_ssh_credentials(...) calls in the discover/drift "
+            "call chain. Replace with resolve_ssh_for_sitemap_row, OR "
+            "if a legitimate bypass is required (e.g., a non-row-scoped "
+            "auth helper), add (filename, enclosing_function) to "
+            "_RESOLVER_CALLS_ALLOWLIST with a one-line justification "
+            "comment.\n\nViolations:\n  " + "\n  ".join(violations)
         )
