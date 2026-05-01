@@ -450,6 +450,7 @@ async def get_proxmox_client(
     session: aiohttp.ClientSession | None = None,
     *,
     credential_id: str | None = None,
+    dial_host: str | None = None,
 ) -> ProxmoxAPIClient:
     """
     Get a Proxmox API client with credentials from environment or parameters.
@@ -468,6 +469,12 @@ async def get_proxmox_client(
             ``proxmox_credential_id`` column (Phase 38.1 D-14 keyword-only).
             When supplied and ``host`` is set with no explicit auth,
             triggers the tier-0 UUID short-circuit on the resolver.
+        dial_host: Optional TCP dial target (Phase 41-06 CR-01 fix). When
+            supplied, the underlying ProxmoxAPIClient connects to this
+            ``host:port`` instead of ``host:port``. The resolver and
+            telemetry/cluster caches continue to key on ``host``. Used by
+            drift_detection to dial sitemap ``row.connection_ip`` while
+            keeping hostname as the canonical cache key.
 
     Returns:
         Configured ProxmoxAPIClient instance
@@ -533,7 +540,7 @@ async def get_proxmox_client(
         raise ValueError("Must provide either PROXMOX_API_TOKEN or PROXMOX_USER+PROXMOX_PASSWORD")
 
     return ProxmoxAPIClient(
-        host=host,
+        host=(dial_host or host),
         port=port,
         verify_ssl=verify_ssl,
         username=username,
