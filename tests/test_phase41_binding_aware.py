@@ -287,10 +287,11 @@ async def test_dial_target_uses_row_connection_ip(sitemap):
 
 @pytest.mark.asyncio
 async def test_drift_dials_connection_ip_not_hostname():
-    """Bug V (drift side): scan_drift must call get_proxmox_client with
-    the row's connection_ip, NOT the hostname.
+    """Bug V (drift side): scan_drift must dial the row's connection_ip.
 
-    Mirror tests/test_drift_detection.py:37-77 pattern.
+    Phase 41-06 CR-01 fix: the dial target moved from the ``host=`` kwarg
+    (Plan 41-04) to the new ``dial_host=`` kwarg. ``host=`` is now the
+    canonical resolver/cache key (the hostname). Both must be paired.
     """
     db_adapter = MagicMock()
     db_adapter.get_all_devices.return_value = [
@@ -306,8 +307,9 @@ async def test_drift_dials_connection_ip_not_hostname():
 
     captured: dict = {}
 
-    async def fake_get_client(host, *, session=None, credential_id=None):
+    async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
         captured["host"] = host
+        captured["dial_host"] = dial_host
         client = MagicMock()
         client.get = AsyncMock(return_value=[])
         return client
@@ -320,8 +322,12 @@ async def test_drift_dials_connection_ip_not_hostname():
 
         await scan_drift(session=None, db_adapter=db_adapter)
 
-    assert captured.get("host") == "192.168.10.20", (
-        f"Bug V: drift dialed {captured.get('host')!r}, expected row.connection_ip='192.168.10.20'"
+    assert captured.get("dial_host") == "192.168.10.20", (
+        f"Bug V (Phase 41-06): drift dial_host={captured.get('dial_host')!r}, "
+        f"expected row.connection_ip='192.168.10.20'"
+    )
+    assert captured.get("host") == "pve", (
+        f"Phase 41-06 CR-01: host= must be the resolver/cache key (hostname), got {captured.get('host')!r}"
     )
 
 

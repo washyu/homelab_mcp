@@ -1454,3 +1454,89 @@ class TestPhase41BindingAwareResolver:
             "_RESOLVER_CALLS_ALLOWLIST with a one-line justification "
             "comment.\n\nViolations:\n  " + "\n  ".join(violations)
         )
+
+
+class TestPhase41HostDialHostHygiene:
+    """Phase 41-06 CR-01 + WR-01: every ``get_proxmox_client(...)`` call inside
+    ``src/homelab_mcp/drift_detection.py`` must:
+
+      1. Pass ``host=`` keyword (the resolver/cache key — typically the hostname).
+      2. NEVER alias ``host=`` to a variable named ``dial_host`` /
+         ``dial_target`` / ``connection_ip`` (those are TCP-dial identifiers;
+         they belong on the new ``dial_host=`` kwarg only).
+      3. Pass ``credential_id=`` keyword (Phase 39.1 D-16 invariant —
+         duplicates TestPhase39_1NoSkipInDriftEnum but the structural pairing
+         here makes the triple visible at one site).
+
+    Why this guard exists: Plan 41-04 introduced a key inconsistency by
+    routing connection_ip through the host= kwarg (CR-01). The fix in
+    Plan 41-06 routes connection_ip through the new dial_host= kwarg instead.
+    A future regression that drops back to host=connection_ip would silently
+    re-introduce the double-resolution + cluster-cache miss class of bug.
+
+    Sources:
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-REVIEW.md (CR-01, WR-01)
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-06-PLAN.md
+    """
+
+    _DIAL_TARGET_NAMES: frozenset[str] = frozenset({"dial_host", "dial_target", "connection_ip"})
+
+    def _drift_calls(self) -> list[ast.Call]:
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+        return [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "get_proxmox_client"
+        ]
+
+    def test_drift_get_proxmox_client_pairs_host_with_hostname_not_dial_target(self) -> None:
+        violations: list[str] = []
+        for call in self._drift_calls():
+            kwargs = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if "host" not in kwargs:
+                violations.append(f"line {call.lineno}: missing host= keyword")
+                continue
+            host_val = kwargs["host"]
+            if isinstance(host_val, ast.Name) and host_val.id in self._DIAL_TARGET_NAMES:
+                violations.append(
+                    f"line {call.lineno}: host={host_val.id} — host= must be the "
+                    "resolver/cache key (typically the hostname). Pass connection_ip "
+                    "via dial_host= instead."
+                )
+        assert not violations, "Phase 41-06 CR-01 violation in drift_detection.py:\n  " + "\n  ".join(violations)
+
+    def test_drift_get_proxmox_client_with_dial_host_pairs_with_host(self) -> None:
+        violations: list[str] = []
+        for call in self._drift_calls():
+            kwarg_names = {kw.arg for kw in call.keywords if kw.arg}
+            if "dial_host" in kwarg_names and "host" not in kwarg_names:
+                violations.append(
+                    f"line {call.lineno}: dial_host= present without host=. "
+                    "Both kwargs must coexist: host= is the resolver/cache key, "
+                    "dial_host= is the TCP target."
+                )
+        assert not violations, "Phase 41-06 CR-01 violation in drift_detection.py:\n  " + "\n  ".join(violations)
+
+    def test_drift_get_proxmox_client_threads_credential_id(self) -> None:
+        # Belt-and-braces with TestPhase39_1NoSkipInDriftEnum — Plan 41-06 adds
+        # dial_host=, so we re-state the credential_id= invariant alongside it.
+        violations: list[str] = []
+        for call in self._drift_calls():
+            kwarg_names = {kw.arg for kw in call.keywords if kw.arg}
+            if "credential_id" not in kwarg_names:
+                violations.append(f"line {call.lineno}: missing credential_id= keyword")
+        assert not violations, (
+            "Phase 39.1 D-16 + Phase 41-06 invariant violation in drift_detection.py:\n  " + "\n  ".join(violations)
+        )
+
+    def test_phase41_06_guard_call_site_floor(self) -> None:
+        calls = self._drift_calls()
+        assert len(calls) >= 2, (
+            f"Phase 41-06 guard call-site floor: expected at least 2 "
+            f"get_proxmox_client(...) call sites in drift_detection.py "
+            f"(scan_drift Proxmox loop + _enumerate_proxmox_vms._enum_one). "
+            f"Found {len(calls)}. A regression that drops a call site silently "
+            "weakens the host/dial_host hygiene guard."
+        )

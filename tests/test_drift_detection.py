@@ -49,7 +49,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             # Phase 41 Bug V: drift now dials connection_ip when set; accept both forms.
             if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
@@ -152,7 +152,7 @@ class TestScanDrift4Bucket:
             {"hostname": "not-a-proxmox-host", "connection_ip": "10.0.0.1", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             raise CredentialNotFoundError("no proxmox creds")
 
         with patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client):
@@ -174,7 +174,7 @@ class TestScanDrift4Bucket:
             {"hostname": "leaky", "connection_ip": "10.0.0.1", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             # Simulate an exception that contains a "secret-looking" token
             client.get = AsyncMock(
@@ -237,7 +237,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
@@ -271,7 +271,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             # Phase 41 Bug V: drift dials connection_ip when set.
             if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
@@ -327,7 +327,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -379,7 +379,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             # Phase 41 Bug V: drift dials connection_ip when set.
             if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
@@ -461,7 +461,7 @@ class TestScanDrift4Bucket:
 
         called_hosts: list[str] = []
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             called_hosts.append(host)
             # Phase 41 Bug V: drift dials connection_ip when set.
             if host in ("pve1", "10.0.0.10"):
@@ -484,12 +484,9 @@ class TestScanDrift4Bucket:
         # detail (Phase 39 DRFT-17 added a post-loop /cluster/resources call,
         # so probed_ok hosts get a second call for VM enumeration). The
         # invariant is the *set* of called hosts, not the count.
-        # Phase 41 Bug V: drift dials connection_ip when set, but
-        # resolve_proxmox_credentials still uses hostname; both call sites surface
-        # in called_hosts. The D-01 filter invariant is that pve2/pve3 are absent.
-        assert set(called_hosts) <= {"pve1", "10.0.0.10"}, (
-            f"D-01 filter failed: expected only pve1's identifiers, got {called_hosts}"
-        )
+        # Phase 41-06 CR-01: drift passes host=hostname (resolver/cache key)
+        # and dial_host=connection_ip; called_hosts captures host= = hostname.
+        assert set(called_hosts) == {"pve1"}, f"D-01 filter failed: expected only pve1, got {called_hosts}"
         assert result["scanned"] == 1
         assert len(result["probed_ok"]) == 1
         assert result["probed_ok"][0]["hostname"] == "pve1"
@@ -536,7 +533,7 @@ class TestScanDrift4Bucket:
 
         called_hosts: list[str] = []
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             called_hosts.append(host)
             # Phase 41 Bug V: drift dials connection_ip; map back to hostname for the mock node response.
             host_to_name = {"10.0.0.10": "pve1", "10.0.0.11": "pve2"}
@@ -556,11 +553,10 @@ class TestScanDrift4Bucket:
         # Phase 39 DRFT-17: probed_ok hosts get a second get_proxmox_client
         # call from the /cluster/resources enumeration pre-pass. Assert on the
         # *set* of hosts probed, not the call count.
-        # Phase 41 Bug V: drift dials connection_ip via get_proxmox_client; resolve_proxmox_credentials
-        # still uses hostname; both surface in called_hosts. Invariant: every row's identifiers appear.
-        assert set(called_hosts) >= {"10.0.0.10", "10.0.0.11"}, (
-            f"node=None should iterate every sitemap row; got: {called_hosts}"
-        )
+        # Phase 41-06 CR-01: drift now passes host=hostname (resolver/cache key)
+        # and dial_host=connection_ip via separate kwargs. called_hosts records
+        # the host= arg, which is the hostname (CR-01 fix).
+        assert set(called_hosts) >= {"pve1", "pve2"}, f"node=None should iterate every sitemap row; got: {called_hosts}"
         assert result["scanned"] == 2
         all_hostnames = {r["hostname"] for r in result["probed_ok"]}
         assert all_hostnames == {"pve1", "pve2"}
@@ -581,7 +577,7 @@ class TestScanDrift4Bucket:
         # Standard 1-row sitemap
         rows = [{"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"}]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
@@ -677,7 +673,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
@@ -718,7 +714,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pve1", "connection_ip": "10.0.0.10", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
             return client
@@ -757,7 +753,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
             return client
@@ -806,7 +802,7 @@ class TestScanDrift4Bucket:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
             return client
@@ -866,7 +862,7 @@ class TestScanDrift4Bucket:
             {"hostname": "pi-lab", "connection_ip": "10.0.0.12", "status": "success"},
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             if host == "pve1":
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
@@ -895,6 +891,81 @@ class TestScanDrift4Bucket:
         r3 = await scan_drift(session=None, db_adapter=db_adapter, node="nonexistent")
         assert r3["unknown"] == [], f"no-match unknown not []: {r3['unknown']}"
         assert r3["changed"] == [], f"no-match changed not []: {r3['changed']}"
+
+    @pytest.mark.asyncio
+    async def test_resolver_runs_once_when_hostname_differs_from_connection_ip(self):
+        """Phase 41-06 CR-01: when hostname != connection_ip on a row,
+        scan_drift must invoke resolve_proxmox_credentials EXACTLY ONCE per
+        host (keyed on hostname). Plan 41-04 had set host=connection_ip on
+        get_proxmox_client, forcing the resolver to write the telemetry cache
+        as (connection_ip, binding); the very next
+        get_resolution_telemetry(hostname, binding) call in scan_drift then
+        missed and re-ran the resolver — double-resolution.
+
+        After Plan 41-06's host/dial_host split, the resolver runs once
+        keyed on hostname; the telemetry cache lookup hits.
+        """
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "pve",
+                "connection_ip": "192.168.10.20",
+                "proxmox_credential_id": "00000000-0000-0000-0000-000000000abc",
+                "status": "success",
+            },
+        ]
+
+        resolve_calls: list[tuple[str, str | None]] = []
+
+        async def fake_resolve(host, *, session=None, credential_id=None):
+            resolve_calls.append((host, credential_id))
+            return ("user@pam!tok=secret", "node", None)
+
+        captured: dict[str, str | None] = {}
+
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
+            captured["host"] = host
+            captured["dial_host"] = dial_host
+            # Drive the resolver via the same path get_proxmox_client uses in
+            # production (so the telemetry cache gets populated keyed on host).
+            await fake_resolve(host, session=session, credential_id=credential_id)
+            client = MagicMock()
+            client.get = AsyncMock(return_value=[])
+            return client
+
+        with (
+            patch(
+                "homelab_mcp.drift_detection.get_proxmox_client",
+                side_effect=fake_get_client,
+            ),
+            patch(
+                "homelab_mcp.drift_detection.resolve_proxmox_credentials",
+                side_effect=fake_resolve,
+            ),
+            patch(
+                "homelab_mcp.drift_detection._bulk_universal_core_probes",
+                AsyncMock(return_value={}),
+            ),
+        ):
+            await scan_drift(session=None, db_adapter=db_adapter)
+
+        # CR-01 invariant: get_proxmox_client receives host=hostname (resolver/cache key)
+        # and dial_host=connection_ip (TCP target).
+        assert captured.get("host") == "pve", (
+            f"Phase 41-06 CR-01: get_proxmox_client got host={captured.get('host')!r}, "
+            f"expected 'pve' (the hostname is the canonical resolver/cache key)."
+        )
+        assert captured.get("dial_host") == "192.168.10.20", (
+            f"Phase 41-06 CR-01: get_proxmox_client got dial_host={captured.get('dial_host')!r}, "
+            f"expected '192.168.10.20' (row.connection_ip)."
+        )
+
+        # CR-01 functional invariant: resolver was called keyed on hostname.
+        assert resolve_calls, "resolver was never invoked"
+        assert all(call[0] == "pve" for call in resolve_calls), (
+            f"Phase 41-06 CR-01: resolver called with non-hostname identifiers: {resolve_calls!r}. "
+            f"Plan 41-04's regression would have invoked it with '192.168.10.20' (connection_ip)."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -931,7 +1002,7 @@ class TestScanDriftNotEligible:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             raise CredentialNotFoundError(f"No Proxmox credentials found for {host}.")
 
         with patch("homelab_mcp.drift_detection.get_proxmox_client", side_effect=fake_get_client):
@@ -959,7 +1030,7 @@ class TestScanDriftNotEligible:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(return_value=[{"type": "node", "name": "pve2"}])
             return client
@@ -993,7 +1064,7 @@ class TestScanDriftNotEligible:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             raise CredentialNotFoundError(
                 f"binding stale: UUID {stale_uuid} not in registry. "
                 f"Run `credentials add --type proxmox {host}` to register."
@@ -1075,7 +1146,7 @@ class TestScanDriftNotEligible:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             # Phase 41 Bug V: drift dials connection_ip when set.
             if host in ("pve-fresh", "10.0.0.1"):
                 client = MagicMock()
@@ -1374,7 +1445,7 @@ class TestPhase39Unknown:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1430,7 +1501,7 @@ class TestPhase39Unknown:
         # Counter recording how many times /cluster/resources is hit.
         resources_call_count = 0
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1482,7 +1553,7 @@ class TestPhase39Unknown:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1529,7 +1600,7 @@ class TestPhase39Unknown:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1573,7 +1644,7 @@ class TestPhase39Unknown:
             },
         ]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1638,7 +1709,7 @@ class TestPhase39Missing:
         row["ssh_credential_id"] = None  # SSH pre-pass skips this row.
         db_adapter.get_all_devices.return_value = [row]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
             return client
@@ -1675,7 +1746,7 @@ class TestPhase39Missing:
         row["ssh_credential_id"] = None
         db_adapter.get_all_devices.return_value = [row]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
             return client
@@ -1718,7 +1789,7 @@ class TestPhase39Missing:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [row]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
             return client
@@ -1760,7 +1831,7 @@ class TestPhase39Missing:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [row]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("timeout"))
             return client
@@ -1801,7 +1872,7 @@ class TestPhase39Changed:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1858,7 +1929,7 @@ class TestPhase39Changed:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1911,7 +1982,7 @@ class TestPhase39Changed:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -1962,7 +2033,7 @@ class TestPhase39Changed:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -2026,7 +2097,7 @@ class TestPhase39Changed:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [row]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -2123,7 +2194,7 @@ class TestPhase39Bucket:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = rows
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             if host == "pve-down":
                 client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused"))
@@ -2188,7 +2259,7 @@ class TestPhase39Bucket:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
 
             async def _get(path: str) -> object:
@@ -2247,7 +2318,7 @@ class TestPhase39Bucket:
         db_adapter = MagicMock()
         db_adapter.get_all_devices.return_value = [sitemap_row_with_stored_fingerprint]
 
-        async def fake_get_client(host, *, session=None, credential_id=None):
+        async def fake_get_client(host, *, dial_host=None, session=None, credential_id=None):
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("api down"))
             return client
