@@ -50,13 +50,14 @@ class TestScanDrift4Bucket:
         ]
 
         async def fake_get_client(host, *, session=None, credential_id=None):
-            if host == "pve1":
+            # Phase 41 Bug V: drift now dials connection_ip when set; accept both forms.
+            if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
                 return client
-            if host == "truenas1":
+            if host in ("truenas1", "10.0.0.11"):
                 raise CredentialNotFoundError(f"no creds for {host}")
-            if host == "pi-lab":
+            if host in ("pi-lab", "10.0.0.12"):
                 client = MagicMock()
                 client.get = AsyncMock(side_effect=aiohttp.ClientError("connection refused to pve.home"))
                 return client
@@ -271,7 +272,8 @@ class TestScanDrift4Bucket:
         ]
 
         async def fake_get_client(host, *, session=None, credential_id=None):
-            if host == "pve1":
+            # Phase 41 Bug V: drift dials connection_ip when set.
+            if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
                 return client
@@ -378,11 +380,12 @@ class TestScanDrift4Bucket:
         ]
 
         async def fake_get_client(host, *, session=None, credential_id=None):
-            if host == "pve1":
+            # Phase 41 Bug V: drift dials connection_ip when set.
+            if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
                 return client
-            if host == "truenas1":
+            if host in ("truenas1", "10.0.0.11"):
                 raise CredentialNotFoundError(f"no creds for {host}")
             client = MagicMock()
             client.get = AsyncMock(side_effect=aiohttp.ClientError("refused"))
@@ -460,7 +463,8 @@ class TestScanDrift4Bucket:
 
         async def fake_get_client(host, *, session=None, credential_id=None):
             called_hosts.append(host)
-            if host == "pve1":
+            # Phase 41 Bug V: drift dials connection_ip when set.
+            if host in ("pve1", "10.0.0.10"):
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve1"}])
                 return client
@@ -480,7 +484,12 @@ class TestScanDrift4Bucket:
         # detail (Phase 39 DRFT-17 added a post-loop /cluster/resources call,
         # so probed_ok hosts get a second call for VM enumeration). The
         # invariant is the *set* of called hosts, not the count.
-        assert set(called_hosts) == {"pve1"}, f"D-01 filter failed: expected only pve1 to be probed, got {called_hosts}"
+        # Phase 41 Bug V: drift dials connection_ip when set, but
+        # resolve_proxmox_credentials still uses hostname; both call sites surface
+        # in called_hosts. The D-01 filter invariant is that pve2/pve3 are absent.
+        assert set(called_hosts) <= {"pve1", "10.0.0.10"}, (
+            f"D-01 filter failed: expected only pve1's identifiers, got {called_hosts}"
+        )
         assert result["scanned"] == 1
         assert len(result["probed_ok"]) == 1
         assert result["probed_ok"][0]["hostname"] == "pve1"
@@ -529,8 +538,10 @@ class TestScanDrift4Bucket:
 
         async def fake_get_client(host, *, session=None, credential_id=None):
             called_hosts.append(host)
+            # Phase 41 Bug V: drift dials connection_ip; map back to hostname for the mock node response.
+            host_to_name = {"10.0.0.10": "pve1", "10.0.0.11": "pve2"}
             client = MagicMock()
-            client.get = AsyncMock(return_value=[{"type": "node", "name": host}])
+            client.get = AsyncMock(return_value=[{"type": "node", "name": host_to_name.get(host, host)}])
             return client
 
         async def fake_resolve(host, session=None, *, credential_id=None):
@@ -545,7 +556,11 @@ class TestScanDrift4Bucket:
         # Phase 39 DRFT-17: probed_ok hosts get a second get_proxmox_client
         # call from the /cluster/resources enumeration pre-pass. Assert on the
         # *set* of hosts probed, not the call count.
-        assert set(called_hosts) == {"pve1", "pve2"}, f"node=None should iterate every sitemap row; got: {called_hosts}"
+        # Phase 41 Bug V: drift dials connection_ip via get_proxmox_client; resolve_proxmox_credentials
+        # still uses hostname; both surface in called_hosts. Invariant: every row's identifiers appear.
+        assert set(called_hosts) >= {"10.0.0.10", "10.0.0.11"}, (
+            f"node=None should iterate every sitemap row; got: {called_hosts}"
+        )
         assert result["scanned"] == 2
         all_hostnames = {r["hostname"] for r in result["probed_ok"]}
         assert all_hostnames == {"pve1", "pve2"}
@@ -1061,13 +1076,14 @@ class TestScanDriftNotEligible:
         ]
 
         async def fake_get_client(host, *, session=None, credential_id=None):
-            if host == "pve-fresh":
+            # Phase 41 Bug V: drift dials connection_ip when set.
+            if host in ("pve-fresh", "10.0.0.1"):
                 client = MagicMock()
                 client.get = AsyncMock(return_value=[{"type": "node", "name": "pve-fresh"}])
                 return client
-            if host == "pve-unbound":
+            if host in ("pve-unbound", "10.0.0.2"):
                 raise CredentialNotFoundError(f"No Proxmox credentials found for {host}.")
-            if host == "pve-stale":
+            if host in ("pve-stale", "10.0.0.3"):
                 raise CredentialNotFoundError(f"binding stale: UUID {stale_uuid} not in registry.")
             raise AssertionError(f"unexpected host in fake_get_client: {host}")
 
