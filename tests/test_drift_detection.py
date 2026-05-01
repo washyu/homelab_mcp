@@ -967,6 +967,68 @@ class TestScanDrift4Bucket:
             f"Plan 41-04's regression would have invoked it with '192.168.10.20' (connection_ip)."
         )
 
+    @pytest.mark.asyncio
+    async def test_probe_one_forwards_db_adapter(self):
+        """Phase 41-07 WR-02: scan_drift's db_adapter argument must be threaded
+        through _bulk_universal_core_probes into _probe_one's
+        resolve_ssh_for_sitemap_row call. Without the thread, the helper
+        falls through to get_database_adapter() which constructs a fresh
+        SQLiteAdapter / PostgreSQLAdapter — potentially against a different
+        db_path than the one scan_drift was handed.
+
+        See .planning/phases/41-binding-aware-resolver-hygiene/41-REVIEW.md WR-02.
+        """
+        from homelab_mcp.ssh_tools import CredentialNotFoundError
+
+        db_adapter = MagicMock()
+        db_adapter.get_all_devices.return_value = [
+            {
+                "hostname": "host1",
+                "connection_ip": "10.0.0.10",
+                "ssh_credential_id": "00000000-0000-0000-0000-00000000abc1",
+                "proxmox_credential_id": None,
+                "status": "success",
+            },
+        ]
+
+        helper_calls: list[tuple[tuple, dict]] = []
+
+        def fake_resolver(*args, **kwargs):
+            helper_calls.append((args, kwargs))
+            # Short-circuit past ssh_connect — _probe_one's bare ``except
+            # Exception`` catches this and returns (hostname, {"_error": ...}).
+            raise CredentialNotFoundError("test stub: short-circuit before ssh_connect")
+
+        with patch(
+            "homelab_mcp.drift_detection.resolve_ssh_for_sitemap_row",
+            side_effect=fake_resolver,
+        ):
+            result = await scan_drift(session=None, db_adapter=db_adapter)
+
+        assert helper_calls, (
+            "Phase 41-07 WR-02: resolve_ssh_for_sitemap_row was never called. "
+            "Either scan_drift didn't reach the SSH pre-pass, or _probe_one "
+            "is bypassing the helper. Check _bulk_universal_core_probes wiring."
+        )
+        for args, kwargs in helper_calls:
+            assert "db_adapter" in kwargs, (
+                f"Phase 41-07 WR-02: resolve_ssh_for_sitemap_row called "
+                f"without db_adapter= kwarg. args={args!r} kwargs={kwargs!r}. "
+                "Without the keyword, the helper falls through to "
+                "get_database_adapter() (a fresh adapter from os.environ), "
+                "breaking scan_drift's single-source-of-truth contract."
+            )
+            assert kwargs["db_adapter"] is db_adapter, (
+                f"Phase 41-07 WR-02: resolve_ssh_for_sitemap_row received a "
+                f"DIFFERENT db_adapter than scan_drift was handed. "
+                f"Expected (id={id(db_adapter)}): {db_adapter!r}; "
+                f"received (id={id(kwargs['db_adapter'])}): {kwargs['db_adapter']!r}. "
+                "The same instance must thread through end-to-end."
+            )
+
+        # Sanity: scan_drift completed and produced a 5-bucket envelope.
+        assert "status" in result
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 38.1 D-18: TestScanDriftNotEligible — functional routing regression

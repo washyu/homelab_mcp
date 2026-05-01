@@ -1540,3 +1540,62 @@ class TestPhase41HostDialHostHygiene:
             f"Found {len(calls)}. A regression that drops a call site silently "
             "weakens the host/dial_host hygiene guard."
         )
+
+
+class TestPhase41DBAdapterHygiene:
+    """Phase 41-07 WR-02: every ``resolve_ssh_for_sitemap_row(...)`` call inside
+    ``src/homelab_mcp/drift_detection.py`` MUST supply a ``db_adapter=``
+    keyword argument. Without the kwarg, the helper falls through to
+    ``get_database_adapter()`` (which consults ``os.getenv('DATABASE_TYPE')``
+    and constructs a fresh adapter), breaking the single-source-of-truth
+    contract in scan_drift's docstring.
+
+    Why an AST guard: silent fallthrough to get_database_adapter() is a known
+    footgun (per CLAUDE.md memory "Regression-test scope: AST meta-tests
+    guard known footguns"). Plan 41-07's functional regression covers
+    ``_probe_one`` only; a new caller of ``resolve_ssh_for_sitemap_row``
+    inside drift_detection.py would silently regress without this guard.
+
+    Sources:
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-REVIEW.md WR-02
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-07-PLAN.md
+    """
+
+    def _drift_resolve_calls(self) -> list[ast.Call]:
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+        calls: list[ast.Call] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            # Match unqualified ``resolve_ssh_for_sitemap_row(...)`` (func is
+            # ast.Name) AND attribute-form ``module.resolve_ssh_for_sitemap_row``.
+            if isinstance(node.func, ast.Name) and node.func.id == "resolve_ssh_for_sitemap_row":
+                calls.append(node)
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "resolve_ssh_for_sitemap_row":
+                calls.append(node)
+        return calls
+
+    def test_drift_resolve_ssh_for_sitemap_row_threads_db_adapter(self) -> None:
+        violations: list[str] = []
+        for call in self._drift_resolve_calls():
+            kwarg_names = {kw.arg for kw in call.keywords if kw.arg}
+            if "db_adapter" not in kwarg_names:
+                violations.append(
+                    f"line {call.lineno}: resolve_ssh_for_sitemap_row(...) "
+                    "missing db_adapter= keyword. Without the kwarg, the "
+                    "helper falls through to get_database_adapter() (a "
+                    "fresh adapter from os.environ), breaking scan_drift's "
+                    "single-source-of-truth contract."
+                )
+        assert not violations, "Phase 41-07 WR-02 violation in drift_detection.py:\n  " + "\n  ".join(violations)
+
+    def test_phase41_07_resolve_call_site_floor(self) -> None:
+        calls = self._drift_resolve_calls()
+        assert len(calls) >= 1, (
+            f"Phase 41-07 guard call-site floor: expected at least 1 "
+            f"resolve_ssh_for_sitemap_row(...) call site in drift_detection.py "
+            f"(_probe_one post-Plan-41-07). Found {len(calls)}. A regression "
+            "that drops the call site silently weakens the db_adapter hygiene guard."
+        )
