@@ -9,7 +9,7 @@
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
 - ✅ **v1.5 Critical Bug Fixes** — Phases 31-32 (shipped 2026-04-20)
 - ✅ **v1.6 Credential Architecture Cleanup** — Phases 33, 33.1, 34, 35 (shipped 2026-04-24)
-- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-41.1 (in progress)
+- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-43 (in progress)
 
 ## Phases
 
@@ -97,7 +97,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 </details>
 
 <details>
-<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-41.1) — IN PROGRESS</summary>
+<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-43) — IN PROGRESS</summary>
 
 - [ ] **Phase 36: Drift ↔ Sitemap Foundation** — Drop parallel `drift_baselines` table; wire `scan_infrastructure_drift` to iterate sitemap rows; resolve Proxmox creds via `resolve_proxmox_credentials`
 - [ ] **Phase 37: Drift Output Shape & Error Hygiene** — Consistent shape across all filter scopes; four-bucket coverage transparency; error messages reference sitemap CRUD tools, never `PROXMOX_HOST`
@@ -107,6 +107,8 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 - [ ] **Phase 40: Proxmox VM Lifecycle Polish** — `get_proxmox_vm_status` clean "VM not found" error; `create_proxmox_vm` schema accuracy + cred-error guidance pointing to `credentials add`, never `PROXMOX_HOST`
 - [ ] **Phase 41: Binding-Aware Resolver Hygiene** (UAT — INSERTED) — Bugs AA + BB + V from 2026-04-28 Claude Desktop UAT: `discover_and_map` shares the same row-binding-aware credential helper as drift scan; sitemap-known hosts dial `connection_ip` not hostname; failed discoveries write errors to the requested-identifier row, never collapse onto degenerate zombie rows
 - [ ] **Phase 41.1: Test Isolation & Keyring Hygiene** (INSERTED) — Integration tests stop leaking real-keyring writes; session-scoped keyring monkeypatch fixture; AST guard against future regressions
+- [ ] **Phase 42: Drift Detection Polish** (POLISH) — Close 4 advisory BLOCKERs + 8 WARNINGs from Phase 39 `39-REVIEW.md`, all localized to `drift_detection.py`: duplicate-hostname collapse, malformed VMID coercion, cold cluster cache, swallowed enumeration errors, naive-TZ threshold, JSON-serialization edges, and assorted dead/drifted code
+- [ ] **Phase 43: Phase 38 Documentation Cleanup** (POLISH) — Close docs gaps from Phase 38 review: misleading `merge_fingerprint` docstring, undocumented `last_seen` mutation in fingerprint preview, missing pre-existing prompts in `docs/tool-reference.md`, dead `_resolve_ssh_credentials_with_binding`
 
 </details>
 
@@ -251,6 +253,32 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   - [x] 41.1-02-PLAN.md — Wave-1 session-autouse `_isolate_keyring` fixture in tests/conftest.py (3-layer defence) + SC-3 leak fix at tests/test_sitemap.py:947 (dual-alias `_REGISTRY_PATH`) + flip Plan 01 RED scaffolds GREEN + delete forensic harness
   - [x] 41.1-03-PLAN.md — Wave-2 SC-2 AST guard `TestPhase41_1KeyringHygiene` in tests/test_ast_regression.py (allowlist + eager-binding ban + alias ban + call-site floor)
 
+### Phase 42: Drift Detection Polish (POLISH)
+
+**Goal**: Close every advisory BLOCKER and WARNING surfaced in `.planning/phases/39-drift-detection-cases/39-REVIEW.md` so a future operator running `scan_infrastructure_drift` against a real homelab — duplicate hostnames in the sitemap, a malformed VMID payload, a cold-cache server restart, a Postgres adapter writing `datetime` objects, a non-UTC clock, an integer threshold of 1 day — never sees a phantom changed entry, a whole-scan abort, a duplicated unknown VM emission, a JSON serialization break, or a ±machine-TZ-offset threshold drift. All findings are localized to `src/homelab_mcp/drift_detection.py`.
+**Depends on**: Phase 39 (closes Phase 39's advisory review backlog), Phase 39.1, Phase 41 (modifications must preserve `_HOST_CLUSTER_CACHE` hygiene + host/dial_host split + `credential_id=` threading invariants from those phases)
+**Requirements**: Promoted from backlog Phase 999.19. No new REQ-IDs — closes goal-backward-non-blocking findings from `39-REVIEW.md`. Captured in `.planning/v1.7-MILESTONE-AUDIT.md` tech_debt 999.19.
+**Success Criteria** (what must be TRUE):
+  1. **BLOCKER fixes**: Duplicate-hostname rows no longer collapse SSH probe results in `dict(pairs)` (`drift_detection.py:391-395`); `int(vm.get("vmid", 0))` is replaced by a tolerant coercion that skips malformed records and emits a structured warning (`:255`); `_HOST_CLUSTER_CACHE` is warmed before unknown-VM enumeration so server-restart scans don't duplicate emissions (`:296-307`); enumeration failures emit a `logger.warning` (or higher) with host context, not silent `logger.debug` (`:317-319`).
+  2. **WARNING fixes**: `record["last_seen"]` is normalized to ISO 8601 string at the boundary so Postgres `datetime` objects round-trip cleanly through JSON (`:583, :689`); `_parse_last_seen` treats sitemap-written naive timestamps as UTC consistently with the writer side (or sitemap writer switches to `datetime.now(UTC).isoformat()` — pick one canonical convention) (`:154-167`); per-row `unreachable` shape docstring is corrected to match the 9-key missing-record shape (`:476-485`); the dead defensive fallthrough return in `_probe_one` is removed (`:387-389`); `_diff_fingerprints` either documents or fixes the current-only key skip per a deliberate semantic decision (`:213-223`); `scope` / `cluster_name` reuse across iterations is scoped per-row (`:586-691`); the `.days >` threshold is replaced with second-resolution comparison so `THRESHOLD=1` triggers at exactly 24h, not 47h59m (`:187`); SSH pre-pass is gated to skip degenerate-row routing inputs (`:517-526`).
+  3. Every fix is covered by a test (functional or unit) that pins the new behavior, including a regression test for the duplicate-hostname phantom that constructs the input shape and asserts the previous bug-shape is gone.
+  4. The full unit suite remains green (≥907 passing, no skips introduced); ruff + mypy clean on `drift_detection.py`; existing AST guards (Phase 36 D-12/D-13, Phase 38.1 D-15, Phase 39.1 D-16, Phase 41 host/dial_host hygiene) all still pass.
+**Plans**: TBD (estimated 3-4 plans grouped by concern: enumeration robustness, threshold/TZ hygiene, observability, dead-code/docstring sweep)
+
+### Phase 43: Phase 38 Documentation Cleanup (POLISH)
+
+**Goal**: Close documentation gaps surfaced in `.planning/phases/38-sitemap-fingerprint-schema/38-REVIEW.md` so a future contributor reading `merge_fingerprint`, calling `update_device_fingerprint_preview`, or scanning `docs/tool-reference.md` for available MCP prompts gets accurate, complete information. No behavior change — pure docs/dead-code cleanup.
+**Depends on**: Phase 38 (closes Phase 38's advisory review docs backlog)
+**Requirements**: Promoted from backlog Phase 999.20. No new REQ-IDs — closes documentation-only findings from `38-REVIEW.md`. Captured in `.planning/v1.7-MILESTONE-AUDIT.md` tech_debt 999.20.
+**Success Criteria** (what must be TRUE):
+  1. **IN-03 closed**: `merge_fingerprint` docstring is rewritten to describe the actual semantics — top-level keys deep-merged, but the `capabilities` sub-dict is one-level overwrite, not recursive merge. Phrasing is unambiguous to a future reader who has only the docstring.
+  2. **WR-03 closed**: `update_device_fingerprint_preview` docstring + tool description explicitly note that the persistent (non-preview) path mutates `last_seen` and `updated_at`, so consumers depending on `analyze_network_topology` row-state are not surprised. Idempotent annotation remains correct.
+  3. **IN-04 closed**: `docs/tool-reference.md` MCP Prompts section documents all five prompts: `connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`, `configure_host_fingerprint`. Cross-link breadcrumbs from related tool entries are added where natural.
+  4. **Dead code resolved**: `ssh_tools.py:312-401` `_resolve_ssh_credentials_with_binding` (retained per REVIEW-FIX WR-01 for plan-acceptance grep) is either removed and the grep allowlist updated, or annotated with a `# Deprecated: kept for grep audit; remove in v1.8` comment. Decision is documented in the SUMMARY.
+  5. **WR-02 closed**: Duplicate `list_keyring_credentials` entry in `_READ_ONLY_TOOLS` (`tool_annotations.py:37, 46`) is removed.
+  6. No functional code change — `git diff src/` shows only docstring/comment edits and the `WR-02` deduplication; tests remain green; no new tests required (docs-only phase).
+**Plans**: TBD (estimated 1-2 plans: one for source-side docstring + dead-code edits, one for `docs/tool-reference.md` MCP Prompts section)
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -291,6 +319,8 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 9/9 | Complete    | 2026-05-01 |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
+| 42. Drift Detection Polish | v1.7 | 0/0 | Not started | - |
+| 43. Phase 38 Documentation Cleanup | v1.7 | 0/0 | Not started | - |
 
 ## Backlog
 
@@ -450,24 +480,6 @@ Plans:
 ### Phase 999.18: credentials add auto-bind prompt clarity (BACKLOG)
 
 **Goal:** [Captured during v1.7 UAT 2026-04-28] `_auto_bind_credential` prompt `Sitemap row 'pve' is already bound to a different proxmox credential. Overwrite the mapping? [y/N]:` reads like an abort point but the credential is already stored in keyring + registry by the time the prompt fires. Saying `n` keeps the existing binding, leaves the new credential orphaned, and prints "Stored proxmox credential ..." which contradicts user intent. Fixes (cheapest first): reword prompt to make stored-vs-binding distinction explicit; add post-`n` feedback pointing to `credentials link <hostname> <new-uuid> --type proxmox`. Larger fix: ask the binding question before commit, with `[y/N/abort]` third option that rolls back the keyring + registry write.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd-review-backlog when ready)
-
-### Phase 999.19: Phase 39 drift_detection.py review backlog (BACKLOG)
-
-**Goal:** [Captured from v1.7-MILESTONE-AUDIT.md tech_debt] Phase 39 code review surfaced 4 advisory BLOCKERs + 8 WARNINGs, all localized to `src/homelab_mcp/drift_detection.py`. BLOCKERs: duplicate-hostname collapse in `dict(pairs)` (`:391-395`); `int(vmid)` crash on malformed Proxmox payload (`:255`); cold `_HOST_CLUSTER_CACHE` defeats cluster de-dupe on restart (`:296-307`); enumeration failures swallowed at `logger.debug` (`:317-319`). WARNINGs: `last_seen` JSON serialization (`:583,689`), naive timestamp TZ (`:154-167`), per-row docstring shape drift (`:476-485`), dead defensive return (`:387-389`), current-only key skip (`:213-223`), scope/cluster_name reuse across iterations (`:586-691`), `.days` threshold off-by-23h59m (`:187`), SSH pre-pass vs degenerate-row routing order (`:517-526`). None block ROADMAP SC achievement (audit confirms goal-backward), but they are real correctness gaps suitable for a polish phase.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (promote with /gsd-review-backlog when ready)
-
-### Phase 999.20: Phase 38 documentation cleanup (BACKLOG)
-
-**Goal:** [Captured from v1.7-MILESTONE-AUDIT.md tech_debt] Phase 38 fingerprint work left documentation gaps: IN-03 `merge_fingerprint` deep-merge docstring is misleading (capabilities sub-dict is one-level overwrite); WR-03 `update_device_fingerprint_preview` doesn't surface that the persistent path mutates `last_seen` and `updated_at`; IN-04 pre-existing prompts (`connect_to_device`, `decommission_device_workflow`, `deploy_service_workflow`, `homelab_health_check`) absent from `docs/tool-reference.md` MCP Prompts section. Plus `ssh_tools.py:312-401` dead `_resolve_ssh_credentials_with_binding` — retained for plan-acceptance grep per REVIEW-FIX WR-01, decide whether to remove or annotate. Pure docs / cleanup phase, no behavior change.
 **Requirements:** TBD
 **Plans:** 0 plans
 
