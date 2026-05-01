@@ -235,3 +235,78 @@ Both adjustments are pre-commit-hook normalizations, not deviations from the pla
 - No pre-existing tests in `tests/test_drift_detection.py` modified ✓
 
 All claims verified.
+
+## Revision: Phase 39 fixture migration (2026-05-01)
+
+**Trigger:** Plan 03 quality gate FAILED at Step 5 (commit `90ac3c8`,
+`.planning/phases/42-drift-detection-polish/42-03-SUMMARY.md`). The original
+Plan 02 harness (commit `b1cb635`) added Phase 42 polish tests in
+`tests/test_drift_detection_polish.py` with the correct tuple-key shape, but
+did NOT audit the pre-existing `tests/test_drift_detection.py` Phase 39
+fixtures for the same B1 contract migration. Three of those pre-existing
+tests still patched `_bulk_universal_core_probes` with bare-hostname dict
+keys (`{"pve1": {...}}`), causing the consumer's tuple-keyed
+`ssh_probe_results.get((hostname, ssh_credential_id), {})` lookup to miss
+against the bare-string-keyed mock — empty live fingerprint, no diff, host
+stayed in `probed_ok` instead of `changed[]`.
+
+**Migration applied** (commit `68c07f7`):
+
+| File:Line | Test | Old key | New key |
+|---|---|---|---|
+| `tests/test_drift_detection.py:~1959` | `TestPhase39Changed::test_kernel_change_in_changed_bucket` | `"pve1"` | `("pve1", "22222222-2222-2222-2222-222222222222")` |
+| `tests/test_drift_detection.py:~2184` | `TestPhase39Changed::test_changed_field_dotted_path_for_capabilities` | `"pve1"` | `("pve1", "ffffffff-ffff-4fff-8fff-ffffffffffff")` |
+| `tests/test_drift_detection.py:~2354` | `TestPhase39Bucket::test_changed_host_with_unknown_vms` | `"pve1"` | `("pve1", "22222222-2222-2222-2222-222222222222")` |
+
+The `ssh_credential_id` literal is sourced from each test's row fixture:
+
+- Tests 1 + 3 use `sitemap_row_with_stored_fingerprint` (defined in
+  `tests/conftest.py:123`) which sets
+  `ssh_credential_id = "22222222-2222-2222-2222-222222222222"`.
+- Test 2 uses an inline row literal (defined in
+  `tests/test_drift_detection.py:2150`) which sets
+  `ssh_credential_id = "ffffffff-ffff-4fff-8fff-ffffffffffff"`.
+
+A migration comment was added to each patch site (`# Phase 42 B1: probe map
+keyed on (hostname, ssh_credential_id) tuple — matches the row's
+ssh_credential_id from <fixture-name>`) so future readers see the shape
+contract at the patch site.
+
+**Why these 3 tests failed but the other 5 `{"pve1": {...}}` patches in the
+same file did not:** the other tests in `TestPhase39Changed` either assert
+`changed == 0` / `probed_ok == 1` (which is the exact behavior produced by
+a missing probe — empty diff routes to probed_ok) or assert on
+`update_device_fingerprint.call_count` (orthogonal to the lookup outcome).
+Only the 3 tests asserting `changed == 1` (i.e., requiring the probe lookup
+to succeed and produce a non-empty diff) actually exercised the contract.
+
+**Verification post-migration:**
+
+```text
+$ uv run pytest tests/test_drift_detection.py -v
+============================= 64 passed in 1.72s ==============================
+```
+
+All 64 tests in `test_drift_detection.py` green (3 previously-failing now
+pass; 61 previously-passing still pass).
+
+```text
+$ uv run pytest tests/ -m "not integration"
+========= 936 passed, 15 skipped, 25 deselected, 1 warning in 12.47s ==========
+```
+
+Full unit suite green (was `3 failed, 933 passed` pre-migration; now
+`936 passed` — exactly the predicted post-fix headline from the original
+Plan 03 SUMMARY).
+
+```text
+$ uv run ruff check src/homelab_mcp/drift_detection.py src/homelab_mcp/sitemap.py tests/test_drift_detection.py tests/test_drift_detection_polish.py
+All checks passed!
+
+$ uv run mypy src/homelab_mcp/drift_detection.py src/homelab_mcp/sitemap.py
+Success: no issues found in 2 source files
+```
+
+Plan 03 quality gate now PASSES — see updated
+`.planning/phases/42-drift-detection-polish/42-03-SUMMARY.md` for full gate
+re-run output.
