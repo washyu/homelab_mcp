@@ -289,7 +289,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete    | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
-| 41. Binding-Aware Resolver Hygiene | v1.7 | 3/9 | In Progress|  |
+| 41. Binding-Aware Resolver Hygiene | v1.7 | 4/9 | In Progress|  |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
 
 ## Backlog
@@ -298,7 +298,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 3/9 plans executed
+**Plans:** 4/9 plans executed
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
