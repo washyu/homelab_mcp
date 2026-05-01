@@ -234,7 +234,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   - [x] 41-06-PLAN.md — Wave 5 gap-closure: split host=hostname / dial_host=connection_ip on get_proxmox_client; restore _HOST_CLUSTER_CACHE + telemetry-cache hygiene on drift Proxmox path; remove WR-04 unreachable raise; add TestPhase41HostDialHostHygiene AST guard (closes CR-01 + WR-01 + WR-04)
   - [x] 41-07-PLAN.md — Wave 6 gap-closure: thread db_adapter through _bulk_universal_core_probes → _probe_one → resolve_ssh_for_sitemap_row; regression test asserts identity-level adapter threading (closes WR-02)
   - [x] 41-08-PLAN.md — Wave 5 gap-closure: repoint two Bug-BB regression tests at homelab_mcp.ssh_tools.ssh_discover_system; remove unparseable-UUID seed short-circuit (closes WR-03)
-  - [ ] 41-09-PLAN.md — Wave 6 gap-closure: split request_identifier (hostname) from dial_target on ssh_connection_wrapper error envelopes; ssh_discover_system + ssh_execute_command accept dial_target= kwarg with back-compat default; regression tests for split + back-compat paths (closes WR-05)
+  - [x] 41-09-PLAN.md — Wave 6 gap-closure: split request_identifier (hostname) from dial_target on ssh_connection_wrapper error envelopes; ssh_discover_system + ssh_execute_command accept dial_target= kwarg with back-compat default; regression tests for split + back-compat paths (closes WR-05)
 
 ### Phase 41.1: Test Isolation & Keyring Hygiene (INSERTED)
 
@@ -289,7 +289,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 39. Drift Detection Cases | v1.7 | 3/3 | Complete    | 2026-04-28 |
 | 39.1 Thread credential_id through drift enum | v1.7 | 1/1 | Complete    | 2026-04-29 |
 | 40. Proxmox VM Lifecycle Polish | v1.7 | 3/3 | Complete    | 2026-04-28 |
-| 41. Binding-Aware Resolver Hygiene | v1.7 | 8/9 | In Progress|  |
+| 41. Binding-Aware Resolver Hygiene | v1.7 | 9/9 | Complete    | 2026-05-01 |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
 
 ## Backlog
@@ -298,7 +298,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 
 **Goal:** [Captured for future planning] Add MCP-side tools (or confirm CLI parity) for server-registration CRUD beyond `register_server` verify: renaming `display_name`, changing the registered username, unregistering from sitemap while preserving history. Phase 33 removed `update_server_credentials` + `remove_server` MCP tools (D-20/D-21). The replacements are CLI-only (`credentials remove`) and CLI doesn't touch sitemap rows. Live testing flagged the gap.
 **Requirements:** TBD
-**Plans:** 8/9 plans executed
+**Plans:** 9/9 plans complete
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)

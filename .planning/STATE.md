@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Drift Architectural Fix
-status: executing
+status: ready_to_plan
 stopped_at: Phase 40 context gathered
 last_updated: "2026-04-30T21:16:24.337Z"
 last_activity: 2026-04-30 -- Phase 41 execution started
 progress:
   total_phases: 15
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 25
   completed_plans: 16
-  percent: 47
+  percent: 53
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 ## Current Position
 
 Milestone: v1.7 Drift Architectural Fix
-Phase: 41 (binding-aware-resolver-hygiene) — EXECUTING
-Plan: 1 of 9
-Status: Executing Phase 41
-Last activity: 2026-04-30 -- Phase 41 execution started
+Phase: 41.1
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-01
 
 Progress: [█████     ] 40% — 2 / 5 phases complete (Phase 36 + Phase 37 verified); Phase 38 plans 6/6 complete (awaiting verifier)
 
