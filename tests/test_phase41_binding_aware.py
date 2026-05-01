@@ -120,37 +120,55 @@ async def test_discover_and_map_uses_row_binding_when_row_exists(sitemap):
 
 
 @pytest.mark.asyncio
-async def test_failed_discover_writes_to_requested_identifier_row(sitemap):
+async def test_failed_discover_writes_to_requested_identifier_row(sitemap, monkeypatch):
     """Bug BB: a failed discovery should upsert to the existing row for
     hostname="pve", NOT create a degenerate zombie row.
 
-    Pre-seed a row for "pve".  Force ssh_discover_system to return an error
-    envelope with connection_ip="pve".  After discover_and_store, exactly one
-    row should exist with hostname="pve" and status="error".
+    Phase 41-08 WR-03 fix: previously patched
+    ``homelab_mcp.ssh_tools.ssh_discover_system_with_binding`` (no longer called
+    by ``discover_and_store`` post Plan 41-03). The patched mock was never
+    reached, so the test passed for the wrong reason.
+
+    Phase 41-08 WARN-01: option (b) MANDATED — monkeypatch
+    ``resolve_ssh_credentials`` so the resolver returns valid creds and the
+    patched ``ssh_discover_system`` is actually invoked (NOT short-circuited
+    via CredentialNotFoundError).
+
+    Phase 41-08 WARN-02: assert ``mock_discover.assert_called_once()`` so a
+    future short-circuit regression cannot silently pass the patch-target
+    presence grep while the mock goes unreached.
     """
+    from homelab_mcp.ssh_tools import SSHCredentials
+
     _seed_row(sitemap, hostname="pve", connection_ip="192.168.10.20")
 
-    # The ssh_connection_wrapper error envelope uses "connection_ip" as the
-    # dialed target but does NOT include a separate "hostname" field (Bug BB).
-    # parse_discovery_output thus produces device.hostname="" — a degenerate
-    # key that creates a zombie row keyed by (hostname="", connection_ip="pve")
-    # instead of updating the pre-existing hostname="pve" row.
-    error_payload = json.dumps(
-        {
-            "status": "error",
-            "connection_ip": "pve",
-            "error": "timeout",
-            # NOTE: no "hostname" field — this is the actual shape produced by
-            # ssh_connection_wrapper when a timeout occurs (Bug BB source).
-        }
+    # Phase 41-08 WARN-01: bypass CredentialNotFoundError so the patched
+    # ssh_discover_system is actually reached.
+    monkeypatch.setattr(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        lambda *a, **kw: SSHCredentials(
+            hostname=kw.get("hostname", a[0] if a else "pve"),
+            username="root",
+            password="stub",
+            key_path=None,
+            port=22,
+        ),
     )
 
+    # Real Bug-BB scenario: ssh_connection_wrapper's error envelope on a
+    # timeout uses "connection_ip" but no separate "hostname" field —
+    # parse_discovery_output thus produces device.hostname="" without
+    # Plan 41-03's requested_identifier fix.
+    error_payload = json.dumps({"status": "error", "connection_ip": "pve", "error": "timeout"})
+
     with patch(
-        "homelab_mcp.ssh_tools.ssh_discover_system_with_binding",
-        new_callable=AsyncMock,
-        return_value=(error_payload, None),
-    ):
+        "homelab_mcp.ssh_tools.ssh_discover_system",
+        new=AsyncMock(return_value=error_payload),
+    ) as mock_discover:
         await discover_and_store(sitemap, hostname="pve")
+        # Phase 41-08 WARN-02: lock the invariant that the patched discovery
+        # layer was actually invoked.
+        mock_discover.assert_called_once()
 
     all_rows = sitemap.db_adapter.get_all_devices()
     assert len(all_rows) == 1, (
@@ -162,22 +180,44 @@ async def test_failed_discover_writes_to_requested_identifier_row(sitemap):
 
 
 @pytest.mark.asyncio
-async def test_failed_discover_does_not_collapse_to_empty_hostname(sitemap):
+async def test_failed_discover_does_not_collapse_to_empty_hostname(sitemap, monkeypatch):
     """Bug BB: when parse_discovery_output gets a JSONDecodeError, the
     resulting row must use the requested hostname ("fakehost.local"), NOT
     "unknown" or "".
 
-    No row pre-seeded.  Force the discovery result to be malformed JSON so
-    parse_discovery_output raises JSONDecodeError internally.
+    Phase 41-08 WR-03 fix: previously patched
+    ``homelab_mcp.ssh_tools.ssh_discover_system_with_binding`` (no longer called
+    by discover_and_store). The malformed payload never reached
+    parse_discovery_output's JSONDecodeError branch.
+
+    Phase 41-08 WARN-01: option (b) MANDATED — monkeypatch
+    ``resolve_ssh_credentials`` so the resolver returns valid creds; the
+    patched ``ssh_discover_system`` then fires and returns malformed JSON.
+
+    Phase 41-08 WARN-02: assert mock invocation so a future short-circuit
+    regression cannot silently pass the patch-target presence grep.
     """
+    from homelab_mcp.ssh_tools import SSHCredentials
+
+    monkeypatch.setattr(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        lambda *a, **kw: SSHCredentials(
+            hostname=kw.get("hostname", a[0] if a else "fakehost.local"),
+            username="root",
+            password="stub",
+            key_path=None,
+            port=22,
+        ),
+    )
+
     malformed_payload = "NOT_VALID_JSON{"
 
     with patch(
-        "homelab_mcp.ssh_tools.ssh_discover_system_with_binding",
-        new_callable=AsyncMock,
-        return_value=(malformed_payload, None),
-    ):
+        "homelab_mcp.ssh_tools.ssh_discover_system",
+        new=AsyncMock(return_value=malformed_payload),
+    ) as mock_discover:
         await discover_and_store(sitemap, hostname="fakehost.local")
+        mock_discover.assert_called_once()
 
     all_rows = sitemap.db_adapter.get_all_devices()
     hostnames = [r["hostname"] for r in all_rows]
