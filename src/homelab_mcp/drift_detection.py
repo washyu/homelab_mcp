@@ -165,21 +165,22 @@ def _parse_last_seen(raw: str | datetime | None) -> datetime | None:
     path. The downstream ``record["last_seen"]`` field is then guaranteed
     to flow through ``isoformat()`` regardless of adapter.
 
-    WR-03 (Phase 39 review): the unconditional ``replace(tzinfo=UTC)`` is
-    a known imprecision. ``sitemap.py`` writes
-    ``datetime.now().isoformat()`` — *local* wall-clock time, no offset
-    suffix. On a server whose local time is not UTC, a 6-hour-old record
-    looks 6 hours into the future or 30 hours in the past depending on
-    direction; on a host that crosses a DST boundary the offset shifts
-    by 1 hour mid-scan. The practical effect: a configured threshold of
-    7 days has a true tolerance of "7 days +/- machine TZ offset" (and
-    similarly for any other threshold), so a 1-day threshold can take
-    up to 47 hours to fire on a UTC-12 server.
+    WR-03 (Phase 39 review) — RESOLVED at the writer side in Phase 42 W2:
+    ``sitemap.py`` now writes ``datetime.now(UTC).isoformat()`` at both
+    ``last_seen=`` writer sites (the success branch in
+    ``store_discovery_data`` and the JSONDecodeError fallback). New rows
+    therefore carry an explicit ``+00:00`` offset suffix and parse to
+    aware UTC datetimes via the ``dt.tzinfo is not None`` branch below
+    — no ``replace(tzinfo=UTC)`` shimming needed.
 
-    The proper fix is in sitemap.py — switch the writer to
-    ``datetime.now(UTC).isoformat()`` (a follow-up phase) and treat naive
-    timestamps as malformed here. Until that ships, operators relying on
-    sub-day precision should run the server in UTC.
+    The unconditional ``replace(tzinfo=UTC)`` for naive timestamps is
+    retained for backward-compat: pre-Phase-42 rows persisted before the
+    canonical writer was deployed (and any naive datetimes returned by a
+    Postgres adapter without explicit offset) still parse correctly. The
+    historical imprecision — a configured threshold of 1 day taking up
+    to 47 hours to fire on a non-UTC server because the writer carried
+    no offset — applies only to legacy rows; new rows are
+    offset-invariant.
     """
     if raw is None:
         return None

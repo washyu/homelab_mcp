@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .database import calculate_data_hash, get_database_adapter
@@ -92,7 +92,13 @@ class NetworkSiteMap:
             device = NetworkDevice(
                 hostname=data.get("hostname", ""),
                 connection_ip=data.get("connection_ip", ""),
-                last_seen=datetime.now().isoformat(),
+                # Phase 42 W2: write canonical UTC ISO-8601 with explicit
+                # offset suffix so drift's _parse_last_seen sees an aware
+                # datetime regardless of server local-TZ. Pre-Phase-42
+                # writes were `datetime.now()` (naive, local-wall-clock),
+                # which made the missing-promotion threshold drift by up
+                # to ±machine-TZ-offset hours.
+                last_seen=datetime.now(UTC).isoformat(),
                 status=data.get("status", "error"),
             )
 
@@ -165,7 +171,11 @@ class NetworkSiteMap:
             return NetworkDevice(
                 hostname=fallback,
                 connection_ip=fallback,
-                last_seen=datetime.now().isoformat(),
+                # Phase 42 W2: canonical UTC writer (see sibling write
+                # above). Even the JSONDecodeError fallback row gets a
+                # UTC-anchored timestamp so drift's threshold compare is
+                # offset-invariant.
+                last_seen=datetime.now(UTC).isoformat(),
                 status="error",
                 error_message=f"JSON parse error: {sanitize_error(e)}",
             )
