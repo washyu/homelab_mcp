@@ -473,3 +473,12 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.21: remove_device tool — pure SQL DELETE for sitemap row, no host-side actions (BACKLOG)
+
+**Goal:** Close the sitemap CRUD gap where `decommission_device` is currently the only delete path but carries Ansible/Terraform host-cleanup semantics. Two distinct user intents — "retire the host" vs "remove from inventory" — are collapsed onto one tool today. Add `remove_device(device_id, dry_run=False)`: pure SQL DELETE on the sitemap row, no SSH, no host-side actions. Preserve any keyring entries bound via `ssh_credential_id` — only drop the sitemap-side binding. Naming pairs naturally with `decommission_device` (remove-from-inventory vs retire-the-host). Scenarios needing pure-DB deletion: test cleanup / reset-and-rediscover flows; stale entries from DHCP IP changes (orphan row, host fine); hostname rename (e.g. `gatewaylocalhost` → `gateway`) where old row is wrong but host is fine; wrong identifier registered (e.g. `pve` vs `pve.home.lab`); healthy row user no longer wants tracked, without SSH'ing in to clean up. Note: `purge_failed_discoveries` already covers `status=error` rows, so `remove_device` is for healthy/stale rows specifically.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
