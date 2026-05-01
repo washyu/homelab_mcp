@@ -411,23 +411,38 @@ async def _enumerate_proxmox_vms(
     values are legitimate (cluster-served rows fall through to Tier-1/Tier-2
     walk, matching scan_drift row-loop semantics at lines 744-752).
     """
-    pairs: list[tuple[str, str | None]] = []
+    pairs: list[tuple[str, str, str | None]] = []
     for record in probed_ok_records:
         hostname = record.get("hostname") or ""
         if not hostname:
             continue  # NOTE: outside scan_drift row loop; outside Phase 38.1 D-15 guard.
+        connection_ip = record.get("connection_ip") or hostname
         cluster_name = _HOST_CLUSTER_CACHE.get(hostname)
-        pairs.append((hostname, cluster_name))
+        pairs.append((hostname, connection_ip, cluster_name))
 
     # Loop-free de-dupe: one entry per (cluster_name OR hostname). When two
-    # hosts share a cluster_name, only the second-seen pair survives — both
-    # would have produced identical /cluster/resources output anyway.
-    targets = list({(c or h): (h, c) for h, c in pairs}.values())
+    # hosts share a cluster_name, only the second-seen triple survives — both
+    # would have produced identical /cluster/resources output anyway. The
+    # dedupe key is (cluster_name OR hostname) — NOT connection_ip — to keep
+    # the cluster-cache invariant: hostname is the canonical resolver/cache key.
+    targets = list({(c or h): (h, ci, c) for h, ci, c in pairs}.values())
 
-    async def _enum_one(h: str, _c: str | None) -> tuple[str, list[dict[str, Any]]]:
+    async def _enum_one(h: str, dial_host: str, _c: str | None) -> tuple[str, list[dict[str, Any]]]:
         binding = host_to_binding.get(h)  # None for cluster-served rows
         try:
-            client = await get_proxmox_client(host=h, session=session, credential_id=binding)
+            # Phase 41-06 WR-01: pair host=h (resolver/cache key — matches
+            # _HOST_CLUSTER_CACHE.get(hostname) above and host_to_binding map
+            # keys) with dial_host (carried as connection_ip from the
+            # probed_ok record). Plan 41-04 only addressed the ssh_connect
+            # dial site in _probe_one and scan_drift's get_proxmox_client; the
+            # cluster-resources enumeration was missed. Plan 41-06 closes the
+            # gap so cluster-dedupe survives hostname != connection_ip rows.
+            client = await get_proxmox_client(
+                host=h,
+                dial_host=dial_host,
+                session=session,
+                credential_id=binding,
+            )
             resources = await client.get("/cluster/resources")
             if not isinstance(resources, list):
                 return (h, [])
@@ -448,7 +463,7 @@ async def _enumerate_proxmox_vms(
 
     if not targets:
         return {}
-    results = await asyncio.gather(*[_enum_one(h, c) for h, c in targets])
+    results = await asyncio.gather(*[_enum_one(h, ci, c) for h, ci, c in targets])
     return dict(results)
 
 
@@ -528,23 +543,15 @@ async def _bulk_universal_core_probes(
                 # resolve_ssh_credentials); catching here keeps drift's SSH
                 # pre-pass non-fatal when a row's binding is stale or desynced.
                 return (hostname, {"_error": sanitize_error(exc)})
-        # WR-B (Phase 39 re-review): every branch of the inner try/except
-        # returns, so this point is genuinely unreachable. The prior
-        # ``logger.error`` + sentinel-return reframing was itself dead
-        # code — a future regression that DID make this reachable would
-        # silently emit ``probe_one_unreachable_fallthrough`` into the
-        # probe map, where the row loop would then treat it like a real
-        # ``_error`` and route the host to probed_ok with no fingerprint
-        # diff (the exact silent-failure mode the prior comment claimed
-        # to prevent). ``raise AssertionError`` ensures a regression
-        # crashes loudly with a stack trace instead of vanishing into
-        # the probe map. The bare ``except Exception`` above already
-        # makes mypy's exhaustiveness check satisfied without this line,
-        # but we keep the explicit ``raise`` as a defensive belt: if a
-        # future refactor splits the broad except into narrower clauses
-        # without re-establishing exhaustiveness, this line will both
-        # satisfy mypy AND fail loudly at runtime.
-        raise AssertionError(f"_probe_one reached unreachable fallthrough for hostname={hostname!r}")
+        # Phase 41-06 WR-04: removed the unreachable belt-and-braces raise.
+        # The bare ``except Exception`` above catches every exception type;
+        # any future refactor that narrows it must add its own logged
+        # sentinel-return path here, not rely on a structurally-unreachable
+        # raise (would crash inside asyncio.gather(return_exceptions=False)
+        # and abort the entire scan, defeating D-10). Sentinel return below
+        # is required only for mypy's exhaustiveness check; runtime is
+        # unreachable per the comment above.
+        return (hostname, {"_error": "probe_one_unreachable_fallthrough"})
 
     # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
     # hostname; if two rows share a hostname, only one probe survives in
@@ -762,11 +769,20 @@ async def scan_drift(
             # resolver falls through to Tier-1/Tier-2 (cluster walk handles
             # cluster-served rows per D-09).
             try:
-                # Phase 41 Bug V (Pitfall 4): dial row.connection_ip when
-                # truthy; fall back to hostname when empty/None.
+                # Phase 41-06 CR-01: keep hostname as the canonical resolver/cache
+                # key (matches _HOST_CLUSTER_CACHE writes + the
+                # get_resolution_telemetry(hostname, binding) lookup below);
+                # pass connection_ip as the TCP dial target only via dial_host=.
+                # Plan 41-04 had set host=connection_ip, forcing
+                # resolve_proxmox_credentials to write the telemetry cache as
+                # (connection_ip, binding) while the very next
+                # get_resolution_telemetry(hostname, binding) call read by
+                # hostname — guaranteed miss when hostname != connection_ip,
+                # defeating the WR-04 double-resolve guard.
                 dial_host = row.get("connection_ip") or hostname
                 client = await get_proxmox_client(
-                    host=dial_host,
+                    host=hostname,
+                    dial_host=dial_host,
                     session=session,
                     credential_id=binding,
                 )
