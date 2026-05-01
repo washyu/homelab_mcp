@@ -534,8 +534,24 @@ async def ssh_discover_system(
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
+    *,
+    dial_target: str | None = None,
 ) -> str:
-    """SSH into a system and gather hardware/system information."""
+    """SSH into a system and gather hardware/system information.
+
+    Args:
+        hostname: Requested identifier (the value the caller asked to discover).
+            Preserved as the ``hostname`` field on error envelopes via
+            ``ssh_connection_wrapper``.
+        dial_target: Optional TCP dial target (Phase 41-09 WR-05). When
+            supplied, the SSH client connects to this host:port; the wrapper's
+            error envelope reports ``hostname`` as the requested identifier
+            and ``connection_ip`` as the dial target. When None, defaults to
+            ``hostname`` (back-compat).
+    """
+    # Phase 41-09 WR-05: split requested identifier from TCP dial target.
+    effective_dial = dial_target or hostname
+
     # Resolve credentials using priority order
     creds = resolve_ssh_credentials(
         hostname=hostname,
@@ -553,7 +569,7 @@ async def ssh_discover_system(
         )
 
     async with await ssh_connect(
-        hostname=creds.hostname,
+        hostname=effective_dial,
         username=creds.username,
         port=creds.port,
         password=creds.password,
@@ -801,7 +817,11 @@ async def ssh_discover_system(
     payload: dict[str, Any] = {
         "status": "success",
         "hostname": actual_hostname,
-        "connection_ip": hostname,
+        # Phase 41-09 WR-05: connection_ip carries the actual TCP dial target
+        # (effective_dial = dial_target or hostname). When dial_target was
+        # not supplied, this is identical to the pre-Phase-41-09 behavior
+        # (connection_ip == hostname).
+        "connection_ip": effective_dial,
         "data": system_info,
     }
     if timed_out_commands:
@@ -881,10 +901,7 @@ def resolve_ssh_for_sitemap_row(
         if len(healthy) == 1:
             matched_rows = healthy
         else:
-            registered = ", ".join(
-                f"{r.get('hostname', '?')}@{r.get('connection_ip', '?')}"
-                for r in matched_rows
-            )
+            registered = ", ".join(f"{r.get('hostname', '?')}@{r.get('connection_ip', '?')}" for r in matched_rows)
             raise CredentialNotFoundError(
                 f"Multiple sitemap rows matched {identifier!r}: {registered}. "
                 "Disambiguate by passing the exact hostname or connection_ip, "
@@ -900,7 +917,12 @@ def resolve_ssh_for_sitemap_row(
             binding,
         )
         creds = resolve_ssh_credentials(
-            identifier, username, password, key_path, port, credential_id=binding,
+            identifier,
+            username,
+            password,
+            key_path,
+            port,
+            credential_id=binding,
         )
     else:
         logger.debug(
@@ -1040,9 +1062,21 @@ async def ssh_execute_command(
     password: str | None = None,
     sudo: bool = False,
     port: int = 22,
+    *,
+    dial_target: str | None = None,
     **kwargs: Any,
 ) -> str:
-    """Execute a command on a remote system via SSH."""
+    """Execute a command on a remote system via SSH.
+
+    Phase 41-09 WR-05: ``dial_target`` is an optional TCP dial target. When
+    supplied, the SSH client connects to this host:port; the wrapper's error
+    envelope reports ``hostname`` as the requested identifier and
+    ``connection_ip`` as the dial target. When None, defaults to ``hostname``
+    (back-compat with every legacy caller).
+    """
+    # Phase 41-09 WR-05: split requested identifier from TCP dial target.
+    effective_dial = dial_target or hostname
+
     # Resolve credentials using priority order
     creds = resolve_ssh_credentials(
         hostname=hostname,
@@ -1064,7 +1098,7 @@ async def ssh_execute_command(
             )
 
     async with await ssh_connect(
-        hostname=creds.hostname,
+        hostname=effective_dial,
         username=creds.username,
         port=creds.port,
         password=creds.password,

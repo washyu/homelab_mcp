@@ -305,7 +305,10 @@ class TestAsyncFunctions:
         result = await discover_and_store(sitemap, hostname="test-host", username="test-user", password="test-pass")
 
         # Verify SSH discovery was called
-        mock_ssh_discover.assert_called_once_with("test-host", "test-user", "test-pass", None, 22)
+        # Phase 41-09 WR-05: discover_and_store now passes dial_target= explicitly.
+        mock_ssh_discover.assert_called_once_with(
+            "test-host", "test-user", "test-pass", None, 22, dial_target="test-host"
+        )
 
         # Verify result
         result_data = json.loads(result)
@@ -418,13 +421,15 @@ class TestAsyncFunctions:
 
         resolver_called_with_username: list = []
 
-        def fake_resolve_credentials(hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None):
+        def fake_resolve_credentials(
+            hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None
+        ):
             resolver_called_with_username.append(username)
             return fake_creds
 
         captured: dict = {}
 
-        async def fake_ssh_discover(hostname, username, password, key_path, port):
+        async def fake_ssh_discover(hostname, username, password, key_path, port, *, dial_target=None):
             captured["hostname"] = hostname
             captured["username"] = username
             captured["password"] = password
@@ -453,8 +458,7 @@ class TestAsyncFunctions:
         )
         # Verify ssh_discover_system was called (credential resolution succeeded).
         assert captured.get("hostname") == "h.example.com", (
-            f"D-06: ssh_discover_system was not called or received wrong hostname; "
-            f"captured={captured!r}"
+            f"D-06: ssh_discover_system was not called or received wrong hostname; captured={captured!r}"
         )
 
     @pytest.mark.asyncio
@@ -483,13 +487,15 @@ class TestAsyncFunctions:
 
         resolver_called_with_username: list = []
 
-        def fake_resolve_credentials(hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None):
+        def fake_resolve_credentials(
+            hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None
+        ):
             resolver_called_with_username.append(username)
             return fake_creds
 
         captured_calls: list[dict] = []
 
-        async def fake_ssh_discover(hostname, username, password, key_path, port):
+        async def fake_ssh_discover(hostname, username, password, key_path, port, *, dial_target=None):
             captured_calls.append(
                 {
                     "hostname": hostname,
@@ -521,9 +527,7 @@ class TestAsyncFunctions:
             f"got calls with username values: {resolver_called_with_username!r}"
         )
         # Verify ssh_discover_system was called (the bulk path completes the discovery).
-        assert len(captured_calls) == 1, (
-            f"D-07: expected 1 ssh_discover_system call; got {len(captured_calls)}"
-        )
+        assert len(captured_calls) == 1, f"D-07: expected 1 ssh_discover_system call; got {len(captured_calls)}"
 
     @pytest.mark.asyncio
     async def test_discover_and_store_resolves_username_from_keyring(self, monkeypatch, temp_db) -> None:

@@ -472,7 +472,11 @@ async def discover_and_store(
     used_credential_id: str | None = None
     try:
         creds, row = resolve_ssh_for_sitemap_row(
-            hostname, username, password, key_path, port,
+            hostname,
+            username,
+            password,
+            key_path,
+            port,
             db_adapter=sitemap.db_adapter,
         )
         # Phase 41 Bug V: dial row.connection_ip when truthy; Pitfall 4
@@ -491,11 +495,12 @@ async def discover_and_store(
             used_credential_id = _scan_registry_for_binding(hostname, username)
 
         discovery_result = await ssh_discover_system(
-            dial_target,
+            hostname,  # Phase 41-09 WR-05: requested identifier (preserved on error envelopes)
             creds.username,
             creds.password,
             creds.key_path,
             creds.port,
+            dial_target=dial_target,  # Phase 41-09 WR-05: TCP target via dedicated kwarg
         )
     except CredentialNotFoundError as exc:
         # Surface multi-match / no-creds as an error row keyed on the

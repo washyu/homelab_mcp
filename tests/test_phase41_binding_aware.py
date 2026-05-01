@@ -350,3 +350,72 @@ async def test_error_envelope_carries_hostname():
     result = await slow(hostname="pve")
     envelope = json.loads(result)
     assert envelope.get("hostname") == "pve", f"Bug BB envelope: missing/wrong hostname field; got {envelope!r}"
+
+
+@pytest.mark.asyncio
+async def test_envelope_split_request_identifier_from_dial_target() -> None:
+    """Phase 41-09 WR-05: when ssh_connection_wrapper receives both
+    ``hostname`` (requested identifier) and ``dial_target`` (TCP target)
+    via kwargs, the error envelope emits them as distinct fields:
+    ``hostname`` carries the requested identifier; ``connection_ip``
+    carries the dial target.
+
+    Pre-Phase-41-09 the envelope emitted both fields as the same value
+    (the dial target) — the requested identifier was lost for any caller
+    that did not post-merge through find_devices_by_hostname_or_ip
+    (e.g., direct MCP tool callers like ssh_execute_command's dispatcher).
+
+    See 41-REVIEW.md WR-05.
+    """
+
+    @ssh_connection_wrapper(timeout_seconds=0.01)
+    async def stub_op(hostname: str, *, dial_target: str | None = None) -> str:
+        import asyncio
+
+        await asyncio.sleep(1.0)
+        return "{}"
+
+    raw = await stub_op(hostname="pve", dial_target="192.168.10.20")
+    envelope = json.loads(raw)
+
+    assert envelope["status"] == "error"
+    assert envelope["hostname"] == "pve", (
+        f"Phase 41-09 WR-05: expected hostname='pve' (the REQUESTED identifier), got {envelope.get('hostname')!r}."
+    )
+    assert envelope["connection_ip"] == "192.168.10.20", (
+        f"Phase 41-09 WR-05: expected connection_ip='192.168.10.20' "
+        f"(the TCP dial target), got {envelope.get('connection_ip')!r}."
+    )
+    assert envelope["hostname"] != envelope["connection_ip"], (
+        "Phase 41-09 WR-05: the split is meaningful only when "
+        "requested != dial_target. With pve != 192.168.10.20, the two "
+        "fields must differ."
+    )
+
+
+@pytest.mark.asyncio
+async def test_envelope_back_compat_when_dial_target_omitted() -> None:
+    """Phase 41-09 WR-05 back-compat: when a caller does NOT pass
+    ``dial_target=``, the envelope's ``connection_ip`` field defaults to
+    the requested identifier — matching pre-Phase-41-09 behavior. This
+    preserves every legacy call site (service_installer.py,
+    vm_operations.py, MCP tool dispatchers, etc.) without churn.
+    """
+
+    @ssh_connection_wrapper(timeout_seconds=0.01)
+    async def stub_op(hostname: str, *, dial_target: str | None = None) -> str:
+        import asyncio
+
+        await asyncio.sleep(1.0)
+        return "{}"
+
+    raw = await stub_op(hostname="pve")
+    envelope = json.loads(raw)
+
+    assert envelope["status"] == "error"
+    assert envelope["hostname"] == "pve"
+    assert envelope["connection_ip"] == "pve", (
+        f"Phase 41-09 WR-05 back-compat: when dial_target is omitted, "
+        f"connection_ip must default to hostname (pre-41-09 behavior). "
+        f"Got {envelope.get('connection_ip')!r}."
+    )
