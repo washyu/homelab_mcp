@@ -697,7 +697,8 @@ async def scan_drift(
         }
 
     Per-row record shape extension (unreachable.status == "missing", Phase 39
-    DRFT-18 — adds two keys to the 7-key base for a total of 9 keys):
+    DRFT-18 — adds two keys to the 7-key base for a total of 9 keys; the
+    9-key shape is: 7 base keys + last_seen + scan_timestamp-bound missing message):
         {
             ... (all 7 keys above), plus:
             "last_seen": str | None,           # ISO-8601 string; None when
@@ -713,6 +714,10 @@ async def scan_drift(
     rename existing keys). WR-02 (Phase 39 review): drove this docstring
     correction — the original Phase 36 D-02 7-key contract did not
     acknowledge the conditional missing-extension shipped in Phase 39.
+    Phase 42 W3: the 9-key shape — last_seen + scan_timestamp + missing-
+    branch message — applies identically across all three emission sites
+    (the outer /cluster/status except, the WR-C transient_resolver_exc
+    fallback, and the inner /cluster/status except).
 
     Per-row record shape (not_eligible, Phase 38.1 D-08):
         {
