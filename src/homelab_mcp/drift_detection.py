@@ -469,6 +469,8 @@ async def _enumerate_proxmox_vms(
 
 async def _bulk_universal_core_probes(
     rows: list[dict[str, Any]],
+    *,
+    db_adapter: DatabaseAdapter,
 ) -> dict[str, dict[str, Any]]:
     """SSH pre-pass: run universal-core probes against rows with ssh_credential_id.
 
@@ -512,7 +514,12 @@ async def _bulk_universal_core_probes(
                 # Phase 41 Bug AA: route through the shared row-binding-aware
                 # helper so Plan 05's AST guard locks the shared-helper
                 # invariant on the drift side.
-                creds, matched_row = resolve_ssh_for_sitemap_row(hostname)
+                # Phase 41-07 WR-02: thread the same db_adapter the outer loop
+                # uses; never fall through to get_database_adapter() (which
+                # would consult os.environ + construct a fresh adapter,
+                # breaking the single-source-of-truth contract in scan_drift's
+                # docstring).
+                creds, matched_row = resolve_ssh_for_sitemap_row(hostname, db_adapter=db_adapter)
                 # Phase 41 Bug V (Pitfall 4): dial row.connection_ip when
                 # truthy; fall back to hostname when empty/None or row missing.
                 dial_target = (matched_row.get("connection_ip") if matched_row else None) or hostname
@@ -730,7 +737,7 @@ async def scan_drift(
     ]
     try:
         ssh_probe_results: dict[str, dict[str, Any]] = await asyncio.wait_for(
-            _bulk_universal_core_probes(ssh_eligible_rows),
+            _bulk_universal_core_probes(ssh_eligible_rows, db_adapter=db_adapter),
             timeout=120.0,
         )
     except TimeoutError:
