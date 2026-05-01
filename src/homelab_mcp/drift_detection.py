@@ -337,10 +337,17 @@ def _enumerate_unknown_vms(
         try:
             vmid = int(vm.get("vmid", 0))
         except (ValueError, TypeError):
-            logger.debug(
-                "Skipping malformed vmid in /cluster/resources for %s: %r",
+            # Phase 42 B2: upgrade to warning-level so operators see
+            # "VM with vmid='abc' on host pve1 was skipped" — parity with
+            # the BL-04 enumeration-level warning at _enum_one. Per-VM
+            # malformed records deserve the same operator visibility:
+            # silently dropping a VM means VM-level drift detection
+            # quietly misses that record on every subsequent scan.
+            logger.warning(
+                "Skipping malformed vmid in /cluster/resources for %s: %r (VM name=%r)",
                 hypervisor,
                 vm.get("vmid"),
+                vm.get("name"),
             )
             return None
         # BL-03 + WR-A: dedupe by (hypervisor, vm_name_lower, vmid). The
@@ -471,13 +478,14 @@ async def _bulk_universal_core_probes(
     rows: list[dict[str, Any]],
     *,
     db_adapter: DatabaseAdapter,
-) -> dict[str, dict[str, Any]]:
+) -> dict[tuple[str, str | None], dict[str, Any]]:
     """SSH pre-pass: run universal-core probes against rows with ssh_credential_id.
 
     Phase 35 D-02 pattern: per-scan ``Semaphore(10)`` + ``asyncio.gather``. Each
     per-host probe is bounded by ``asyncio.wait_for(45s)`` to cap worst-case
     when the remote conn hangs (Pitfall 3 outer-bound). Returns a mapping
-    ``{hostname: probe_result_dict}`` where ``probe_result_dict`` is either:
+    ``{(hostname, ssh_credential_id): probe_result_dict}`` where
+    ``probe_result_dict`` is either:
 
       - ``{"fingerprint": dict, "partial": bool, "timed_out_commands": list}``
         on success, OR
@@ -490,25 +498,30 @@ async def _bulk_universal_core_probes(
     Loop-free w.r.t. bucket appends (D-11(b)): only loop is a list-comprehension
     over rows; per-row work happens inside ``_probe_one`` (no ``continue``).
 
-    BL-01: the result map is keyed on ``hostname``, so two rows that
-    legitimately share a hostname (migration overlap, stale-row purge race,
-    same host discovered under two connection_ips, or a degenerate row with
-    hostname="") collapse into a single entry whose value is whichever
-    probe finished last. The row loop in ``scan_drift`` then attributes
-    that probe to BOTH rows, which produces phantom ``changed[]`` entries
-    when row A's stored fingerprint is diffed against row B's probe
-    result. Dedupe on hostname here so duplicate rows are silently dropped
-    rather than overwriting each other.
+    Phase 42 B1: the result map is keyed on the
+    ``(hostname, ssh_credential_id)`` tuple, NOT bare hostname. Two rows
+    that legitimately share a hostname but carry distinct
+    ``ssh_credential_id`` values (e.g., migration overlap, stale-row purge
+    race, or two rows tracking the same host under different credentials)
+    BOTH contribute probe results, attributed by their own credential
+    binding rather than colliding on the hostname key. The previous
+    hostname-only dedupe silently dropped the duplicate row's probe and
+    re-attributed the survivor's probe to BOTH rows, producing phantom
+    ``changed[]`` entries when row A's stored fingerprint was diffed
+    against row B's probe result. Two rows with the SAME
+    ``(hostname, ssh_credential_id)`` ARE the same logical row — those
+    are still deduped (first-seen wins).
     """
     semaphore = asyncio.Semaphore(10)
 
-    async def _probe_one(row: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    async def _probe_one(row: dict[str, Any]) -> tuple[tuple[str, str | None], dict[str, Any]]:
         hostname = row.get("hostname", "")
         binding = row.get("ssh_credential_id")
+        key: tuple[str, str | None] = (hostname, binding)
         # Caller filters by ssh_credential_id, but be defensive against
         # external callers that don't.
         if binding is None:
-            return (hostname, {"_error": "no_ssh_credential_id"})
+            return (key, {"_error": "no_ssh_credential_id"})
         async with semaphore:
             try:
                 # Phase 41 Bug AA: route through the shared row-binding-aware
@@ -536,7 +549,7 @@ async def _bulk_universal_core_probes(
                         timeout=45.0,
                     )
                     return (
-                        hostname,
+                        key,
                         {
                             "fingerprint": fp,
                             "partial": bool(timed_out),
@@ -544,35 +557,46 @@ async def _bulk_universal_core_probes(
                         },
                     )
             except (asyncssh.Error, OSError, TimeoutError, ValueError) as exc:
-                return (hostname, {"_error": sanitize_error(exc)})
+                return (key, {"_error": sanitize_error(exc)})
             except Exception as exc:  # CredentialNotFoundError + defensive
                 # CredentialNotFoundError is a sibling of Exception (raised by
                 # resolve_ssh_credentials); catching here keeps drift's SSH
                 # pre-pass non-fatal when a row's binding is stale or desynced.
-                return (hostname, {"_error": sanitize_error(exc)})
-        # Phase 41-06 WR-04: removed the unreachable belt-and-braces raise.
-        # The bare ``except Exception`` above catches every exception type;
-        # any future refactor that narrows it must add its own logged
-        # sentinel-return path here, not rely on a structurally-unreachable
-        # raise (would crash inside asyncio.gather(return_exceptions=False)
-        # and abort the entire scan, defeating D-10). Sentinel return below
-        # is required only for mypy's exhaustiveness check; runtime is
-        # unreachable per the comment above.
-        return (hostname, {"_error": "probe_one_unreachable_fallthrough"})
+                return (key, {"_error": sanitize_error(exc)})
+        # Phase 42 W4: mypy exhaustiveness sentinel. The bare ``except
+        # Exception`` above catches all exception types, so this raise is
+        # structurally unreachable at runtime — but mypy's control-flow
+        # analysis on ``async with`` blocks doesn't deduce that, so the
+        # function would fail [return] without a terminal statement. Raise
+        # AssertionError (loud failure) rather than returning a sentinel
+        # dict (silent failure mode that the prior
+        # ``probe_one_unreachable_fallthrough`` return embodied — see
+        # 39-REVIEW WR-B). If a future refactor narrows the except
+        # clauses, this raise crashes loudly inside
+        # asyncio.gather(return_exceptions=False), which makes the
+        # incomplete catch-set obvious during testing rather than silently
+        # poisoning the probe map with a sentinel _error.
+        raise AssertionError(f"_probe_one reached unreachable fallthrough for hostname={hostname!r}")
 
-    # BL-01: dedupe by hostname BEFORE gather. The probe map is keyed on
-    # hostname; if two rows share a hostname, only one probe survives in
-    # the result dict, which then gets attributed to both rows in the
-    # scan_drift row loop (phantom changed[] entries). Skip duplicates.
-    # Empty/None hostnames are dropped here too — they would all collide
-    # on the same "" key.
-    seen_hostnames: set[str] = set()
+    # Phase 42 B1: dedupe by (hostname, ssh_credential_id) tuple BEFORE
+    # gather. Two rows sharing a hostname but with distinct
+    # ssh_credential_id values both contribute probe results — the row loop
+    # in scan_drift looks up each row's probe by its own (hostname,
+    # ssh_credential_id) tuple, so probes never cross-attribute. Two rows
+    # with the SAME (hostname, ssh_credential_id) tuple ARE the same
+    # logical row; first-seen wins. Empty/None hostnames are dropped (they
+    # collide on the "" key even with distinct credentials, and the W8
+    # gate at scan_drift's ssh_eligible_rows filter excludes them
+    # upstream — this is belt-and-braces).
+    seen_keys: set[tuple[str, str | None]] = set()
     eligible: list[dict[str, Any]] = []
     for r in rows:
         h = r.get("hostname") or ""
-        if not h or not r.get("ssh_credential_id") or h in seen_hostnames:
+        cred = r.get("ssh_credential_id")
+        dedupe_key = (h, cred)
+        if not h or not cred or dedupe_key in seen_keys:
             continue
-        seen_hostnames.add(h)
+        seen_keys.add(dedupe_key)
         eligible.append(r)
     pairs = await asyncio.gather(
         *[_probe_one(r) for r in eligible],
@@ -736,7 +760,7 @@ async def scan_drift(
         and r.get("ssh_credential_id")
     ]
     try:
-        ssh_probe_results: dict[str, dict[str, Any]] = await asyncio.wait_for(
+        ssh_probe_results: dict[tuple[str, str | None], dict[str, Any]] = await asyncio.wait_for(
             _bulk_universal_core_probes(ssh_eligible_rows, db_adapter=db_adapter),
             timeout=120.0,
         )
@@ -936,7 +960,13 @@ async def scan_drift(
                         # fingerprint exists, route to changed[]; otherwise
                         # probed_ok[]. D-04b: drift never updates the stored
                         # fingerprint — diff is read-only.
-                        probe = ssh_probe_results.get(hostname or "", {})
+                        # Phase 42 B1: probe map is keyed on the
+                        # (hostname, ssh_credential_id) tuple, not bare
+                        # hostname. This ensures two rows sharing a
+                        # hostname but with distinct ssh_credential_id
+                        # values look up their own probe result — no
+                        # cross-attribution / phantom changed[] entries.
+                        probe = ssh_probe_results.get((hostname or "", row.get("ssh_credential_id")), {})
                         stored_fp = row.get("fingerprint", {}) or {}
                         current_fp = probe.get("fingerprint", {}) if "fingerprint" in probe else {}
                         # WR-D (Phase 39 re-review): when the SSH pre-pass
