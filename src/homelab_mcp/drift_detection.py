@@ -44,7 +44,7 @@ from .proxmox_api import (
     resolve_proxmox_credentials,
 )
 from .ssh_connection import ssh_connect
-from .ssh_tools import _probe_universal_core, resolve_ssh_credentials
+from .ssh_tools import _probe_universal_core, resolve_ssh_for_sitemap_row
 
 logger = logging.getLogger(__name__)
 
@@ -494,9 +494,15 @@ async def _bulk_universal_core_probes(
             return (hostname, {"_error": "no_ssh_credential_id"})
         async with semaphore:
             try:
-                creds = resolve_ssh_credentials(hostname, credential_id=binding)
+                # Phase 41 Bug AA: route through the shared row-binding-aware
+                # helper so Plan 05's AST guard locks the shared-helper
+                # invariant on the drift side.
+                creds, matched_row = resolve_ssh_for_sitemap_row(hostname)
+                # Phase 41 Bug V (Pitfall 4): dial row.connection_ip when
+                # truthy; fall back to hostname when empty/None or row missing.
+                dial_target = (matched_row.get("connection_ip") if matched_row else None) or hostname
                 async with await ssh_connect(
-                    hostname=creds.hostname,
+                    hostname=dial_target,
                     username=creds.username,
                     port=creds.port,
                     password=creds.password,
@@ -756,8 +762,11 @@ async def scan_drift(
             # resolver falls through to Tier-1/Tier-2 (cluster walk handles
             # cluster-served rows per D-09).
             try:
+                # Phase 41 Bug V (Pitfall 4): dial row.connection_ip when
+                # truthy; fall back to hostname when empty/None.
+                dial_host = row.get("connection_ip") or hostname
                 client = await get_proxmox_client(
-                    host=hostname,
+                    host=dial_host,
                     session=session,
                     credential_id=binding,
                 )
