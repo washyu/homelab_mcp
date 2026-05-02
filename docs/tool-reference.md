@@ -522,6 +522,39 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 
 ---
 
+### decommission_device_preview
+
+**Description:** Preview what `decommission_device` would affect without executing. Returns a structured dry-run report. No infrastructure is modified.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`decommission_device`](#decommission_device).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| device_id | integer | Yes | -- | Database ID of the device to decommission |
+| migration_plan | object | No | -- | Plan for migrating services to other devices containing: target_devices (array of integers), service_mapping (object) |
+| force_removal | boolean | No | false | Force removal without migration (data loss possible) |
+| validate_only | boolean | No | false | Only validate decommission plan without executing |
+
+**Example:**
+
+```json
+{
+  "device_id": 3,
+  "migration_plan": {
+    "target_devices": [1, 2],
+    "service_mapping": {"nginx": 1, "postgres": 2}
+  }
+}
+```
+
+**Returns:** A dict containing the dry-run preview of the decommission operation (impact analysis, migration plan validation) without modifying any infrastructure.
+
+---
+
 ### scale_services
 
 **Description:** Scale services up or down based on resource analysis.
