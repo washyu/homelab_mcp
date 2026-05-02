@@ -147,6 +147,15 @@ async def handle_update_device_fingerprint_preview(arguments: dict[str, Any]) ->
 
     Mirrors the validation/filtering of handle_update_device_fingerprint so the
     preview shape exactly matches what the real call would write.
+
+    Side-effect contract (Phase 43 WR-03 clarification):
+      * Preview path (this function): pure read — no DB write, no last_seen
+        mutation, no updated_at mutation. Safe to call repeatedly.
+      * Persist path (handle_update_device_fingerprint → adapter.update_device_fingerprint):
+        bumps updated_at on the device row; preserves last_seen as set by the most
+        recent discover_and_map run (Phase 38 REVIEW-FIX commit f53365c). Consumers
+        of analyze_network_topology row ordering (which keys off last_seen) are
+        NOT disturbed by fingerprint updates.
     """
     from ..database import merge_fingerprint  # local import — avoids circular issues
 
