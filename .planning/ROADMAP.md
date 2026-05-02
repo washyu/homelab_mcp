@@ -280,7 +280,9 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   4. **Dead code resolved**: `ssh_tools.py:312-401` `_resolve_ssh_credentials_with_binding` (retained per REVIEW-FIX WR-01 for plan-acceptance grep) is either removed and the grep allowlist updated, or annotated with a `# Deprecated: kept for grep audit; remove in v1.8` comment. Decision is documented in the SUMMARY.
   5. **WR-02 closed**: Duplicate `list_keyring_credentials` entry in `_READ_ONLY_TOOLS` (`tool_annotations.py:37, 46`) is removed.
   6. No functional code change — `git diff src/` shows only docstring/comment edits and the `WR-02` deduplication; tests remain green; no new tests required (docs-only phase).
-**Plans**: TBD (estimated 1-2 plans: one for source-side docstring + dead-code edits, one for `docs/tool-reference.md` MCP Prompts section)
+**Plans:** 2 plans
+  - [ ] 43-01-PLAN.md — Source-side docstring/comment cleanup (IN-03 + WR-03 + WR-02 invariant + dead-code v1.8 sentinel)
+  - [ ] 43-02-PLAN.md — docs/tool-reference.md MCP Prompts section + IN-03/WR-03 docs surface (IN-04)
 
 ## Progress
 
@@ -323,7 +325,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 9/9 | Complete    | 2026-05-01 |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
 | 42. Drift Detection Polish | v1.7 | 3/3 | Complete   | 2026-05-01 |
-| 43. Phase 38 Documentation Cleanup | v1.7 | 0/0 | Not started | - |
+| 43. Phase 38 Documentation Cleanup | v1.7 | 0/2 | Planned     | - |
 
 ## Backlog
 
