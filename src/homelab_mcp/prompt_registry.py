@@ -153,10 +153,10 @@ homelab-mcp credentials add {hostname} <username> --key-path <path>.
 verify the stored credential end-to-end.
 
 4. Call ssh_discover with hostname="{hostname}" to collect hardware and system info \
-and record it in the database.
+(read-only — returns JSON; does not write to the database).
 
 5. Call discover_and_map with hostname="{hostname}" to add the device to the network \
-sitemap.
+sitemap (this is the step that persists discovery data to the database).
 
 6. Call ssh_execute_command with hostname="{hostname}" and command="sudo -n true" to \
 confirm the registered user has passwordless sudo. A non-zero exit code means sudo \

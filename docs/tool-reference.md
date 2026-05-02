@@ -1673,8 +1673,8 @@ MCP prompt templates that ship with the server. Prompts are surfaced to the AI a
 1. Confirm the target host has an SSH-accessible user with sudo privileges.
 2. Direct the user to run `homelab-mcp credentials add <hostname> <username>` (or `--key-path <path>` for key auth) to store the SSH credential in the OS keyring.
 3. Call `register_server` to verify the stored credential end-to-end.
-4. Call `ssh_discover` to collect hardware and system info into the database.
-5. Call `discover_and_map` to add the device to the network sitemap.
+4. Call `ssh_discover` to collect hardware and system info (read-only — returns JSON; does not write to the database).
+5. Call `discover_and_map` to add the device to the network sitemap (this is the step that persists discovery data to the database).
 6. Call `ssh_execute_command` with `sudo -n true` to confirm passwordless sudo for the registered user.
 
 **Argument:**
