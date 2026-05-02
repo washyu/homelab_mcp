@@ -357,7 +357,7 @@ None.
 
 ### update_device_fingerprint
 
-**Description:** Merge fingerprint data (kernel, OS, package digest, capabilities) into a device's sitemap row. Top-level keys (`kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`) overwrite; the `capabilities` sub-dict deep-merges (incoming sub-keys overwrite, missing sub-keys preserve). Run `discover_and_map` first to add the device to the sitemap. See the [`configure_host_fingerprint`](#configure_host_fingerprint) MCP prompt for the conversational workflow that drives this tool.
+**Description:** Merge fingerprint data (kernel, OS, package digest, capabilities) into a device's sitemap row. Top-level keys (`kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`) overwrite (last-write-wins). The `capabilities` sub-dict updates **one level deep** — incoming top-level capability keys REPLACE the stored entry entirely (NOT a recursive merge), so callers updating any field within a capability must pass the full capability dict. Run `discover_and_map` first to add the device to the sitemap. See the [`configure_host_fingerprint`](#configure_host_fingerprint) MCP prompt for the conversational workflow that drives this tool. Persists to DB and bumps `updated_at`; `last_seen` is preserved (Phase 38 REVIEW-FIX WR-03).
 
 **Annotations:** `[Idempotent]`
 
@@ -393,7 +393,7 @@ None.
 
 ### update_device_fingerprint_preview
 
-**Description:** Read-only dry-run of `update_device_fingerprint`. Returns the would-be merged fingerprint without writing to the database. Use to confirm a merge before committing it via `update_device_fingerprint`. Phase 38 D-05c.
+**Description:** Preview the merge result of `update_device_fingerprint` without persisting. Returns the would-be merged fingerprint dict using the same merge rules: top-level overwrite + `capabilities` one-level overwrite (incoming capability keys replace stored entries entirely; not recursive). Read-only — no DB write, no `last_seen` or `updated_at` mutation. Phase 38 D-05c.
 
 **Annotations:** `[Read-Only]` `[Idempotent]`
 
@@ -1632,6 +1632,85 @@ Tools for Proxmox API integration, community script discovery, and VM/container 
 ## MCP Prompts
 
 MCP prompt templates that ship with the server. Prompts are surfaced to the AI agent via the MCP `prompts/get` capability and provide structured workflows for multi-step operations. Use `prompts/list` from your MCP client to discover available prompts at runtime.
+
+### connect_to_device
+
+**Description:** Step-by-step onboarding workflow for connecting a new device to the homelab. The prompt instructs the agent to:
+
+1. Confirm the target host has an SSH-accessible user with sudo privileges.
+2. Direct the user to run `homelab-mcp credentials add <hostname> <username>` (or `--key-path <path>` for key auth) to store the SSH credential in the OS keyring.
+3. Call `register_server` to verify the stored credential end-to-end.
+4. Call `ssh_discover` to collect hardware and system info into the database.
+5. Call `discover_and_map` to add the device to the network sitemap.
+6. Call `ssh_execute_command` with `sudo -n true` to confirm passwordless sudo for the registered user.
+
+**Argument:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| hostname | string | Yes | Hostname or IP address of the new device to onboard |
+
+**Related tools:** [`ssh_discover`](#ssh_discover), [`register_server`](#register_server), [`discover_and_map`](#discover_and_map), [`ssh_execute_command`](#ssh_execute_command).
+
+---
+
+### decommission_device_workflow
+
+**Description:** Safe guided workflow for decommissioning a homelab device. The prompt instructs the agent to:
+
+1. Call `get_network_sitemap` to find the target device's `device_id` by hostname match.
+2. Call `decommission_device_preview` with the resolved `device_id` to preview the operation.
+3. Present the preview result to the user and require explicit confirmation.
+4. Only on confirmation: call `decommission_device` with the same `device_id`.
+5. Report the result to the user.
+
+The workflow refuses to proceed past step 3 without explicit user confirmation.
+
+**Argument:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| hostname | string | Yes | Hostname or IP of the device to decommission |
+
+**Related tools:** [`get_network_sitemap`](#get_network_sitemap), [`decommission_device_preview`](#decommission_device_preview), [`decommission_device`](#decommission_device).
+
+---
+
+### deploy_service_workflow
+
+**Description:** Pre-flight checked service deployment workflow. The prompt instructs the agent to:
+
+1. Call `ssh_discover` against the target host to verify SSH connectivity.
+2. Call `get_service_status` to check whether the service is already installed on the target.
+3. If pre-flight checks pass, call `install_service` to deploy.
+4. Report the installation result to the user.
+
+**Arguments:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| service_name | string | Yes | Name of the service to deploy |
+| target_host | string | Yes | Target host for deployment |
+
+**Related tools:** [`ssh_discover`](#ssh_discover), [`get_service_status`](#get_service_status), [`install_service`](#install_service).
+
+---
+
+### homelab_health_check
+
+**Description:** Read all infrastructure resources and summarize homelab state. The prompt instructs the agent to read three MCP resources and produce a consolidated summary:
+
+1. `homelab://vms` — list all VMs and containers.
+2. `homelab://devices` — list all tracked network devices.
+3. `homelab://drift/latest` — check for infrastructure drift.
+
+The summary surfaces total VM count, total device count, drift status, and prominently flags any drifted items when `drift_detected` is true.
+
+**Arguments:** None.
+
+**Related tools / resources:** [`get_network_sitemap`](#get_network_sitemap), [`scan_infrastructure_drift`](#scan_infrastructure_drift), and the MCP resources `homelab://vms`, `homelab://devices`, `homelab://drift/latest`.
+
+---
 
 ### configure_host_fingerprint
 
