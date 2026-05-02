@@ -304,6 +304,7 @@ def resolve_ssh_credentials(
     )
 
 
+# Deprecated: kept for grep audit; remove in v1.8
 # DEAD CODE: kept solely for plan-acceptance grep — DO NOT USE.
 # Per Phase 38.1-08 SUMMARY, the actual auto-bind path lives in
 # ``ssh_discover_system_with_binding`` (below) which calls
