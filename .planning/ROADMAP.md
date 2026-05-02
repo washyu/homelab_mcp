@@ -9,7 +9,7 @@
 - ✅ **v1.4.1 Security Patch** — Phase 30 (shipped 2026-04-01)
 - ✅ **v1.5 Critical Bug Fixes** — Phases 31-32 (shipped 2026-04-20)
 - ✅ **v1.6 Credential Architecture Cleanup** — Phases 33, 33.1, 34, 35 (shipped 2026-04-24)
-- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-43 (in progress)
+- 🚧 **v1.7 Drift Architectural Fix** — Phases 36-44 (in progress)
 
 ## Phases
 
@@ -97,7 +97,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 </details>
 
 <details>
-<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-43) — IN PROGRESS</summary>
+<summary>🚧 v1.7 Drift Architectural Fix (Phases 36-44) — IN PROGRESS</summary>
 
 - [ ] **Phase 36: Drift ↔ Sitemap Foundation** — Drop parallel `drift_baselines` table; wire `scan_infrastructure_drift` to iterate sitemap rows; resolve Proxmox creds via `resolve_proxmox_credentials`
 - [ ] **Phase 37: Drift Output Shape & Error Hygiene** — Consistent shape across all filter scopes; four-bucket coverage transparency; error messages reference sitemap CRUD tools, never `PROXMOX_HOST`
@@ -109,6 +109,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 - [ ] **Phase 41.1: Test Isolation & Keyring Hygiene** (INSERTED) — Integration tests stop leaking real-keyring writes; session-scoped keyring monkeypatch fixture; AST guard against future regressions
 - [ ] **Phase 42: Drift Detection Polish** (POLISH) — Close 4 advisory BLOCKERs + 8 WARNINGs from Phase 39 `39-REVIEW.md`, all localized to `drift_detection.py`: duplicate-hostname collapse, malformed VMID coercion, cold cluster cache, swallowed enumeration errors, naive-TZ threshold, JSON-serialization edges, and assorted dead/drifted code
 - [ ] **Phase 43: Phase 38 Documentation Cleanup** (POLISH) — Close docs gaps from Phase 38 review: misleading `merge_fingerprint` docstring, undocumented `last_seen` mutation in fingerprint preview, missing pre-existing prompts in `docs/tool-reference.md`, dead `_resolve_ssh_credentials_with_binding`
+- [ ] **Phase 44: Sitemap CRUD Completion** (CRUD-PARITY) — Close the drift-correction loop. `remove_device(device_id)` for pure-SQL DELETE on healthy/stale rows (no host-side actions, distinct from `decommission_device`); generalize `purge_failed_discoveries` → `purge_devices(filter=...)` covering hostname / `last_seen < N days` / `status='error'` / IP-range filters with the failed-discovery flow kept as a named alias. Promotes backlog 999.21 + 999.5.
 
 </details>
 
@@ -283,6 +284,20 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 **Plans:** 2/2 plans complete
   - [x] 43-01-PLAN.md — Source-side docstring/comment cleanup (IN-03 + WR-03 + WR-02 invariant + dead-code v1.8 sentinel)
   - [x] 43-02-PLAN.md — docs/tool-reference.md MCP Prompts section + IN-03/WR-03 docs surface (IN-04)
+
+### Phase 44: Sitemap CRUD Completion (CRUD-PARITY)
+
+**Goal**: The sitemap is the single source of truth for drift detection (Phase 36 D-12), but a user/agent has no clean MCP-tool path to *correct* a stale sitemap row when drift surfaces a divergence. `decommission_device` carries Ansible/Terraform host-cleanup semantics that are wrong for "VM was deleted externally — drop the inventory entry"; `purge_failed_discoveries` only DELETEs `status='error'` or empty-hostname rows. This phase closes that loop with two new tools: `remove_device(device_id)` for pure-SQL DELETE on healthy rows, and `purge_devices(filter=...)` as the generalized superset of the existing failed-discovery purge. Without these, the v1.7 drift workflow is half-shipped — detection without a corrective action surface.
+**Depends on**: Phase 36 (sitemap-as-source-of-truth invariant), Phase 38 (fingerprint schema unchanged), Phase 39 / Phase 41 (drift output surfaces the divergence the user/agent then acts on)
+**Requirements**: Promoted from backlog Phase 999.21 (`remove_device`) and Phase 999.5 (`purge_devices` generalization). Closes the v1.7 CRUD parity gap captured during 2026-05-02 validation testing.
+**Success Criteria** (what must be TRUE):
+  1. `remove_device(device_id, dry_run=False)` ships as a registered MCP tool: pure SQL DELETE on the sitemap row plus cascade DELETE on `discovery_history` rows for that `device_id`. No SSH dial, no Ansible runs, no Terraform plans on the handler call path. `dry_run=True` returns the would-delete row payload without writing.
+  2. `remove_device` preserves any keyring credential entry bound to the row's `ssh_credential_id` — only the sitemap-side row is dropped. A subsequent `discover_and_map` of the same hostname can re-bind to the existing credential without forcing the user to re-add it.
+  3. `purge_devices(filter=...)` ships as a registered MCP tool with at least these filter modes: by hostname, `last_seen_older_than_days`, `status` (covers existing `purge_failed_discoveries` behavior when `status='error'`), IP-range. `dry_run=True` returns the candidate set without deletion. `purge_failed_discoveries` is preserved as a named alias that delegates to `purge_devices` with the failed-discovery filter, so existing callers do not break.
+  4. Tool descriptions explicitly contrast the three delete paths so an MCP client surfaces the right tool for the right intent: `remove_device` (one row, inventory-only), `purge_devices` (bulk, filter-based, inventory-only), `decommission_device` (one row, host-side cleanup + DELETE). Wording-parity rule applied across schema description and `docs/tool-reference.md` prose.
+  5. `docs/tool-reference.md` documents both new tools with example invocations, plus a one-line cross-reference in the `decommission_device` section pointing to `remove_device` as the right choice when the user wants inventory-only deletion.
+  6. The full unit suite remains green (≥907 passing, no skips introduced); new tests cover: `remove_device` happy path, `dry_run` preview, missing-`device_id` error path, credential-preservation invariant; `purge_devices` per-filter behavior and `purge_failed_discoveries` alias parity. Ruff + mypy clean. AST guard added so the `remove_device` handler's call path is provably free of SSH / Ansible / Terraform invocations (regression protection against future "let's just call decommission internally" drift).
+**Plans:** TBD (run /gsd-plan-phase 44 to break down — anticipated 2-3 plans: `remove_device` tool, `purge_devices` generalization with alias, quality gate)
 
 ## Progress
 

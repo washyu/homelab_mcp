@@ -89,6 +89,7 @@ Bug I (`get_proxmox_vm_status` HTTP 500 leak) bundled into v1.7 as adjacent poli
 
 - Phase 38.1 inserted after Phase 38: Sitemap-keystore credential binding (URGENT) — Claude Desktop UAT on 2026-04-26 surfaced Bug O (sitemap stores hostnames, keyring keyed by IP/FQDN, no normalization → drift returns scanned: 0 on documented happy path) and Bug N (drift eligibility heuristic invisible to users). Architectural decision: each sitemap row carries a stable `keystore_id` reference rather than relying on hostname/IP join inference. Blocks Phase 39 — drift detection cases depend on credential resolution working end-to-end.
 - Phase 39.1 inserted after Phase 39: Thread credential_id through drift_detection._enum_one + extend Phase 38.1 AST guard. Closes Phase 38.1 R6 regression surfaced in 38.1-VERIFICATION.md. Bisected to Phase 39 commit e05df24 (DRFT-17). (URGENT)
+- Phase 44 added at end of v1.7: Sitemap CRUD Completion — promotes backlog 999.21 (`remove_device`) and 999.5 (`purge_devices` generalization) into v1.7 scope after 2026-05-02 validation testing surfaced that drift detection without a corrective action surface is half-shipped. `decommission_device` carries host-cleanup semantics that are wrong for "VM was deleted externally — drop the inventory entry"; `purge_failed_discoveries` only covers error rows. Closes the v1.7 detection-to-correction loop.
 
 ### Decisions
 
