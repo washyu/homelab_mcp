@@ -325,7 +325,7 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
 | 41. Binding-Aware Resolver Hygiene | v1.7 | 9/9 | Complete    | 2026-05-01 |
 | 41.1 Test Isolation & Keyring Hygiene | v1.7 | 3/3 | Complete    | 2026-04-29 |
 | 42. Drift Detection Polish | v1.7 | 3/3 | Complete   | 2026-05-01 |
-| 43. Phase 38 Documentation Cleanup | v1.7 | 2/2 | Complete   | 2026-05-02 |
+| 43. Phase 38 Documentation Cleanup | v1.7 | 2/2 | Complete    | 2026-05-02 |
 
 ## Backlog
 
