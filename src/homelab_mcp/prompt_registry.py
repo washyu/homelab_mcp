@@ -207,8 +207,9 @@ to capture the current value. Examples:
 
 5. Build a capabilities dict from the captured values and call \
 update_device_fingerprint(hostname="{hostname}", fingerprint={{"capabilities": {{...}}}}). \
-Note: the persist call REPLACES each top-level capability entry entirely (not a recursive \
-merge), so always pass the full per-capability dict. Use update_device_fingerprint_preview \
+Note: the persist call REPLACES each *incoming* top-level capability entry entirely (not a \
+recursive merge); existing capability keys not present in the call are preserved, but every \
+key you DO send overwrites its stored entry, so always pass the full per-capability dict. Use update_device_fingerprint_preview \
 first to confirm the merge result before persisting (preview is read-only and does not \
 mutate updated_at).
 

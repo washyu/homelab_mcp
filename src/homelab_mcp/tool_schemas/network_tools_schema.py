@@ -106,8 +106,9 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
         "description": (
             "Merge fingerprint data (kernel, OS, package digest, capabilities) into a "
             "device's sitemap row. Top-level keys overwrite (last-write-wins). The "
-            "capabilities sub-dict updates one level deep — incoming top-level capability "
-            "keys REPLACE the stored entry entirely (NOT a recursive merge), so callers "
+            "capabilities sub-dict updates one level deep — each *incoming* top-level "
+            "capability key REPLACES its stored entry entirely (NOT a recursive merge); "
+            "stored capability keys not present in the call are preserved. Callers "
             "updating any field within a capability must pass the full capability dict. "
             "Run discover_and_map first to populate the device. See the "
             "configure_host_fingerprint prompt for the conversational workflow. Persists "
