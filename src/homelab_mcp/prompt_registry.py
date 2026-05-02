@@ -207,7 +207,10 @@ to capture the current value. Examples:
 
 5. Build a capabilities dict from the captured values and call \
 update_device_fingerprint(hostname="{hostname}", fingerprint={{"capabilities": {{...}}}}). \
-Use update_device_fingerprint_preview first if you want to confirm the merge before persisting.
+Note: the persist call REPLACES each top-level capability entry entirely (not a recursive \
+merge), so always pass the full per-capability dict. Use update_device_fingerprint_preview \
+first to confirm the merge result before persisting (preview is read-only and does not \
+mutate updated_at).
 
 6. Confirm the persisted fingerprint to the user, summarising what is now being tracked.
 
