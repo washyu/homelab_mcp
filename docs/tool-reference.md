@@ -357,7 +357,7 @@ None.
 
 ### update_device_fingerprint
 
-**Description:** Merge fingerprint data (kernel, OS, package digest, capabilities) into a device's sitemap row. Top-level keys (`kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`) overwrite; the `capabilities` sub-dict deep-merges (incoming sub-keys overwrite, missing sub-keys preserve). Run `discover_and_map` first to add the device to the sitemap. See the [`configure_host_fingerprint`](#configure_host_fingerprint) MCP prompt for the conversational workflow that drives this tool.
+**Description:** Merge fingerprint data (kernel, OS, package digest, capabilities) into a device's sitemap row. Top-level keys (`kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`) overwrite (last-write-wins). The `capabilities` sub-dict updates **one level deep** — incoming top-level capability keys REPLACE the stored entry entirely (NOT a recursive merge), so callers updating any field within a capability must pass the full capability dict. Run `discover_and_map` first to add the device to the sitemap. See the [`configure_host_fingerprint`](#configure_host_fingerprint) MCP prompt for the conversational workflow that drives this tool. Persists to DB and bumps `updated_at`; `last_seen` is preserved (Phase 38 REVIEW-FIX WR-03).
 
 **Annotations:** `[Idempotent]`
 
@@ -393,7 +393,7 @@ None.
 
 ### update_device_fingerprint_preview
 
-**Description:** Read-only dry-run of `update_device_fingerprint`. Returns the would-be merged fingerprint without writing to the database. Use to confirm a merge before committing it via `update_device_fingerprint`. Phase 38 D-05c.
+**Description:** Preview the merge result of `update_device_fingerprint` without persisting. Returns the would-be merged fingerprint dict using the same merge rules: top-level overwrite + `capabilities` one-level overwrite (incoming capability keys replace stored entries entirely; not recursive). Read-only — no DB write, no `last_seen` or `updated_at` mutation. Phase 38 D-05c.
 
 **Annotations:** `[Read-Only]` `[Idempotent]`
 
