@@ -304,7 +304,8 @@ def resolve_ssh_credentials(
     )
 
 
-# Deprecated: kept for grep audit; remove in v1.8
+# Deprecated: kept solely for plan-acceptance grep audit. Safe to remove in
+# v1.8 once the Phase 38.1-08 acceptance grep no longer references this symbol.
 # DEAD CODE: kept solely for plan-acceptance grep — DO NOT USE.
 # Per Phase 38.1-08 SUMMARY, the actual auto-bind path lives in
 # ``ssh_discover_system_with_binding`` (below) which calls
@@ -330,8 +331,8 @@ def _resolve_ssh_credentials_with_binding(
         path is :func:`ssh_discover_system_with_binding`, which uses
         :func:`_scan_registry_for_binding` instead. Retained solely so the
         Phase 38.1-08 plan-acceptance grep finds the symbol. New code
-        MUST NOT call this; it will be removed once the plan acceptance
-        grep is updated.
+        MUST NOT call this; safe to remove in v1.8 once the Phase 38.1-08
+        acceptance grep no longer references this symbol.
 
     Discovery's auto-bind side effect calls this instead of
     :func:`resolve_ssh_credentials` so the upsert path can record
