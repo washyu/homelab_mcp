@@ -46,10 +46,13 @@ class DatabaseAdapter(ABC):
 
     @abstractmethod
     def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
-        """Phase 38 D-05/D-11: deep-merge fingerprint dict into the device row.
+        """Phase 38 D-05/D-11: merge fingerprint dict into the device row.
 
-        Returns the merged fingerprint dict. Raises ValueError if hostname is
-        not found in the sitemap (with a hint pointing to discover_and_map).
+        Top-level keys overwrite; the ``capabilities`` sub-dict updates one level
+        deep (incoming capability keys replace stored entries entirely — see
+        :func:`merge_fingerprint` for full semantics). Returns the merged
+        fingerprint dict. Raises ValueError if hostname is not found in the
+        sitemap (with a hint pointing to discover_and_map).
         """
         pass
 
@@ -1247,16 +1250,26 @@ def _maybe_json_load(value: Any) -> Any:
 
 
 def merge_fingerprint(stored: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    """Phase 38 D-05 merge contract: top-level overwrite, capabilities deep-merge.
+    """Phase 38 D-05 merge contract: top-level overwrite, capabilities one-level overwrite.
 
     ``stored`` is the existing fingerprint dict (parsed from DB).
     ``incoming`` is the dict from update_device_fingerprint (already filtered
     to recognized keys). Returns the merged dict to write back. Pure function —
     no side effects.
 
-    - Top-level keys (kernel/os/package_*) overwrite (last-write-wins).
-    - ``capabilities`` sub-dict deep-merges: incoming sub-keys overwrite,
-      missing sub-keys preserved.
+    Semantics (NOT a recursive deep-merge):
+
+    - Top-level keys (kernel_name, kernel_version, os_name, os_version,
+      package_fingerprint) overwrite (last-write-wins).
+    - The ``capabilities`` sub-dict updates one level deep: incoming top-level
+      capability keys REPLACE the stored entry entirely. Example: passing
+      ``capabilities={"vulkan": {"loader_version": "1.3.275"}}`` does NOT merge
+      into an existing ``capabilities.vulkan`` dict — it REPLACES the entire
+      vulkan sub-dict. Callers updating any field within a capability MUST pass
+      the full capability dict.
+    - Missing top-level capability keys (e.g. an existing ``capabilities.cuda``
+      entry) are preserved when the incoming ``capabilities`` dict does not
+      mention them.
     """
     merged: dict[str, Any] = dict(stored)
     for key, value in incoming.items():
