@@ -49,6 +49,7 @@ _READ_ONLY_TOOLS = [
     "destroy_terraform_service_preview",
     "rollback_infrastructure_changes_preview",
     "update_device_fingerprint_preview",  # Phase 38 D-05c (Plan 05)
+    "remove_device_preview",  # Phase 44 D-11
 ]
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ _DESTRUCTIVE_TOOLS = [
     "destroy_terraform_service",
     "rollback_infrastructure_changes",
     "purge_failed_discoveries",
+    "remove_device",  # Phase 44 D-06
 ]
 
 # ---------------------------------------------------------------------------

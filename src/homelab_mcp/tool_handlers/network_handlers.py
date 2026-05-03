@@ -214,3 +214,51 @@ async def handle_update_device_fingerprint_preview(arguments: dict[str, Any]) ->
         indent=2,
     )
     return {"content": [{"type": "text", "text": result_str}]}
+async def handle_remove_device(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle remove_device tool (Phase 44 D-06).
+
+    Pure-SQL single-row delete on the sitemap row keyed by ``device_id``,
+    with manual cascade to ``discovery_history``. No SSH dial, no Ansible
+    runs, no Terraform plans, no keyring mutation — body-level scope is
+    locked by tests/test_ast_regression.py::TestPhase44RemoveDeviceCallPath.
+
+    Per D-06b: missing ``device_id`` returns a structured error envelope
+    (NOT a raised exception). Per D-06a: success payload carries the full
+    ``removed_device`` row dict. Per D-11a: dry_run path makes no DB write
+    and the keyring entry bound via ``ssh_credential_id`` is preserved by
+    construction (this handler never references keyring at all).
+    """
+    device_id = int(arguments["device_id"])
+    dry_run = bool(arguments.get("dry_run", False))
+    sitemap = NetworkSiteMap()
+    removed = sitemap.db_adapter.delete_device_by_id(device_id, dry_run=dry_run)
+    if removed is None:
+        # NOTE: error string + hint substring are asserted exactly by
+        # tests/test_remove_device.py::test_handle_remove_device_missing_id_phase44.
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": f"Device {device_id} not found in sitemap",
+                "hint": "Run get_network_sitemap to see current device IDs.",
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+    result = json.dumps(
+        {
+            "status": "success",
+            "dry_run": dry_run,
+            "removed_device": removed,
+        },
+        indent=2,
+        default=str,
+    )
+    return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_remove_device_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle remove_device_preview tool (Phase 44 D-11).
+
+    Delegates to handle_remove_device with dry_run=True injected.
+    No DB write, no keyring touch, no host-side action.
+    """
+    return await handle_remove_device({**arguments, "dry_run": True})

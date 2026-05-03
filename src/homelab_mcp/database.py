@@ -154,6 +154,27 @@ class DatabaseAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete_device_by_id(
+        self, device_id: int, dry_run: bool = False
+    ) -> dict[str, Any] | None:
+        """Delete a single sitemap row by ``id``.
+
+        Returns the row dict that was (or would be) deleted; returns ``None``
+        when no row matches ``device_id``. Cascades into ``discovery_history``
+        for the same ``device_id`` in a single transaction (no FK CASCADE on
+        the schema — manual cascade per Phase 44 D-06c, mirroring
+        ``purge_failed_devices``).
+
+        ``dry_run=True`` returns the row payload without writing.
+
+        Phase 44 D-13. The ``handle_remove_device`` call path (network_handlers.py)
+        and this adapter method body are scoped by the
+        TestPhase44RemoveDeviceCallPath AST guard (D-10) — keep the body free
+        of SSH/Ansible/Terraform/keyring-mutation symbols.
+        """
+        pass
+
 
 class SQLiteAdapter(DatabaseAdapter):
     """SQLite database adapter."""
@@ -654,6 +675,38 @@ class SQLiteAdapter(DatabaseAdapter):
         )
         self.connection.commit()
         return candidates
+
+    def delete_device_by_id(
+        self, device_id: int, dry_run: bool = False
+    ) -> dict[str, Any] | None:
+        """SQLite implementation. See ``DatabaseAdapter.delete_device_by_id``."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT * FROM devices WHERE id = ?",
+            (device_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        candidate = dict(row)
+        if dry_run:
+            return candidate
+        # Delete history first (no ON DELETE CASCADE); then devices.
+        # Single transaction — both DELETEs share the commit so a partial
+        # failure does not orphan history rows.
+        cursor.execute(
+            "DELETE FROM discovery_history WHERE device_id = ?",
+            (device_id,),
+        )
+        cursor.execute(
+            "DELETE FROM devices WHERE id = ?",
+            (device_id,),
+        )
+        self.connection.commit()
+        return candidate
 
 
 class PostgreSQLAdapter(DatabaseAdapter):
@@ -1205,6 +1258,35 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
         self.connection.commit()
         return candidates
+
+    def delete_device_by_id(
+        self, device_id: int, dry_run: bool = False
+    ) -> dict[str, Any] | None:
+        """PostgreSQL implementation. See ``DatabaseAdapter.delete_device_by_id``."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(
+            "SELECT * FROM devices WHERE id = %s",
+            (device_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        candidate = dict(row)
+        if dry_run:
+            return candidate
+        cursor.execute(
+            "DELETE FROM discovery_history WHERE device_id = %s",
+            (device_id,),
+        )
+        cursor.execute(
+            "DELETE FROM devices WHERE id = %s",
+            (device_id,),
+        )
+        self.connection.commit()
+        return candidate
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:

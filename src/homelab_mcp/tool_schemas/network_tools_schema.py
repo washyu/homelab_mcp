@@ -102,6 +102,54 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
             "required": [],
         },
     },
+    "remove_device": {
+        "description": (
+            "Delete a single sitemap row by device_id. Pure SQL DELETE on the "
+            "sitemap row plus cascade DELETE on discovery_history rows for that "
+            "device_id. No SSH dial, no Ansible runs, no Terraform plans on the "
+            "handler call path. The keyring credential entry bound via "
+            "ssh_credential_id is preserved — only the sitemap row is dropped, so "
+            "a subsequent discover_and_map can re-bind without re-adding the "
+            "credential. Pass dry_run=true to preview the would-delete row "
+            "payload without writing. "
+            "Use `remove_device` for inventory-only deletion of one row; use "
+            "`purge_devices` for bulk filter-based inventory deletion; use "
+            "`decommission_device` when host-side cleanup (stop services, "
+            "remove from clusters) is required before deletion."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "integer",
+                    "description": "Database ID of the device to remove (look up via get_network_sitemap).",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, return the would-delete row payload without writing (default: false).",
+                    "default": False,
+                },
+            },
+            "required": ["device_id"],
+        },
+    },
+    "remove_device_preview": {
+        "description": (
+            "Preview the result of remove_device without persisting. Returns the "
+            "would-delete row payload. Read-only — no DB write, no keyring touch. "
+            "Phase 44 D-11."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "integer",
+                    "description": "Database ID of the device to preview-remove.",
+                },
+            },
+            "required": ["device_id"],
+        },
+    },
     "update_device_fingerprint": {
         "description": (
             "Merge fingerprint data (kernel, OS, package digest, capabilities) into a "
