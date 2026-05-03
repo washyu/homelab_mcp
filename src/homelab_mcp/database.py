@@ -644,38 +644,15 @@ class SQLiteAdapter(DatabaseAdapter):
         return [dict(row) for row in cursor.fetchall()]
 
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
-        """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``."""
-        if not self.connection:
-            self.connect()
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT id, hostname, connection_ip, status, error_message, last_seen
-            FROM devices
-            WHERE status = 'error'
-               OR hostname IS NULL
-               OR hostname = ''
-               OR hostname = 'unknown'
-            ORDER BY id
-            """
+        """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``.
+
+        Phase 44 D-07: refactored to delegate to ``_purge_devices_by_filter`` with
+        the ``failed_discovery`` sentinel so the bulk-delete SQL path is unified
+        with ``purge_devices``.
+        """
+        return _purge_devices_by_filter(
+            self, "sqlite", "failed_discovery", None, dry_run=dry_run
         )
-        candidates = [dict(row) for row in cursor.fetchall()]
-        if dry_run or not candidates:
-            return candidates
-        ids = [row["id"] for row in candidates]
-        placeholders = ",".join("?" * len(ids))
-        # Delete history first (no ON DELETE CASCADE); then devices.
-        cursor.execute(
-            f"DELETE FROM discovery_history WHERE device_id IN ({placeholders})",  # noqa: S608
-            ids,
-        )
-        cursor.execute(
-            f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
-            ids,
-        )
-        self.connection.commit()
-        return candidates
 
     def delete_device_by_id(
         self, device_id: int, dry_run: bool = False
@@ -1234,31 +1211,15 @@ class PostgreSQLAdapter(DatabaseAdapter):
         return [dict(row) for row in cursor.fetchall()]
 
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
-        """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``."""
-        if not self.connection:
-            self.connect()
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(
-            """
-            SELECT id, hostname, connection_ip::text AS connection_ip,
-                   status, error_message, last_seen::text AS last_seen
-            FROM devices
-            WHERE status = 'error'
-               OR hostname IS NULL
-               OR hostname = ''
-               OR hostname = 'unknown'
-            ORDER BY id
-            """
+        """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``.
+
+        Phase 44 D-07: refactored to delegate to ``_purge_devices_by_filter`` with
+        the ``failed_discovery`` sentinel so the bulk-delete SQL path is unified
+        with ``purge_devices``.
+        """
+        return _purge_devices_by_filter(
+            self, "postgres", "failed_discovery", None, dry_run=dry_run
         )
-        candidates = [dict(row) for row in cursor.fetchall()]
-        if dry_run or not candidates:
-            return candidates
-        ids = [row["id"] for row in candidates]
-        cursor.execute("DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,))
-        cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
-        self.connection.commit()
-        return candidates
 
     def delete_device_by_id(
         self, device_id: int, dry_run: bool = False
@@ -1393,6 +1354,104 @@ def _row_in_cidr(
         return ipaddress.ip_address(raw_ip) in net
     except ValueError:
         return False
+
+
+def _purge_devices_by_filter(
+    adapter: Any,
+    dialect: Literal["sqlite", "postgres"],
+    filter_type: str,
+    value: Any,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    """Shared filter-dispatch for purge_devices + purge_failed_discoveries alias.
+
+    ``adapter``: a SQLiteAdapter or PostgreSQLAdapter instance — used for
+        ``connection`` and ``get_all_devices()`` only. The orchestrator does
+        NOT branch on the concrete adapter class; ``dialect`` carries the
+        SQL flavor instead. Annotated as Any because the abstract
+        ``DatabaseAdapter`` does not declare ``connection`` (concrete impls
+        carry it).
+    ``dialect``: "sqlite" or "postgres" — caller (the adapter method) passes
+        its own dialect string. Removes the need for ``isinstance`` checks
+        in this function.
+    ``filter_type``: one of {'hostname', 'last_seen_older_than_days', 'status',
+        'ip_range', 'failed_discovery'} (last is alias-internal sentinel per
+        D-08 — matches status='error' OR hostname IN (NULL,'','unknown')).
+    ``value``: per-filter shape (str/int/CIDR-str). May be None for
+        'failed_discovery' (no value bound).
+    ``dry_run``: returns candidates without DELETE.
+
+    Returns the list of removed (or would-be-removed) row dicts. Each row is
+    a full sitemap row (per D-01a — agent confirms what would be / was
+    deleted). Two-step cascade per D-06c.
+
+    Phase 44 D-14. Validation errors raise ValueError; the handler wraps
+    into the structured-error envelope per D-01b.
+    """
+    if not adapter.connection:
+        adapter.connect()
+    assert adapter.connection is not None
+
+    # ip_range = Python-side filter via ipaddress, not SQL.
+    if filter_type == "ip_range":
+        try:
+            net = ipaddress.ip_network(value, strict=False)
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"Invalid CIDR for ip_range filter: {value!r} ({e})"
+            ) from e
+        all_devices = adapter.get_all_devices()
+        candidates = [dict(row) for row in all_devices if _row_in_cidr(row, net)]
+    else:
+        # SQL-side filter. Caller's `dialect` drives placeholder + cursor choice.
+        where, params = _build_filter_clause(filter_type, value, dialect)
+        if dialect == "postgres":
+            # RealDictCursor for postgres parity with purge_failed_devices.
+            # ::text casts on connection_ip + last_seen for SQLite-shape parity.
+            cursor = adapter.connection.cursor(
+                cursor_factory=psycopg2.extras.RealDictCursor
+            )
+            # WHERE fragment is from a controlled set (`_build_filter_clause`
+            # only emits `column OP placeholder` shapes); value is bound as a
+            # parameter, never interpolated.
+            cursor.execute(
+                f"SELECT id, hostname, connection_ip::text AS connection_ip, "  # noqa: S608
+                f"status, error_message, last_seen::text AS last_seen "
+                f"FROM devices WHERE {where} ORDER BY id",
+                params,
+            )
+        else:
+            cursor = adapter.connection.cursor()
+            cursor.execute(
+                f"SELECT id, hostname, connection_ip, status, error_message, "  # noqa: S608
+                f"last_seen FROM devices WHERE {where} ORDER BY id",
+                params,
+            )
+        candidates = [dict(row) for row in cursor.fetchall()]
+
+    if dry_run or not candidates:
+        return candidates
+
+    # Two-step cascade per D-06c. Single transaction.
+    ids = [row["id"] for row in candidates]
+    cursor = adapter.connection.cursor()
+    if dialect == "sqlite":
+        placeholders = ",".join("?" * len(ids))
+        cursor.execute(
+            f"DELETE FROM discovery_history WHERE device_id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+        cursor.execute(
+            f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+    else:
+        cursor.execute(
+            "DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,)
+        )
+        cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
+    adapter.connection.commit()
+    return candidates
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
