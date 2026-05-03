@@ -1,14 +1,15 @@
 """Database abstraction layer for network sitemap functionality."""
 
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import sqlite3
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -1287,6 +1288,111 @@ class PostgreSQLAdapter(DatabaseAdapter):
         )
         self.connection.commit()
         return candidate
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Phase 44 D-14: shared filter-dispatch helpers for purge_devices + the
+# purge_failed_discoveries alias.
+#
+# Helpers in this section are pure: no adapter coupling, no isinstance
+# branching. The orchestrator `_purge_devices_by_filter` (Task 1b) takes
+# an explicit `dialect: Literal["sqlite", "postgres"]` parameter and each
+# adapter calls the orchestrator with its own dialect string.
+# ─────────────────────────────────────────────────────────────────────────
+
+_FAILED_DISCOVERY_WHERE = (
+    "status = 'error' "
+    "OR hostname IS NULL "
+    "OR hostname = '' "
+    "OR hostname = 'unknown'"
+)
+
+
+def _build_filter_clause(
+    filter_type: str,
+    value: Any,
+    dialect: Literal["sqlite", "postgres"],
+) -> tuple[str, tuple[Any, ...]]:
+    """Build the WHERE clause + params for one filter_type. Returns (where, params).
+
+    ``dialect`` is "sqlite" (uses ``?``) or "postgres" (uses ``%s``).
+    Raises ValueError on bad value shape; the caller (handler) wraps that
+    into a structured-error envelope per D-01b.
+
+    Note: ip_range is NOT handled here — the orchestrator dispatches it to
+    Python-side ``ipaddress`` filtering instead of SQL (D-03).
+
+    Phase 44 D-01/D-01b/D-02/D-04/D-05/D-08.
+    """
+    ph = "?" if dialect == "sqlite" else "%s"
+
+    if filter_type == "failed_discovery":
+        # D-08: 4-clause OR alias semantics; no value bound.
+        return (_FAILED_DISCOVERY_WHERE, ())
+
+    if filter_type == "hostname":
+        # D-02: exact match only — no glob/LIKE.
+        if not isinstance(value, str):
+            raise ValueError(
+                f"`value` must be str for filter_type='hostname' "
+                f"(got {type(value).__name__})"
+            )
+        return (f"hostname = {ph}", (value,))
+
+    if filter_type == "status":
+        # D-05: exact match. Bare 'status'='error' does NOT cover zombie rows
+        # (those need filter_type='failed_discovery' for backward compat).
+        if not isinstance(value, str):
+            raise ValueError(
+                f"`value` must be str for filter_type='status' "
+                f"(got {type(value).__name__})"
+            )
+        return (f"status = {ph}", (value,))
+
+    if filter_type == "last_seen_older_than_days":
+        # D-04: integer N; rows where last_seen < (now_utc - N days).
+        # Exclusive boundary so N=0 matches "older than this instant".
+        # last_seen is TEXT (ISO format) per Phase 42 W2 canonical UTC.
+        # Reject bool explicitly — `isinstance(True, int)` is True in Python.
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(
+                f"`value` must be int for filter_type='last_seen_older_than_days' "
+                f"(got {type(value).__name__})"
+            )
+        threshold = (datetime.now(UTC) - timedelta(days=value)).isoformat()
+        return (f"last_seen < {ph}", (threshold,))
+
+    if filter_type == "ip_range":
+        # Handled separately by the orchestrator (Python-side filter, not SQL).
+        raise ValueError(
+            "_build_filter_clause does not handle ip_range — orchestrator dispatches "
+            "to Python-side ipaddress filter per D-03"
+        )
+
+    raise ValueError(
+        f"Unknown filter_type: {filter_type!r}. Valid: hostname, "
+        f"last_seen_older_than_days, status, ip_range, failed_discovery"
+    )
+
+
+def _row_in_cidr(
+    row: dict[str, Any],
+    net: ipaddress.IPv4Network | ipaddress.IPv6Network,
+) -> bool:
+    """D-03/D-03a: per-row CIDR membership. Silent skip on unparseable IP.
+
+    ``net`` is the parsed CIDR network (caller must have already validated
+    via ``ipaddress.ip_network(value, strict=False)``). Returns False for
+    any row whose connection_ip is missing, empty, or unparseable as an IP
+    address (zombie rows, hostname-fallback rows). Never raises.
+    """
+    raw_ip = row.get("connection_ip", "")
+    if not raw_ip:
+        return False
+    try:
+        return ipaddress.ip_address(raw_ip) in net
+    except ValueError:
+        return False
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
