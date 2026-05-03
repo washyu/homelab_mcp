@@ -419,6 +419,187 @@ Same shape as [`update_device_fingerprint`](#update_device_fingerprint).
 
 ---
 
+### remove_device
+
+**Description:** Delete a single sitemap row by `device_id`. Pure SQL DELETE on the sitemap row plus cascade DELETE on `discovery_history` rows for that `device_id`. No SSH dial, no Ansible runs, no Terraform plans on the handler call path. The keyring credential entry bound via `ssh_credential_id` is preserved — only the sitemap row is dropped, so a subsequent `discover_and_map` can re-bind without re-adding the credential.
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**Annotations:** `[Destructive]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| device_id | integer | Yes | -- | Database ID of the device to remove (look up via `get_network_sitemap`) |
+| dry_run | boolean | No | false | If true, return the would-delete row payload without writing |
+
+**Example (happy path):**
+
+```json
+{
+  "device_id": 3
+}
+```
+
+**Example (dry_run):**
+
+```json
+{
+  "device_id": 3,
+  "dry_run": true
+}
+```
+
+**Returns:** `{status, dry_run, removed_device}`. On missing device_id: `{status: "error", error: "Device <id> not found in sitemap", hint: "Run get_network_sitemap to see current device IDs."}`
+
+---
+
+### remove_device_preview
+
+**Description:** Preview the result of `remove_device` without persisting. Returns the would-delete row payload. Read-only — no DB write, no keyring touch.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`remove_device`](#remove_device).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| device_id | integer | Yes | -- | Database ID of the device to preview-remove |
+
+**Example:**
+
+```json
+{
+  "device_id": 3
+}
+```
+
+**Returns:** Same shape as `remove_device` with `dry_run: true`.
+
+---
+
+### purge_devices
+
+**Description:** Bulk-delete sitemap rows by filter. Single mutually-exclusive filter per call selected by `filter_type`. Composite/ANDed filters are NOT supported (use two calls).
+
+Supported `filter_type` values:
+- `hostname` — exact-match string. No glob, no LIKE, no wildcards.
+- `last_seen_older_than_days` — integer N. Matches rows where `last_seen < (now - N days)`. Exclusive boundary; `N=0` matches all rows older than this instant.
+- `status` — exact-match string (e.g., `"error"`, `"success"`). NOTE: `status='error'` matches ONLY `status='error'` rows; for the broader failed-discovery set (zombie hostnames included), use `purge_failed_discoveries`.
+- `ip_range` — CIDR string (IPv4 like `"192.168.1.0/24"`, IPv6 like `"2001:db8::/32"`, single IP like `"192.168.1.42/32"`). Rows whose `connection_ip` is not a valid IP are silently skipped.
+
+Zero-match returns success with `purged_count: 0`, never an error.
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**Annotations:** `[Destructive]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| filter_type | string (enum) | Yes | -- | One of `hostname`, `last_seen_older_than_days`, `status`, `ip_range` |
+| value | string \| integer | Yes | -- | Filter value; shape varies by `filter_type` |
+| dry_run | boolean | No | false | If true, return candidates without deleting |
+
+**Example (hostname):**
+
+```json
+{
+  "filter_type": "hostname",
+  "value": "old-test-host"
+}
+```
+
+**Example (stale-row sweep):**
+
+```json
+{
+  "filter_type": "last_seen_older_than_days",
+  "value": 30,
+  "dry_run": true
+}
+```
+
+**Example (status):**
+
+```json
+{
+  "filter_type": "status",
+  "value": "error"
+}
+```
+
+**Example (CIDR):**
+
+```json
+{
+  "filter_type": "ip_range",
+  "value": "192.168.10.0/24"
+}
+```
+
+**Returns:** `{status, dry_run, purged_count, purged_devices}`. On bad value shape or invalid CIDR: `{status: "error", error: "...", hint: "..."}`.
+
+---
+
+### purge_devices_preview
+
+**Description:** Preview the result of `purge_devices` without persisting. Returns the candidate set the bulk delete would touch. Read-only — no DB write.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`purge_devices`](#purge_devices).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| filter_type | string (enum) | Yes | -- | One of `hostname`, `last_seen_older_than_days`, `status`, `ip_range` |
+| value | string \| integer | Yes | -- | Filter value; shape varies by `filter_type` |
+
+**Example:**
+
+```json
+{
+  "filter_type": "ip_range",
+  "value": "192.168.10.0/24"
+}
+```
+
+**Returns:** Same shape as `purge_devices` with `dry_run: true`.
+
+---
+
+### purge_failed_discoveries
+
+**Description:** Remove sitemap rows for devices where discovery failed (`status='error'` or empty/null/`'unknown'` hostname). Pass `dry_run=true` to preview the removal candidates without deleting them. (Equivalent to `purge_devices` with the failed-discovery filter — preserves the 4-clause OR semantics; bare `purge_devices(filter_type='status', value='error')` matches ONLY `status='error'` rows, NOT zombie hostnames.)
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**Annotations:** `[Destructive]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| dry_run | boolean | No | false | If true, return removal candidates without deleting |
+
+**Example:**
+
+```json
+{
+  "dry_run": true
+}
+```
+
+**Returns:** `{status, dry_run, purged_count, purged_devices}` (same shape as `purge_devices`).
+
+---
+
 ## Infrastructure Tools
 
 Tools for infrastructure deployment, configuration, scaling, backup, and rollback.
@@ -492,7 +673,11 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 
 ### decommission_device
 
-**Description:** Safely remove a device from the network infrastructure.
+**Description:** Safely remove a device from the network infrastructure. Stops services, removes the device from clusters, optionally migrates services per `migration_plan`, then deletes the sitemap row.
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**See also:** `remove_device` for inventory-only deletion (no host-side cleanup).
 
 **Annotations:** `[Destructive]` `[Idempotent]`
 
