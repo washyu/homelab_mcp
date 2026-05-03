@@ -41,6 +41,8 @@ STANDALONE_TOOLS: set[str] = {
     "analyze_network_topology",
     "suggest_deployments",
     "purge_failed_discoveries",
+    "remove_device",
+    "remove_device_preview",
     # Credential listing (reads local keyring, may be empty)
     "list_registered_servers",
     # Proxmox script search (queries GitHub API, no Proxmox needed)
@@ -152,6 +154,8 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "suggest_deployments",
         "get_device_changes",
         "purge_failed_discoveries",
+        "remove_device",
+        "remove_device_preview",
     ],
     "VM & Containers": [
         "deploy_vm",
