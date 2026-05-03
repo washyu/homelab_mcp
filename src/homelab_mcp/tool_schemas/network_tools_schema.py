@@ -88,7 +88,15 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
         "description": (
             "Remove sitemap rows for devices where discovery failed (status='error' "
             "or empty/null/'unknown' hostname). Pass dry_run=true to preview the "
-            "removal candidates without deleting them."
+            "removal candidates without deleting them. "
+            "(Equivalent to `purge_devices` with the failed-discovery filter — "
+            "preserves the 4-clause OR semantics; bare `purge_devices(filter_type="
+            "'status', value='error')` matches ONLY status='error' rows, NOT "
+            "zombie hostnames.) "
+            "Use `remove_device` for inventory-only deletion of one row; use "
+            "`purge_devices` for bulk filter-based inventory deletion; use "
+            "`decommission_device` when host-side cleanup (stop services, "
+            "remove from clusters) is required before deletion."
         ),
         "inputSchema": {
             "type": "object",
@@ -100,6 +108,78 @@ NETWORK_TOOLS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": [],
+        },
+    },
+    "purge_devices": {
+        "description": (
+            "Bulk-delete sitemap rows by filter. Single mutually-exclusive filter "
+            "per call selected by filter_type. Supported filter_types: "
+            "'hostname' (exact-match string, no glob/LIKE), "
+            "'last_seen_older_than_days' (integer N — rows where last_seen < now - N days, "
+            "exclusive boundary; N=0 matches all rows older than this instant), "
+            "'status' (exact match string like 'error' or 'success'), "
+            "'ip_range' (CIDR string like '192.168.1.0/24' or '2001:db8::/32' — "
+            "rows whose connection_ip is not a valid IP are silently skipped). "
+            "Composite/ANDed filters are NOT supported (use two calls). "
+            "Pass dry_run=true to preview the candidate set without deleting. "
+            "Zero-match returns success with purged_count=0, never an error. "
+            "Note: filter_type='status', value='error' covers ONLY status='error' rows; "
+            "use purge_failed_discoveries for the broader failed-discovery filter "
+            "(includes zombie hostnames). "
+            "Use `remove_device` for inventory-only deletion of one row; use "
+            "`purge_devices` for bulk filter-based inventory deletion; use "
+            "`decommission_device` when host-side cleanup (stop services, "
+            "remove from clusters) is required before deletion."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filter_type": {
+                    "type": "string",
+                    "enum": ["hostname", "last_seen_older_than_days", "status", "ip_range"],
+                    "description": (
+                        "Filter to apply (exactly one per call). See tool description for "
+                        "per-filter value-shape examples."
+                    ),
+                },
+                "value": {
+                    # D-01b: handler validates per-filter_type shape; schema is permissive.
+                    "oneOf": [{"type": "string"}, {"type": "integer"}],
+                    "description": (
+                        "Filter value. Shape varies by filter_type: "
+                        "hostname/status -> string, last_seen_older_than_days -> integer, "
+                        "ip_range -> CIDR string."
+                    ),
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, return candidates without deleting (default: false).",
+                    "default": False,
+                },
+            },
+            "required": ["filter_type", "value"],
+        },
+    },
+    "purge_devices_preview": {
+        "description": (
+            "Preview the result of purge_devices without persisting. Returns the "
+            "candidate set the bulk delete would touch. Read-only — no DB write. "
+            "Phase 44 D-11."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "filter_type": {
+                    "type": "string",
+                    "enum": ["hostname", "last_seen_older_than_days", "status", "ip_range"],
+                    "description": "Filter to apply (exactly one per call).",
+                },
+                "value": {
+                    "oneOf": [{"type": "string"}, {"type": "integer"}],
+                    "description": "Filter value. Shape varies by filter_type.",
+                },
+            },
+            "required": ["filter_type", "value"],
         },
     },
     "remove_device": {
