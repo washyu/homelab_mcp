@@ -13,14 +13,16 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 56
-    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint + update_device_fingerprint_preview (Plan 05); Phase 44 Plan 01 added remove_device + remove_device_preview
+        len(tools) == 58
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint + update_device_fingerprint_preview (Plan 05); Phase 44 Plan 01 added remove_device + remove_device_preview; Phase 44 Plan 02 added purge_devices + purge_devices_preview
     assert "ssh_discover" in tools
     assert "purge_failed_discoveries" in tools  # v1.6.x: sitemap CRUD completion
     assert "update_device_fingerprint" in tools  # Phase 38
     assert "update_device_fingerprint_preview" in tools  # Phase 38 D-05c (Plan 05)
     assert "remove_device" in tools  # Phase 44 D-06
     assert "remove_device_preview" in tools  # Phase 44 D-11
+    assert "purge_devices" in tools  # Phase 44 D-01
+    assert "purge_devices_preview" in tools  # Phase 44 D-11
     assert "setup_mcp_admin" not in tools  # D-10: removed in Phase 33
     assert "verify_mcp_admin" not in tools  # D-05: removed in Phase 33.1
     assert "update_mcp_admin_groups" not in tools  # D-05: removed in Phase 33.1

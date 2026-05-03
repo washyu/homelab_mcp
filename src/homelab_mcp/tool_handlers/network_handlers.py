@@ -1,8 +1,9 @@
 """Handler functions for network topology and sitemap tools."""
 
 import json
-from typing import Any
+from typing import Any, Literal
 
+from ..database import PostgreSQLAdapter, SQLiteAdapter, _purge_devices_by_filter
 from ..sitemap import NetworkSiteMap, bulk_discover_and_store, discover_and_store
 from ..validation import validate_hostname
 
@@ -262,3 +263,114 @@ async def handle_remove_device_preview(arguments: dict[str, Any]) -> dict[str, A
     No DB write, no keyring touch, no host-side action.
     """
     return await handle_remove_device({**arguments, "dry_run": True})
+
+
+_VALID_FILTER_TYPES = {"hostname", "last_seen_older_than_days", "status", "ip_range"}
+
+
+def _adapter_dialect(adapter: Any) -> Literal["sqlite", "postgres"]:
+    """Determine the SQL dialect for the adapter so the orchestrator gets a
+    precise dialect parameter (avoids isinstance branching inside the helper).
+
+    The handler is the right place for this single concrete-class check —
+    the helper itself stays adapter-agnostic per Phase 44 D-14.
+    """
+    if isinstance(adapter, PostgreSQLAdapter):
+        return "postgres"
+    if isinstance(adapter, SQLiteAdapter):
+        return "sqlite"
+    raise TypeError(
+        f"Unknown adapter type {type(adapter).__name__}; expected SQLiteAdapter or "
+        "PostgreSQLAdapter."
+    )
+
+
+def _value_hint_for(filter_type: str) -> str:
+    """D-01b: per-filter_type hint string for bad-value-shape error envelopes."""
+    return {
+        "hostname": "Pass an exact hostname string, e.g., 'pve-test'.",
+        "status": "Pass a status string, e.g., 'success' or 'error'.",
+        "last_seen_older_than_days": "Pass an integer day count, e.g., 7.",
+        "ip_range": "Pass a CIDR string, e.g., '192.168.1.0/24' or '2001:db8::/32'.",
+    }.get(filter_type, "See the tool description for value-shape examples.")
+
+
+async def handle_purge_devices(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle purge_devices tool (Phase 44 D-01).
+
+    Generalized superset of purge_failed_discoveries. Single mutually-exclusive
+    filter per call; filter_type enum is one of {hostname, last_seen_older_than_days,
+    status, ip_range}. Value shape varies per filter_type and is validated at
+    handler boundary per D-01b (MCP framework does not enforce inputSchema).
+
+    Response shape mirrors purge_failed_discoveries (D-01a):
+        {status, dry_run, purged_count, purged_devices}
+
+    Zero-match returns success with empty list (D-01c, NEVER an error).
+
+    purge_failed_discoveries alias: this handler does NOT cover the
+    4-clause failed-discovery filter (D-08) — for that, use the
+    purge_failed_discoveries tool directly. ``purge_devices(filter_type='status',
+    value='error')`` matches ONLY status='error' rows; zombie hostnames need
+    the alias.
+    """
+    filter_type = arguments.get("filter_type", "")
+    value = arguments.get("value")
+    dry_run = bool(arguments.get("dry_run", False))
+
+    # D-01b: validate filter_type at handler boundary (JSON Schema enum is
+    # advisory — MCP framework does not enforce inputSchema).
+    if filter_type not in _VALID_FILTER_TYPES:
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": (
+                    f"Invalid filter_type: {filter_type!r}. "
+                    f"Valid: hostname, last_seen_older_than_days, status, ip_range."
+                ),
+                "hint": (
+                    "Pass filter_type as one of the four enum values; "
+                    "see the tool description for value-shape examples."
+                ),
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+
+    sitemap = NetworkSiteMap()
+    dialect = _adapter_dialect(sitemap.db_adapter)
+    try:
+        removed = _purge_devices_by_filter(
+            sitemap.db_adapter, dialect, filter_type, value, dry_run=dry_run
+        )
+    except ValueError as e:
+        # D-01b: bad value shape (wrong type, invalid CIDR, etc.) → structured envelope.
+        hint = _value_hint_for(filter_type)
+        result_str = json.dumps(
+            {
+                "status": "error",
+                "error": str(e),
+                "hint": hint,
+            }
+        )
+        return {"content": [{"type": "text", "text": result_str}]}
+
+    result = json.dumps(
+        {
+            "status": "success",
+            "dry_run": dry_run,
+            "purged_count": len(removed),
+            "purged_devices": removed,
+        },
+        indent=2,
+        default=str,
+    )
+    return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_purge_devices_preview(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle purge_devices_preview tool (Phase 44 D-11).
+
+    Delegates to handle_purge_devices with dry_run=True injected.
+    No DB write, no host-side action.
+    """
+    return await handle_purge_devices({**arguments, "dry_run": True})

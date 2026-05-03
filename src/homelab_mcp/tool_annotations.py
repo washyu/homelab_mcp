@@ -1,6 +1,6 @@
 """Tool annotations for MCP spec compliance.
 
-Maps all 57 tool names to ToolAnnotations instances with readOnlyHint,
+Maps all 58 tool names to ToolAnnotations instances with readOnlyHint,
 destructiveHint, and idempotentHint set. MCP clients use these hints
 to distinguish read-only from destructive tools and provide safety warnings.
 """
@@ -50,6 +50,7 @@ _READ_ONLY_TOOLS = [
     "rollback_infrastructure_changes_preview",
     "update_device_fingerprint_preview",  # Phase 38 D-05c (Plan 05)
     "remove_device_preview",  # Phase 44 D-11
+    "purge_devices_preview",  # Phase 44 D-11
 ]
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,7 @@ _DESTRUCTIVE_TOOLS = [
     "rollback_infrastructure_changes",
     "purge_failed_discoveries",
     "remove_device",  # Phase 44 D-06
+    "purge_devices",  # Phase 44 D-01
 ]
 
 # ---------------------------------------------------------------------------
