@@ -103,7 +103,15 @@ INFRASTRUCTURE_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "decommission_device": {
-        "description": "Safely remove a device from the network infrastructure",
+        "description": (
+            "Safely remove a device from the network infrastructure. Stops "
+            "services, removes the device from clusters, optionally migrates "
+            "services per migration_plan, then deletes the sitemap row. "
+            "Use `remove_device` for inventory-only deletion of one row; use "
+            "`purge_devices` for bulk filter-based inventory deletion; use "
+            "`decommission_device` when host-side cleanup (stop services, "
+            "remove from clusters) is required before deletion."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {

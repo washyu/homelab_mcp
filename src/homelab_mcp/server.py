@@ -154,7 +154,8 @@ HOMELAB_RESOURCES: dict[str, dict[str, object]] = {
             "(probed_ok, unreachable, unknown, changed) with per-bucket counts and a "
             "conditional guidance field when no hosts were scanned. Populated by "
             "scan_infrastructure_drift; recovery via discover_and_map / "
-            "get_network_sitemap / purge_failed_discoveries."
+            "get_network_sitemap / remove_device / purge_devices / "
+            "purge_failed_discoveries / decommission_device."
         ),
     },
 }
@@ -1019,7 +1020,8 @@ def _cmd_credentials_link(args: argparse.Namespace) -> None:
         print(
             f"Error: multiple sitemap rows match hostname {args.hostname!r}. "
             f"Use a more specific identifier or fix the duplication via "
-            f"purge_failed_discoveries.",
+            f"`remove_device <device_id>` (precise) or "
+            f"`purge_failed_discoveries` (bulk failed-discovery cleanup).",
             file=sys.stderr,
         )
         sys.exit(1)
