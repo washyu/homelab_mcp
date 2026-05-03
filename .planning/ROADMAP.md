@@ -297,9 +297,9 @@ Full details: `.planning/milestones/v1.6-ROADMAP.md`
   4. Tool descriptions explicitly contrast the three delete paths so an MCP client surfaces the right tool for the right intent: `remove_device` (one row, inventory-only), `purge_devices` (bulk, filter-based, inventory-only), `decommission_device` (one row, host-side cleanup + DELETE). Wording-parity rule applied across schema description and `docs/tool-reference.md` prose.
   5. `docs/tool-reference.md` documents both new tools with example invocations, plus a one-line cross-reference in the `decommission_device` section pointing to `remove_device` as the right choice when the user wants inventory-only deletion.
   6. The full unit suite remains green (≥907 passing, no skips introduced); new tests cover: `remove_device` happy path, `dry_run` preview, missing-`device_id` error path, credential-preservation invariant; `purge_devices` per-filter behavior and `purge_failed_discoveries` alias parity. Ruff + mypy clean. AST guard added so the `remove_device` handler's call path is provably free of SSH / Ansible / Terraform invocations (regression protection against future "let's just call decommission internally" drift).
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
   - [x] 44-01-PLAN.md — remove_device adapter + handler + schema + registry + tests (Wave 1)
-  - [ ] 44-02-PLAN.md — purge_devices generalization + shared filter helper + alias parity (Wave 1)
+  - [x] 44-02-PLAN.md — purge_devices generalization + shared filter helper + alias parity (Wave 1)
   - [ ] 44-03-PLAN.md — AST guard + wording sweep + docs/tool-reference.md + final quality gate (Wave 2, depends on 44-01 + 44-02)
 
 ## Progress
