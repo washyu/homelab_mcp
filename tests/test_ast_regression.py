@@ -1599,3 +1599,223 @@ class TestPhase41DBAdapterHygiene:
             f"(_probe_one post-Plan-41-07). Found {len(calls)}. A regression "
             "that drops the call site silently weakens the db_adapter hygiene guard."
         )
+
+
+class TestPhase44RemoveDeviceCallPath:
+    """Phase 44 D-10: handle_remove_device + handle_remove_device_preview +
+    delete_device_by_id are body-level free of SSH/Ansible/Terraform/
+    credential-cleanup/decommission symbols.
+
+    Scope per D-10a: walks ONLY the named functions' AST subtrees, NOT the
+    transitive call graph. If a future refactor extracts a helper, the
+    helper's name MUST be added to ``_GUARDED_FUNCTIONS`` — keeping the body
+    of each guarded function minimal (validate -> adapter call -> response
+    shape) is what makes this guard hold.
+
+    Per D-10b: one ``test_*`` method per forbidden symbol so failures
+    pinpoint which symbol regressed. Sibling to TestPhase37/38.1/40 classes.
+
+    SC-6 explicitly justifies this AST guard: "regression protection against
+    future 'let's just call decommission internally' drift."
+
+    Issue 12: ``handle_remove_device_preview`` is included in
+    ``_GUARDED_FUNCTIONS``. Its body is currently a 1-line delegate so the
+    guard trivially passes, but including it catches future drift where
+    someone extends the preview body with logic that touches a forbidden
+    symbol.
+    """
+
+    # (relative_path_under_src/homelab_mcp, optional_class_name_or_None, function_name)
+    # class_name=None means top-level FunctionDef; otherwise scope to ClassDef first.
+    _GUARDED_FUNCTIONS: tuple[tuple[str, str | None, str], ...] = (
+        ("tool_handlers/network_handlers.py", None, "handle_remove_device"),
+        ("tool_handlers/network_handlers.py", None, "handle_remove_device_preview"),
+        ("database.py", "SQLiteAdapter", "delete_device_by_id"),
+        ("database.py", "PostgreSQLAdapter", "delete_device_by_id"),
+    )
+
+    # Forbidden bare names (used as ast.Name id, ast.alias name in Import,
+    # or ast.Attribute attr where appropriate).
+    _FORBIDDEN_NAMES: tuple[str, ...] = (
+        "ssh_connect",
+        "asyncssh",
+        "decommission_network_device",
+        "_stop_all_device_services",
+        "_remove_from_clusters",
+        "_execute_migration_plan",
+        "delete_credential",
+        "delete_proxmox_credential",
+    )
+
+    # Forbidden attribute pairs: (value_id, attr_name) — e.g.,
+    # ("keyring", "delete_password") matches `keyring.delete_password(...)`.
+    _FORBIDDEN_ATTRIBUTES: tuple[tuple[str, str], ...] = (
+        ("keyring", "delete_password"),
+        ("keyring", "set_password"),
+        # subprocess.* — most defensive scope per D-10. The handler should be
+        # pure DB work; no shell needed.
+        ("subprocess", "run"),
+        ("subprocess", "Popen"),
+        ("subprocess", "call"),
+        ("subprocess", "check_call"),
+        ("subprocess", "check_output"),
+    )
+
+    @classmethod
+    def _load_function_subtree(
+        cls, rel_path: str, class_name: str | None, func_name: str
+    ) -> ast.AST:
+        """Find the named function's AST subtree.
+
+        For class methods, scope to the ClassDef first then find the method
+        within. Raises if the function is not found (planner renamed it
+        without updating this guard).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / rel_path).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=rel_path)
+
+        if class_name is not None:
+            class_node = next(
+                (
+                    n
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.ClassDef) and n.name == class_name
+                ),
+                None,
+            )
+            assert class_node is not None, (
+                f"Phase 44 D-10: class {class_name!r} not found in {rel_path} "
+                f"(if you renamed it, update _GUARDED_FUNCTIONS)"
+            )
+            search_root: ast.AST = class_node
+        else:
+            search_root = tree
+
+        func_node = next(
+            (
+                n
+                for n in ast.walk(search_root)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+                and n.name == func_name
+            ),
+            None,
+        )
+        assert func_node is not None, (
+            f"Phase 44 D-10: function {func_name!r} not found in "
+            f"{class_name or '<module>'} of {rel_path} "
+            f"(if you renamed it, update _GUARDED_FUNCTIONS)"
+        )
+        return func_node
+
+    @classmethod
+    def _scan_for_name(cls, subtree: ast.AST, forbidden_name: str) -> list[int]:
+        """Return line numbers where ``forbidden_name`` appears as a bare
+        ast.Name id, ast.alias name in Import/ImportFrom, or as an
+        ast.Attribute attr (e.g., ``something.<forbidden_name>(...)``).
+        """
+        violations: list[int] = []
+        for node in ast.walk(subtree):
+            # Bare reference: forbidden_name(...) or forbidden_name.x
+            if isinstance(node, ast.Name) and node.id == forbidden_name:
+                violations.append(node.lineno)
+            # Attribute access: x.forbidden_name (matches asyncssh.connect etc.)
+            elif isinstance(node, ast.Attribute) and node.attr == forbidden_name:
+                violations.append(node.lineno)
+            # Import: from X import forbidden_name OR import forbidden_name
+            elif isinstance(node, ast.ImportFrom | ast.Import):
+                for alias in node.names:
+                    if alias.name == forbidden_name or alias.asname == forbidden_name:
+                        violations.append(node.lineno)
+        return violations
+
+    @classmethod
+    def _scan_for_attribute(
+        cls, subtree: ast.AST, value_id: str, attr_name: str
+    ) -> list[int]:
+        """Return line numbers where ``value_id.attr_name`` appears (e.g.,
+        ``keyring.delete_password``)."""
+        violations: list[int] = []
+        for node in ast.walk(subtree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == attr_name
+                and isinstance(node.value, ast.Name)
+                and node.value.id == value_id
+            ):
+                violations.append(node.lineno)
+        return violations
+
+    # --- Per-symbol test methods (D-10b: one test per forbidden symbol). ---
+
+    def test_handle_remove_device_no_ssh_connect(self) -> None:
+        self._assert_no_forbidden_name("ssh_connect")
+
+    def test_handle_remove_device_no_asyncssh(self) -> None:
+        self._assert_no_forbidden_name("asyncssh")
+
+    def test_handle_remove_device_no_decommission_network_device(self) -> None:
+        self._assert_no_forbidden_name("decommission_network_device")
+
+    def test_handle_remove_device_no_stop_all_device_services(self) -> None:
+        self._assert_no_forbidden_name("_stop_all_device_services")
+
+    def test_handle_remove_device_no_remove_from_clusters(self) -> None:
+        self._assert_no_forbidden_name("_remove_from_clusters")
+
+    def test_handle_remove_device_no_execute_migration_plan(self) -> None:
+        self._assert_no_forbidden_name("_execute_migration_plan")
+
+    def test_handle_remove_device_no_delete_credential(self) -> None:
+        self._assert_no_forbidden_name("delete_credential")
+
+    def test_handle_remove_device_no_delete_proxmox_credential(self) -> None:
+        self._assert_no_forbidden_name("delete_proxmox_credential")
+
+    def test_handle_remove_device_no_keyring_delete_password(self) -> None:
+        self._assert_no_forbidden_attribute("keyring", "delete_password")
+
+    def test_handle_remove_device_no_keyring_set_password(self) -> None:
+        self._assert_no_forbidden_attribute("keyring", "set_password")
+
+    def test_handle_remove_device_no_subprocess_run(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "run")
+
+    def test_handle_remove_device_no_subprocess_popen(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "Popen")
+
+    def test_handle_remove_device_no_subprocess_call(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "call")
+
+    def test_handle_remove_device_no_subprocess_check_call(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "check_call")
+
+    def test_handle_remove_device_no_subprocess_check_output(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "check_output")
+
+    # --- Helper assertions (shared across the per-symbol tests). ---
+
+    def _assert_no_forbidden_name(self, forbidden_name: str) -> None:
+        for rel_path, class_name, func_name in self._GUARDED_FUNCTIONS:
+            subtree = self._load_function_subtree(rel_path, class_name, func_name)
+            violations = self._scan_for_name(subtree, forbidden_name)
+            assert not violations, (
+                f"Phase 44 D-10 regression — forbidden symbol "
+                f"{forbidden_name!r} appeared in "
+                f"{class_name or '<module>'}.{func_name} ({rel_path}) "
+                f"at line(s): {violations}. This handler/adapter must be "
+                f"free of SSH/Ansible/Terraform/credential-cleanup symbols. "
+                f"If you intentionally extracted a helper, add the helper's "
+                f"qualified name to _GUARDED_FUNCTIONS."
+            )
+
+    def _assert_no_forbidden_attribute(self, value_id: str, attr_name: str) -> None:
+        for rel_path, class_name, func_name in self._GUARDED_FUNCTIONS:
+            subtree = self._load_function_subtree(rel_path, class_name, func_name)
+            violations = self._scan_for_attribute(subtree, value_id, attr_name)
+            assert not violations, (
+                f"Phase 44 D-10 regression — forbidden attribute "
+                f"{value_id}.{attr_name} appeared in "
+                f"{class_name or '<module>'}.{func_name} ({rel_path}) "
+                f"at line(s): {violations}."
+            )

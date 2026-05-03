@@ -56,9 +56,11 @@ logger = logging.getLogger(__name__)
 _EMPTY_SCAN_GUIDANCE = (
     "No Proxmox hosts in sitemap matched this scan. "
     "Run discover_and_map to populate the sitemap, "
-    "get_network_sitemap to inspect what's tracked, or "
-    "purge_failed_discoveries to clean stale rows. "
-    "If a host is decommissioned, use decommission_device."
+    "get_network_sitemap to inspect what's tracked, "
+    "remove_device for inventory-only removal of a single stale row, "
+    "purge_devices for bulk filter-based cleanup, or "
+    "purge_failed_discoveries to clean stale failed-discovery rows. "
+    "If a host is decommissioned and needs host-side cleanup, use decommission_device."
 )
 
 
@@ -123,7 +125,10 @@ def _reason_message(reason: str, hostname: str, credential_type: str) -> str:
     if reason == "degenerate":
         return (
             "Sitemap row has degenerate hostname or status=error; run "
-            "`homelab-mcp purge_failed_discoveries` to clean up."
+            "`purge_failed_discoveries` to clean up the entire failed-discovery "
+            "set, or `purge_devices(filter_type='hostname', value='unknown')` "
+            "for precise-match cleanup of `unknown`-hostname zombie rows. "
+            "Use `remove_device` if you have the row's device_id in hand."
         )
     return f"Unknown not_eligible reason: {reason!r}"
 
@@ -224,8 +229,12 @@ def _classify_unreachable(
         hostname = row.get("hostname", "")
         message = (
             f"Host last seen {parsed.isoformat()} (>{threshold_days}d ago). "
-            f"If decommissioned, run `decommission_device {hostname}` or "
-            f"`purge_failed_discoveries` to clean up."
+            f"For inventory-only removal, run `remove_device` (look up the "
+            f"device_id via get_network_sitemap) or `purge_devices` for "
+            f"bulk filter-based cleanup. If decommissioned with host-side "
+            f"cleanup needed, run `decommission_device {hostname}`. The "
+            f"existing `purge_failed_discoveries` alias also covers this row "
+            f"if hostname is degenerate."
         )
         return ("missing", message)
     return ("unreachable", sanitize_error(exc))
