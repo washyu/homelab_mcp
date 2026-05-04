@@ -433,23 +433,21 @@ def test_backup_file_mode_preserved_phase381(tmp_path, monkeypatch):
     from homelab_mcp.migration import run_sqlite_migrations
 
     registry_path = tmp_path / "credential_registry.json"
+    stamp_path = tmp_path / "migration_state.json"
     _seed_registry(registry_path)
     os.chmod(registry_path, 0o600)
 
     monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
-    monkeypatch.setattr(
-        "homelab_mcp.migration._MIGRATION_STATE_PATH",
-        tmp_path / "migration_state.json",
-        raising=False,
-    )
+    monkeypatch.setattr("homelab_mcp.migration._MIGRATION_STATE_PATH", stamp_path, raising=False)
 
     db_path = tmp_path / "sitemap.db"
     adapter = _bootstrap_sqlite(db_path)
-    # CR-01 gate (migration.py:208-227) skips the destructive path when the
-    # devices table already carries binding columns. _bootstrap_sqlite produces
-    # that state, so install the legacy schema to force the destructive path
-    # to fire and archive the registry.
+    # _bootstrap_sqlite -> init_schema -> run_sqlite_migrations stamps Phase 38.1
+    # as applied. Install legacy schema and clear the stamp so the next migration
+    # call exercises the destructive block (which writes the .bak file).
     _install_legacy_devices_table(adapter)
+    _reset_phase_38_1_state(stamp_path, registry_path)
+    os.chmod(registry_path, 0o600)
     try:
         run_sqlite_migrations(_connection=adapter.connection)
     finally:
