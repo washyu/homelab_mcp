@@ -50,9 +50,11 @@ def test_drift_resource_after_scan() -> None:
     from homelab_mcp.server import set_latest_drift_report  # type: ignore[attr-defined]
 
     sample_report = {
-        "drift_detected": True,
-        "drifted_vms": [],
-        "scanned_at": "2026-01-01T00:00:00",
+        "status": "success",
+        "scan_timestamp": "2026-01-01T00:00:00",
+        "scanned": 0,
+        "probed_ok": [],
+        "unreachable": [],
     }
 
     set_latest_drift_report(sample_report)

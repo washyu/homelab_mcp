@@ -45,13 +45,18 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "list_proxmox_resources": {
-        "description": "List all Proxmox cluster resources (VMs, containers, nodes, storage). Uses PROXMOX_HOST from environment if host not provided.",
+        "description": "List all Proxmox cluster resources (VMs, containers, nodes, storage).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "host": {
                     "type": "string",
-                    "description": "Proxmox host (optional, uses PROXMOX_HOST env var if not provided)",
+                    "description": (
+                        "Proxmox host. Register via "
+                        "`homelab-mcp credentials add --type proxmox <host> <username>` "
+                        "(per-node) or `... --scope cluster:<name> <token_id>` "
+                        "(cluster scope)."
+                    ),
                 },
                 "resource_type": {
                     "type": "string",
@@ -73,7 +78,12 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "host": {
                     "type": "string",
-                    "description": "Proxmox host (optional, uses PROXMOX_HOST env var)",
+                    "description": (
+                        "Proxmox host. Register via "
+                        "`homelab-mcp credentials add --type proxmox <host> <username>` "
+                        "(per-node) or `... --scope cluster:<name> <token_id>` "
+                        "(cluster scope)."
+                    ),
                 },
             },
             "required": ["node"],
@@ -100,7 +110,12 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "host": {
                     "type": "string",
-                    "description": "Proxmox host (optional)",
+                    "description": (
+                        "Proxmox host. Register via "
+                        "`homelab-mcp credentials add --type proxmox <host> <username>` "
+                        "(per-node) or `... --scope cluster:<name> <token_id>` "
+                        "(cluster scope)."
+                    ),
                 },
             },
             "required": ["node", "vmid"],
@@ -286,10 +301,15 @@ PROXMOX_TOOLS: dict[str, dict[str, Any]] = {
                 },
                 "host": {
                     "type": "string",
-                    "description": "Proxmox host (optional)",
+                    "description": (
+                        "Proxmox host. Any node hostname covered by your registered "
+                        "credential (per-node) or cluster-scope token. Register with "
+                        "`homelab-mcp credentials add --type proxmox <host> <username>`, "
+                        "or `... --scope cluster:<name> <token_id>` for cluster tokens."
+                    ),
                 },
             },
-            "required": ["node", "vmid", "name"],
+            "required": ["node", "vmid", "name", "host"],
         },
     },
     "clone_proxmox_vm": {

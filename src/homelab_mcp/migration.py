@@ -2,14 +2,153 @@
 
 import json
 import logging
+import pathlib
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from .config import get_config
 from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
 
 logger = logging.getLogger(__name__)
+
+# Phase 38.1 R10/D-19 migration version stamp.
+_MIGRATION_STATE_PATH = pathlib.Path.home() / ".homelab_mcp" / "migration_state.json"
+_PHASE_38_1_KEY = "phase_38_1_credential_binding_applied"
+
+
+def _load_migration_state() -> dict[str, Any]:
+    """Load the migration version-stamp file (Phase 38.1 D-19)."""
+    if not _MIGRATION_STATE_PATH.exists():
+        return {}
+    try:
+        return json.loads(_MIGRATION_STATE_PATH.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+    except Exception:  # noqa: BLE001
+        logger.warning("Migration state file unreadable — treating as empty")
+        return {}
+
+
+def _stamp_migration(key: str) -> None:
+    """Write a version stamp to mark this migration as applied (Phase 38.1 D-19)."""
+    state = _load_migration_state()
+    state[key] = True
+    state[f"{key}_at"] = datetime.now(UTC).isoformat()
+    _MIGRATION_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _MIGRATION_STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _phase_38_1_applied() -> bool:
+    """Return True if the Phase 38.1 destructive migration has already run."""
+    return bool(_load_migration_state().get(_PHASE_38_1_KEY))
+
+
+def _archive_registry_for_phase_38_1() -> pathlib.Path | None:
+    """Archive the credential registry to ``.bak.<microsecond_ts>`` (D-20 step 1).
+
+    Returns the backup path, or ``None`` when the registry file does not
+    exist (no archive happened). Callers must handle the ``None`` case
+    when emitting operator-facing messages — synthesizing a fake
+    ``.bak.none`` path is misleading (WR-03).
+
+    D-22: microsecond-precision timestamp; while-loop guards against
+    collisions so an existing ``.bak.<ts>`` is never overwritten.
+    """
+    from .credential_store import _REGISTRY_PATH  # noqa: PLC0415
+
+    if not _REGISTRY_PATH.exists():
+        return None
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    backup_path = pathlib.Path(str(_REGISTRY_PATH) + f".bak.{timestamp}")
+    # D-22: never overwrite an existing .bak file — keep regenerating
+    # the microsecond timestamp until we land on a free slot.
+    while backup_path.exists():
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        backup_path = pathlib.Path(str(_REGISTRY_PATH) + f".bak.{timestamp}")
+    _REGISTRY_PATH.rename(backup_path)
+    return backup_path
+
+
+def _print_phase_38_1_banner(backup_path: pathlib.Path | None) -> None:
+    """3-block stderr banner per Phase 38.1 D-21 (action / why / recovery).
+
+    W5: block 1 explicitly names BOTH dropped tables (devices) and cleared
+    FK-dependent rows (discovery_history) so operators understand the full
+    side-effect surface.
+
+    WR-03: ``backup_path`` is ``None`` when no registry file existed at
+    archive time; in that case the "Archived..." line is omitted so we
+    don't point operators at a path that does not exist on disk.
+    """
+    if backup_path is not None:
+        print(
+            f"Archived credential registry to {backup_path}\n"
+            "Dropped devices table (v1.7 credential-binding rollout)\n"
+            "Cleared discovery_history rows (FK-dependent on devices table)\n",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "Dropped devices table (v1.7 credential-binding rollout)\n"
+            "Cleared discovery_history rows (FK-dependent on devices table)\n",
+            file=sys.stderr,
+        )
+    print(
+        "v1.7 introduces opaque credential UUIDs binding sitemap rows to keyring entries.\n"
+        "Existing registry entries don't carry UUIDs and the devices table doesn't carry\n"
+        "binding columns; clean-slate is required.\n",
+        file=sys.stderr,
+    )
+    print(
+        "Recovery (copy-paste ready):\n"
+        "  homelab-mcp credentials add --type ssh <hostname> <username>\n"
+        "  homelab-mcp credentials add --type proxmox <hostname> <username>\n"
+        "  homelab-mcp discover_and_map <hostname>",
+        file=sys.stderr,
+    )
+
+
+_SQLITE_RECREATE_DEVICES = """
+    CREATE TABLE IF NOT EXISTS devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hostname TEXT NOT NULL,
+        connection_ip TEXT NOT NULL,
+        last_seen TEXT NOT NULL,
+        status TEXT NOT NULL,
+        cpu_model TEXT, cpu_cores INTEGER,
+        memory_total TEXT, memory_used TEXT, memory_free TEXT, memory_available TEXT,
+        disk_filesystem TEXT, disk_size TEXT, disk_used TEXT, disk_available TEXT,
+        disk_use_percent TEXT, disk_mount TEXT,
+        network_interfaces TEXT,
+        usb_devices TEXT, pci_devices TEXT, block_devices TEXT,
+        fingerprint TEXT,
+        ssh_credential_id TEXT,
+        proxmox_credential_id TEXT,
+        uptime TEXT,
+        os_info TEXT,
+        error_message TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices (hostname);
+"""
+
+_POSTGRES_RECREATE_DEVICES = """
+    CREATE TABLE IF NOT EXISTS devices (
+        id SERIAL PRIMARY KEY,
+        hostname VARCHAR(255) NOT NULL,
+        connection_ip INET NOT NULL,
+        last_seen TIMESTAMP NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        system_info JSONB DEFAULT '{}',
+        network_interfaces JSONB DEFAULT '[]',
+        ssh_credential_id TEXT,
+        proxmox_credential_id TEXT,
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    )
+"""
 
 
 def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None) -> list[str]:
@@ -62,6 +201,79 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
         )
 
     # ─────────────────────────────────────────────────────────────────
+    # Phase 38.1 R10: destructive drop-and-recreate migration with version
+    # stamp. Order per D-20: (1) backup registry → (2) drop devices →
+    # (3) stamp version. Idempotent: re-runs are no-ops once stamped (D-19).
+    # ─────────────────────────────────────────────────────────────────
+    if not _phase_38_1_applied():
+        # CR-01 (Phase 38.1 review): defense-in-depth gating to prevent the
+        # destructive block from firing on (a) fresh installs where init_schema
+        # just created the table, or (b) state-file deletion on an
+        # already-migrated DB (silent data loss risk). Inspect the live
+        # devices table for the binding columns; only run drop+recreate when
+        # they are genuinely missing.
+        cursor.execute("PRAGMA table_info(devices)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        devices_table_exists = bool(existing_columns)
+        bindings_already_present = (
+            "ssh_credential_id" in existing_columns and "proxmox_credential_id" in existing_columns
+        )
+        if devices_table_exists and bindings_already_present:
+            # Already migrated (state file lost or never written) — just stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        elif not devices_table_exists:
+            # Fresh install — init_schema just created an empty table OR no
+            # table exists yet; nothing to drop. Skip the banner and just stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        else:
+            # Real migration: pre-existing devices table without binding columns.
+            # D-20 step 1: backup registry (preserve user data BEFORE any DB op).
+            backup_path = _archive_registry_for_phase_38_1()
+
+            # D-20 step 2: drop devices table.
+            # W5/WR-09: SQLite does NOT auto-cascade FK on DROP TABLE; explicitly
+            # delete discovery_history rows first so we don't leave dangling
+            # FK references. Guard the DELETE on table existence — defense-in-depth
+            # against a future refactor that moves migration before init_schema.
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
+            if cursor.fetchone():
+                cursor.execute("DELETE FROM discovery_history")
+            cursor.execute("DROP TABLE IF EXISTS devices")
+            conn.commit()
+
+            # Recreate the devices table inline so subsequent ALTER blocks have
+            # something to operate on. Mirrors database.py:197 + Plan 03's
+            # ssh_credential_id / proxmox_credential_id additions.
+            cursor.executescript(_SQLITE_RECREATE_DEVICES)
+            conn.commit()
+
+            # D-20 step 3: stamp version (only after backup + drop succeeded).
+            _stamp_migration(_PHASE_38_1_KEY)
+            applied_migrations.append("phase_38_1_drop_recreate")
+
+            # D-21: 3-block stderr banner with recovery commands.
+            _print_phase_38_1_banner(backup_path)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 38.1 R2: idempotent ALTER TABLE ADD COLUMN for the binding
+    # columns. No-op when the destructive block above just ran (CREATE TABLE
+    # already includes the columns) or when ALTER ran on a previous startup.
+    # Required for users who installed a build that wrote the version stamp
+    # but predates the binding columns landing in CREATE TABLE.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(devices)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    newly_added_binding: list[str] = []
+    for new_col in ("ssh_credential_id", "proxmox_credential_id"):
+        if new_col not in existing_columns:
+            cursor.execute(f"ALTER TABLE devices ADD COLUMN {new_col} TEXT")  # noqa: S608
+            newly_added_binding.append(new_col)
+    if newly_added_binding:
+        conn.commit()
+        for col in newly_added_binding:
+            applied_migrations.append(f"add_column_{col}")
+
+    # ─────────────────────────────────────────────────────────────────
     # Phase 35 D-09c: ADD COLUMN for usb_devices / pci_devices / block_devices.
     # Legacy rows get NULL defaults; get_all_devices returns None for these on
     # pre-existing devices until re-discovered.
@@ -77,6 +289,17 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
         conn.commit()
         for col in newly_added:
             applied_migrations.append(f"add_column_{col}")
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 38 D-08: ADD COLUMN fingerprint for sitemap drift detection.
+    # Mirrors Phase 35 D-09c. Legacy rows get NULL until re-discovered.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute("PRAGMA table_info(devices)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    if "fingerprint" not in existing_columns:
+        cursor.execute("ALTER TABLE devices ADD COLUMN fingerprint TEXT")  # noqa: S608
+        conn.commit()
+        applied_migrations.append("add_column_fingerprint")
 
     # ─────────────────────────────────────────────────────────────────
     # Phase 35 D-02: Collapse duplicate hostnames into a single row. Keep row
@@ -169,6 +392,9 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
                 usb_devices TEXT,
                 pci_devices TEXT,
                 block_devices TEXT,
+                fingerprint TEXT,
+                ssh_credential_id TEXT,
+                proxmox_credential_id TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
@@ -204,6 +430,9 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
             "usb_devices",
             "pci_devices",
             "block_devices",
+            "fingerprint",
+            "ssh_credential_id",
+            "proxmox_credential_id",
             "uptime",
             "os_info",
             "error_message",
@@ -221,30 +450,30 @@ def run_sqlite_migrations(db_path: str | None = None, *, _connection: Any = None
         conn.commit()
         applied_migrations.append("drop_stale_hostname_ip_unique")
 
-    # Check if drift_baselines table exists
-    cursor.execute("""
+    # Phase 36 D-05: Drop legacy drift_baselines table if it still exists (v1.7 cleanup).
+    # Sitemap is now the single source of truth for drift detection (DRFT-11).
+    cursor.execute(
+        """
         SELECT name FROM sqlite_master
         WHERE type='table' AND name='drift_baselines'
-    """)
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS drift_baselines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node TEXT NOT NULL,
-                vmid INTEGER NOT NULL,
-                vm_type TEXT NOT NULL DEFAULT 'qemu',
-                baseline_config TEXT NOT NULL,
-                recorded_at TEXT NOT NULL,
-                recorded_by TEXT NOT NULL,
-                UNIQUE(node, vmid, vm_type)
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
-            ON drift_baselines (node, vmid, vm_type)
-        """)
+        """
+    )
+    if cursor.fetchone():
+        cursor.execute("DROP INDEX IF EXISTS idx_drift_baselines_node_vmid")
+        cursor.execute("DROP TABLE IF EXISTS drift_baselines")
         conn.commit()
-        applied_migrations.append("create_drift_baselines_table")
+        applied_migrations.append("drop_drift_baselines_table")
+        import sys  # noqa: PLC0415
+
+        print(
+            "Dropped legacy drift_baselines table (v1.7: sitemap is now the single source of truth for drift)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Pre-existing baseline rows are not preserved (per DRFT-21 architectural decision).\n"
+            "      Drift now reports against the live sitemap; no manual baseline registration is needed.",
+            file=sys.stderr,
+        )
 
     if own_connection:
         assert adapter is not None
@@ -303,6 +532,73 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None, *, _c
             "Re-add them with: homelab-mcp credentials add <hostname> <username>",
             file=sys.stderr,
         )
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 38.1 R10 (Postgres): destructive drop-and-recreate migration
+    # with version stamp. Order per D-20 mirrors SQLite. Postgres uses
+    # DROP TABLE devices CASCADE which auto-cascades FK references from
+    # discovery_history.device_id, so no separate DELETE is required (W5).
+    # ─────────────────────────────────────────────────────────────────
+    if not _phase_38_1_applied():
+        # CR-01/CR-02 (Phase 38.1 review): defense-in-depth gating.
+        # Only run drop+recreate when binding columns are genuinely missing.
+        # Detect via information_schema.columns instead of pg_attribute so
+        # the check is portable and skip-safe on a fresh DB.
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'devices'
+            """
+        )
+        existing_columns_pg = {row[0] for row in cursor.fetchall()}
+        devices_table_exists_pg = bool(existing_columns_pg)
+        bindings_already_present_pg = (
+            "ssh_credential_id" in existing_columns_pg and "proxmox_credential_id" in existing_columns_pg
+        )
+        if devices_table_exists_pg and bindings_already_present_pg:
+            # Already migrated (state file lost) — just stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        elif not devices_table_exists_pg:
+            # Fresh install — nothing to drop. Skip banner and stamp.
+            _stamp_migration(_PHASE_38_1_KEY)
+        else:
+            # Real migration: pre-existing devices table without binding columns.
+            backup_path_pg = _archive_registry_for_phase_38_1()
+            # CR-02 (Phase 38.1 review): mirror SQLite path — clear FK-dependent
+            # rows BEFORE dropping the parent. CASCADE on DROP TABLE removes the
+            # FK CONSTRAINT, not the dependent rows; without this DELETE, the
+            # discovery_history rows would survive and dangle with stale device_ids
+            # (and the banner's "Cleared discovery_history rows" line would be a lie).
+            # WR-09: guard DELETE on table existence (defense-in-depth).
+            cursor.execute(
+                """
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'discovery_history'
+                )
+                """
+            )
+            if cursor.fetchone()[0]:
+                cursor.execute("DELETE FROM discovery_history")
+            cursor.execute("DROP TABLE IF EXISTS devices CASCADE")
+            conn.commit()
+
+            cursor.execute(_POSTGRES_RECREATE_DEVICES)
+            conn.commit()
+
+            _stamp_migration(_PHASE_38_1_KEY)
+            applied_migrations.append("phase_38_1_drop_recreate")
+            _print_phase_38_1_banner(backup_path_pg)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Phase 38.1 R2 (Postgres): idempotent ADD COLUMN IF NOT EXISTS for
+    # the binding columns. Native Postgres support; safe under any prior
+    # state.
+    # ─────────────────────────────────────────────────────────────────
+    cursor.execute("ALTER TABLE devices ADD COLUMN IF NOT EXISTS ssh_credential_id TEXT")
+    cursor.execute("ALTER TABLE devices ADD COLUMN IF NOT EXISTS proxmox_credential_id TEXT")
+    conn.commit()
 
     # ─────────────────────────────────────────────────────────────────
     # Phase 35 D-02 (Postgres): Collapse duplicate hostnames. Same
@@ -394,6 +690,33 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None, *, _c
         """
     )
     conn.commit()
+
+    # Phase 36 D-05: Drop legacy drift_baselines table from Postgres if it still exists (v1.7 cleanup).
+    # Sitemap is now the single source of truth for drift detection (DRFT-11).
+    cursor.execute(
+        """
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_name = 'drift_baselines'
+        )
+        """
+    )
+    if cursor.fetchone()[0]:
+        cursor.execute("DROP INDEX IF EXISTS idx_drift_baselines_node_vmid")
+        cursor.execute("DROP TABLE IF EXISTS drift_baselines")
+        conn.commit()
+        applied_migrations.append("drop_drift_baselines_table")
+        import sys  # noqa: PLC0415
+
+        print(
+            "Dropped legacy drift_baselines table from Postgres (v1.7: sitemap is now the single source of truth for drift)",
+            file=sys.stderr,
+        )
+        print(
+            "NOTE: Pre-existing baseline rows are not preserved (per DRFT-21 architectural decision).\n"
+            "      Drift now reports against the live sitemap; no manual baseline registration is needed.",
+            file=sys.stderr,
+        )
 
     if own_connection:
         assert adapter is not None

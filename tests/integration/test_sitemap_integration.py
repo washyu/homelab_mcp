@@ -242,6 +242,95 @@ class TestSitemapIntegration:
             assert len(changes_data["changes"]) >= 1
             assert changes_data["changes"][0]["data"]["hostname"] == "web-server-01"
 
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_discover_populates_fingerprint_against_docker_phase38(self, test_container, tmp_path):
+        """Phase 38 SC-1 + SC-2: live SSH discovery against the Ubuntu Docker
+        container populates the fingerprint sub-dict end-to-end.
+
+        Proves the chain works from real SSH probe to sitemap row:
+
+        1. ``ssh_discover_system`` runs the Plan-01 fingerprint probes
+           (uname -s/-r, /etc/os-release, locale-pinned dpkg sha256).
+        2. ``parse_discovery_output`` (Plan 02) JSON-serializes the
+           fingerprint sub-dict into ``NetworkDevice.fingerprint``.
+        3. ``SQLiteAdapter.store_device`` (Plan 03) persists the column.
+        4. ``sitemap.get_all_devices()`` decodes the JSON string back to
+           a dict on read.
+
+        Skips cleanly when Docker is unavailable via the ``test_container``
+        fixture's ``docker_client`` dependency (see
+        ``tests/integration/docker_client_factory.py``).
+        """
+        # Per-test SQLite DB on disk so the file fixture lifecycle is
+        # explicit (cleaned by ``tmp_path``).
+        db_path = str(tmp_path / "phase38_fingerprint.db")
+        sitemap = NetworkSiteMap(db_path=db_path, db_type="sqlite")
+
+        result_str = await discover_and_store(
+            sitemap,
+            hostname=test_container["hostname"],
+            username=test_container["admin_user"],
+            password=test_container["admin_pass"],
+            port=test_container["port"],
+        )
+
+        # Discovery wrapper returns ``status`` mirroring ``device.status``
+        # ("success" on probe success — see sitemap.py:436-442).
+        result = json.loads(result_str)
+        assert result.get("status") == "success", (
+            f"discover_and_store should report success against the live container; got: {result}"
+        )
+
+        devices = sitemap.get_all_devices()
+        assert len(devices) >= 1, f"Expected at least one stored device after discovery; got {len(devices)}: {devices}"
+
+        # Only one device written by this test; the container's reported
+        # hostname (e.g., 'test-ubuntu' from docker-compose.test.yml) may
+        # not match 'localhost', so pick the only row rather than filtering.
+        target = devices[0]
+        fp = target.get("fingerprint")
+        assert fp is not None, f"fingerprint should be populated on the device row; row keys: {sorted(target.keys())}"
+        assert isinstance(fp, dict), (
+            f"fingerprint should be decoded back to a dict by SQLiteAdapter."
+            f"get_all_devices (Plan 03 D-10); got {type(fp).__name__}: {fp!r}"
+        )
+
+        # SC-1: ``uname -s`` → ``kernel_name`` (Plan 01)
+        assert fp.get("kernel_name") == "Linux", (
+            f"Expected kernel_name='Linux' on the Ubuntu container; got {fp.get('kernel_name')!r}"
+        )
+
+        # SC-1: ``uname -r`` → ``kernel_version`` (Plan 01).
+        # The exact kernel string varies (Docker reuses the host kernel),
+        # so assert non-empty plausible-shape only.
+        kv = fp.get("kernel_version")
+        assert kv, f"kernel_version should be populated from uname -r; got {kv!r}"
+        assert isinstance(kv, str) and len(kv) >= 3, f"kernel_version unexpectedly short or non-string: {kv!r}"
+
+        # SC-1: /etc/os-release → ``os_name`` (Plan 01).
+        # Container is Ubuntu 22.04; PRETTY_NAME contains "Ubuntu" but
+        # be lenient on exact contents to keep the test stable across
+        # docker-compose.test.yml base-image bumps.
+        os_name = fp.get("os_name")
+        assert os_name and isinstance(os_name, str), (
+            f"os_name should be populated from /etc/os-release PRETTY_NAME; got {os_name!r}"
+        )
+
+        # SC-1: ``LC_ALL=C dpkg -l | sort | sha256sum`` →
+        # ``package_fingerprint`` (Plan 01). The container has dpkg native
+        # so the digest must be present and well-formed.
+        pkg_fp = fp.get("package_fingerprint")
+        assert pkg_fp, f"package_fingerprint should be populated on the Debian/Ubuntu container; got {pkg_fp!r}"
+        assert pkg_fp.startswith("sha256:"), (
+            f"package_fingerprint should carry the 'sha256:' prefix per Plan 01 D-04; got {pkg_fp!r}"
+        )
+        digest = pkg_fp[len("sha256:") :]
+        assert len(digest) == 64, (
+            f"Expected a 64-char sha256 hex digest after the prefix; got {len(digest)} chars: {digest!r}"
+        )
+        assert all(c in "0123456789abcdef" for c in digest.lower()), f"Digest should be lowercase hex; got {digest!r}"
+
     @pytest.mark.asyncio
     async def test_error_handling_integration(self, sitemap):
         """Test sitemap error handling with real network scenarios."""

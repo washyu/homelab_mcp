@@ -4,7 +4,7 @@ from typing import Any
 
 SSH_TOOLS: dict[str, dict[str, Any]] = {
     "ssh_discover": {
-        "description": "SSH into a system and gather hardware/system information. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored.",
+        "description": "SSH into a system and gather hardware/system information. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored. Recommended follow-up after onboarding: run the configure_host_fingerprint prompt to capture per-host capability signals for drift detection.",
         "inputSchema": {
             "type": "object",
             "properties": {

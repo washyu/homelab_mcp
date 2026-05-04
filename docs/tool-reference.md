@@ -14,6 +14,7 @@ Each tool is documented with its description, annotations, arguments, a usage ex
 - [Service Tools](#service-tools)
 - [Credential Tools](#credential-tools)
 - [Proxmox Tools](#proxmox-tools)
+- [MCP Prompts](#mcp-prompts)
 
 ## Annotation Legend
 
@@ -34,7 +35,7 @@ Tools for SSH-based system discovery, administration, and remote command executi
 
 ### ssh_discover
 
-**Description:** SSH into a system and gather hardware/system information.
+**Description:** SSH into a system and gather hardware/system information. Recommended follow-up after onboarding: run the `configure_host_fingerprint` prompt (see [MCP Prompts](#mcp-prompts)) to capture per-host capability signals for drift detection.
 
 **Annotations:** `[Read-Only]` `[Idempotent]`
 
@@ -213,7 +214,7 @@ Tools for network device discovery, topology mapping, and change tracking.
 
 ### discover_and_map
 
-**Description:** Discover a device via SSH and store it in the network site map database.
+**Description:** Discover a device via SSH and store it in the network site map database. Recommended follow-up: run the `configure_host_fingerprint` prompt (see [MCP Prompts](#mcp-prompts)) to capture per-host capability signals for drift detection.
 
 **Annotations:** `[Idempotent]`
 
@@ -354,6 +355,251 @@ None.
 
 ---
 
+### update_device_fingerprint
+
+**Description:** Merge fingerprint data (kernel, OS, package digest, capabilities) into a device's sitemap row. Top-level keys (`kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`) overwrite (last-write-wins). The `capabilities` sub-dict updates **one level deep** — each *incoming* top-level capability key REPLACES its stored entry entirely (NOT a recursive merge); stored capability keys not present in the call are preserved. Callers updating any field within a capability must pass the full capability dict. Run `discover_and_map` first to add the device to the sitemap. See the [`configure_host_fingerprint`](#configure_host_fingerprint) MCP prompt for the conversational workflow that drives this tool. Persists to DB and bumps `updated_at`; `last_seen` is preserved (Phase 38 REVIEW-FIX WR-03).
+
+**Annotations:** `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| hostname | string | Yes | -- | Hostname of the device to fingerprint |
+| fingerprint | object | Yes | -- | Fingerprint dict. Recognized top-level keys: `kernel_name`, `kernel_version`, `os_name`, `os_version`, `package_fingerprint`, `capabilities`. Unknown top-level keys are dropped server-side. `capabilities` is a freeform sub-dict. |
+
+**Example:**
+
+```json
+{
+  "hostname": "pve1.local",
+  "fingerprint": {
+    "kernel_version": "6.5.13-1-pve",
+    "capabilities": {
+      "vulkan": {"available": true, "loader_version": "1.3.275"}
+    }
+  }
+}
+```
+
+**Returns:** A dict with `status: "success"`, the hostname, and the merged fingerprint dict that was persisted.
+
+**Errors:**
+
+- `Hostname not in sitemap` (status=error) — hint points to running `discover_and_map` first.
+- `` `fingerprint` must be an object `` (status=error) — schema-level rejection when fingerprint is not a JSON object.
+
+---
+
+### update_device_fingerprint_preview
+
+**Description:** Preview the merge result of `update_device_fingerprint` without persisting. Returns the would-be merged fingerprint dict using the same merge rules: top-level overwrite + `capabilities` one-level overwrite (incoming capability keys replace stored entries entirely; not recursive). Read-only — no DB write, no `last_seen` or `updated_at` mutation. Phase 38 D-05c.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`update_device_fingerprint`](#update_device_fingerprint).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| hostname | string | Yes | -- | Hostname of the device to preview-fingerprint |
+| fingerprint | object | Yes | -- | Same shape as `update_device_fingerprint.fingerprint` |
+
+**Example:**
+
+```json
+{
+  "hostname": "pve1.local",
+  "fingerprint": {"capabilities": {"cuda": {"driver_version": "535"}}}
+}
+```
+
+**Returns:** A dict with `status: "success"`, `preview: true`, the hostname, and the merged fingerprint dict that *would* be persisted (not actually written).
+
+---
+
+### remove_device
+
+**Description:** Delete a single sitemap row by `device_id`. Pure SQL DELETE on the sitemap row plus cascade DELETE on `discovery_history` rows for that `device_id`. No SSH dial, no Ansible runs, no Terraform plans on the handler call path. The keyring credential entry bound via `ssh_credential_id` is preserved — only the sitemap row is dropped, so a subsequent `discover_and_map` can re-bind without re-adding the credential.
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**Annotations:** `[Destructive]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| device_id | integer | Yes | -- | Database ID of the device to remove (look up via `get_network_sitemap`) |
+| dry_run | boolean | No | false | If true, return the would-delete row payload without writing |
+
+**Example (happy path):**
+
+```json
+{
+  "device_id": 3
+}
+```
+
+**Example (dry_run):**
+
+```json
+{
+  "device_id": 3,
+  "dry_run": true
+}
+```
+
+**Returns:** `{status, dry_run, removed_device}`. On missing device_id: `{status: "error", error: "Device <id> not found in sitemap", hint: "Run get_network_sitemap to see current device IDs."}`
+
+---
+
+### remove_device_preview
+
+**Description:** Preview the result of `remove_device` without persisting. Returns the would-delete row payload. Read-only — no DB write, no keyring touch.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`remove_device`](#remove_device).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| device_id | integer | Yes | -- | Database ID of the device to preview-remove |
+
+**Example:**
+
+```json
+{
+  "device_id": 3
+}
+```
+
+**Returns:** Same shape as `remove_device` with `dry_run: true`.
+
+---
+
+### purge_devices
+
+**Description:** Bulk-delete sitemap rows by filter. Single mutually-exclusive filter per call selected by `filter_type`. Composite/ANDed filters are NOT supported (use two calls).
+
+Supported `filter_type` values:
+- `hostname` — exact-match string. No glob, no LIKE, no wildcards.
+- `last_seen_older_than_days` — integer N. Matches rows where `last_seen < (now - N days)`. Exclusive boundary; `N=0` matches all rows older than this instant.
+- `status` — exact-match string (e.g., `"error"`, `"success"`). NOTE: `status='error'` matches ONLY `status='error'` rows; for the broader failed-discovery set (zombie hostnames included), use `purge_failed_discoveries`.
+- `ip_range` — CIDR string (IPv4 like `"192.168.1.0/24"`, IPv6 like `"2001:db8::/32"`, single IP like `"192.168.1.42/32"`). Rows whose `connection_ip` is not a valid IP are silently skipped.
+
+Zero-match returns success with `purged_count: 0`, never an error.
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**Annotations:** `[Destructive]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| filter_type | string (enum) | Yes | -- | One of `hostname`, `last_seen_older_than_days`, `status`, `ip_range` |
+| value | string \| integer | Yes | -- | Filter value; shape varies by `filter_type` |
+| dry_run | boolean | No | false | If true, return candidates without deleting |
+
+**Example (hostname):**
+
+```json
+{
+  "filter_type": "hostname",
+  "value": "old-test-host"
+}
+```
+
+**Example (stale-row sweep):**
+
+```json
+{
+  "filter_type": "last_seen_older_than_days",
+  "value": 30,
+  "dry_run": true
+}
+```
+
+**Example (status):**
+
+```json
+{
+  "filter_type": "status",
+  "value": "error"
+}
+```
+
+**Example (CIDR):**
+
+```json
+{
+  "filter_type": "ip_range",
+  "value": "192.168.10.0/24"
+}
+```
+
+**Returns:** `{status, dry_run, purged_count, purged_devices}`. On bad value shape or invalid CIDR: `{status: "error", error: "...", hint: "..."}`.
+
+---
+
+### purge_devices_preview
+
+**Description:** Preview the result of `purge_devices` without persisting. Returns the candidate set the bulk delete would touch. Read-only — no DB write.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`purge_devices`](#purge_devices).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| filter_type | string (enum) | Yes | -- | One of `hostname`, `last_seen_older_than_days`, `status`, `ip_range` |
+| value | string \| integer | Yes | -- | Filter value; shape varies by `filter_type` |
+
+**Example:**
+
+```json
+{
+  "filter_type": "ip_range",
+  "value": "192.168.10.0/24"
+}
+```
+
+**Returns:** Same shape as `purge_devices` with `dry_run: true`.
+
+---
+
+### purge_failed_discoveries
+
+**Description:** Remove sitemap rows for devices where discovery failed (`status='error'` or empty/null/`'unknown'` hostname). Pass `dry_run=true` to preview the removal candidates without deleting them. (Equivalent to `purge_devices` with the failed-discovery filter — preserves the 4-clause OR semantics; bare `purge_devices(filter_type='status', value='error')` matches ONLY `status='error'` rows, NOT zombie hostnames.)
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**Annotations:** `[Destructive]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| dry_run | boolean | No | false | If true, return removal candidates without deleting |
+
+**Example:**
+
+```json
+{
+  "dry_run": true
+}
+```
+
+**Returns:** `{status, dry_run, purged_count, purged_devices}` (same shape as `purge_devices`).
+
+---
+
 ## Infrastructure Tools
 
 Tools for infrastructure deployment, configuration, scaling, backup, and rollback.
@@ -427,7 +673,11 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 
 ### decommission_device
 
-**Description:** Safely remove a device from the network infrastructure.
+**Description:** Safely remove a device from the network infrastructure. Stops services, removes the device from clusters, optionally migrates services per `migration_plan`, then deletes the sitemap row.
+
+Use `remove_device` for inventory-only deletion of one row; use `purge_devices` for bulk filter-based inventory deletion; use `decommission_device` when host-side cleanup (stop services, remove from clusters) is required before deletion.
+
+**See also:** `remove_device` for inventory-only deletion (no host-side cleanup).
 
 **Annotations:** `[Destructive]` `[Idempotent]`
 
@@ -454,6 +704,39 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 ```
 
 **Returns:** A dict with the decommission operation results or validation report.
+
+---
+
+### decommission_device_preview
+
+**Description:** Preview what `decommission_device` would affect without executing. Returns a structured dry-run report. No infrastructure is modified.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+Same shape as [`decommission_device`](#decommission_device).
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| device_id | integer | Yes | -- | Database ID of the device to decommission |
+| migration_plan | object | No | -- | Plan for migrating services to other devices containing: target_devices (array of integers), service_mapping (object) |
+| force_removal | boolean | No | false | Force removal without migration (data loss possible) |
+| validate_only | boolean | No | false | Only validate decommission plan without executing |
+
+**Example:**
+
+```json
+{
+  "device_id": 3,
+  "migration_plan": {
+    "target_devices": [1, 2],
+    "service_mapping": {"nginx": 1, "postgres": 2}
+  }
+}
+```
+
+**Returns:** A dict containing the dry-run preview of the decommission operation (impact analysis, migration plan validation) without modifying any infrastructure.
 
 ---
 
@@ -570,6 +853,96 @@ Tools for infrastructure deployment, configuration, scaling, backup, and rollbac
 ```
 
 **Returns:** A dict with rollback operation results or validation report.
+
+---
+
+### scan_infrastructure_drift
+
+**Description:** Scan for infrastructure drift against the sitemap. Iterates registered devices in the network sitemap, resolves Proxmox credentials per row through the keyring (per-node → cluster → error), and probes each resolved host's `/cluster/status` endpoint. Returns a four-bucket coverage report — `probed_ok` (host probed successfully), `unreachable` (host did not respond), `unknown` (reserved for Phase 39: VMs/LXC present on a Proxmox hypervisor but absent from sitemap), and `changed` (reserved for Phase 39: fingerprint differs from stored). All four buckets are always present (empty arrays for the Phase-39-reserved buckets). The response also includes a `counts` sub-dict mirroring bucket sizes. When zero hosts were scanned (empty sitemap, or `node` filter narrowed everything out), a top-level `guidance` field is included with pointers to the sitemap CRUD tools (`discover_and_map`, `get_network_sitemap`, `purge_failed_discoveries`, `decommission_device`); when at least one host was scanned, the `guidance` field is omitted.
+
+**Annotations:** `[Read-Only]` `[Idempotent]`
+
+**Arguments:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| node | string | No | (none) | Optional sitemap hostname filter. Exact-match only — no wildcards, no case folding. When set to a hostname that does not match any sitemap row, returns `status="success"` with all four buckets empty and a `guidance` field — never an error. |
+| vm_type | string | No | "all" | Reserved for Phase 39 per-VM detection; currently filters at host level only (no-op until per-VM enumeration ships). Accepts `"qemu"`, `"lxc"`, or `"all"` — all three values produce identical scan results in this release. |
+
+**Example (no filter):**
+
+```json
+{}
+```
+
+**Example (hostname filter):**
+
+```json
+{ "node": "pve1" }
+```
+
+**Returns (populated scan):**
+
+```json
+{
+  "status": "success",
+  "scan_timestamp": "2026-04-25T12:34:56+00:00",
+  "scanned": 2,
+  "counts": {
+    "probed_ok": 1,
+    "unreachable": 1,
+    "unknown": 0,
+    "changed": 0
+  },
+  "probed_ok": [
+    {
+      "hostname": "pve1",
+      "connection_ip": "10.0.0.10",
+      "scope": "node",
+      "cluster_name": null,
+      "status": "probed-ok",
+      "error": null,
+      "scan_timestamp": "2026-04-25T12:34:56+00:00"
+    }
+  ],
+  "unreachable": [
+    {
+      "hostname": "pi-lab",
+      "connection_ip": "10.0.0.12",
+      "scope": "cluster",
+      "cluster_name": "homelab-prod",
+      "status": "unreachable",
+      "error": "connection refused",
+      "scan_timestamp": "2026-04-25T12:34:56+00:00"
+    }
+  ],
+  "unknown": [],
+  "changed": []
+}
+```
+
+**Returns (empty scan — empty sitemap or no-match filter):**
+
+```json
+{
+  "status": "success",
+  "scan_timestamp": "2026-04-25T12:34:56+00:00",
+  "scanned": 0,
+  "counts": {
+    "probed_ok": 0,
+    "unreachable": 0,
+    "unknown": 0,
+    "changed": 0
+  },
+  "guidance": "No Proxmox hosts in sitemap matched this scan. Run discover_and_map to populate the sitemap, get_network_sitemap to inspect what's tracked, or purge_failed_discoveries to clean stale rows. If a host is decommissioned, use decommission_device.",
+  "probed_ok": [],
+  "unreachable": [],
+  "unknown": [],
+  "changed": []
+}
+```
+
+**Recovery from credential failure:** If a sitemap row resolves to a Proxmox host but no keyring credential exists, the row is silently skipped (it is treated as "not a registered Proxmox host"). To register credentials, run `homelab-mcp credentials add --type proxmox` (per-node) or `homelab-mcp credentials add --type proxmox --scope cluster:<name>` (cluster-wide).
 
 ---
 
@@ -1471,3 +1844,105 @@ Tools for Proxmox API integration, community script discovery, and VM/container 
 ```
 
 **Returns:** A dict with the deletion result and task ID.
+
+---
+
+## MCP Prompts
+
+MCP prompt templates that ship with the server. Prompts are surfaced to the AI agent via the MCP `prompts/get` capability and provide structured workflows for multi-step operations. Use `prompts/list` from your MCP client to discover available prompts at runtime.
+
+### connect_to_device
+
+**Description:** Step-by-step onboarding workflow for connecting a new device to the homelab. The prompt instructs the agent to:
+
+1. Confirm the target host has an SSH-accessible user with sudo privileges.
+2. Direct the user to run `homelab-mcp credentials add <hostname> <username>` (or `--key-path <path>` for key auth) to store the SSH credential in the OS keyring.
+3. Call `register_server` to verify the stored credential end-to-end.
+4. Call `ssh_discover` to collect hardware and system info (read-only — returns JSON; does not write to the database).
+5. Call `discover_and_map` to add the device to the network sitemap (this is the step that persists discovery data to the database).
+6. Call `ssh_execute_command` with `sudo -n true` to confirm passwordless sudo for the registered user.
+
+**Argument:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| hostname | string | Yes | Hostname or IP address of the new device to onboard |
+
+**Related tools:** [`ssh_discover`](#ssh_discover), [`register_server`](#register_server), [`discover_and_map`](#discover_and_map), [`ssh_execute_command`](#ssh_execute_command).
+
+---
+
+### decommission_device_workflow
+
+**Description:** Safe guided workflow for decommissioning a homelab device. The prompt instructs the agent to:
+
+1. Call `get_network_sitemap` to find the target device's `device_id` by hostname match.
+2. Call `decommission_device_preview` with the resolved `device_id` to preview the operation.
+3. Present the preview result to the user and require explicit confirmation.
+4. Only on confirmation: call `decommission_device` with the same `device_id`.
+5. Report the result to the user.
+
+The workflow refuses to proceed past step 3 without explicit user confirmation.
+
+**Argument:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| hostname | string | Yes | Hostname or IP of the device to decommission |
+
+**Related tools:** [`get_network_sitemap`](#get_network_sitemap), [`decommission_device_preview`](#decommission_device_preview), [`decommission_device`](#decommission_device).
+
+---
+
+### deploy_service_workflow
+
+**Description:** Pre-flight checked service deployment workflow. The prompt instructs the agent to:
+
+1. Call `ssh_discover` against the target host to verify SSH connectivity.
+2. Call `get_service_status` to check whether the service is already installed on the target.
+3. If pre-flight checks pass, call `install_service` to deploy.
+4. Report the installation result to the user.
+
+**Arguments:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| service_name | string | Yes | Name of the service to deploy |
+| target_host | string | Yes | Target host for deployment |
+
+**Related tools:** [`ssh_discover`](#ssh_discover), [`get_service_status`](#get_service_status), [`install_service`](#install_service).
+
+---
+
+### homelab_health_check
+
+**Description:** Read all infrastructure resources and summarize homelab state. The prompt instructs the agent to read three MCP resources and produce a consolidated summary:
+
+1. `homelab://vms` — list all VMs and containers.
+2. `homelab://devices` — list all tracked network devices.
+3. `homelab://drift/latest` — check for infrastructure drift.
+
+The summary surfaces total VM count, total device count, drift status, and prominently flags any drifted items when `drift_detected` is true.
+
+**Arguments:** None.
+
+**Related tools / resources:** [`get_network_sitemap`](#get_network_sitemap), [`scan_infrastructure_drift`](#scan_infrastructure_drift), and the MCP resources `homelab://vms`, `homelab://devices`, `homelab://drift/latest`.
+
+---
+
+### configure_host_fingerprint
+
+**Description:** Conversational workflow for capturing per-host capability fingerprints (GPU passthrough state, Vulkan/CUDA versions, ZFS pool config, etc.). Used after `discover_and_map` to enable Phase 39 changed-infrastructure drift detection. The prompt instructs the agent to:
+
+1. Read the device's sitemap row via `get_network_sitemap` to interpret role hints (Proxmox VE → gpu_passthrough; NVIDIA in `pci_devices` → cuda; AMD VGA → vulkan; TrueNAS/ZFS → zfs).
+2. Suggest signals to track based on the inferred role and ask the user for confirmation.
+3. Use `ssh_execute_command` to capture each agreed signal's current value.
+4. Persist the captured values via `update_device_fingerprint(hostname, {"capabilities": {...}})`. Optionally use `update_device_fingerprint_preview` to confirm the merge before persisting.
+
+**Argument:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| hostname | string | Yes | Hostname or IP of the device to configure fingerprint tracking for |
+
+**Related tools:** [`update_device_fingerprint`](#update_device_fingerprint), [`update_device_fingerprint_preview`](#update_device_fingerprint_preview), [`get_network_sitemap`](#get_network_sitemap), [`ssh_execute_command`](#ssh_execute_command).

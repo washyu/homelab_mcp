@@ -59,7 +59,6 @@ class TestDriftHandlerRegistration:
         mock_rm = MagicMock()
         mock_rm.proxmox_session = AsyncMock()
         mock_rm.db_adapter = MagicMock()
-        mock_rm.db_adapter.get_all_drift_baselines.return_value = []
         mock_rm.db_adapter.get_all_devices.return_value = []
 
         with patch("homelab_mcp.server.get_resource_manager", return_value=mock_rm):
@@ -86,9 +85,9 @@ class TestDriftHandlerRegistration:
             mock_scan.return_value = {
                 "status": "success",
                 "scan_timestamp": "2026-01-01T00:00:00Z",
-                "config_drift": [],
-                "state_drift": [],
-                "summary": {},
+                "scanned": 0,
+                "probed_ok": [],
+                "unreachable": [],
             }
 
             await handle_scan_infrastructure_drift({"node": "pve", "vm_type": "qemu"})

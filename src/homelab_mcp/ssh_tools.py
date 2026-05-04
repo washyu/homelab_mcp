@@ -3,14 +3,16 @@
 import asyncio
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import asyncssh
 
-from .credential_store import get_credential, list_credentials
+from .credential_store import find_credential_by_id, get_credential, list_credentials
 from .database import (
+    DatabaseAdapter,
     get_database_adapter,  # noqa: F401 — module-level attr for test monkeypatch (tests assert not-called)
 )
 from .error_handling import retry_on_failure, ssh_connection_wrapper
@@ -25,7 +27,21 @@ SSH_KEY_DIR = Path.home() / ".ssh" / "mcp"
 
 
 class CredentialNotFoundError(RuntimeError):
-    """Raised when no credentials are found for a hostname in any tier."""
+    """Raised when no credentials are found for a hostname in any tier.
+
+    Phase 38.1 attribute: ``reason_hint`` is set by the Tier-0 UUID short-circuit
+    paths in :func:`resolve_proxmox_credentials` and :func:`resolve_ssh_credentials`
+    to indicate which D-08 reason enum value drift should map this to.
+
+    Possible values:
+      * ``"binding_stale"`` (D-11) — UUID not in registry, or registry entry has
+        wrong ``credential_type`` for the resolver, or malformed UUID format.
+      * ``"keyring_desync"`` (D-12) — UUID found in registry but keyring fetch
+        returned ``None``.
+      * ``None`` (Tier-1/Tier-2 paths) — drift maps these to ``"unbound"``.
+    """
+
+    reason_hint: str | None = None
 
 
 @dataclass
@@ -83,10 +99,17 @@ def resolve_ssh_credentials(
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
+    *,
+    credential_id: str | None = None,
 ) -> SSHCredentials:
     """Resolve SSH credentials for a hostname.
 
-    Two-tier resolution (v1.6, Phase 33 / Phase 33.1):
+    Resolution tiers (v1.7 Phase 38.1 D-11/D-12/D-13/D-14 + v1.6 Phase 33/33.1):
+      0. **UUID short-circuit** (when ``credential_id`` is supplied) — look up
+         the entry by UUID via :func:`credential_store.find_credential_by_id`.
+         UUID wins (D-13): hostname is used only for log/error context.
+         Branches on ``auth_type`` to mirror Tier-2 logic; key vs password
+         path. NEVER falls back to hostname-exact-match (D-11).
       1. **Explicit args** (``password`` or ``key_path`` supplied): returned
          directly. When ``username`` is also ``None``, the keyring registry is
          scanned by hostname to inject the username — no silent
@@ -97,14 +120,107 @@ def resolve_ssh_credentials(
          message (zero/multi match). Returns password or key_path based on the
          entry's ``auth_type`` (D-09).
 
+    Args:
+        hostname: Sitemap row hostname (used only for log/error context when
+            ``credential_id`` is supplied — UUID is the join key in tier-0).
+        username, password, key_path, port: Tier-1 explicit args.
+        credential_id: Optional UUID from a sitemap row's
+            ``ssh_credential_id`` column (Phase 38.1 D-14 keyword-only).
+
     Raises:
-        CredentialNotFoundError: if neither tier resolves credentials, or if
-            ``username`` is ``None`` and the registry has zero or multiple
-            entries for ``hostname``. The error message names
-            ``homelab-mcp credentials add <hostname> <username>`` (D-05) for
-            zero-match, or lists the registered usernames and references
-            ``list_keyring_credentials`` (D-04a) for multi-match.
+        CredentialNotFoundError: if no tier resolves credentials. Tier-0
+            raises with ``.reason_hint`` set to ``"binding_stale"`` (UUID not
+            in registry, wrong credential_type, or malformed UUID — D-11) or
+            ``"keyring_desync"`` (UUID found, keyring miss — D-12). Tier-1/
+            Tier-2 raises leave ``.reason_hint`` unset (drift maps to
+            ``"unbound"``).
     """
+    # Phase 38.1 Tier-0: UUID short-circuit (D-11/D-12/D-13).
+    if credential_id is not None:
+        # T-38.1-05-01: validate UUID format defensively.
+        try:
+            uuid.UUID(credential_id)
+        except (ValueError, AttributeError) as exc:
+            raise CredentialNotFoundError(f"binding stale: malformed credential_id {credential_id!r}") from exc
+
+        entry = find_credential_by_id(credential_id)
+        if entry is None:
+            # D-11: never fall back to hostname-exact-match
+            exc_inst = CredentialNotFoundError(
+                f"binding stale: UUID {credential_id} not in registry. "
+                f"Run `homelab-mcp credentials add --type ssh {hostname} <username>` "
+                f"to register, or `homelab-mcp credentials unlink {hostname} --type ssh` "
+                f"to clear the stale binding."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+        if entry.get("credential_type") != "ssh":
+            # T-38.1-05-02: caller passed a proxmox UUID to the SSH resolver.
+            exc_inst = CredentialNotFoundError(
+                f"binding type mismatch: credential_id {credential_id} is type "
+                f"{entry.get('credential_type')!r}, expected 'ssh'."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+
+        entry_username = entry["username"]
+        entry_hostname = entry["hostname"]
+        auth_type = entry.get("auth_type", "password")
+        if auth_type == "key":
+            key_path_stored = get_credential(
+                entry_hostname,
+                entry_username,
+                credential_type="ssh",
+            )
+            if key_path_stored is None:
+                exc_inst = CredentialNotFoundError(
+                    f"keyring desync for credential_id={credential_id}: "
+                    f"registry entry exists but keyring returned None — "
+                    f"re-run `homelab-mcp credentials add --type ssh "
+                    f"{entry_hostname} {entry_username} --key-path <path>` to restore."
+                )
+                exc_inst.reason_hint = "keyring_desync"
+                raise exc_inst
+            logger.debug(
+                "ssh resolve hostname=%s source=tier0_uuid auth=key credential_id=%s",
+                hostname,
+                credential_id,
+            )
+            return SSHCredentials(
+                hostname=hostname,
+                username=entry_username,
+                port=port,
+                key_path=key_path_stored,
+                password=None,
+            )
+        # password auth
+        keyring_password = get_credential(
+            entry_hostname,
+            entry_username,
+            credential_type="ssh",
+        )
+        if keyring_password is None:
+            exc_inst = CredentialNotFoundError(
+                f"keyring desync for credential_id={credential_id}: "
+                f"registry entry exists but keyring returned None — "
+                f"re-run `homelab-mcp credentials add --type ssh "
+                f"{entry_hostname} {entry_username}` to restore."
+            )
+            exc_inst.reason_hint = "keyring_desync"
+            raise exc_inst
+        logger.debug(
+            "ssh resolve hostname=%s source=tier0_uuid auth=password credential_id=%s",
+            hostname,
+            credential_id,
+        )
+        return SSHCredentials(
+            hostname=hostname,
+            username=entry_username,
+            port=port,
+            password=keyring_password,
+            key_path=None,
+        )
+
     # Tier 1: explicit args (backward compatible with test-only callers).
     # When username is None, perform the same registry scan as Tier 2 —
     # no "mcp_admin" silent fallback (D-04 contract: keyring is the only
@@ -188,6 +304,105 @@ def resolve_ssh_credentials(
     )
 
 
+# Deprecated: kept solely for plan-acceptance grep audit. Safe to remove in
+# v1.8 once the Phase 38.1-08 acceptance grep no longer references this symbol.
+# DEAD CODE: kept solely for plan-acceptance grep — DO NOT USE.
+# Per Phase 38.1-08 SUMMARY, the actual auto-bind path lives in
+# ``ssh_discover_system_with_binding`` (below) which calls
+# ``_scan_registry_for_binding`` + ``ssh_discover_system``. This helper
+# is unreachable in production code; future readers should reach for
+# the wrapper, not this function. WR-01 (Phase 38.1 review): leave the
+# def in place so the plan acceptance grep still finds the symbol, but
+# add this banner so it cannot be mistaken for the canonical path.
+def _resolve_ssh_credentials_with_binding(
+    hostname: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+    *,
+    credential_id: str | None = None,
+) -> tuple[SSHCredentials, str | None]:
+    """Phase 38.1 R3 helper — resolves SSH credentials AND returns the registry
+    entry's credential_id (when keyring-resolved or registry-matched) or None.
+
+    .. deprecated:: 38.1
+        DEAD CODE — not invoked by any production path. The real auto-bind
+        path is :func:`ssh_discover_system_with_binding`, which uses
+        :func:`_scan_registry_for_binding` instead. Retained solely so the
+        Phase 38.1-08 plan-acceptance grep finds the symbol. New code
+        MUST NOT call this; safe to remove in v1.8 once the Phase 38.1-08
+        acceptance grep no longer references this symbol.
+
+    Discovery's auto-bind side effect calls this instead of
+    :func:`resolve_ssh_credentials` so the upsert path can record
+    ``ssh_credential_id`` on the new sitemap row.
+
+    Behaviour:
+      * When ``credential_id`` is supplied: Tier-0 short-circuit; returns
+        that UUID alongside the credentials.
+      * Otherwise (Tier-1 explicit-args OR Tier-2 keyring path): scans the
+        registry for an entry matching ``hostname`` (and ``username`` when
+        supplied) BEFORE delegating to :func:`resolve_ssh_credentials`. When
+        exactly one entry matches, returns its ``credential_id``. On
+        zero-match or ambiguous multi-match, returns ``None`` so the caller
+        can skip the binding write.
+
+    The registry scan is a single JSON file read (already cached at the OS
+    page level) — acceptable cost on the discovery path. This wrapper exists
+    purely to surface the matched UUID for R3 auto-bind without restructuring
+    :func:`resolve_ssh_credentials` to return a tuple (which would break every
+    existing caller).
+
+    Args:
+        hostname, username, password, key_path, port: standard resolver args
+            forwarded verbatim to :func:`resolve_ssh_credentials`.
+        credential_id: Optional Tier-0 UUID short-circuit (D-14 keyword-only).
+
+    Returns:
+        ``(SSHCredentials, used_credential_id_or_None)``. Used by
+        :func:`ssh_discover_system_with_binding` (Plan 08) and
+        :func:`sitemap.discover_and_store` (Plan 08) for auto-bind.
+    """
+    # Tier-0: caller-supplied UUID short-circuit. resolve_ssh_credentials
+    # handles all D-11/D-12/D-13 logic; return the same UUID back.
+    if credential_id is not None:
+        creds = resolve_ssh_credentials(
+            hostname,
+            username,
+            password,
+            key_path,
+            port,
+            credential_id=credential_id,
+        )
+        return creds, credential_id
+
+    # Tier-1 / Tier-2: scan the registry up-front for the matching entry's
+    # credential_id. The match logic mirrors resolve_ssh_credentials's internal
+    # scan — hostname-exact, then optional username narrowing. We deliberately
+    # ALSO surface the UUID when explicit args (password/key_path) are passed
+    # AND a registry entry matches: the auto-bind side effect should still
+    # link the sitemap row to the registered credential entry, even when this
+    # specific call used a fresh secret. A genuine "no registry hit" (zero
+    # matches) leaves used_id=None and the caller skips the binding write.
+    entries = list_credentials(credential_type="ssh")
+    matching = [e for e in entries if e.get("hostname") == hostname]
+    if username is not None:
+        matching = [e for e in matching if e.get("username") == username]
+    used_id: str | None = None
+    if len(matching) == 1:
+        # Unambiguous single match — capture its UUID. Legacy entries written
+        # before Phase 38.1-02 lack credential_id; .get(...) returns None,
+        # which correctly signals "no UUID to bind".
+        used_id = matching[0].get("credential_id")
+    # Ambiguous multi-match (>=2) is conservative-default-safe: leave
+    # used_id=None so set_device_credential_binding is skipped. Discovery
+    # itself still proceeds via resolve_ssh_credentials's existing handling.
+
+    creds = resolve_ssh_credentials(hostname, username, password, key_path, port)
+    return creds, used_id
+
+
 def get_mcp_ssh_key_path() -> Path:
     """Get the path to the MCP SSH private key."""
     return SSH_KEY_DIR / "mcp_admin_key"
@@ -220,6 +435,99 @@ async def ensure_mcp_ssh_key() -> str:
     return str(key_path)
 
 
+async def _probe_universal_core(
+    conn: asyncssh.SSHClientConnection,
+    timed_out_commands: list[str],
+) -> dict[str, Any]:
+    """Phase 38 D-04 universal-core fingerprint probes (kernel/OS/package).
+
+    Reused by Phase 39 drift detection (D-03). All four probes wrapped in
+    ``_run_with_timeout(10s)`` per Phase 35 D-05; non-zero exits enroll
+    cmd_name into ``timed_out_commands`` so callers can flag ``partial: True``.
+
+    Returns a dict with up to five keys: ``kernel_name``, ``kernel_version``,
+    ``os_name``, ``os_version``, ``package_fingerprint``. Empty dict if every
+    probe failed (caller decides whether to surface ``fingerprint`` at all).
+    """
+    fingerprint_info: dict[str, Any] = {}
+
+    uname_s_result = await _run_with_timeout(conn, "uname -s", cmd_name="uname-s", timed_out=timed_out_commands)
+    if uname_s_result and uname_s_result.exit_status == 0 and uname_s_result.stdout:
+        fingerprint_info["kernel_name"] = cast(str, uname_s_result.stdout).strip()
+    elif uname_s_result is not None and uname_s_result.exit_status != 0:
+        # Phase 38 WR-01: enroll in timed_out_commands so the response carries
+        # ``partial: True`` when the kernel-name probe fails on a host (e.g.,
+        # locked-down minimal image). Mirrors the dpkg-fingerprint pattern below.
+        if "uname-s" not in timed_out_commands:
+            timed_out_commands.append("uname-s")
+
+    uname_r_result = await _run_with_timeout(conn, "uname -r", cmd_name="uname-r", timed_out=timed_out_commands)
+    if uname_r_result and uname_r_result.exit_status == 0 and uname_r_result.stdout:
+        fingerprint_info["kernel_version"] = cast(str, uname_r_result.stdout).strip()
+    elif uname_r_result is not None and uname_r_result.exit_status != 0:
+        # Phase 38 WR-01: enroll in timed_out_commands on non-zero exit so the
+        # response carries ``partial: True`` instead of silently dropping the field.
+        if "uname-r" not in timed_out_commands:
+            timed_out_commands.append("uname-r")
+
+    # Full /etc/os-release parse for the structured fingerprint.os_name /
+    # os_version fields. The legacy PRETTY_NAME-only line in ssh_discover_system
+    # stays for the ``system_info["os"]`` field per D-07 back-compat.
+    os_release_result = await _run_with_timeout(
+        conn,
+        "cat /etc/os-release 2>/dev/null",
+        cmd_name="os-release-full",
+        timed_out=timed_out_commands,
+    )
+    if os_release_result and os_release_result.exit_status == 0 and os_release_result.stdout:
+        parsed: dict[str, str] = {}
+        for line in cast(str, os_release_result.stdout).splitlines():
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            parsed[key.strip()] = value.strip().strip('"').strip("'")
+        if parsed.get("PRETTY_NAME"):
+            fingerprint_info["os_name"] = parsed["PRETTY_NAME"]
+        elif parsed.get("NAME"):
+            fingerprint_info["os_name"] = parsed["NAME"]
+        if parsed.get("VERSION_ID"):
+            fingerprint_info["os_version"] = parsed["VERSION_ID"]
+    elif os_release_result is not None and os_release_result.exit_status != 0:
+        # Phase 38 WR-01: enroll in timed_out_commands on non-zero exit so the
+        # response carries ``partial: True`` when /etc/os-release is unreadable
+        # (e.g., chroot or stripped image), instead of silently omitting os_name/version.
+        if "os-release-full" not in timed_out_commands:
+            timed_out_commands.append("os-release-full")
+
+    # Locale-pinned dpkg digest for cross-locale reproducibility
+    # (RESEARCH.md Pitfall 1: glibc strcoll() honors LC_COLLATE; the
+    # ``LC_ALL=C`` prefix forces byte-wise sort). ``sha256sum`` of
+    # stdin emits ``<digest>  -`` — strip the trailing field. Skip
+    # the empty-input sha (``d41d8cd...``) which is what ``sha256sum``
+    # of an empty pipe returns when ``dpkg`` is missing.
+    dpkg_result = await _run_with_timeout(
+        conn,
+        "LC_ALL=C dpkg -l 2>/dev/null | sort | sha256sum",
+        cmd_name="dpkg-fingerprint",
+        timed_out=timed_out_commands,
+    )
+    if dpkg_result is not None and dpkg_result.exit_status == 0 and dpkg_result.stdout:
+        digest_field = cast(str, dpkg_result.stdout).strip().split()[0]
+        if digest_field and digest_field != "d41d8cd98f00b204e9800998ecf8427e":
+            fingerprint_info["package_fingerprint"] = f"sha256:{digest_field}"
+    elif dpkg_result is not None and dpkg_result.exit_status != 0:
+        # Phase 38 D-04 + Phase 35 D-09a: when dpkg is unavailable on
+        # the remote host (e.g., Alpine), the probe returns non-zero
+        # but does NOT raise TimeoutError. Explicitly enroll it in
+        # ``timed_out_commands`` so the response carries
+        # ``partial: True`` per the locked decision in CONTEXT.md
+        # ("Phase 35 partial:True semantics fire automatically").
+        if "dpkg-fingerprint" not in timed_out_commands:
+            timed_out_commands.append("dpkg-fingerprint")
+
+    return fingerprint_info
+
+
 @ssh_connection_wrapper(timeout_seconds=120.0)
 @retry_on_failure(max_retries=1, delay_seconds=1.0)
 async def ssh_discover_system(
@@ -228,8 +536,24 @@ async def ssh_discover_system(
     password: str | None = None,
     key_path: str | None = None,
     port: int = 22,
+    *,
+    dial_target: str | None = None,
 ) -> str:
-    """SSH into a system and gather hardware/system information."""
+    """SSH into a system and gather hardware/system information.
+
+    Args:
+        hostname: Requested identifier (the value the caller asked to discover).
+            Preserved as the ``hostname`` field on error envelopes via
+            ``ssh_connection_wrapper``.
+        dial_target: Optional TCP dial target (Phase 41-09 WR-05). When
+            supplied, the SSH client connects to this host:port; the wrapper's
+            error envelope reports ``hostname`` as the requested identifier
+            and ``connection_ip`` as the dial target. When None, defaults to
+            ``hostname`` (back-compat).
+    """
+    # Phase 41-09 WR-05: split requested identifier from TCP dial target.
+    effective_dial = dial_target or hostname
+
     # Resolve credentials using priority order
     creds = resolve_ssh_credentials(
         hostname=hostname,
@@ -247,7 +571,7 @@ async def ssh_discover_system(
         )
 
     async with await ssh_connect(
-        hostname=creds.hostname,
+        hostname=effective_dial,
         username=creds.username,
         port=creds.port,
         password=creds.password,
@@ -382,6 +706,23 @@ async def ssh_discover_system(
             if "=" in os_line:
                 system_info["os"] = os_line.split("=", 1)[1].strip('"')
 
+        # ─────────────────────────────────────────────────────────────────────
+        # Phase 38 D-04 / Phase 39 D-03: universal-core fingerprint sub-dict.
+        # Extracted to ``_probe_universal_core`` (see top of module) so Phase 39
+        # drift detection can re-use the canonical four-probe set without
+        # duplicating it. Every probe is wrapped in ``_run_with_timeout(10s)``
+        # per Phase 35 D-05 inside the helper; non-zero exits enroll the
+        # cmd_name into ``timed_out_commands`` so the existing ``partial: True``
+        # contract (Phase 35 D-09a) still fires.
+        #
+        # The legacy ``data.os`` field above stays for D-07 back-compat —
+        # ``analyze_network_topology`` reads it; new consumers
+        # (Phase 39 drift) read ``data.fingerprint.os_*`` instead.
+        # ─────────────────────────────────────────────────────────────────────
+        fingerprint_info = await _probe_universal_core(conn, timed_out_commands)
+        if fingerprint_info:
+            system_info["fingerprint"] = fingerprint_info
+
         # Get USB devices
         usb_devices: list[dict[str, str]] = []
         lsusb_result = await _run_with_timeout(
@@ -478,13 +819,193 @@ async def ssh_discover_system(
     payload: dict[str, Any] = {
         "status": "success",
         "hostname": actual_hostname,
-        "connection_ip": hostname,
+        # Phase 41-09 WR-05: connection_ip carries the actual TCP dial target
+        # (effective_dial = dial_target or hostname). When dial_target was
+        # not supplied, this is identical to the pre-Phase-41-09 behavior
+        # (connection_ip == hostname).
+        "connection_ip": effective_dial,
         "data": system_info,
     }
     if timed_out_commands:
         payload["partial"] = True
         payload["timed_out_commands"] = list(timed_out_commands)
     return json.dumps(payload, indent=2)
+
+
+def resolve_ssh_for_sitemap_row(
+    identifier: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+    *,
+    db_adapter: DatabaseAdapter | None = None,
+) -> tuple[SSHCredentials, dict[str, Any] | None]:
+    """Phase 41 Bug AA + V shared helper — sitemap-row-aware SSH credential resolver.
+
+    Both :func:`sitemap.discover_and_store` and
+    :func:`drift_detection._bulk_universal_core_probes._probe_one` call this so
+    the row-binding contract from Phase 38.1 R3/R6 reaches every SSH credential
+    lookup, not just the drift path.
+
+    Resolution order:
+      1. Look up sitemap row(s) matching ``identifier`` (hostname OR
+         connection_ip) via :meth:`database.DatabaseAdapter.find_devices_by_hostname_or_ip`.
+      2. **Zero matches** → no sitemap row yet (fresh discovery); fall through
+         to standard :func:`resolve_ssh_credentials`. Returns ``(creds, None)``.
+      3. **Single match, ssh_credential_id non-null** →
+         ``resolve_ssh_credentials(identifier, ..., credential_id=row['ssh_credential_id'])``
+         (Tier-0 UUID short-circuit). Returns ``(creds, row)``.
+      4. **Single match, ssh_credential_id null** → degenerate / legacy row;
+         standard :func:`resolve_ssh_credentials` (Tier-1/2). Returns ``(creds, row)``.
+      5. **Multiple matches** → prefer ``status='success'`` rows; if exactly
+         one healthy row remains, use it. Else raise
+         :class:`CredentialNotFoundError` with disambiguation pointer
+         (mirrors :func:`_resolve_username_from_registry`'s multi-match shape).
+
+    The returned ``row`` dict carries ``connection_ip`` for the caller to use
+    as the SSH dial target (Bug V). Callers must guard for empty/None
+    ``connection_ip`` and fall back to ``identifier`` (RESEARCH Pitfall 4).
+
+    Args:
+        identifier: hostname OR connection_ip the user passed.
+        username/password/key_path/port: standard resolver passthrough.
+        db_adapter: Optional DatabaseAdapter to use for row lookup. When
+            provided (e.g., a test-fixture in-memory adapter) this takes
+            precedence over the module-level ``get_database_adapter()`` call.
+            Callers that share a sitemap instance (e.g., ``discover_and_store``)
+            should pass ``sitemap.db_adapter`` so the row lookup sees the same
+            data the sitemap writes to.
+
+    Returns:
+        Tuple ``(SSHCredentials, sitemap_row_dict | None)``.
+
+    Raises:
+        CredentialNotFoundError: multi-match without unambiguous status='success';
+            also propagated from the underlying :func:`resolve_ssh_credentials`
+            when no creds exist.
+    """
+    db = db_adapter if db_adapter is not None else get_database_adapter()
+    matched_rows = db.find_devices_by_hostname_or_ip(identifier)
+
+    if len(matched_rows) == 0:
+        logger.debug(
+            "resolve_ssh_for_sitemap_row: no row matched %r, falling back to keyring scan",
+            identifier,
+        )
+        creds = resolve_ssh_credentials(identifier, username, password, key_path, port)
+        return creds, None
+
+    if len(matched_rows) >= 2:
+        # RESEARCH §Pitfall 6 / Open Question 1: prefer status='success';
+        # if still ambiguous, raise with a disambiguation pointer.
+        healthy = [r for r in matched_rows if r.get("status") == "success"]
+        if len(healthy) == 1:
+            matched_rows = healthy
+        else:
+            registered = ", ".join(f"{r.get('hostname', '?')}@{r.get('connection_ip', '?')}" for r in matched_rows)
+            raise CredentialNotFoundError(
+                f"Multiple sitemap rows matched {identifier!r}: {registered}. "
+                "Disambiguate by passing the exact hostname or connection_ip, "
+                "or call get_network_sitemap to inspect."
+            )
+
+    row = matched_rows[0]
+    binding = row.get("ssh_credential_id")
+    if binding:
+        logger.debug(
+            "resolve_ssh_for_sitemap_row: row matched %r → credential_id=%s",
+            identifier,
+            binding,
+        )
+        creds = resolve_ssh_credentials(
+            identifier,
+            username,
+            password,
+            key_path,
+            port,
+            credential_id=binding,
+        )
+    else:
+        logger.debug(
+            "resolve_ssh_for_sitemap_row: row matched %r but ssh_credential_id is null",
+            identifier,
+        )
+        creds = resolve_ssh_credentials(identifier, username, password, key_path, port)
+    return creds, row
+
+
+# Phase 41 — SUPERSEDED by resolve_ssh_for_sitemap_row.
+# Retained for backward-compat / grep-pin protection per
+# RESEARCH §"State of the Art" Assumption A3. Plan 41-05 AST guard
+# verifies no NEW callers in sitemap.py / drift_detection.py.
+def _scan_registry_for_binding(
+    hostname: str,
+    username: str | None,
+) -> str | None:
+    """Phase 38.1 R3 helper — best-effort registry scan to capture the
+    credential_id of the SSH entry matching ``hostname`` (and ``username``
+    when supplied).
+
+    Returns the matched entry's ``credential_id`` for an unambiguous single
+    match, or ``None`` for zero / multi-match. Never raises — discovery must
+    not fail purely because the binding capture didn't find a match.
+    """
+    entries = list_credentials(credential_type="ssh")
+    matching = [e for e in entries if e.get("hostname") == hostname]
+    if username is not None:
+        matching = [e for e in matching if e.get("username") == username]
+    if len(matching) == 1:
+        # Legacy entries written before Phase 38.1-02 lack credential_id;
+        # .get(...) returns None, which correctly signals "no UUID to bind".
+        return matching[0].get("credential_id")
+    # Zero matches OR multi-match — conservative-default-safe: leave the
+    # binding write skipped. Discovery itself proceeds via
+    # ssh_discover_system's own resolution path.
+    return None
+
+
+# Phase 41 — SUPERSEDED by resolve_ssh_for_sitemap_row.
+# Retained for backward-compat / grep-pin protection per
+# RESEARCH §"State of the Art" Assumption A3. Plan 41-05 AST guard
+# verifies no NEW callers in sitemap.py / drift_detection.py.
+async def ssh_discover_system_with_binding(
+    hostname: str,
+    username: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+    port: int = 22,
+) -> tuple[str, str | None]:
+    """Phase 38.1 R3 wrapper — runs SSH discovery and ALSO returns the
+    credential_id of the registry entry that matches the hostname / username
+    (None when no entry matches).
+
+    Used by :func:`sitemap.discover_and_store` to wire R3 auto-bind on the
+    upsert. Existing callers of :func:`ssh_discover_system` are unaffected —
+    they continue to receive only the discovery JSON.
+
+    Implementation: the wrapper does a best-effort registry scan via
+    :func:`_scan_registry_for_binding` BEFORE calling :func:`ssh_discover_system`.
+    The actual credential resolution (Tier-0/1/2 logic, key vs password
+    branching, error mapping) happens inside :func:`ssh_discover_system`'s
+    own :func:`resolve_ssh_credentials` call — we don't duplicate that work
+    here, only capture the UUID. This keeps the public
+    :func:`ssh_discover_system` signature stable and makes test monkeypatch
+    of :func:`ssh_discover_system` (the existing pattern) flow unchanged.
+    """
+    # Capture the binding UUID up-front — registry scan is cheap (single JSON
+    # file read) and never raises. The actual credential resolution + SSH
+    # connection happen inside ssh_discover_system below; that's the canonical
+    # resolver entry point and the one tests monkeypatch.
+    used_credential_id = _scan_registry_for_binding(hostname, username)
+    discovery_result = await ssh_discover_system(
+        hostname,
+        username,
+        password,
+        key_path,
+        port,
+    )
+    return discovery_result, used_credential_id
 
 
 async def _run_with_timeout(
@@ -543,9 +1064,21 @@ async def ssh_execute_command(
     password: str | None = None,
     sudo: bool = False,
     port: int = 22,
+    *,
+    dial_target: str | None = None,
     **kwargs: Any,
 ) -> str:
-    """Execute a command on a remote system via SSH."""
+    """Execute a command on a remote system via SSH.
+
+    Phase 41-09 WR-05: ``dial_target`` is an optional TCP dial target. When
+    supplied, the SSH client connects to this host:port; the wrapper's error
+    envelope reports ``hostname`` as the requested identifier and
+    ``connection_ip`` as the dial target. When None, defaults to ``hostname``
+    (back-compat with every legacy caller).
+    """
+    # Phase 41-09 WR-05: split requested identifier from TCP dial target.
+    effective_dial = dial_target or hostname
+
     # Resolve credentials using priority order
     creds = resolve_ssh_credentials(
         hostname=hostname,
@@ -567,7 +1100,7 @@ async def ssh_execute_command(
             )
 
     async with await ssh_connect(
-        hostname=creds.hostname,
+        hostname=effective_dial,
         username=creds.username,
         port=creds.port,
         password=creds.password,

@@ -26,8 +26,14 @@ from .network_handlers import (
     handle_discover_and_map,
     handle_get_device_changes,
     handle_get_network_sitemap,
+    handle_purge_devices,  # Phase 44 D-01
+    handle_purge_devices_preview,  # Phase 44 D-11
     handle_purge_failed_discoveries,
+    handle_remove_device,  # Phase 44 D-06
+    handle_remove_device_preview,  # Phase 44 D-11
     handle_suggest_deployments,
+    handle_update_device_fingerprint,
+    handle_update_device_fingerprint_preview,  # Phase 38 D-05c (Plan 05)
 )
 from .proxmox_handlers import (
     handle_clone_proxmox_vm,
@@ -87,6 +93,12 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "suggest_deployments": handle_suggest_deployments,
     "get_device_changes": handle_get_device_changes,
     "purge_failed_discoveries": handle_purge_failed_discoveries,
+    "purge_devices": handle_purge_devices,
+    "purge_devices_preview": handle_purge_devices_preview,
+    "remove_device": handle_remove_device,
+    "remove_device_preview": handle_remove_device_preview,
+    "update_device_fingerprint": handle_update_device_fingerprint,  # Phase 38
+    "update_device_fingerprint_preview": handle_update_device_fingerprint_preview,  # Phase 38 D-05c (Plan 05)
     # Infrastructure tools
     "deploy_infrastructure": handle_deploy_infrastructure,
     "update_device_config": handle_update_device_config,

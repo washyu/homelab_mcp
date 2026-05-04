@@ -111,6 +111,16 @@ TOOLS["new_tool"] = {
 - Pre-commit hooks configured in `.pre-commit-config.yaml`
 - CI runs on GitHub Actions (`.github/workflows/main.yml`)
 
+## Milestone Branching
+
+**Every new milestone opens on its own branch, cut from `main` at milestone-open time.** Don't reuse a leftover feature branch for a new milestone — it confuses the diff against `main` and makes "what shipped in vX.Y" hard to read on GitHub.
+
+**Naming:** `v<X.Y>-<short-slug>` matching the milestone's ROADMAP slug. Examples: `v1.7-drift`, `v1.8-lifecycle-hooks`, `v1.7.1-credential-binding`.
+
+**When:** Cut the branch as the first step of `/gsd-new-milestone`, before any phase work begins. If you realize partway through that you're on the wrong branch, do NOT retroactively rename — just use what you have for the rest of the milestone and apply the rule cleanly to the next one.
+
+**Inserted phases stay on the milestone branch.** A phase added mid-milestone (e.g., via `/gsd-insert-phase`) does not get its own branch.
+
 ## Release & Tagging Workflow
 
 **PyPI publishing is auto-triggered by `git tag v*` push** via OIDC trusted publishing. The workflow runs test-and-quality + cross-platform + security + release jobs and only publishes if all pass — but the trigger fires on the **tag commit**, regardless of which branch it's on.

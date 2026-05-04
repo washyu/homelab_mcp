@@ -41,6 +41,10 @@ STANDALONE_TOOLS: set[str] = {
     "analyze_network_topology",
     "suggest_deployments",
     "purge_failed_discoveries",
+    "purge_devices",
+    "purge_devices_preview",
+    "remove_device",
+    "remove_device_preview",
     # Credential listing (reads local keyring, may be empty)
     "list_registered_servers",
     # Proxmox script search (queries GitHub API, no Proxmox needed)
@@ -56,8 +60,8 @@ INFRA_REQUIREMENTS: dict[str, str] = {
     "Services": "a target host for service deployment. Register credentials first: POST /api/tools/register_server",
     "Credentials": "valid credential parameters (hostname, username, password)",
     "Infrastructure": "configured infrastructure targets. Register credentials first: POST /api/tools/register_server",
-    "Proxmox": "a Proxmox VE host. Set PROXMOX_HOST and credentials via environment or POST /api/tools/register_server",
-    "Drift Detection": "a Proxmox VE host with stored baselines. Set PROXMOX_HOST and credentials first",
+    "Proxmox": "a Proxmox VE host. Configure credentials with 'homelab-mcp credentials add --type proxmox' (per-node) or '--scope cluster:<name>' (cluster-wide).",
+    "Drift Detection": "a Proxmox VE host registered in the sitemap. Populate via 'discover_and_map' and configure credentials with 'homelab-mcp credentials add --type proxmox' (per-node) or '--scope cluster:<name>' (cluster-wide)",
 }
 
 # External reachability requirements: tool -> how to locate the target and what port to probe.
@@ -152,6 +156,10 @@ TOOL_CATEGORIES: dict[str, list[str]] = {
         "suggest_deployments",
         "get_device_changes",
         "purge_failed_discoveries",
+        "purge_devices",
+        "purge_devices_preview",
+        "remove_device",
+        "remove_device_preview",
     ],
     "VM & Containers": [
         "deploy_vm",

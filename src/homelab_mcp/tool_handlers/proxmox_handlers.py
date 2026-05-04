@@ -115,7 +115,6 @@ async def handle_manage_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
 
 async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle create_proxmox_lxc tool."""
-    from ..drift_detection import update_baseline_after_mutation
     from ..server import get_resource_manager
 
     validate_hostname(arguments["hostname"])
@@ -138,24 +137,11 @@ async def handle_create_proxmox_lxc(arguments: dict[str, Any]) -> dict[str, Any]
         start=arguments.get("start", False),
         session=get_resource_manager().proxmox_session,
     )
-    if result.get("status") == "success":
-        try:
-            await update_baseline_after_mutation(
-                node=arguments["node"],
-                vmid=arguments["vmid"],
-                vm_type="lxc",
-                tool_name="create_proxmox_lxc",
-                session=get_resource_manager().proxmox_session,
-                db_adapter=get_resource_manager().db_adapter,
-            )
-        except Exception:
-            logger.debug("Baseline update skipped for create_proxmox_lxc vmid=%s", arguments["vmid"])
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_create_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle create_proxmox_vm tool."""
-    from ..drift_detection import update_baseline_after_mutation
     from ..server import get_resource_manager
 
     if host := arguments.get("host"):
@@ -177,24 +163,11 @@ async def handle_create_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         start=arguments.get("start", False),
         session=get_resource_manager().proxmox_session,
     )
-    if result.get("status") == "success":
-        try:
-            await update_baseline_after_mutation(
-                node=arguments["node"],
-                vmid=arguments["vmid"],
-                vm_type="qemu",
-                tool_name="create_proxmox_vm",
-                session=get_resource_manager().proxmox_session,
-                db_adapter=get_resource_manager().db_adapter,
-            )
-        except Exception:
-            logger.debug("Baseline update skipped for create_proxmox_vm vmid=%s", arguments["vmid"])
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
 async def handle_clone_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle clone_proxmox_vm tool."""
-    from ..drift_detection import update_baseline_after_mutation
     from ..server import get_resource_manager
 
     if host := arguments.get("host"):
@@ -209,18 +182,6 @@ async def handle_clone_proxmox_vm(arguments: dict[str, Any]) -> dict[str, Any]:
         vm_type=arguments.get("vm_type", "qemu"),
         session=get_resource_manager().proxmox_session,
     )
-    if result.get("status") == "success":
-        try:
-            await update_baseline_after_mutation(
-                node=arguments["node"],
-                vmid=arguments["new_vmid"],
-                vm_type=arguments.get("vm_type", "qemu"),
-                tool_name="clone_proxmox_vm",
-                session=get_resource_manager().proxmox_session,
-                db_adapter=get_resource_manager().db_adapter,
-            )
-        except Exception:
-            logger.debug("Baseline update skipped for clone_proxmox_vm new_vmid=%s", arguments["new_vmid"])
     return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
 
 
