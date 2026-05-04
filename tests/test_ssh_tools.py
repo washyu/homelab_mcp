@@ -914,9 +914,7 @@ def test_resolve_ssh_with_unknown_uuid_raises_binding_stale_phase381(
             )
 
     error_msg = str(exc_info.value)
-    assert "binding stale" in error_msg, (
-        f"Phase 38.1 D-11 SSH: expected 'binding stale' in error, got: {error_msg!r}"
-    )
+    assert "binding stale" in error_msg, f"Phase 38.1 D-11 SSH: expected 'binding stale' in error, got: {error_msg!r}"
 
 
 def test_resolve_ssh_uuid_keyring_miss_raises_desync_phase381(
@@ -973,11 +971,13 @@ def test_resolve_ssh_legacy_positional_backward_compat_phase381(
 
     with patch(
         "homelab_mcp.ssh_tools.list_credentials",
-        return_value=[{
-            "hostname": "legacy-host",
-            "username": "legacy-user",
-            "credential_type": "ssh",
-        }],
+        return_value=[
+            {
+                "hostname": "legacy-host",
+                "username": "legacy-user",
+                "credential_type": "ssh",
+            }
+        ],
     ):
         with patch("homelab_mcp.ssh_tools.get_credential", return_value="legacy-pw"):
             # Phase 38.1 D-14: no credential_id → falls back to existing hostname-exact-match
@@ -1023,9 +1023,7 @@ def test_resolve_ssh_with_malformed_credential_id_phase381() -> None:
     assert "binding stale" in error_msg, (
         f"Phase 38.1 T-38.1-05-01 SSH: expected 'binding stale' for malformed UUID, got: {error_msg!r}"
     )
-    assert "malformed" in error_msg, (
-        f"Phase 38.1 T-38.1-05-01 SSH: expected 'malformed' marker, got: {error_msg!r}"
-    )
+    assert "malformed" in error_msg, f"Phase 38.1 T-38.1-05-01 SSH: expected 'malformed' marker, got: {error_msg!r}"
 
 
 def test_resolve_ssh_unknown_uuid_sets_reason_hint_binding_stale_phase381() -> None:

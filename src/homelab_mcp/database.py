@@ -156,9 +156,7 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
-    def delete_device_by_id(
-        self, device_id: int, dry_run: bool = False
-    ) -> dict[str, Any] | None:
+    def delete_device_by_id(self, device_id: int, dry_run: bool = False) -> dict[str, Any] | None:
         """Delete a single sitemap row by ``id``.
 
         Returns the row dict that was (or would be) deleted; returns ``None``
@@ -650,13 +648,9 @@ class SQLiteAdapter(DatabaseAdapter):
         the ``failed_discovery`` sentinel so the bulk-delete SQL path is unified
         with ``purge_devices``.
         """
-        return _purge_devices_by_filter(
-            self, "sqlite", "failed_discovery", None, dry_run=dry_run
-        )
+        return _purge_devices_by_filter(self, "sqlite", "failed_discovery", None, dry_run=dry_run)
 
-    def delete_device_by_id(
-        self, device_id: int, dry_run: bool = False
-    ) -> dict[str, Any] | None:
+    def delete_device_by_id(self, device_id: int, dry_run: bool = False) -> dict[str, Any] | None:
         """SQLite implementation. See ``DatabaseAdapter.delete_device_by_id``."""
         if not self.connection:
             self.connect()
@@ -1217,13 +1211,9 @@ class PostgreSQLAdapter(DatabaseAdapter):
         the ``failed_discovery`` sentinel so the bulk-delete SQL path is unified
         with ``purge_devices``.
         """
-        return _purge_devices_by_filter(
-            self, "postgres", "failed_discovery", None, dry_run=dry_run
-        )
+        return _purge_devices_by_filter(self, "postgres", "failed_discovery", None, dry_run=dry_run)
 
-    def delete_device_by_id(
-        self, device_id: int, dry_run: bool = False
-    ) -> dict[str, Any] | None:
+    def delete_device_by_id(self, device_id: int, dry_run: bool = False) -> dict[str, Any] | None:
         """PostgreSQL implementation. See ``DatabaseAdapter.delete_device_by_id``."""
         if not self.connection:
             self.connect()
@@ -1261,12 +1251,7 @@ class PostgreSQLAdapter(DatabaseAdapter):
 # adapter calls the orchestrator with its own dialect string.
 # ─────────────────────────────────────────────────────────────────────────
 
-_FAILED_DISCOVERY_WHERE = (
-    "status = 'error' "
-    "OR hostname IS NULL "
-    "OR hostname = '' "
-    "OR hostname = 'unknown'"
-)
+_FAILED_DISCOVERY_WHERE = "status = 'error' OR hostname IS NULL OR hostname = '' OR hostname = 'unknown'"
 
 
 def _build_filter_clause(
@@ -1294,20 +1279,14 @@ def _build_filter_clause(
     if filter_type == "hostname":
         # D-02: exact match only — no glob/LIKE.
         if not isinstance(value, str):
-            raise ValueError(
-                f"`value` must be str for filter_type='hostname' "
-                f"(got {type(value).__name__})"
-            )
+            raise ValueError(f"`value` must be str for filter_type='hostname' (got {type(value).__name__})")
         return (f"hostname = {ph}", (value,))
 
     if filter_type == "status":
         # D-05: exact match. Bare 'status'='error' does NOT cover zombie rows
         # (those need filter_type='failed_discovery' for backward compat).
         if not isinstance(value, str):
-            raise ValueError(
-                f"`value` must be str for filter_type='status' "
-                f"(got {type(value).__name__})"
-            )
+            raise ValueError(f"`value` must be str for filter_type='status' (got {type(value).__name__})")
         return (f"status = {ph}", (value,))
 
     if filter_type == "last_seen_older_than_days":
@@ -1317,8 +1296,7 @@ def _build_filter_clause(
         # Reject bool explicitly — `isinstance(True, int)` is True in Python.
         if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError(
-                f"`value` must be int for filter_type='last_seen_older_than_days' "
-                f"(got {type(value).__name__})"
+                f"`value` must be int for filter_type='last_seen_older_than_days' (got {type(value).__name__})"
             )
         threshold = (datetime.now(UTC) - timedelta(days=value)).isoformat()
         return (f"last_seen < {ph}", (threshold,))
@@ -1397,9 +1375,7 @@ def _purge_devices_by_filter(
         try:
             net = ipaddress.ip_network(value, strict=False)
         except (ValueError, TypeError) as e:
-            raise ValueError(
-                f"Invalid CIDR for ip_range filter: {value!r} ({e})"
-            ) from e
+            raise ValueError(f"Invalid CIDR for ip_range filter: {value!r} ({e})") from e
         all_devices = adapter.get_all_devices()
         candidates = [dict(row) for row in all_devices if _row_in_cidr(row, net)]
     else:
@@ -1408,9 +1384,7 @@ def _purge_devices_by_filter(
         if dialect == "postgres":
             # RealDictCursor for postgres parity with purge_failed_devices.
             # ::text casts on connection_ip + last_seen for SQLite-shape parity.
-            cursor = adapter.connection.cursor(
-                cursor_factory=psycopg2.extras.RealDictCursor
-            )
+            cursor = adapter.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             # WHERE fragment is from a controlled set (`_build_filter_clause`
             # only emits `column OP placeholder` shapes); value is bound as a
             # parameter, never interpolated.
@@ -1446,9 +1420,7 @@ def _purge_devices_by_filter(
             ids,
         )
     else:
-        cursor.execute(
-            "DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,)
-        )
+        cursor.execute("DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,))
         cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
     adapter.connection.commit()
     return candidates

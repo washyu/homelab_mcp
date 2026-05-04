@@ -37,18 +37,14 @@ class TestCreateProxmoxVmRequiresHost:
         )
 
     def test_host_description_points_at_credentials_cli(self) -> None:
-        desc = PROXMOX_TOOLS["create_proxmox_vm"]["inputSchema"]["properties"]["host"][
-            "description"
-        ]
+        desc = PROXMOX_TOOLS["create_proxmox_vm"]["inputSchema"]["properties"]["host"]["description"]
         assert CREDENTIALS_CLI_LITERAL in desc, (
             f"POL-02 D-03 regression: create_proxmox_vm.host.description does not "
             f"reference {CREDENTIALS_CLI_LITERAL!r}; got {desc!r}"
         )
 
     def test_host_description_advertises_cluster_scope(self) -> None:
-        desc = PROXMOX_TOOLS["create_proxmox_vm"]["inputSchema"]["properties"]["host"][
-            "description"
-        ]
+        desc = PROXMOX_TOOLS["create_proxmox_vm"]["inputSchema"]["properties"]["host"]["description"]
         assert CLUSTER_SCOPE_LITERAL in desc, (
             f"POL-02 D-03 regression: create_proxmox_vm.host.description does not "
             f"advertise {CLUSTER_SCOPE_LITERAL!r}; got {desc!r}"
@@ -59,13 +55,7 @@ class TestProxmoxHostSweep:
     """D-05: zero PROXMOX_HOST substrings remain in proxmox_tools_schema.py."""
 
     def test_no_proxmox_host_in_schema_file(self) -> None:
-        schema_path = (
-            Path(__file__).parent.parent
-            / "src"
-            / "homelab_mcp"
-            / "tool_schemas"
-            / "proxmox_tools_schema.py"
-        )
+        schema_path = Path(__file__).parent.parent / "src" / "homelab_mcp" / "tool_schemas" / "proxmox_tools_schema.py"
         assert schema_path.exists(), f"schema file missing: {schema_path}"
         source = schema_path.read_text(encoding="utf-8")
         assert "PROXMOX_HOST" not in source, (
@@ -77,8 +67,7 @@ class TestProxmoxHostSweep:
     def test_list_proxmox_resources_tool_description_no_env_var(self) -> None:
         desc = PROXMOX_TOOLS["list_proxmox_resources"]["description"]
         assert "PROXMOX_HOST" not in desc, (
-            f"D-05 regression: list_proxmox_resources tool description still "
-            f"mentions PROXMOX_HOST; got {desc!r}"
+            f"D-05 regression: list_proxmox_resources tool description still mentions PROXMOX_HOST; got {desc!r}"
         )
 
     def test_swept_host_descriptions_point_at_credentials_cli(self) -> None:
@@ -98,12 +87,9 @@ class TestProxmoxHostSweep:
             if "PROXMOX_HOST" in desc:
                 violations.append(f"{tool}: host description still contains PROXMOX_HOST: {desc!r}")
             if CREDENTIALS_CLI_LITERAL not in desc:
-                violations.append(
-                    f"{tool}: host description does not reference {CREDENTIALS_CLI_LITERAL!r}: {desc!r}"
-                )
-        assert not violations, (
-            "D-05 regression — swept host descriptions:\n"
-            + "\n".join(f"  - {v}" for v in violations)
+                violations.append(f"{tool}: host description does not reference {CREDENTIALS_CLI_LITERAL!r}: {desc!r}")
+        assert not violations, "D-05 regression — swept host descriptions:\n" + "\n".join(
+            f"  - {v}" for v in violations
         )
 
     def test_credentials_cli_literal_count_at_least_four(self) -> None:
@@ -111,13 +97,7 @@ class TestProxmoxHostSweep:
 
         create_proxmox_vm.host + 3 swept tool host descriptions = 4 minimum.
         """
-        schema_path = (
-            Path(__file__).parent.parent
-            / "src"
-            / "homelab_mcp"
-            / "tool_schemas"
-            / "proxmox_tools_schema.py"
-        )
+        schema_path = Path(__file__).parent.parent / "src" / "homelab_mcp" / "tool_schemas" / "proxmox_tools_schema.py"
         source = schema_path.read_text(encoding="utf-8")
         count = source.count(CREDENTIALS_CLI_LITERAL)
         assert count >= 4, (

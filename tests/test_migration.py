@@ -702,9 +702,7 @@ class TestDriftBaselinesDrop:
                 UNIQUE(node, vmid, vm_type)
             )
         """)
-        conn.execute(
-            "CREATE INDEX idx_drift_baselines_node_vmid ON drift_baselines (node, vmid, vm_type)"
-        )
+        conn.execute("CREATE INDEX idx_drift_baselines_node_vmid ON drift_baselines (node, vmid, vm_type)")
         conn.execute(
             "INSERT INTO drift_baselines (node, vmid, vm_type, baseline_config, recorded_at, recorded_by) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -719,9 +717,7 @@ class TestDriftBaselinesDrop:
 
         # Verify table is gone
         conn = sqlite3.connect(db_path)
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='drift_baselines'"
-        ).fetchall()
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='drift_baselines'").fetchall()
         conn.close()
         assert len(rows) == 0, f"drift_baselines still exists after migration: {rows}"
 
@@ -751,8 +747,6 @@ class TestDriftBaselinesDrop:
 
         # Verify drift_baselines was NEVER created (init_schema no longer creates it post-Plan 01)
         conn = sqlite3.connect(db_path)
-        rows = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='drift_baselines'"
-        ).fetchall()
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='drift_baselines'").fetchall()
         conn.close()
         assert len(rows) == 0

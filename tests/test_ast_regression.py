@@ -1662,9 +1662,7 @@ class TestPhase44RemoveDeviceCallPath:
     )
 
     @classmethod
-    def _load_function_subtree(
-        cls, rel_path: str, class_name: str | None, func_name: str
-    ) -> ast.AST:
+    def _load_function_subtree(cls, rel_path: str, class_name: str | None, func_name: str) -> ast.AST:
         """Find the named function's AST subtree.
 
         For class methods, scope to the ClassDef first then find the method
@@ -1677,11 +1675,7 @@ class TestPhase44RemoveDeviceCallPath:
 
         if class_name is not None:
             class_node = next(
-                (
-                    n
-                    for n in ast.walk(tree)
-                    if isinstance(n, ast.ClassDef) and n.name == class_name
-                ),
+                (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == class_name),
                 None,
             )
             assert class_node is not None, (
@@ -1696,8 +1690,7 @@ class TestPhase44RemoveDeviceCallPath:
             (
                 n
                 for n in ast.walk(search_root)
-                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-                and n.name == func_name
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == func_name
             ),
             None,
         )
@@ -1730,9 +1723,7 @@ class TestPhase44RemoveDeviceCallPath:
         return violations
 
     @classmethod
-    def _scan_for_attribute(
-        cls, subtree: ast.AST, value_id: str, attr_name: str
-    ) -> list[int]:
+    def _scan_for_attribute(cls, subtree: ast.AST, value_id: str, attr_name: str) -> list[int]:
         """Return line numbers where ``value_id.attr_name`` appears (e.g.,
         ``keyring.delete_password``)."""
         violations: list[int] = []

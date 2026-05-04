@@ -452,9 +452,7 @@ def test_store_credential_cluster_scope_headless_fallback(mocker) -> None:
 UUID4_RE = r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 
 
-def test_register_credential_returns_uuid_phase381(
-    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
-) -> None:
+def test_register_credential_returns_uuid_phase381(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """register_credential must return a UUIDv4 string (Phase 38.1 R1).
 
     Currently returns None — this test is RED until Plan 02 implements the change.
@@ -470,7 +468,7 @@ def test_register_credential_returns_uuid_phase381(
 
 
 def test_register_then_remove_then_register_yields_fresh_uuid_phase381(
-    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Rotation (remove + re-add same hostname/username) produces two different UUIDs (R1 acceptance).
 
@@ -486,9 +484,7 @@ def test_register_then_remove_then_register_yields_fresh_uuid_phase381(
     assert uuid1 != uuid2, f"Rotation must produce a fresh UUID; got identical UUIDs: {uuid1!r}"
 
 
-def test_find_credential_by_id_returns_entry_phase381(
-    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
-) -> None:
+def test_find_credential_by_id_returns_entry_phase381(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """find_credential_by_id returns the registry entry for a known credential_id (R1).
 
     Currently fails because find_credential_by_id does not exist.
@@ -506,7 +502,7 @@ def test_find_credential_by_id_returns_entry_phase381(
 
 
 def test_find_credential_by_id_returns_none_for_unknown_phase381(
-    tmp_path: pathlib.Path, monkeypatch: "pytest.MonkeyPatch"
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """find_credential_by_id returns None for an unknown UUID (R1).
 

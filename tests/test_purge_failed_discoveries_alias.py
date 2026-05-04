@@ -37,9 +37,7 @@ def seeded_with_failed_rows(tmp_path: Path) -> SQLiteAdapter:
     adapter.store_device(
         {"hostname": "broken-host", "connection_ip": "192.168.1.11", "status": "error", "last_seen": now}
     )
-    adapter.store_device(
-        {"hostname": "", "connection_ip": "192.168.1.12", "status": "success", "last_seen": now}
-    )
+    adapter.store_device({"hostname": "", "connection_ip": "192.168.1.12", "status": "success", "last_seen": now})
     adapter.store_device(
         {"hostname": "unknown", "connection_ip": "192.168.1.13", "status": "success", "last_seen": now}
     )
@@ -53,9 +51,7 @@ class TestPhase44AliasParity:
         """D-07: refactored adapter delegates via 'failed_discovery' sentinel.
         Byte-identical row sets on the same seeded DB."""
         via_adapter = seeded_with_failed_rows.purge_failed_devices(dry_run=True)
-        via_helper = _purge_devices_by_filter(
-            seeded_with_failed_rows, "sqlite", "failed_discovery", None, dry_run=True
-        )
+        via_helper = _purge_devices_by_filter(seeded_with_failed_rows, "sqlite", "failed_discovery", None, dry_run=True)
         assert via_adapter == via_helper
         # And it picks up exactly the 3 non-good rows (D-08 4-clause OR).
         hostnames = {r["hostname"] for r in via_adapter}
@@ -67,23 +63,17 @@ class TestPhase44AliasParity:
     ) -> None:
         """Live deletion parity — both code paths leave the same DB state."""
         # Snapshot the rows that should be deleted (via dry_run preview).
-        preview = _purge_devices_by_filter(
-            seeded_with_failed_rows, "sqlite", "failed_discovery", None, dry_run=True
-        )
+        preview = _purge_devices_by_filter(seeded_with_failed_rows, "sqlite", "failed_discovery", None, dry_run=True)
         # Now delete via the alias.
         removed = seeded_with_failed_rows.purge_failed_devices(dry_run=False)
         assert removed == preview
         # Only good-host remains.
         assert seeded_with_failed_rows.connection is not None
-        cur = seeded_with_failed_rows.connection.execute(
-            "SELECT hostname FROM devices ORDER BY id"
-        )
+        cur = seeded_with_failed_rows.connection.execute("SELECT hostname FROM devices ORDER BY id")
         remaining = [row[0] for row in cur.fetchall()]
         assert remaining == ["good-host"]
 
-    def test_purge_failed_devices_delegates_through_helper(
-        self, seeded_with_failed_rows: SQLiteAdapter
-    ) -> None:
+    def test_purge_failed_devices_delegates_through_helper(self, seeded_with_failed_rows: SQLiteAdapter) -> None:
         """Issue 11 lock: the refactored adapter MUST invoke
         _purge_devices_by_filter with the exact delegation shape.
 
@@ -104,18 +94,12 @@ class TestPhase44AliasParity:
         )
 
     @pytest.mark.asyncio
-    async def test_handler_envelope_unchanged_after_refactor(
-        self, seeded_with_failed_rows: SQLiteAdapter
-    ) -> None:
+    async def test_handler_envelope_unchanged_after_refactor(self, seeded_with_failed_rows: SQLiteAdapter) -> None:
         """D-07: external behavior of handle_purge_failed_discoveries is byte-identical
         to the pre-Phase-44 envelope. status, dry_run, purged_count, purged_devices keys."""
-        with patch(
-            "homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap"
-        ) as MockSM:
+        with patch("homelab_mcp.tool_handlers.network_handlers.NetworkSiteMap") as MockSM:
             MockSM.return_value.db_adapter = seeded_with_failed_rows
-            MockSM.return_value.purge_failed_devices = (
-                seeded_with_failed_rows.purge_failed_devices
-            )
+            MockSM.return_value.purge_failed_devices = seeded_with_failed_rows.purge_failed_devices
             result = await handle_purge_failed_discoveries({"dry_run": True})
         payload = json.loads(result["content"][0]["text"])
         assert set(payload.keys()) == {"status", "dry_run", "purged_count", "purged_devices"}

@@ -215,6 +215,8 @@ async def handle_update_device_fingerprint_preview(arguments: dict[str, Any]) ->
         indent=2,
     )
     return {"content": [{"type": "text", "text": result_str}]}
+
+
 async def handle_remove_device(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle remove_device tool (Phase 44 D-06).
 
@@ -279,10 +281,7 @@ def _adapter_dialect(adapter: Any) -> Literal["sqlite", "postgres"]:
         return "postgres"
     if isinstance(adapter, SQLiteAdapter):
         return "sqlite"
-    raise TypeError(
-        f"Unknown adapter type {type(adapter).__name__}; expected SQLiteAdapter or "
-        "PostgreSQLAdapter."
-    )
+    raise TypeError(f"Unknown adapter type {type(adapter).__name__}; expected SQLiteAdapter or PostgreSQLAdapter.")
 
 
 def _value_hint_for(filter_type: str) -> str:
@@ -339,9 +338,7 @@ async def handle_purge_devices(arguments: dict[str, Any]) -> dict[str, Any]:
     sitemap = NetworkSiteMap()
     dialect = _adapter_dialect(sitemap.db_adapter)
     try:
-        removed = _purge_devices_by_filter(
-            sitemap.db_adapter, dialect, filter_type, value, dry_run=dry_run
-        )
+        removed = _purge_devices_by_filter(sitemap.db_adapter, dialect, filter_type, value, dry_run=dry_run)
     except ValueError as e:
         # D-01b: bad value shape (wrong type, invalid CIDR, etc.) → structured envelope.
         hint = _value_hint_for(filter_type)

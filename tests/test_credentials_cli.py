@@ -650,7 +650,7 @@ class TestAutoBind:
 
     def test_zero_match_silent_d01_phase381(
         self,
-        tmp_path: "pytest.TempPathFactory",
+        tmp_path: pytest.TempPathFactory,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -731,9 +731,7 @@ class TestAutoBind:
         _cmd_credentials_add(args)
 
         # Phase 38.1 R4: set_device_credential_binding must have been called
-        assert len(bind_calls) == 1, (
-            f"Phase 38.1 R4: expected 1 auto-bind call, got {len(bind_calls)}"
-        )
+        assert len(bind_calls) == 1, f"Phase 38.1 R4: expected 1 auto-bind call, got {len(bind_calls)}"
         assert bind_calls[0]["credential_id"] == "auto-uuid-001"
         assert bind_calls[0]["credential_type"] == "proxmox"
 
@@ -784,9 +782,11 @@ class TestAutoBind:
             f"Phase 38.1 D-05: binding must be skipped in non-TTY, but got {len(bind_calls)} calls"
         )
         # Warning emitted
-        assert "skip" in captured.err.lower() or "warn" in captured.err.lower() or "non-interactive" in captured.err.lower(), (
-            "Phase 38.1 D-05: expected a warning on stderr when skipping overwrite in non-TTY"
-        )
+        assert (
+            "skip" in captured.err.lower()
+            or "warn" in captured.err.lower()
+            or "non-interactive" in captured.err.lower()
+        ), "Phase 38.1 D-05: expected a warning on stderr when skipping overwrite in non-TTY"
 
     def test_cluster_scope_skips_auto_bind_per_d07_phase381(
         self,
@@ -918,9 +918,7 @@ class TestLinkUnlink:
         )
         _cmd_credentials_link(args)
 
-        assert len(bind_calls) == 1, (
-            f"Phase 38.1 R8: expected 1 bind call from link, got {len(bind_calls)}"
-        )
+        assert len(bind_calls) == 1, f"Phase 38.1 R8: expected 1 bind call from link, got {len(bind_calls)}"
         assert bind_calls[0]["credential_id"] == "test-uuid-link"
 
     def test_link_rejects_type_mismatch_per_d25_phase381(
@@ -1153,5 +1151,5 @@ def test_list_default_tabular_omits_credential_id_phase381(
     captured = capsys.readouterr()
     # D-23: tabular output must NOT expose UUIDs to users
     assert test_uuid not in captured.out, (
-        f"Phase 38.1 D-23: tabular output must omit credential_id, but UUID was present in output"
+        "Phase 38.1 D-23: tabular output must omit credential_id, but UUID was present in output"
     )

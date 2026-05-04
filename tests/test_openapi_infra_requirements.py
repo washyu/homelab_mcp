@@ -35,8 +35,7 @@ class TestInfraRequirementsProxmoxEntry:
     def test_proxmox_entry_no_proxmox_host(self) -> None:
         value = INFRA_REQUIREMENTS["Proxmox"]
         assert "PROXMOX_HOST" not in value, (
-            f"D-05 regression: INFRA_REQUIREMENTS['Proxmox'] still mentions "
-            f"PROXMOX_HOST; got {value!r}"
+            f"D-05 regression: INFRA_REQUIREMENTS['Proxmox'] still mentions PROXMOX_HOST; got {value!r}"
         )
 
     def test_proxmox_entry_no_register_server_pointer(self) -> None:
@@ -56,12 +55,7 @@ class TestInfraRequirementsProxmoxEntry:
 
     def test_openapi_app_file_no_proxmox_host(self) -> None:
         """File-level sweep: zero PROXMOX_HOST substrings in openapi_app.py."""
-        openapi_path = (
-            Path(__file__).parent.parent
-            / "src"
-            / "homelab_mcp"
-            / "openapi_app.py"
-        )
+        openapi_path = Path(__file__).parent.parent / "src" / "homelab_mcp" / "openapi_app.py"
         assert openapi_path.exists(), f"file missing: {openapi_path}"
         source = openapi_path.read_text(encoding="utf-8")
         assert "PROXMOX_HOST" not in source, (

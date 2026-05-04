@@ -1078,7 +1078,6 @@ def test_run_sqlite_migrations_adds_fingerprint_column_idempotently_phase38(tmp_
 
 def test_devices_has_credential_id_columns_phase381_sqlite():
     """Phase 38.1 R2: fresh SQLite schema must have ssh_credential_id + proxmox_credential_id."""
-    import sqlite3
 
     adapter = SQLiteAdapter(":memory:")
     adapter.init_schema()
@@ -1097,12 +1096,14 @@ def test_set_device_credential_binding_writes_column_sqlite():
     adapter.init_schema()
 
     # Insert a device
-    device_id = adapter.store_device({
-        "hostname": "pve1",
-        "connection_ip": "10.0.0.1",
-        "last_seen": datetime.now().isoformat(),
-        "status": "success",
-    })
+    device_id = adapter.store_device(
+        {
+            "hostname": "pve1",
+            "connection_ip": "10.0.0.1",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
 
     # Write ssh binding
     adapter.set_device_credential_binding(device_id, "ssh", "test-uuid-001")
@@ -1136,6 +1137,7 @@ def test_set_device_credential_binding_writes_column_sqlite():
 
     # Closed-set enforcement
     import pytest as _pytest
+
     with _pytest.raises(ValueError, match="credential_type must be"):
         adapter.set_device_credential_binding(device_id, "invalid", "some-uuid")
 
@@ -1154,12 +1156,14 @@ def test_get_all_devices_includes_eligibility_field_sqlite():
     adapter = SQLiteAdapter(":memory:")
     adapter.init_schema()
 
-    device_id = adapter.store_device({
-        "hostname": "node1",
-        "connection_ip": "10.0.0.2",
-        "last_seen": datetime.now().isoformat(),
-        "status": "success",
-    })
+    device_id = adapter.store_device(
+        {
+            "hostname": "node1",
+            "connection_ip": "10.0.0.2",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
 
     # No bindings — both eligibility fields should be False
     devices = adapter.get_all_devices()
@@ -1202,12 +1206,14 @@ def test_find_devices_by_hostname_or_ip_phase381_sqlite():
     adapter = SQLiteAdapter(":memory:")
     adapter.init_schema()
 
-    device_id = adapter.store_device({
-        "hostname": "pve-node",
-        "connection_ip": "192.168.1.50",
-        "last_seen": datetime.now().isoformat(),
-        "status": "success",
-    })
+    device_id = adapter.store_device(
+        {
+            "hostname": "pve-node",
+            "connection_ip": "192.168.1.50",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
 
     # Match by hostname
     results = adapter.find_devices_by_hostname_or_ip("pve-node")
@@ -1237,18 +1243,22 @@ def test_bulk_null_credential_binding_phase381_sqlite():
     adapter = SQLiteAdapter(":memory:")
     adapter.init_schema()
 
-    id1 = adapter.store_device({
-        "hostname": "alpha",
-        "connection_ip": "10.0.0.1",
-        "last_seen": datetime.now().isoformat(),
-        "status": "success",
-    })
-    id2 = adapter.store_device({
-        "hostname": "beta",
-        "connection_ip": "10.0.0.2",
-        "last_seen": datetime.now().isoformat(),
-        "status": "success",
-    })
+    id1 = adapter.store_device(
+        {
+            "hostname": "alpha",
+            "connection_ip": "10.0.0.1",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+    id2 = adapter.store_device(
+        {
+            "hostname": "beta",
+            "connection_ip": "10.0.0.2",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
 
     # Set up bindings
     adapter.set_device_credential_binding(id1, "ssh", "uuid-to-remove")
@@ -1270,6 +1280,7 @@ def test_bulk_null_credential_binding_phase381_sqlite():
 
     # Closed-set enforcement
     import pytest as _pytest
+
     with _pytest.raises(ValueError, match="credential_type must be"):
         adapter.bulk_null_credential_binding(["x"], "invalid")
 

@@ -125,9 +125,7 @@ class TestPhase44PurgeDevicesFilters:
         # purge_failed_discoveries would have caught it.
 
     def test_last_seen_older_than_days(self, seeded_diverse: SQLiteAdapter) -> None:
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "last_seen_older_than_days", 7
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "last_seen_older_than_days", 7)
         assert len(removed) == 1
         assert removed[0]["hostname"] == "pve-old"
 
@@ -142,9 +140,7 @@ class TestPhase44PurgeDevicesFilters:
         `last_seen` ties exactly with the query-time `now`, but in practice the
         query-time `now` is microseconds after row insertion, so the strict-less-than
         comparison succeeds for every seeded row."""
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "last_seen_older_than_days", 0, dry_run=True
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "last_seen_older_than_days", 0, dry_run=True)
         # Five rows seeded; all five match because each was inserted microseconds
         # before this query computed `now`. The 30-day-old row (pve-old) is
         # included alongside the four "now" rows.
@@ -154,32 +150,24 @@ class TestPhase44PurgeDevicesFilters:
         assert hostnames == {"pve-test", "pve-fail", "", "pve-old", "v6host"}
 
     def test_ip_range_cidr_v4(self, seeded_diverse: SQLiteAdapter) -> None:
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "ip_range", "192.168.0.0/16"
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "ip_range", "192.168.0.0/16")
         hostnames = {r["hostname"] for r in removed}
         assert "pve-test" in hostnames
         assert "pve-old" in hostnames
         assert "pve-fail" not in hostnames  # 10.0.0.5 outside /16
 
     def test_ip_range_cidr_v6(self, seeded_diverse: SQLiteAdapter) -> None:
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "ip_range", "fe80::/10"
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "ip_range", "fe80::/10")
         assert any(r["hostname"] == "v6host" for r in removed)
 
     def test_ip_range_single_ip_slash_32(self, seeded_diverse: SQLiteAdapter) -> None:
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "ip_range", "192.168.10.20/32"
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "ip_range", "192.168.10.20/32")
         assert len(removed) == 1
         assert removed[0]["hostname"] == "pve-test"
 
     def test_ip_range_skips_unparseable_connection_ip(self, seeded_diverse: SQLiteAdapter) -> None:
         """D-03a: zombie row with connection_ip='' is silently skipped — never matches."""
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "ip_range", "0.0.0.0/0", dry_run=True
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "ip_range", "0.0.0.0/0", dry_run=True)
         # 0.0.0.0/0 matches all valid IPv4. Zombie row's '' is skipped.
         hostnames = {r["hostname"] for r in removed}
         assert "" not in hostnames
@@ -187,24 +175,18 @@ class TestPhase44PurgeDevicesFilters:
 
 class TestPhase44PurgeDevicesDryRun:
     def test_dry_run_does_not_delete(self, seeded_diverse: SQLiteAdapter) -> None:
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "hostname", "pve-test", dry_run=True
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "hostname", "pve-test", dry_run=True)
         assert len(removed) == 1
         # Row still present.
         assert seeded_diverse.connection is not None
-        cur = seeded_diverse.connection.execute(
-            "SELECT COUNT(*) FROM devices WHERE hostname = ?", ("pve-test",)
-        )
+        cur = seeded_diverse.connection.execute("SELECT COUNT(*) FROM devices WHERE hostname = ?", ("pve-test",))
         assert cur.fetchone()[0] == 1
 
 
 class TestPhase44PurgeDevicesZeroMatch:
     def test_zero_match_returns_success_empty(self, seeded_diverse: SQLiteAdapter) -> None:
         """D-01c: zero-match is success, never error."""
-        removed = _purge_devices_by_filter(
-            seeded_diverse, "sqlite", "hostname", "no-such-host"
-        )
+        removed = _purge_devices_by_filter(seeded_diverse, "sqlite", "hostname", "no-such-host")
         assert removed == []
 
 
@@ -250,9 +232,7 @@ class TestPhase44PurgeDevicesHandler:
     async def test_happy_path_envelope(self, seeded_diverse: SQLiteAdapter) -> None:
         with patch(NSM_PATH) as MockSM:
             MockSM.return_value.db_adapter = seeded_diverse
-            result = await handle_purge_devices(
-                {"filter_type": "hostname", "value": "pve-test"}
-            )
+            result = await handle_purge_devices({"filter_type": "hostname", "value": "pve-test"})
         payload = json.loads(result["content"][0]["text"])
         assert payload["status"] == "success"
         assert payload["dry_run"] is False
@@ -263,51 +243,37 @@ class TestPhase44PurgeDevicesHandler:
     async def test_zero_match_success(self, seeded_diverse: SQLiteAdapter) -> None:
         with patch(NSM_PATH) as MockSM:
             MockSM.return_value.db_adapter = seeded_diverse
-            result = await handle_purge_devices(
-                {"filter_type": "hostname", "value": "no-such-host"}
-            )
+            result = await handle_purge_devices({"filter_type": "hostname", "value": "no-such-host"})
         payload = json.loads(result["content"][0]["text"])
         assert payload["status"] == "success"
         assert payload["purged_count"] == 0
         assert payload["purged_devices"] == []
 
     @pytest.mark.asyncio
-    async def test_invalid_filter_type_returns_error_envelope(
-        self, seeded_diverse: SQLiteAdapter
-    ) -> None:
+    async def test_invalid_filter_type_returns_error_envelope(self, seeded_diverse: SQLiteAdapter) -> None:
         with patch(NSM_PATH) as MockSM:
             MockSM.return_value.db_adapter = seeded_diverse
-            result = await handle_purge_devices(
-                {"filter_type": "bogus", "value": "x"}
-            )
+            result = await handle_purge_devices({"filter_type": "bogus", "value": "x"})
         payload = json.loads(result["content"][0]["text"])
         assert payload["status"] == "error"
         assert "Invalid filter_type" in payload["error"]
         assert "hostname" in payload["error"]  # lists valid options
 
     @pytest.mark.asyncio
-    async def test_bad_value_shape_returns_error_envelope(
-        self, seeded_diverse: SQLiteAdapter
-    ) -> None:
+    async def test_bad_value_shape_returns_error_envelope(self, seeded_diverse: SQLiteAdapter) -> None:
         with patch(NSM_PATH) as MockSM:
             MockSM.return_value.db_adapter = seeded_diverse
-            result = await handle_purge_devices(
-                {"filter_type": "last_seen_older_than_days", "value": "not-int"}
-            )
+            result = await handle_purge_devices({"filter_type": "last_seen_older_than_days", "value": "not-int"})
         payload = json.loads(result["content"][0]["text"])
         assert payload["status"] == "error"
         assert "must be int" in payload["error"]
         assert "integer day count" in payload["hint"]
 
     @pytest.mark.asyncio
-    async def test_invalid_cidr_returns_error_envelope(
-        self, seeded_diverse: SQLiteAdapter
-    ) -> None:
+    async def test_invalid_cidr_returns_error_envelope(self, seeded_diverse: SQLiteAdapter) -> None:
         with patch(NSM_PATH) as MockSM:
             MockSM.return_value.db_adapter = seeded_diverse
-            result = await handle_purge_devices(
-                {"filter_type": "ip_range", "value": "not-a-cidr"}
-            )
+            result = await handle_purge_devices({"filter_type": "ip_range", "value": "not-a-cidr"})
         payload = json.loads(result["content"][0]["text"])
         assert payload["status"] == "error"
         assert "Invalid CIDR" in payload["error"]
@@ -317,15 +283,11 @@ class TestPhase44PurgeDevicesHandler:
     async def test_preview_is_thin_delegate(self, seeded_diverse: SQLiteAdapter) -> None:
         with patch(NSM_PATH) as MockSM:
             MockSM.return_value.db_adapter = seeded_diverse
-            result = await handle_purge_devices_preview(
-                {"filter_type": "hostname", "value": "pve-test"}
-            )
+            result = await handle_purge_devices_preview({"filter_type": "hostname", "value": "pve-test"})
         payload = json.loads(result["content"][0]["text"])
         assert payload["status"] == "success"
         assert payload["dry_run"] is True
         # Row still present after preview.
         assert seeded_diverse.connection is not None
-        cur = seeded_diverse.connection.execute(
-            "SELECT COUNT(*) FROM devices WHERE hostname = ?", ("pve-test",)
-        )
+        cur = seeded_diverse.connection.execute("SELECT COUNT(*) FROM devices WHERE hostname = ?", ("pve-test",))
         assert cur.fetchone()[0] == 1
