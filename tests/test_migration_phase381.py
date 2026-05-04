@@ -445,6 +445,11 @@ def test_backup_file_mode_preserved_phase381(tmp_path, monkeypatch):
 
     db_path = tmp_path / "sitemap.db"
     adapter = _bootstrap_sqlite(db_path)
+    # CR-01 gate (migration.py:208-227) skips the destructive path when the
+    # devices table already carries binding columns. _bootstrap_sqlite produces
+    # that state, so install the legacy schema to force the destructive path
+    # to fire and archive the registry.
+    _install_legacy_devices_table(adapter)
     try:
         run_sqlite_migrations(_connection=adapter.connection)
     finally:
