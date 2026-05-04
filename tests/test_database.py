@@ -132,6 +132,105 @@ class TestSQLiteAdapter:
         changes = adapter.get_device_changes(device_id)
         assert len(changes) == 1
 
+    def test_store_and_retrieve_fingerprint_phase38_sqlite(self, adapter):
+        """Phase 38 D-09: SQLite store_device round-trips fingerprint as JSON-string + flatten-on-read."""
+        fp_dict = {
+            "kernel_name": "Linux",
+            "kernel_version": "6.5.13-1-pve",
+            "os_name": "Proxmox VE 8.2.4",
+            "os_version": "8.2.4",
+            "package_fingerprint": "sha256:abc123",
+            "capabilities": {"vulkan": {"available": True, "loader_version": "1.3.275"}},
+        }
+        device_data = {
+            "hostname": "test-pve",
+            "connection_ip": "10.0.0.5",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(fp_dict),
+        }
+        adapter.store_device(device_data)
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1
+        fp_back = devices[0]["fingerprint"]
+        assert isinstance(fp_back, dict), f"fingerprint should be decoded to dict, got {type(fp_back)}"
+        assert fp_back["kernel_name"] == "Linux"
+        assert fp_back["kernel_version"] == "6.5.13-1-pve"
+        assert fp_back["capabilities"]["vulkan"]["available"] is True
+
+    def test_store_device_update_branch_writes_fingerprint_phase38_sqlite(self, adapter):
+        """Phase 38 D-09: UPDATE branch (re-storing same hostname) writes fingerprint."""
+        base = {
+            "hostname": "test-host",
+            "connection_ip": "10.0.0.6",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+        # First store: no fingerprint
+        adapter.store_device(dict(base))
+        # Second store: same hostname (UPDATE branch) with fingerprint
+        fp_dict = {"kernel_name": "Linux", "kernel_version": "6.0.0"}
+        adapter.store_device({**base, "fingerprint": json.dumps(fp_dict)})
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1
+        assert devices[0]["fingerprint"]["kernel_version"] == "6.0.0"
+
+    def test_update_device_fingerprint_deep_merge_capabilities_phase38_sqlite(self, adapter):
+        """Phase 38 D-05: capabilities sub-dict deep-merges (existing keys preserved)."""
+        base = {
+            "hostname": "merge-host",
+            "connection_ip": "10.0.0.10",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(
+                {
+                    "kernel_version": "6.0.0",
+                    "capabilities": {"vulkan": {"available": True, "loader_version": "1.3.275"}},
+                }
+            ),
+        }
+        adapter.store_device(base)
+        merged = adapter.update_device_fingerprint(
+            "merge-host",
+            {"capabilities": {"cuda": {"driver_version": "535.183.06"}}},
+        )
+        assert "vulkan" in merged["capabilities"], "Original capability should survive deep-merge"
+        assert merged["capabilities"]["vulkan"]["available"] is True
+        assert "cuda" in merged["capabilities"]
+        assert merged["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+        # And the persisted state matches.
+        devices = adapter.get_all_devices()
+        target = next(d for d in devices if d["hostname"] == "merge-host")
+        assert "vulkan" in target["fingerprint"]["capabilities"]
+        assert "cuda" in target["fingerprint"]["capabilities"]
+
+    def test_update_device_fingerprint_overwrites_top_level_phase38_sqlite(self, adapter):
+        """Phase 38 D-05: top-level keys (kernel/os/package) overwrite, capabilities preserved."""
+        base = {
+            "hostname": "overwrite-host",
+            "connection_ip": "10.0.0.11",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(
+                {
+                    "kernel_version": "6.0.0",
+                    "capabilities": {"vulkan": {"available": True}},
+                }
+            ),
+        }
+        adapter.store_device(base)
+        merged = adapter.update_device_fingerprint(
+            "overwrite-host",
+            {"kernel_version": "6.5.13-1-pve"},
+        )
+        assert merged["kernel_version"] == "6.5.13-1-pve"
+        assert merged["capabilities"]["vulkan"]["available"] is True
+
+    def test_update_device_fingerprint_missing_hostname_raises_phase38_sqlite(self, adapter):
+        """Phase 38 D-05: missing hostname raises ValueError with discover_and_map hint."""
+        with pytest.raises(ValueError, match="discover_and_map"):
+            adapter.update_device_fingerprint("nonexistent.local", {"kernel_name": "Linux"})
+
 
 @pytest.mark.skipif(not POSTGRESQL_AVAILABLE, reason="psycopg2 not available")
 class TestPostgreSQLAdapter:
@@ -193,6 +292,248 @@ class TestPostgreSQLAdapter:
         # Verify INSERT was called with JSONB data
         assert mock_cursor.execute.call_count >= 2  # SELECT + INSERT
         mock_conn.commit.assert_called()
+
+    def test_store_device_jsonb_includes_fingerprint_phase38(self, mock_connection):
+        """Phase 38 D-09a: Postgres store_device places fingerprint inside system_info JSONB.
+
+        Mirrors test_store_device_jsonb above — asserts on mock_cursor.execute, not on round-trip.
+        The codebase has no live-Postgres fixture; mock-cursor assertion is the established pattern.
+        """
+        mock_conn, mock_cursor = mock_connection
+        # SELECT (existence check) returns None, then INSERT RETURNING returns [1]
+        mock_cursor.fetchone.side_effect = [None, [1]]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        fp_dict = {
+            "kernel_name": "Linux",
+            "kernel_version": "6.5.13-1-pve",
+            "package_fingerprint": "sha256:def456",
+            "capabilities": {"cuda": {"driver_version": "535.183.06"}},
+        }
+        device_data = {
+            "hostname": "test-pg",
+            "connection_ip": "10.0.0.7",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(fp_dict),
+        }
+        adapter.store_device(device_data)
+
+        # Find the INSERT call (after the SELECT for existence check).
+        # The system_info JSON-string is positional arg index 4 in the INSERT VALUES tuple
+        # (hostname, connection_ip, last_seen, status, system_info, network_interfaces, error_message).
+        insert_call = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call.args[0]
+            if "INSERT INTO devices" in sql:
+                insert_call = call
+                break
+        assert insert_call is not None, "Expected INSERT INTO devices call"
+        params = insert_call.args[1]
+        system_info_json = params[4]  # 5th positional in VALUES tuple
+        parsed = json.loads(system_info_json)
+        assert "fingerprint" in parsed, (
+            f"system_info JSONB must include 'fingerprint' sub-key, got keys: {list(parsed.keys())}"
+        )
+        assert parsed["fingerprint"]["kernel_name"] == "Linux"
+        assert parsed["fingerprint"]["kernel_version"] == "6.5.13-1-pve"
+        assert parsed["fingerprint"]["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+
+    def test_store_device_update_branch_includes_fingerprint_phase38_postgres(self, mock_connection):
+        """Phase 38 D-09a: Postgres UPDATE branch (existing device) carries fingerprint inside system_info JSONB."""
+        mock_conn, mock_cursor = mock_connection
+        # Existing device: SELECT returns [1] (device id)
+        mock_cursor.fetchone.return_value = [1]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        fp_dict = {"kernel_name": "Linux", "kernel_version": "6.0.0"}
+        device_data = {
+            "hostname": "test-pg-update",
+            "connection_ip": "10.0.0.8",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+            "fingerprint": json.dumps(fp_dict),
+        }
+        adapter.store_device(device_data)
+
+        # Find the UPDATE call. system_info JSON-string is positional arg index 2 in the UPDATE
+        # tuple (last_seen, status, system_info, network_interfaces, error_message, connection_ip, id).
+        update_call = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call.args[0]
+            if "UPDATE devices SET" in sql:
+                update_call = call
+                break
+        assert update_call is not None, "Expected UPDATE devices SET call"
+        params = update_call.args[1]
+        system_info_json = params[2]
+        parsed = json.loads(system_info_json)
+        assert "fingerprint" in parsed
+        assert parsed["fingerprint"]["kernel_version"] == "6.0.0"
+
+    def test_get_all_devices_flattens_fingerprint_phase38_postgres(self, mock_connection):
+        """Phase 38 D-10: Postgres get_all_devices lifts system_info['fingerprint'] to top-level row key."""
+        mock_conn, mock_cursor = mock_connection
+
+        # Prime the read path: cursor.fetchall returns row dicts (RealDictCursor shape).
+        mock_cursor.fetchall.return_value = [
+            {
+                "id": 1,
+                "hostname": "test-pg-read",
+                "connection_ip": "10.0.0.9",
+                "last_seen": datetime.now().isoformat(),
+                "status": "success",
+                "system_info": {
+                    "cpu": {"model": "Intel", "cores": 4},
+                    "memory": {"total": "16G"},
+                    "disk": {},
+                    "uptime": "1h",
+                    "os": "Linux",
+                    "usb_devices": [],
+                    "pci_devices": [],
+                    "block_devices": [],
+                    "fingerprint": {
+                        "kernel_name": "Linux",
+                        "kernel_version": "6.5.13-1-pve",
+                        "capabilities": {"cuda": {"driver_version": "535.183.06"}},
+                    },
+                },
+                "network_interfaces": [],
+                "error_message": None,
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+            }
+        ]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        devices = adapter.get_all_devices()
+        assert len(devices) == 1
+        assert "fingerprint" in devices[0], (
+            "get_all_devices must flatten system_info['fingerprint'] to top-level row key"
+        )
+        assert devices[0]["fingerprint"]["kernel_name"] == "Linux"
+        assert devices[0]["fingerprint"]["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+
+    def test_update_device_fingerprint_deep_merge_capabilities_phase38_postgres(self, mock_connection):
+        """Phase 38 D-05/D-11: Postgres deep-merge proven via mock_cursor.execute on SELECT-then-UPDATE.
+
+        Mirrors test_store_device_jsonb at line 171 — asserts on mock_cursor.execute, not real round-trip.
+        Postgres "round-trip" in this codebase = "adapter produced the right SQL with the right JSON args".
+        """
+        mock_conn, mock_cursor = mock_connection
+
+        # Prime the SELECT-system_info-from-devices-where-hostname read.
+        existing_system_info = {
+            "cpu": {"model": "Intel"},
+            "memory": {"total": "16G"},
+            "disk": {},
+            "uptime": "1h",
+            "os": "Linux",
+            "usb_devices": [],
+            "pci_devices": [],
+            "block_devices": [],
+            "fingerprint": {
+                "kernel_version": "6.0.0",
+                "capabilities": {"vulkan": {"available": True, "loader_version": "1.3.275"}},
+            },
+        }
+        mock_cursor.fetchone.return_value = [existing_system_info]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        merged = adapter.update_device_fingerprint(
+            "merge-host",
+            {"capabilities": {"cuda": {"driver_version": "535.183.06"}}},
+        )
+
+        # Return value is the merged fingerprint dict.
+        assert "vulkan" in merged["capabilities"], "Original capability survives deep-merge"
+        assert "cuda" in merged["capabilities"]
+        assert merged["capabilities"]["cuda"]["driver_version"] == "535.183.06"
+
+        # Verify SELECT-then-UPDATE sequence on mock cursor.
+        select_call = None
+        update_call = None
+        for call in mock_cursor.execute.call_args_list:
+            sql = call.args[0]
+            if "SELECT system_info FROM devices" in sql:
+                select_call = call
+            elif "UPDATE devices SET" in sql:
+                update_call = call
+        assert select_call is not None, "Expected SELECT system_info FROM devices call"
+        assert update_call is not None, "Expected UPDATE devices SET call"
+
+        # SELECT should be parameterized on hostname.
+        assert "hostname" in select_call.args[0]
+        assert select_call.args[1] == ("merge-host",)
+
+        # UPDATE's system_info JSON arg should contain the merged fingerprint.
+        update_params = update_call.args[1]
+        # Find the JSON-string param (system_info is a json.dumps result).
+        system_info_json = next(p for p in update_params if isinstance(p, str) and p.startswith("{"))
+        parsed = json.loads(system_info_json)
+        assert "vulkan" in parsed["fingerprint"]["capabilities"]
+        assert "cuda" in parsed["fingerprint"]["capabilities"]
+
+    def test_update_device_fingerprint_overwrites_top_level_phase38_postgres(self, mock_connection):
+        """Phase 38 D-05/D-11: top-level overwrite proven via mock_cursor.execute UPDATE inspection."""
+        mock_conn, mock_cursor = mock_connection
+
+        existing_system_info = {
+            "cpu": {},
+            "memory": {},
+            "disk": {},
+            "uptime": "",
+            "os": "",
+            "usb_devices": [],
+            "pci_devices": [],
+            "block_devices": [],
+            "fingerprint": {
+                "kernel_version": "6.0.0",
+                "capabilities": {"vulkan": {"available": True}},
+            },
+        }
+        mock_cursor.fetchone.return_value = [existing_system_info]
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        merged = adapter.update_device_fingerprint(
+            "overwrite-host",
+            {"kernel_version": "6.5.13-1-pve"},
+        )
+
+        assert merged["kernel_version"] == "6.5.13-1-pve"
+        assert merged["capabilities"]["vulkan"]["available"] is True
+
+        update_call = next(
+            (c for c in mock_cursor.execute.call_args_list if "UPDATE devices SET" in c.args[0]),
+            None,
+        )
+        assert update_call is not None
+        update_params = update_call.args[1]
+        system_info_json = next(p for p in update_params if isinstance(p, str) and p.startswith("{"))
+        parsed = json.loads(system_info_json)
+        assert parsed["fingerprint"]["kernel_version"] == "6.5.13-1-pve"
+        assert parsed["fingerprint"]["capabilities"]["vulkan"]["available"] is True
+
+    def test_update_device_fingerprint_missing_hostname_raises_phase38_postgres(self, mock_connection):
+        """Phase 38 D-05: Postgres missing-hostname path raises ValueError with discover_and_map hint."""
+        mock_conn, mock_cursor = mock_connection
+        mock_cursor.fetchone.return_value = None  # No row found for hostname.
+
+        adapter = PostgreSQLAdapter()
+        adapter.connection = mock_conn
+
+        with pytest.raises(ValueError, match="discover_and_map"):
+            adapter.update_device_fingerprint("nonexistent.local", {"kernel_name": "Linux"})
 
 
 class TestDatabaseFactory:
@@ -352,120 +693,6 @@ class TestCredentialDBRemoval:
             assert not hasattr(adapter, method_name), (
                 f"SQLiteAdapter must not have {method_name!r} after Phase 33 credential DB removal"
             )
-
-
-class TestDriftBaselines:
-    """Tests for DRFT-04: SQLiteAdapter drift baseline CRUD methods.
-
-    These tests will fail with AttributeError until Plan 02 implements
-    upsert_drift_baseline, get_drift_baseline, and get_all_drift_baselines
-    on SQLiteAdapter — that is the expected RED state.
-    """
-
-    @pytest.fixture
-    def adapter(self):
-        """Create an in-memory SQLite adapter with schema initialized."""
-        db = SQLiteAdapter(":memory:")
-        db.init_schema()
-        return db
-
-    def test_upsert_and_get_baseline(self, adapter):
-        """upsert_drift_baseline stores config; get_drift_baseline retrieves it."""
-        baseline_config = {"cores": 2, "memory": 2048, "net0": "virtio,bridge=vmbr0"}
-
-        adapter.upsert_drift_baseline(
-            node="pve",
-            vmid=100,
-            vm_type="qemu",
-            baseline_config=baseline_config,
-            recorded_by="test_tool",
-        )
-
-        result = adapter.get_drift_baseline(node="pve", vmid=100, vm_type="qemu")
-
-        assert result is not None
-        assert result["node"] == "pve"
-        assert result["vmid"] == 100
-        assert result["vm_type"] == "qemu"
-        assert result["baseline_config"] == baseline_config
-
-    def test_upsert_replaces_existing(self, adapter):
-        """Second upsert for same (node, vmid, vm_type) replaces the previous baseline."""
-        adapter.upsert_drift_baseline(
-            node="pve",
-            vmid=100,
-            vm_type="qemu",
-            baseline_config={"cores": 2},
-            recorded_by="initial_tool",
-        )
-        adapter.upsert_drift_baseline(
-            node="pve",
-            vmid=100,
-            vm_type="qemu",
-            baseline_config={"cores": 4, "memory": 4096},
-            recorded_by="resize_vm",
-        )
-
-        result = adapter.get_drift_baseline(node="pve", vmid=100, vm_type="qemu")
-
-        assert result is not None
-        assert result["baseline_config"]["cores"] == 4
-        assert result["baseline_config"].get("memory") == 4096
-
-        # Verify only one baseline exists for this VM
-        all_baselines = adapter.get_all_drift_baselines()
-        pve_100 = [b for b in all_baselines if b["node"] == "pve" and b["vmid"] == 100]
-        assert len(pve_100) == 1
-
-    def test_get_returns_none_when_absent(self, adapter):
-        """get_drift_baseline returns None for an unknown vmid."""
-        result = adapter.get_drift_baseline(node="pve", vmid=9999, vm_type="qemu")
-
-        assert result is None
-
-    def test_get_all_drift_baselines(self, adapter):
-        """get_all_drift_baselines returns a list containing all stored baselines."""
-        adapter.upsert_drift_baseline(
-            node="pve",
-            vmid=100,
-            vm_type="qemu",
-            baseline_config={"cores": 2},
-            recorded_by="tool_a",
-        )
-        adapter.upsert_drift_baseline(
-            node="pve",
-            vmid=101,
-            vm_type="lxc",
-            baseline_config={"cores": 1},
-            recorded_by="tool_b",
-        )
-
-        all_baselines = adapter.get_all_drift_baselines()
-
-        assert isinstance(all_baselines, list)
-        assert len(all_baselines) >= 2
-        vmids = [b["vmid"] for b in all_baselines]
-        assert 100 in vmids
-        assert 101 in vmids
-
-    def test_baseline_config_is_full_dict(self, adapter):
-        """Retrieved baseline_config is a dict (deserialized from JSON), not a raw string."""
-        config = {"cores": 4, "memory": 8192, "net0": "virtio,bridge=vmbr0"}
-
-        adapter.upsert_drift_baseline(
-            node="pve",
-            vmid=200,
-            vm_type="qemu",
-            baseline_config=config,
-            recorded_by="some_tool",
-        )
-
-        result = adapter.get_drift_baseline(node="pve", vmid=200, vm_type="qemu")
-
-        assert result is not None
-        assert isinstance(result["baseline_config"], dict)
-        assert result["baseline_config"]["cores"] == 4
-        assert result["baseline_config"]["net0"] == "virtio,bridge=vmbr0"
 
 
 # Phase 33 regression tests — RED until implementation plans land
@@ -790,3 +1017,271 @@ def test_init_schema_triggers_phase35_migrations_on_legacy_db(tmp_path):
         assert "UNIQUE (hostname, connection_ip)" not in table_sql, "Stale composite UNIQUE not dropped on init_schema"
     finally:
         conn.close()
+
+
+def test_run_sqlite_migrations_adds_fingerprint_column_idempotently_phase38(tmp_path):
+    """Phase 38 D-08 / SC-3: ADD COLUMN fingerprint is idempotent and non-destructive."""
+    import sqlite3
+
+    from src.homelab_mcp.migration import run_sqlite_migrations
+
+    db_path = str(tmp_path / "legacy.db")
+    # Build a pre-Phase-38 schema (with usb/pci/block but no fingerprint).
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hostname TEXT NOT NULL,
+            connection_ip TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            status TEXT NOT NULL,
+            usb_devices TEXT,
+            pci_devices TEXT,
+            block_devices TEXT
+        )
+        """
+    )
+    # Insert a legacy row to confirm it survives the migration with NULL fingerprint
+    conn.execute(
+        "INSERT INTO devices (hostname, connection_ip, last_seen, status) VALUES (?, ?, ?, ?)",
+        ("legacy.local", "10.0.0.1", "2026-04-01T00:00:00", "success"),
+    )
+    conn.commit()
+    conn.close()
+
+    applied1 = run_sqlite_migrations(db_path=db_path)
+    assert "add_column_fingerprint" in applied1, applied1
+
+    # Verify column exists, legacy row still present, fingerprint is NULL.
+    conn = sqlite3.connect(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+    assert "fingerprint" in cols, cols
+    row = conn.execute(
+        "SELECT hostname, fingerprint FROM devices WHERE hostname = ?",
+        ("legacy.local",),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "legacy.local"
+    assert row[1] is None  # NULL on legacy rows — re-discovery populates
+    conn.close()
+
+    # Re-run is idempotent — no add_column_fingerprint on second call.
+    applied2 = run_sqlite_migrations(db_path=db_path)
+    assert "add_column_fingerprint" not in applied2, applied2
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R2: credential_id columns on devices (Task 1 TDD — RED)
+# ---------------------------------------------------------------------------
+
+
+def test_devices_has_credential_id_columns_phase381_sqlite():
+    """Phase 38.1 R2: fresh SQLite schema must have ssh_credential_id + proxmox_credential_id."""
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+    assert adapter.connection is not None
+    cols = {row[1] for row in adapter.connection.execute("PRAGMA table_info(devices)").fetchall()}
+    assert "ssh_credential_id" in cols, f"ssh_credential_id missing from devices; cols={cols}"
+    assert "proxmox_credential_id" in cols, f"proxmox_credential_id missing from devices; cols={cols}"
+    adapter.close()
+
+
+def test_set_device_credential_binding_writes_column_sqlite():
+    """Phase 38.1 R3/R4/R8/R9: set_device_credential_binding writes correct column + validates type."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    # Insert a device
+    device_id = adapter.store_device(
+        {
+            "hostname": "pve1",
+            "connection_ip": "10.0.0.1",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+
+    # Write ssh binding
+    adapter.set_device_credential_binding(device_id, "ssh", "test-uuid-001")
+    assert adapter.connection is not None
+    row = adapter.connection.execute(
+        "SELECT ssh_credential_id, proxmox_credential_id FROM devices WHERE id = ?",
+        (device_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "test-uuid-001", f"Expected test-uuid-001, got {row[0]}"
+    assert row[1] is None, f"proxmox_credential_id should still be NULL, got {row[1]}"
+
+    # Write proxmox binding
+    adapter.set_device_credential_binding(device_id, "proxmox", "prox-uuid-002")
+    row = adapter.connection.execute(
+        "SELECT ssh_credential_id, proxmox_credential_id FROM devices WHERE id = ?",
+        (device_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "test-uuid-001", "ssh_credential_id must not change"
+    assert row[1] == "prox-uuid-002", f"Expected prox-uuid-002, got {row[1]}"
+
+    # Null-the binding (unlink)
+    adapter.set_device_credential_binding(device_id, "ssh", None)
+    row = adapter.connection.execute(
+        "SELECT ssh_credential_id FROM devices WHERE id = ?",
+        (device_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[0] is None, "Null write must clear the binding"
+
+    # Closed-set enforcement
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="credential_type must be"):
+        adapter.set_device_credential_binding(device_id, "invalid", "some-uuid")
+
+    adapter.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R7: eligibility flatten on get_all_devices (Task 2 TDD — RED)
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_devices_includes_eligibility_field_sqlite():
+    """Phase 38.1 R7/D-10: get_all_devices must emit eligibility:{ssh, proxmox} per row."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    device_id = adapter.store_device(
+        {
+            "hostname": "node1",
+            "connection_ip": "10.0.0.2",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+
+    # No bindings — both eligibility fields should be False
+    devices = adapter.get_all_devices()
+    assert len(devices) == 1
+    device = devices[0]
+    assert "eligibility" in device, "get_all_devices must emit eligibility key"
+    eligibility = device["eligibility"]
+    assert isinstance(eligibility, dict), f"eligibility must be a dict, got {type(eligibility)}"
+    assert "ssh" in eligibility, "eligibility must have 'ssh' key"
+    assert "proxmox" in eligibility, "eligibility must have 'proxmox' key"
+    assert eligibility["ssh"] is False, "ssh eligibility must be False when no binding"
+    assert eligibility["proxmox"] is False, "proxmox eligibility must be False when no binding"
+
+    # Add ssh binding — ssh eligibility should become True
+    adapter.set_device_credential_binding(device_id, "ssh", "uuid-abc")
+    devices = adapter.get_all_devices()
+    eligibility = devices[0]["eligibility"]
+    assert eligibility["ssh"] is True, "ssh eligibility must be True when binding present"
+    assert eligibility["proxmox"] is False, "proxmox eligibility must stay False"
+
+    # Add proxmox binding too
+    adapter.set_device_credential_binding(device_id, "proxmox", "uuid-xyz")
+    devices = adapter.get_all_devices()
+    eligibility = devices[0]["eligibility"]
+    assert eligibility["ssh"] is True
+    assert eligibility["proxmox"] is True
+
+    adapter.close()
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 Blocker B2: typed adapter methods (Task 3 TDD — RED)
+# ---------------------------------------------------------------------------
+
+
+def test_find_devices_by_hostname_or_ip_phase381_sqlite():
+    """Phase 38.1 R4/R8 (Blocker B2): find_devices_by_hostname_or_ip returns rows for hostname or IP match."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    device_id = adapter.store_device(
+        {
+            "hostname": "pve-node",
+            "connection_ip": "192.168.1.50",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+
+    # Match by hostname
+    results = adapter.find_devices_by_hostname_or_ip("pve-node")
+    assert len(results) == 1, f"Expected 1 result, got {len(results)}"
+    assert results[0]["hostname"] == "pve-node"
+    assert results[0]["id"] == device_id
+    assert "ssh_credential_id" in results[0]
+    assert "proxmox_credential_id" in results[0]
+    assert results[0]["ssh_credential_id"] is None
+
+    # Match by IP
+    results_ip = adapter.find_devices_by_hostname_or_ip("192.168.1.50")
+    assert len(results_ip) == 1, f"Expected 1 result by IP, got {len(results_ip)}"
+    assert results_ip[0]["id"] == device_id
+
+    # No match
+    no_match = adapter.find_devices_by_hostname_or_ip("nonexistent")
+    assert no_match == [], f"Expected empty list, got {no_match}"
+
+    adapter.close()
+
+
+def test_bulk_null_credential_binding_phase381_sqlite():
+    """Phase 38.1 R9 (Blocker B2): bulk_null_credential_binding nulls columns + returns affected hostnames."""
+    from datetime import datetime
+
+    adapter = SQLiteAdapter(":memory:")
+    adapter.init_schema()
+
+    id1 = adapter.store_device(
+        {
+            "hostname": "alpha",
+            "connection_ip": "10.0.0.1",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+    id2 = adapter.store_device(
+        {
+            "hostname": "beta",
+            "connection_ip": "10.0.0.2",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+
+    # Set up bindings
+    adapter.set_device_credential_binding(id1, "ssh", "uuid-to-remove")
+    adapter.set_device_credential_binding(id2, "ssh", "uuid-to-remove")
+
+    # Bulk null
+    affected = adapter.bulk_null_credential_binding(["uuid-to-remove"], "ssh")
+    assert set(affected) == {"alpha", "beta"}, f"Expected alpha and beta, got {affected}"
+
+    # Verify nulled
+    assert adapter.connection is not None
+    rows = adapter.connection.execute("SELECT hostname, ssh_credential_id FROM devices ORDER BY hostname").fetchall()
+    for row in rows:
+        assert row[1] is None, f"ssh_credential_id for {row[0]} must be NULL after bulk_null"
+
+    # Empty input → no-op, returns []
+    result_empty = adapter.bulk_null_credential_binding([], "ssh")
+    assert result_empty == [], f"Expected [] for empty input, got {result_empty}"
+
+    # Closed-set enforcement
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError, match="credential_type must be"):
+        adapter.bulk_null_credential_binding(["x"], "invalid")
+
+    adapter.close()

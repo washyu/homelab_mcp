@@ -219,3 +219,52 @@ def test_connect_to_device_mentions_credentials_cli() -> None:
     assert "mcp_admin" not in combined or "<username>" in combined, (
         "D-18/D-22: prompt must not mandate mcp_admin; should use <username> placeholder"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 38 D-06 / D-06b — configure_host_fingerprint prompt tests
+# ---------------------------------------------------------------------------
+
+
+def test_configure_host_fingerprint_prompt_registered_phase38() -> None:
+    """Phase 38 D-06: configure_host_fingerprint prompt is registered in HOMELAB_PROMPTS.
+
+    Asserts the prompt entry exists and declares the required hostname argument.
+    """
+    from homelab_mcp.prompt_registry import HOMELAB_PROMPTS
+
+    assert "configure_host_fingerprint" in HOMELAB_PROMPTS
+    prompt = HOMELAB_PROMPTS["configure_host_fingerprint"]
+    assert any(arg.name == "hostname" and arg.required for arg in prompt.arguments)
+
+
+def test_configure_host_fingerprint_prompt_body_phase38() -> None:
+    """Phase 38 D-06 / D-06b: prompt body interpolates hostname and references key tools + role hints.
+
+    The prompt must:
+    - Interpolate the supplied hostname into the body text.
+    - Name the three supporting tools (get_network_sitemap, ssh_execute_command,
+      update_device_fingerprint) so the agent knows the workflow.
+    - Mention 'capabilities' so the agent knows where to land per-host signals.
+    - Cover at least 3 of the recommended role-hint inference rules
+      (Proxmox VE → gpu_passthrough; NVIDIA → cuda; AMD VGA → vulkan; TrueNAS/ZFS → zfs).
+    """
+    from mcp.types import GetPromptResult
+
+    from homelab_mcp.prompt_registry import get_prompt_result
+
+    result = get_prompt_result("configure_host_fingerprint", {"hostname": "test.local"})
+    assert isinstance(result, GetPromptResult)
+    assert len(result.messages) >= 1
+    combined = " ".join(msg.content.text for msg in result.messages if hasattr(msg.content, "text"))
+    # Hostname interpolated
+    assert "test.local" in combined
+    # Tool references the agent must know
+    assert "get_network_sitemap" in combined
+    assert "ssh_execute_command" in combined
+    assert "update_device_fingerprint" in combined
+    assert "capabilities" in combined
+    # Role-hint inference rules (D-06b) — must mention at least 3 of these distinct hints
+    role_hints = {"Proxmox", "NVIDIA", "AMD", "TrueNAS", "ZFS"}
+    matched = {hint for hint in role_hints if hint in combined}
+    assert len(matched) >= 3, f"Prompt should mention at least 3 role hints; matched: {matched}"

@@ -7,6 +7,7 @@ Tests the Proxmox VE API client and all Proxmox management tools.
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from aiohttp import ClientError
 from aioresponses import aioresponses
@@ -204,17 +205,20 @@ class TestGetProxmoxClient:
     @patch.dict(
         os.environ,
         {
-            "PROXMOX_HOST": "192.168.1.100",
             "PROXMOX_USER": "root@pam",
             "PROXMOX_PASSWORD": "secret",
         },
     )
     async def test_client_from_env_vars(self):
-        """Test creating client from environment variables (explicit auth via env bypasses resolver)."""
-        # WHEN: Creating client without parameters (env vars supply host+auth → resolver bypassed)
-        client = await get_proxmox_client()
+        """Test creating client with auth from env vars (explicit host required after POL-03 D-04).
 
-        # THEN: Should use environment variables
+        PROXMOX_USER/PASSWORD/API_TOKEN env vars remain supported per CONTEXT D-04
+        (resolver-bypass fallback for SC-5 back-compat); only PROXMOX_HOST was removed.
+        """
+        # WHEN: Creating client with explicit host; env supplies auth → resolver bypassed
+        client = await get_proxmox_client(host="192.168.1.100")
+
+        # THEN: Should use environment variables for auth
         assert client.host == "192.168.1.100"
         assert client.username == "root@pam"
         assert client.password == "secret"
@@ -224,36 +228,67 @@ class TestGetProxmoxClient:
         "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
-    @patch.dict(os.environ, {"PROXMOX_HOST": "192.168.1.100"}, clear=True)
+    @patch.dict(os.environ, {}, clear=True)
     async def test_client_missing_credentials(self, mock_resolver):
-        """Test client creation with host but no auth — resolver is called, raises on miss."""
+        """Test client creation with explicit host but no auth — resolver is called, raises on miss."""
         from src.homelab_mcp.ssh_tools import CredentialNotFoundError
 
         mock_resolver.side_effect = CredentialNotFoundError("No credentials for 192.168.1.100")
         # WHEN/THEN: Should raise CredentialNotFoundError (resolver finds nothing)
+        # POL-03 D-04: host must be passed explicitly now (env-var fallback removed)
         with pytest.raises(CredentialNotFoundError):
-            await get_proxmox_client()
+            await get_proxmox_client(host="192.168.1.100")
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {}, clear=True)
     async def test_client_missing_host(self):
-        """Test client creation without host."""
-        # WHEN/THEN: Should raise ValueError if no host (resolver not called — no host to resolve)
-        with pytest.raises(ValueError, match="Proxmox host must be provided or set in PROXMOX_HOST"):
+        """Test client creation without host.
+
+        POL-03 D-04: ValueError text now references the credentials-add CLI command
+        and contains zero references to the deprecated PROXMOX_HOST env var.
+        """
+        # WHEN/THEN: Should raise ValueError if no host
+        with pytest.raises(ValueError) as exc_info:
             await get_proxmox_client()
+
+        msg = str(exc_info.value)
+        # New canonical wording — credentials-add CLI pointer
+        assert "Proxmox host required" in msg
+        assert "homelab-mcp credentials add --type proxmox" in msg
+        assert "--scope cluster:" in msg
+        # POL-03 D-04 invariant: zero references to PROXMOX_HOST
+        assert "PROXMOX_HOST" not in msg
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"PROXMOX_HOST": "should-be-ignored.example"}, clear=True)
+    async def test_client_no_longer_reads_proxmox_host_env_var(self):
+        """POL-03 D-04: PROXMOX_HOST env var is no longer consulted.
+
+        Setting PROXMOX_HOST in the environment with no explicit host argument
+        must NOT auto-populate host. The function must fail with the new
+        credentials-add ValueError, proving the env-var fallback is gone.
+        """
+        with pytest.raises(ValueError) as exc_info:
+            await get_proxmox_client()
+
+        msg = str(exc_info.value)
+        assert "Proxmox host required" in msg
+        assert "PROXMOX_HOST" not in msg
 
     @pytest.mark.asyncio
     @patch.dict(
         os.environ,
         {
-            "PROXMOX_HOST": "proxmox.local",
             "PROXMOX_API_TOKEN": "root@pam!token=secret",
         },
     )
     async def test_client_with_api_token_from_env(self):
-        """Test creating client with API token from environment (explicit token bypasses resolver)."""
-        # WHEN: Creating client
-        client = await get_proxmox_client()
+        """Test creating client with API token from environment (explicit token bypasses resolver).
+
+        POL-03 D-04: host must now be passed explicitly; API token env var still honored.
+        """
+        # WHEN: Creating client with explicit host; env supplies token → resolver bypassed
+        client = await get_proxmox_client(host="proxmox.local")
 
         # THEN: Should use API token
         assert client.api_token == "root@pam!token=secret"
@@ -262,18 +297,20 @@ class TestGetProxmoxClient:
 
     @pytest.mark.asyncio
     async def test_client_with_explicit_params_override_env(self):
-        """Test that explicit parameters override environment variables."""
-        # GIVEN: Environment has one host
-        with patch.dict(os.environ, {"PROXMOX_HOST": "env-host.local"}):
-            # WHEN: Creating client with explicit host+auth (bypasses resolver)
-            client = await get_proxmox_client(
-                host="explicit-host.local",
-                username="admin@pam",
-                password="test",
-            )
+        """Test that explicit parameters control client construction.
 
-            # THEN: Should use explicit parameters
-            assert client.host == "explicit-host.local"
+        POL-03 D-04: PROXMOX_HOST env var no longer affects host; the explicit
+        host argument is the only source of truth.
+        """
+        # WHEN: Creating client with explicit host+auth (bypasses resolver)
+        client = await get_proxmox_client(
+            host="explicit-host.local",
+            username="admin@pam",
+            password="test",
+        )
+
+        # THEN: Should use explicit parameters
+        assert client.host == "explicit-host.local"
 
 
 class TestListProxmoxResources:
@@ -497,6 +534,160 @@ class TestGetProxmoxVMStatus:
         # THEN: Should default to qemu
         assert result["type"] == "qemu"
         mock_client.get.assert_called_once_with("/nodes/pve/qemu/100/status/current")
+
+    # ── POL-01: structured vm_not_found classification (Phase 40 D-01/D-02) ──
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_returns_structured_vm_not_found_on_500(self, mock_get_client):
+        """POL-01 D-01/D-02: HTTP 500 with 'does not exist' body → vm_not_found dict."""
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        # GIVEN: Mock client that raises ClientResponseError(500, "VM 999 does not exist")
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        request_info = MagicMock()
+        request_info.url = "https://leak-this-url.example.invalid/api2/json/nodes/pve/qemu/999/status/current"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=500,
+            message="VM 999 does not exist",
+        )
+        mock_client.get.side_effect = exc
+
+        # WHEN: Getting status of non-existent VM via the public function
+        result = await get_proxmox_vm_status(node="pve", vmid=999, host="proxmox.example", vm_type="qemu")
+
+        # THEN: Should return the structured vm_not_found dict (D-02)
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "pve"
+        assert result["vmid"] == 999
+        assert result["vm_type"] == "qemu"
+        assert result["host"] == "proxmox.example"
+        # AND: message must NOT contain the URL (URL-leak guard / Bug I)
+        assert "leak-this-url" not in result["message"]
+        assert "/api2/json" not in result["message"]
+        # AND: message echoes inputs back per D-02 template
+        assert "999" in result["message"]
+        assert "pve" in result["message"]
+
+        # AND: helper called directly should also yield the same structured dict
+        classified = _classify_vm_status_error(exc, node="pve", vmid=999, vm_type="qemu", host="proxmox.example")
+        assert classified is not None
+        assert classified["error_kind"] == "vm_not_found"
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_404_missing_node(self):
+        """POL-01 D-01: HTTP 404 (defensive: missing-node case) also classifies as vm_not_found."""
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        request_info = MagicMock()
+        request_info.url = "https://secret/api2/json/nodes/missing-node/qemu/100/status/current"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=404,
+            message="Not Found - 100",  # contains str(vmid)
+        )
+
+        result = _classify_vm_status_error(exc, node="missing-node", vmid=100, vm_type="lxc", host="proxmox.example")
+
+        assert result is not None
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "missing-node"
+        assert result["vmid"] == 100
+        assert result["vm_type"] == "lxc"
+        # URL never echoed
+        assert "secret" not in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_returns_none_on_non_response_error(self):
+        """POL-01 D-01: Non-ClientResponseError exceptions → None (legacy fallback)."""
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        # ValueError is not a ClientResponseError → must return None
+        result = _classify_vm_status_error(ValueError("oops"), node="pve", vmid=100, vm_type="qemu", host="h")
+        assert result is None
+
+        # ClientError without status field also → None
+        from aiohttp import ClientError as PlainClientError
+
+        result2 = _classify_vm_status_error(
+            PlainClientError("VM 100 does not exist"),
+            node="pve",
+            vmid=100,
+            vm_type="qemu",
+            host="h",
+        )
+        assert result2 is None
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_returns_none_on_unrelated_status(self):
+        """POL-01 D-01: ClientResponseError with status not in (500, 404) → None."""
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        request_info = MagicMock()
+        request_info.url = "https://secret/api"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=502,
+            message="Bad Gateway",
+        )
+        result = _classify_vm_status_error(exc, node="pve", vmid=100, vm_type="qemu", host="h")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_classify_vm_status_error_returns_none_on_unmatched_wording(self):
+        """POL-01 D-01: 500 with neither 'does not exist' nor vmid substring → None.
+
+        Falls through to legacy fallback (graceful degradation if Proxmox changes wording).
+        """
+        import aiohttp
+
+        from src.homelab_mcp.proxmox_api import _classify_vm_status_error
+
+        request_info = MagicMock()
+        request_info.url = "https://secret/api"
+        request_info.real_url = request_info.url
+        exc = aiohttp.ClientResponseError(
+            request_info=request_info,
+            history=(),
+            status=500,
+            message="Internal Server Error",
+        )
+        # vmid=42, body has neither "does not exist" nor "42"
+        result = _classify_vm_status_error(exc, node="pve", vmid=42, vm_type="qemu", host="h")
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_legacy_fallback_when_helper_returns_none(self, mock_get_client):
+        """POL-01: Legacy generic-error path retained for non-matching exceptions."""
+        # GIVEN: Mock client that raises a plain ClientError (helper returns None)
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = ClientError("Connection timeout")
+
+        # WHEN: Getting VM status
+        result = await get_proxmox_vm_status(node="pve", vmid=100)
+
+        # THEN: Should fall back to legacy {status:"error", message:"Failed to get VM status: ..."}
+        assert result["status"] == "error"
+        assert "Failed to get VM status" in result["message"]
+        # AND: structured fields should be absent on the legacy path
+        assert "error_kind" not in result
 
 
 class TestGetProxmoxVMConfig:
@@ -1373,19 +1564,25 @@ class TestGetProxmoxClientAsync:
 
         assert isinstance(client, ProxmoxAPIClient)
         assert client.api_token == "root@pam!tok=uuid"
-        mock_resolver.assert_awaited_once_with("pve1", session=None)
+        # Phase 38.1 D-14: get_proxmox_client now threads credential_id (default None)
+        mock_resolver.assert_awaited_once_with("pve1", session=None, credential_id=None)
 
     @pytest.mark.asyncio
     @patch(
         "src.homelab_mcp.proxmox_api.resolve_proxmox_credentials",
         new_callable=AsyncMock,
     )
-    async def test_get_proxmox_client_no_host_raises_proxmox_host_valueerror(
+    async def test_get_proxmox_client_no_host_raises_credentials_add_valueerror(
         self,
         mock_resolver: AsyncMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """D-12: when no host can be determined, ValueError names PROXMOX_HOST env var."""
+        """POL-03 D-04: when no host is provided, ValueError points at credentials-add CLI.
+
+        Supersedes the prior D-12 test which asserted PROXMOX_HOST wording.
+        Phase 40 hard-removed the PROXMOX_HOST env var fallback; the new
+        canonical wording references the credentials-add CLI.
+        """
         monkeypatch.delenv("PROXMOX_HOST", raising=False)
         monkeypatch.delenv("PROXMOX_API_TOKEN", raising=False)
         monkeypatch.delenv("PROXMOX_USER", raising=False)
@@ -1394,7 +1591,12 @@ class TestGetProxmoxClientAsync:
         with pytest.raises(ValueError) as exc_info:
             await get_proxmox_client()
 
-        assert "PROXMOX_HOST" in str(exc_info.value)
+        msg = str(exc_info.value)
+        assert "Proxmox host required" in msg
+        assert "homelab-mcp credentials add --type proxmox" in msg
+        assert "--scope cluster:" in msg
+        # POL-03 D-04 invariant: zero references to PROXMOX_HOST
+        assert "PROXMOX_HOST" not in msg
         mock_resolver.assert_not_called()
 
 
@@ -1609,28 +1811,33 @@ class TestProxmoxSSLVerification:
 
     @pytest.mark.asyncio
     async def test_ssl_verify_false_override_via_env(self):
-        """Test get_proxmox_client with PROXMOX_VERIFY_SSL=false sets verify_ssl=False."""
+        """Test get_proxmox_client with PROXMOX_VERIFY_SSL=false sets verify_ssl=False.
+
+        POL-03 D-04: host now passed explicitly (env-var fallback removed); verify-SSL
+        env var still honored.
+        """
         with patch.dict(
             os.environ,
             {
-                "PROXMOX_HOST": "pve.local",
                 "PROXMOX_VERIFY_SSL": "false",
                 "PROXMOX_API_TOKEN": "root@pam!token=secret",
             },
         ):
             # explicit api_token in env → resolver bypassed
-            client = await get_proxmox_client()
+            client = await get_proxmox_client(host="pve.local")
 
             # THEN: verify_ssl should be False
             assert client.verify_ssl is False
 
     @pytest.mark.asyncio
     async def test_get_proxmox_client_default_verify_ssl_true(self):
-        """Test get_proxmox_client defaults to verify_ssl=True."""
+        """Test get_proxmox_client defaults to verify_ssl=True.
+
+        POL-03 D-04: host now passed explicitly (env-var fallback removed).
+        """
         with patch.dict(
             os.environ,
             {
-                "PROXMOX_HOST": "pve.local",
                 "PROXMOX_API_TOKEN": "root@pam!token=secret",
             },
             clear=False,
@@ -1639,11 +1846,10 @@ class TestProxmoxSSLVerification:
             env = os.environ.copy()
             env.pop("PROXMOX_VERIFY_SSL", None)
             with patch.dict(os.environ, env, clear=True):
-                # Also ensure our test vars are present
-                os.environ["PROXMOX_HOST"] = "pve.local"
+                # Also ensure auth env var is present
                 os.environ["PROXMOX_API_TOKEN"] = "root@pam!token=secret"
                 # explicit api_token in env → resolver bypassed
-                client = await get_proxmox_client()
+                client = await get_proxmox_client(host="pve.local")
 
                 # THEN: verify_ssl should default to True
                 assert client.verify_ssl is True
@@ -1776,12 +1982,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 100, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_vm", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_vm(
                 {
@@ -1817,12 +2021,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 100, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_vm", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_vm({"node": "pve", "vmid": 100, "name": "test-vm"})
 
@@ -1846,12 +2048,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 200, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_lxc", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_lxc(
                 {
@@ -1885,12 +2085,10 @@ class TestHandlerSessionThreading:
         mock_rm.proxmox_session = mock_session
         mock_rm.db_adapter = MagicMock()
         mock_fn = AsyncMock(return_value={"status": "success", "node": "pve", "vmid": 200, "message": "created"})
-        mock_baseline = AsyncMock()
 
         with (
             patch("src.homelab_mcp.server.get_resource_manager", return_value=mock_rm),
             patch.object(_ph_mod, "create_proxmox_lxc", mock_fn),
-            patch("src.homelab_mcp.drift_detection.update_baseline_after_mutation", mock_baseline),
         ):
             await handle_create_proxmox_lxc({"node": "pve", "vmid": 200, "hostname": "test-ct"})
 
@@ -1930,5 +2128,366 @@ class TestHandlerSessionThreading:
 # The test_get_proxmox_client_keyring_fallback test that verified the INJECT-03
 # "first registry entry" shortcut has been removed because D-12 intentionally
 # deletes that shortcut. The new behavior is: get_proxmox_client() with no host
-# raises ValueError naming PROXMOX_HOST (see test_client_missing_host above).
-# The resolver path is covered by TestGetProxmoxClientAsync.
+# raises ValueError pointing at the credentials-add CLI (see
+# test_client_missing_host above; POL-03 D-04 superseded the prior PROXMOX_HOST
+# wording). The resolver path is covered by TestGetProxmoxClientAsync.
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Wave 0 RED tests: resolver credential_id kwarg (R5, D-11, D-12, D-13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_credential_id_short_circuit_phase381(
+    mock_get_cred,
+    mock_list_creds,
+    mock_find_by_id,
+) -> None:
+    """D-13: resolve_proxmox_credentials(host='pve', credential_id=<uuid>) short-circuits to registry UUID."""
+    from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
+
+    test_uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    # Registry entry keyed by IP — different from host='pve'
+    mock_list_creds.return_value = []  # hostname-exact-match tier finds nothing
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",
+        "scope": "node",
+        "cluster_name": "",
+    }
+    mock_get_cred.return_value = "test-api-token"
+
+    # Phase 38.1 R5: credential_id kwarg must exist and short-circuit lookup
+    # This MUST FAIL until Plan 02 adds the credential_id parameter
+    result = await resolve_proxmox_credentials(host="pve", credential_id=test_uuid)
+    assert result is not None
+    assert isinstance(result, tuple)
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
+@patch("homelab_mcp.proxmox_api.list_credentials")
+async def test_resolve_proxmox_credentials_with_unknown_uuid_raises_binding_stale_phase381(
+    mock_list_creds,
+    mock_find_by_id,
+) -> None:
+    """D-11: resolve_proxmox_credentials with UUID not in registry raises CredentialNotFoundError (binding stale)."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    mock_list_creds.return_value = []  # empty registry
+    mock_find_by_id.return_value = None  # UUID not in registry
+
+    # Phase 38.1 D-11: unknown UUID → CredentialNotFoundError with 'binding stale' message
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(
+            host="pve",
+            credential_id="00000000-0000-4000-8000-000000000000",
+        )
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, f"Phase 38.1 D-11: expected 'binding stale' in error, got: {error_msg!r}"
+    assert "credentials add --type proxmox pve" in error_msg, (
+        f"Phase 38.1 D-11: error must include recovery command, got: {error_msg!r}"
+    )
+    assert getattr(exc_info.value, "reason_hint", None) == "binding_stale", (
+        f"Phase 38.1 D-08: expected reason_hint='binding_stale', got: {getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_proxmox_credentials_with_uuid_keyring_miss_raises_desync_phase381(
+    mock_get_cred,
+    mock_list_creds,
+    mock_find_by_id,
+) -> None:
+    """D-12: UUID found in registry but keyring returns None → CredentialNotFoundError (keyring_desync)."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    test_uuid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    mock_list_creds.return_value = []  # tier-1 hostname match empty
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",
+        "scope": "node",
+        "cluster_name": "",
+    }
+    mock_get_cred.return_value = None  # keyring desync
+
+    # Phase 38.1 D-12: UUID hits registry entry, but keyring returns None
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(host="pve", credential_id=test_uuid)
+
+    error_msg = str(exc_info.value)
+    # Must not fall back silently — must surface desync
+    assert exc_info.type is CredentialNotFoundError
+    assert "keyring desync" in error_msg, f"Phase 38.1 D-12: expected 'keyring desync' in error, got: {error_msg!r}"
+    assert getattr(exc_info.value, "reason_hint", None) == "keyring_desync", (
+        f"Phase 38.1 D-08: expected reason_hint='keyring_desync', got: {getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_proxmox_credentials_with_credential_id_ignores_host_arg_phase381(
+    mock_get_cred,
+    mock_list_creds,
+    mock_find_by_id,
+) -> None:
+    """D-13: UUID wins over host — hostname mismatch is expected, not an error."""
+    from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
+
+    # Registry entry keyed by IP; host passed as short name — mismatch is the point
+    test_uuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    mock_list_creds.return_value = []
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",  # registry hostname
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",
+        "scope": "node",
+        "cluster_name": "",
+    }
+    mock_get_cred.return_value = "valid-token"
+
+    # Phase 38.1 D-13: UUID short-circuit means host mismatch is irrelevant
+    # This MUST FAIL until Plan 02 adds credential_id support
+    result = await resolve_proxmox_credentials(
+        host="pve",  # sitemap short hostname
+        credential_id=test_uuid,  # UUID for '192.168.10.20' entry
+    )
+    assert result is not None  # must not raise
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.list_credentials")
+@patch("homelab_mcp.proxmox_api.get_credential")
+async def test_resolve_proxmox_credentials_legacy_positional_backward_compat_phase381(
+    mock_get_cred,
+    mock_list_creds,
+) -> None:
+    """Existing callers without credential_id still work (backward compat — D-14)."""
+    from homelab_mcp.proxmox_api import resolve_proxmox_credentials  # noqa: PLC0415
+
+    mock_list_creds.return_value = [
+        {
+            "hostname": "pve-legacy",
+            "username": "root@pam!tok",
+            "credential_type": "proxmox",
+            "scope": "node",
+            "cluster_name": "",
+        }
+    ]
+    mock_get_cred.return_value = "legacy-token"
+
+    # Phase 38.1 D-14: legacy call without credential_id must still work
+    result = await resolve_proxmox_credentials("pve-legacy")
+    assert result is not None
+    assert isinstance(result, tuple)
+
+
+@pytest.mark.asyncio
+@patch("homelab_mcp.proxmox_api.find_credential_by_id")
+@patch("homelab_mcp.proxmox_api.list_credentials")
+async def test_resolve_proxmox_credentials_with_uuid_of_wrong_type_raises_type_mismatch_phase381(
+    mock_list_creds,
+    mock_find_by_id,
+) -> None:
+    """T-38.1-05-02: caller passes SSH UUID to proxmox resolver → 'binding type mismatch'."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    test_uuid = "11111111-1111-4111-8111-111111111111"
+    mock_list_creds.return_value = []
+    # Registry entry exists but is an SSH credential, not proxmox
+    mock_find_by_id.return_value = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root",
+        "credential_type": "ssh",  # WRONG TYPE
+        "scope": "node",
+        "cluster_name": "",
+    }
+
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(host="pve", credential_id=test_uuid)
+
+    error_msg = str(exc_info.value)
+    assert "binding type mismatch" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02: expected 'binding type mismatch', got: {error_msg!r}"
+    )
+    assert "expected 'proxmox'" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02: expected target type in message, got: {error_msg!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_proxmox_credentials_with_malformed_credential_id_phase381() -> None:
+    """T-38.1-05-01: malformed (non-UUID) credential_id → CredentialNotFoundError 'binding stale: malformed'."""
+    from homelab_mcp.proxmox_api import CredentialNotFoundError, resolve_proxmox_credentials  # noqa: PLC0415
+
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        await resolve_proxmox_credentials(host="pve", credential_id="not-a-uuid")
+
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, (
+        f"Phase 38.1 T-38.1-05-01: expected 'binding stale' for malformed UUID, got: {error_msg!r}"
+    )
+    assert "malformed" in error_msg, f"Phase 38.1 T-38.1-05-01: expected 'malformed' marker, got: {error_msg!r}"
+
+
+class TestPhase40VmNotFoundShape:
+    """POL-01 D-01/D-02: vm_not_found classifier returns structured error.
+
+    Phase 40 — closes Bug I (HTTP 500 leak with internal API URL on
+    nonexistent VMID). Asserts the new response shape from
+    _classify_vm_status_error and the URL-leak guard.
+    """
+
+    @staticmethod
+    def _make_response_error(*, status: int, message: str) -> aiohttp.ClientResponseError:
+        """Build a ClientResponseError for fixture injection.
+
+        ``request_info`` is a MagicMock — the helper under test must NOT
+        read from it (URL-leak guard). The fixture deliberately stuffs
+        a sentinel URL into the mock so any test asserting URL absence
+        in the rendered message has a non-empty target to fail against.
+        """
+        fake_request_info = MagicMock()
+        fake_request_info.url = "https://internal-proxmox.local/api2/json/nodes/pve/qemu/9999/status/current"
+        return aiohttp.ClientResponseError(
+            request_info=fake_request_info,
+            history=(),
+            status=status,
+            message=message,
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_returns_vm_not_found_shape(self, mock_get_client):
+        """POL-01 D-02: 500 + 'does not exist' body → vm_not_found shape with all inputs echoed."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=500,
+            message="VM 9999 does not exist",
+        )
+
+        result = await get_proxmox_vm_status(node="pve1", vmid=9999, vm_type="qemu", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "pve1"
+        assert result["vmid"] == 9999
+        assert result["vm_type"] == "qemu"
+        assert result["host"] == "homelab-pve1"
+        assert "list_proxmox_resources" in result["message"]
+        # URL-leak guard: message constructed from inputs, not from exception's request_info.url
+        assert "/api2/" not in result["message"]
+        assert "internal-proxmox.local" not in result["message"]
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_lxc_variant_classified_via_vmid_substring(self, mock_get_client):
+        """POL-01 D-01: LXC error wording differs but vmid-as-substring match still classifies."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=500,
+            message="Configuration file '/etc/pve/lxc/8888.conf' missing",
+        )
+
+        result = await get_proxmox_vm_status(node="pve1", vmid=8888, vm_type="lxc", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["vm_type"] == "lxc"
+        assert result["vmid"] == 8888
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_404_classified_as_vm_not_found(self, mock_get_client):
+        """POL-01 D-01 defensive: status=404 also classifies as vm_not_found (missing-node case)."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=404,
+            message="Node 'typo-pve' does not exist",
+        )
+
+        result = await get_proxmox_vm_status(node="typo-pve", vmid=100, vm_type="qemu", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        assert result["error_kind"] == "vm_not_found"
+        assert result["node"] == "typo-pve"
+
+    @pytest.mark.asyncio
+    @patch("src.homelab_mcp.proxmox_api.get_proxmox_client", new_callable=AsyncMock)
+    async def test_get_vm_status_unmatched_error_falls_through_to_legacy_shape(self, mock_get_client):
+        """POL-01 D-01 graceful degradation: unmatched body → legacy `{status, message}` fallback."""
+        mock_client = AsyncMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get.side_effect = self._make_response_error(
+            status=500,
+            message="Internal server error",
+        )
+
+        result = await get_proxmox_vm_status(node="pve1", vmid=100, vm_type="qemu", host="homelab-pve1")
+
+        assert result["status"] == "error"
+        # Critically: the legacy shape lacks `error_kind`
+        assert "error_kind" not in result
+        # And keeps the legacy "Failed to get VM status: ..." prefix
+        assert "Failed to get VM status" in result["message"]
+
+
+class TestPhase40CreateProxmoxVmSchema:
+    """POL-02 D-03: create_proxmox_vm schema declares host as required."""
+
+    def test_create_proxmox_vm_schema_requires_host(self):
+        """POL-02 D-03: 'host' is in the create_proxmox_vm required list."""
+        from src.homelab_mcp.tool_schemas.proxmox_tools_schema import PROXMOX_TOOLS
+
+        schema = PROXMOX_TOOLS["create_proxmox_vm"]["inputSchema"]
+        assert "host" in schema["required"], (
+            f"POL-02 D-03 regression: 'host' missing from create_proxmox_vm required list. Got: {schema['required']!r}"
+        )
+        assert schema["properties"]["host"]["type"] == "string"
+        host_desc = schema["properties"]["host"]["description"]
+        assert "homelab-mcp credentials add --type proxmox" in host_desc, (
+            f"POL-02 D-03 regression: host description lost credentials-add CLI pointer. Got: {host_desc!r}"
+        )
+        assert "PROXMOX_HOST" not in host_desc
+
+
+class TestPhase40GetProxmoxClientNoHost:
+    """POL-03 D-04: get_proxmox_client(host=None) → actionable ValueError, no PROXMOX_HOST."""
+
+    @pytest.mark.asyncio
+    async def test_get_proxmox_client_no_host_raises_actionable_error(self):
+        """POL-03 D-04: missing host → ValueError with credentials-add CLI hint, no PROXMOX_HOST."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError) as exc_info:
+                await get_proxmox_client(host=None)
+
+        msg = str(exc_info.value)
+        assert "homelab-mcp credentials add --type proxmox" in msg, (
+            f"POL-03 D-04 regression: ValueError text lost credentials-add CLI pointer. Got: {msg!r}"
+        )
+        assert "--scope cluster:" in msg, (
+            f"POL-03 D-04 regression: ValueError text lost cluster-scope hint. Got: {msg!r}"
+        )
+        assert "PROXMOX_HOST" not in msg, (
+            f"POL-03 D-04 regression: ValueError text mentions PROXMOX_HOST (deprecated). Got: {msg!r}"
+        )
+        assert "must be provided or set" not in msg

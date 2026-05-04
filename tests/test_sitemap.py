@@ -52,6 +52,13 @@ def sample_ssh_discovery_success():
                 "network": [{"name": "eth0", "state": "UP", "addresses": ["192.168.1.100"]}],
                 "uptime": "up 5 days, 2 hours, 30 minutes",
                 "os": "Ubuntu 22.04.3 LTS",
+                "fingerprint": {
+                    "kernel_name": "Linux",
+                    "kernel_version": "6.5.13-1-pve",
+                    "os_name": "Proxmox VE 8.2.4",
+                    "os_version": "8.2.4",
+                    "package_fingerprint": "sha256:abc123def456",
+                },
             },
         }
     )
@@ -122,6 +129,17 @@ class TestNetworkSiteMap:
         assert len(network_data) == 1
         assert network_data[0]["name"] == "eth0"
         assert network_data[0]["addresses"] == ["192.168.1.100"]
+
+    def test_parse_discovery_output_fingerprint_phase38(self, sitemap, sample_ssh_discovery_success):
+        """Phase 38 D-04c: parse_discovery_output stores fingerprint as JSON string."""
+        device = sitemap.parse_discovery_output(sample_ssh_discovery_success)
+        assert device.fingerprint is not None, "fingerprint should be populated from data['fingerprint']"
+        fp = json.loads(device.fingerprint)
+        assert fp["kernel_name"] == "Linux"
+        assert fp["kernel_version"] == "6.5.13-1-pve"
+        assert fp["os_name"] == "Proxmox VE 8.2.4"
+        assert fp["os_version"] == "8.2.4"
+        assert fp["package_fingerprint"] == "sha256:abc123def456"
 
     def test_parse_discovery_output_error(self, sitemap, sample_ssh_discovery_error):
         """Test parsing failed SSH discovery output."""
@@ -287,7 +305,10 @@ class TestAsyncFunctions:
         result = await discover_and_store(sitemap, hostname="test-host", username="test-user", password="test-pass")
 
         # Verify SSH discovery was called
-        mock_ssh_discover.assert_called_once_with("test-host", "test-user", "test-pass", None, 22)
+        # Phase 41-09 WR-05: discover_and_store now passes dial_target= explicitly.
+        mock_ssh_discover.assert_called_once_with(
+            "test-host", "test-user", "test-pass", None, 22, dial_target="test-host"
+        )
 
         # Verify result
         result_data = json.loads(result)
@@ -373,16 +394,42 @@ class TestAsyncFunctions:
 
     @pytest.mark.asyncio
     async def test_discover_and_store_passes_none_username_when_omitted(self, monkeypatch, temp_db) -> None:
-        """D-06/D-07: omitting username passes None through to ssh_discover_system.
+        """D-06/D-07: omitting username is NOT silently replaced with 'mcp_admin'.
 
-        sitemap.discover_and_store lazy-imports ssh_discover_system from the
-        ssh_tools module, so we monkeypatch the attribute on that module.
+        Phase 41 architecture: discover_and_store resolves credentials via
+        resolve_ssh_for_sitemap_row (which calls resolve_ssh_credentials) BEFORE
+        calling ssh_discover_system. The D-06 contract (no mcp_admin fallback) is
+        enforced inside resolve_ssh_credentials. This test verifies the integration:
+        resolve_ssh_credentials is called with username=None (not "mcp_admin"),
+        and ssh_discover_system receives the resolved credentials from the helper.
+
+        Both resolve_ssh_credentials and ssh_discover_system are monkeypatched so
+        the test controls what flows through without a real keyring or SSH connection.
         """
+        from types import SimpleNamespace
+
         import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        resolved_username = "keyring-user"  # simulates what keyring resolution returns
+        fake_creds = SimpleNamespace(
+            hostname="h.example.com",
+            username=resolved_username,
+            port=22,
+            password="fake-password",
+            key_path=None,
+        )
+
+        resolver_called_with_username: list = []
+
+        def fake_resolve_credentials(
+            hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None
+        ):
+            resolver_called_with_username.append(username)
+            return fake_creds
 
         captured: dict = {}
 
-        async def fake_ssh_discover(hostname, username, password, key_path, port):
+        async def fake_ssh_discover(hostname, username, password, key_path, port, *, dial_target=None):
             captured["hostname"] = hostname
             captured["username"] = username
             captured["password"] = password
@@ -398,27 +445,57 @@ class TestAsyncFunctions:
             )
 
         monkeypatch.setattr(ssh_tools_mod, "ssh_discover_system", fake_ssh_discover)
+        monkeypatch.setattr(ssh_tools_mod, "resolve_ssh_credentials", fake_resolve_credentials)
 
         sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
         await discover_and_store(sitemap, hostname="h.example.com")
 
-        assert captured["username"] is None, f"D-06: expected username=None when omitted; got {captured['username']!r}"
-        assert captured["hostname"] == "h.example.com"
-        assert captured["password"] is None
-        assert captured["key_path"] is None
-        assert captured["port"] == 22
+        # D-06: resolve_ssh_credentials must be called with the original username=None
+        # (NOT "mcp_admin"). Enforcement of D-06 happens inside resolve_ssh_credentials.
+        assert None in resolver_called_with_username, (
+            f"D-06: resolve_ssh_credentials was not called with username=None; "
+            f"got calls with username values: {resolver_called_with_username!r}"
+        )
+        # Verify ssh_discover_system was called (credential resolution succeeded).
+        assert captured.get("hostname") == "h.example.com", (
+            f"D-06: ssh_discover_system was not called or received wrong hostname; captured={captured!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_bulk_discover_and_store_passes_none_username_when_omitted(self, monkeypatch, temp_db) -> None:
-        """D-07: bulk target with no 'username' key flows None down to
-        ssh_discover_system — no silent 'mcp_admin' fallback from
-        ``target.get("username", "mcp_admin")``.
+        """D-07: bulk target with no 'username' key does NOT silently use 'mcp_admin'.
+
+        Phase 41 architecture: discover_and_store resolves credentials via
+        resolve_ssh_credentials (through resolve_ssh_for_sitemap_row) with the
+        original username=None. This test verifies the D-07 contract is preserved:
+        resolve_ssh_credentials is called with username=None (not "mcp_admin").
+
+        Both resolve_ssh_credentials and ssh_discover_system are monkeypatched so
+        the test controls what flows through without a real keyring or SSH connection.
         """
+        from types import SimpleNamespace
+
         import src.homelab_mcp.ssh_tools as ssh_tools_mod
+
+        fake_creds = SimpleNamespace(
+            hostname="h.example.com",
+            username="keyring-user",
+            port=22,
+            password="fake-password",
+            key_path=None,
+        )
+
+        resolver_called_with_username: list = []
+
+        def fake_resolve_credentials(
+            hostname, username=None, password=None, key_path=None, port=22, *, credential_id=None
+        ):
+            resolver_called_with_username.append(username)
+            return fake_creds
 
         captured_calls: list[dict] = []
 
-        async def fake_ssh_discover(hostname, username, password, key_path, port):
+        async def fake_ssh_discover(hostname, username, password, key_path, port, *, dial_target=None):
             captured_calls.append(
                 {
                     "hostname": hostname,
@@ -438,16 +515,19 @@ class TestAsyncFunctions:
             )
 
         monkeypatch.setattr(ssh_tools_mod, "ssh_discover_system", fake_ssh_discover)
+        monkeypatch.setattr(ssh_tools_mod, "resolve_ssh_credentials", fake_resolve_credentials)
 
         sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
-        # Omit 'username' from target — bulk path must pass None, not 'mcp_admin'.
+        # Omit 'username' from target — bulk path must pass None to resolver, not 'mcp_admin'.
         await bulk_discover_and_store(sitemap, [{"hostname": "h.example.com"}])
 
-        assert len(captured_calls) == 1
-        assert captured_calls[0]["username"] is None, (
-            "D-07: bulk_discover_and_store must propagate target.get('username') "
-            f"as None when omitted; got {captured_calls[0]['username']!r}"
+        # D-07: resolve_ssh_credentials must be called with username=None (not "mcp_admin").
+        assert None in resolver_called_with_username, (
+            "D-07: bulk path must propagate username=None to resolve_ssh_credentials; "
+            f"got calls with username values: {resolver_called_with_username!r}"
         )
+        # Verify ssh_discover_system was called (the bulk path completes the discovery).
+        assert len(captured_calls) == 1, f"D-07: expected 1 ssh_discover_system call; got {len(captured_calls)}"
 
     @pytest.mark.asyncio
     async def test_discover_and_store_resolves_username_from_keyring(self, monkeypatch, temp_db) -> None:
@@ -870,3 +950,93 @@ def test_purge_failed_discoveries_handler_dry_run_default_false(tmp_path, monkey
     payload2 = json.loads(result2["content"][0]["text"])
     assert payload2["purged_count"] == 0
     assert payload2["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R7: eligibility field round-trip via NetworkSiteMap (Task 2 TDD)
+# ---------------------------------------------------------------------------
+
+
+def test_eligibility_field_phase381(temp_db):
+    """Phase 38.1 R7/D-10: NetworkSiteMap.get_sitemap rows must carry eligibility:{ssh, proxmox}."""
+    from datetime import datetime
+
+    from src.homelab_mcp.database import SQLiteAdapter
+
+    sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+    # Store a device directly via the adapter
+    adapter: SQLiteAdapter = sitemap.db_adapter  # type: ignore[assignment]
+    device_id = adapter.store_device(
+        {
+            "hostname": "test-node",
+            "connection_ip": "10.1.1.1",
+            "last_seen": datetime.now().isoformat(),
+            "status": "success",
+        }
+    )
+
+    # With no credential binding both flags should be False
+    devices = adapter.get_all_devices()
+    assert len(devices) == 1
+    device = devices[0]
+    assert "eligibility" in device, "get_all_devices must emit eligibility key"
+    assert device["eligibility"]["ssh"] is False
+    assert device["eligibility"]["proxmox"] is False
+
+    # After binding ssh the flag should flip
+    adapter.set_device_credential_binding(device_id, "ssh", "some-uuid")
+    devices_after = adapter.get_all_devices()
+    assert devices_after[0]["eligibility"]["ssh"] is True
+    assert devices_after[0]["eligibility"]["proxmox"] is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 R3 RED scaffold (Plan 01 Task 2): discover_and_store writes
+# the registry entry's credential_id onto the devices row's ssh_credential_id
+# column. Lands GREEN in Plan 08. Until then this test fails.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("src.homelab_mcp.ssh_tools.ssh_discover_system")
+async def test_discover_writes_credential_id_phase381(
+    mock_ssh_discover,
+    temp_db,
+    sample_ssh_discovery_success,
+    tmp_path,
+    monkeypatch,
+):
+    """R3: after discover_and_store, the devices row carries ssh_credential_id from the registry entry.
+
+    Plan 08 (Wave 4) wires this side-effect — until then this test fails because
+    discover_and_store never calls set_device_credential_binding with the resolver's UUID.
+    """
+    # Phase 41.1 SC-3 fix: dual-alias _REGISTRY_PATH monkeypatch. Without
+    # both, the import below resolves register_credential from
+    # src.homelab_mcp.credential_store whose _REGISTRY_PATH still points at
+    # the developer's real ~/.homelab_mcp/credential_registry.json — a
+    # silent leak. The session-autouse fixture in tests/conftest.py also
+    # covers this, but the per-test patch is kept for clarity and to match
+    # the tests/integration/test_credential_binding_round_trip.py:62-65
+    # canonical dual-alias pattern.
+    registry_path = tmp_path / "registry.json"
+    monkeypatch.setattr("homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
+    monkeypatch.setattr("src.homelab_mcp.credential_store._REGISTRY_PATH", registry_path)
+    from src.homelab_mcp.credential_store import register_credential
+
+    cred_id = register_credential("test-host", "test-user", credential_type="ssh")
+    assert isinstance(cred_id, str), "Plan 02 prerequisite: register_credential must return UUID"
+
+    mock_ssh_discover.return_value = sample_ssh_discovery_success
+    sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
+
+    await discover_and_store(sitemap, hostname="test-host", username="test-user", password="test-pass")
+
+    devices = sitemap.get_all_devices()
+    assert len(devices) == 1
+    row = devices[0]
+    assert row.get("ssh_credential_id") == cred_id, (
+        f"Phase 38.1 R3: expected ssh_credential_id={cred_id!r} on the discovered "
+        f"devices row, got {row.get('ssh_credential_id')!r}. Plan 08 must wire "
+        "set_device_credential_binding into discover_and_store's post-upsert side-effect."
+    )

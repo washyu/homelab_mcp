@@ -7,11 +7,12 @@ Supports both password and API token authentication.
 
 import logging
 import os
+import uuid
 from typing import Any, Literal
 
 import aiohttp
 
-from .credential_store import get_credential, list_credentials
+from .credential_store import find_credential_by_id, get_credential, list_credentials
 from .log_filter import sanitize_error
 from .ssh_tools import CredentialNotFoundError  # noqa: F401 — re-exported for consumers
 
@@ -19,6 +20,30 @@ logger = logging.getLogger(__name__)
 
 # D-05a: in-memory cache for successful host→cluster_name mappings. Process-lifetime only.
 _HOST_CLUSTER_CACHE: dict[str, str] = {}
+
+# WR-04 (Phase 38.1 review): in-memory cache for the (scope, cluster_name)
+# telemetry of the most recent successful resolution per (host, credential_id).
+# Drift's second resolver call after get_proxmox_client succeeds previously
+# re-executed Tier-0 / Tier-1 logic (registry load + keyring round-trip) on
+# every probe — on flaky keyring backends that succeeded the first call but
+# failed the second, drift would mis-route a perfectly reachable host into
+# not_eligible. Populating this cache from EVERY successful tier (not just
+# Tier-2 cluster-walk hits like _HOST_CLUSTER_CACHE) lets drift cheaply
+# recover the telemetry without re-invoking the resolver.
+_RESOLUTION_TELEMETRY_CACHE: dict[tuple[str, str | None], tuple[Literal["node", "cluster"], str | None]] = {}
+
+
+def get_resolution_telemetry(
+    host: str,
+    credential_id: str | None = None,
+) -> tuple[Literal["node", "cluster"], str | None] | None:
+    """Return the cached (scope, cluster_name) for a previously-resolved host.
+
+    Returns ``None`` when no cache entry exists. Used by drift_detection.scan_drift
+    to avoid a second ``resolve_proxmox_credentials`` call when telemetry was
+    already captured during the first resolution. WR-04 (Phase 38.1 review).
+    """
+    return _RESOLUTION_TELEMETRY_CACHE.get((host, credential_id))
 
 
 class ProxmoxAPIClient:
@@ -193,11 +218,19 @@ class ProxmoxAPIClient:
 
 async def resolve_proxmox_credentials(
     host: str,
+    *,
     session: aiohttp.ClientSession | None = None,
+    credential_id: str | None = None,
 ) -> tuple[str, Literal["node", "cluster"], str | None]:
-    """Resolve Proxmox API credentials for a host via per-node → cluster → error tiers.
+    """Resolve Proxmox API credentials for a host via Tier-0 → per-node → cluster → error.
 
-    Two-tier resolution (v1.6 Phase 34, D-09/D-10):
+    Resolution tiers (v1.7 Phase 38.1 D-11/D-12/D-13/D-14 + v1.6 Phase 34 D-09/D-10):
+      0. **UUID short-circuit** (when ``credential_id`` is supplied) — look up
+         the entry by UUID via :func:`credential_store.find_credential_by_id`.
+         UUID wins (D-13): ``host`` is used only for log/error context; hostname
+         mismatch between sitemap row and registry entry is the WHOLE POINT of
+         the binding. NEVER falls back to per-node hostname-exact-match (D-11)
+         — that would mask rotation cleanup bugs.
       1. **Per-node registry entry exists for host** → return its token+scope="node"+None.
          ``/cluster/status`` is NEVER called in this tier (D-10 bullet 1; Success Criterion 5).
       2. **Cluster walk** — iterate registry entries with scope=="cluster", probing
@@ -206,6 +239,14 @@ async def resolve_proxmox_credentials(
          Successful ``host → cluster_name`` mapping is cached in ``_HOST_CLUSTER_CACHE``
          for the lifetime of the process (D-05a).
 
+    Args:
+        host: Hostname (used for lookup in tier-1/tier-2; only log/error context
+            in tier-0).
+        session: Optional shared aiohttp.ClientSession (now keyword-only, D-14).
+        credential_id: Optional UUID from a sitemap row's
+            ``proxmox_credential_id`` column. When supplied, triggers the
+            tier-0 UUID short-circuit (keyword-only, D-14).
+
     Returns:
         (api_token, scope, cluster_name) — api_token is the full
         ``"user@realm!tokenid=SECRET"`` form ProxmoxAPIClient expects. scope is
@@ -213,10 +254,74 @@ async def resolve_proxmox_credentials(
         cluster-scope results, None for node-scope results.
 
     Raises:
-        CredentialNotFoundError: when neither tier matches. Message names every
-            cluster entry that was tried and includes the ``credentials add
-            --type proxmox`` CLI pointer (D-05, D-15).
+        CredentialNotFoundError: when no tier matches. Tier-0 raises with
+            ``.reason_hint`` set to ``"binding_stale"`` (UUID not in registry
+            or wrong credential_type — D-11) or ``"keyring_desync"`` (UUID
+            found but keyring miss — D-12). Tier-1/Tier-2 paths leave
+            ``.reason_hint`` unset (drift maps these to ``"unbound"``).
     """
+    # Phase 38.1 Tier-0: UUID short-circuit (D-11/D-12/D-13).
+    if credential_id is not None:
+        # T-38.1-05-01: validate UUID format defensively. Hand-edited registry
+        # entries with malformed credential_id would otherwise pass string
+        # equality in find_credential_by_id.
+        try:
+            uuid.UUID(credential_id)
+        except (ValueError, AttributeError) as exc:
+            raise CredentialNotFoundError(f"binding stale: malformed credential_id {credential_id!r}") from exc
+
+        entry = find_credential_by_id(credential_id)
+        if entry is None:
+            # D-11: never fall back to hostname-exact-match (would mask
+            # rotation cleanup bugs — the same silent-skip class we are closing).
+            exc_inst = CredentialNotFoundError(
+                f"binding stale: UUID {credential_id} not in registry. "
+                f"Run `homelab-mcp credentials add --type proxmox {host} <username>` "
+                f"to register, or `homelab-mcp credentials unlink {host} --type proxmox` "
+                f"to clear the stale binding."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+        if entry.get("credential_type") != "proxmox":
+            # T-38.1-05-02 defensive: caller passed an SSH UUID to the proxmox resolver.
+            exc_inst = CredentialNotFoundError(
+                f"binding type mismatch: credential_id {credential_id} is type "
+                f"{entry.get('credential_type')!r}, expected 'proxmox'."
+            )
+            exc_inst.reason_hint = "binding_stale"
+            raise exc_inst
+
+        scope_str = "cluster" if entry.get("scope") == "cluster" else "node"
+        entry_cluster_name = entry.get("cluster_name") or None
+        secret = get_credential(
+            entry["hostname"],
+            entry["username"],
+            credential_type="proxmox",
+            scope=scope_str,
+            cluster_name=entry.get("cluster_name", ""),
+        )
+        if secret is None:
+            # D-12: keyring desync (registry hit, keyring miss).
+            exc_inst = CredentialNotFoundError(
+                f"keyring desync for credential_id={credential_id}: "
+                f"registry entry exists but keyring returned None — "
+                f"re-run `homelab-mcp credentials add --type proxmox "
+                f"{entry['hostname']} {entry['username']}` to restore."
+            )
+            exc_inst.reason_hint = "keyring_desync"
+            raise exc_inst
+        logger.debug(
+            "proxmox resolve host=%s source=tier0_uuid credential_id=%s scope=%s",
+            host,
+            credential_id,
+            scope_str,
+        )
+        # Narrow scope_str back to Literal for the function return type.
+        scope_literal: Literal["node", "cluster"] = "cluster" if scope_str == "cluster" else "node"
+        # WR-04: populate telemetry cache for drift's second-call optimization.
+        _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = (scope_literal, entry_cluster_name)
+        return (f"{entry['username']}={secret}", scope_literal, entry_cluster_name)
+
     entries = list_credentials(credential_type="proxmox")
 
     # Tier 1: per-node short-circuit (D-10 bullet 1; SC-5 requires /cluster/status is never called here).
@@ -237,6 +342,8 @@ async def resolve_proxmox_credentials(
         else:
             api_token = f"{entry['username']}={secret}"
             logger.debug("proxmox resolve host=%s source=node", host)
+            # WR-04: populate telemetry cache for drift's second-call optimization.
+            _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = ("node", None)
             return (api_token, "node", None)
     logger.debug("proxmox resolve host=%s tier=node MISS", host)
 
@@ -260,6 +367,8 @@ async def resolve_proxmox_credentials(
                         host,
                         cached_cluster,
                     )
+                    # WR-04: populate telemetry cache.
+                    _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = ("cluster", cached_cluster)
                     return (api_token, "cluster", cached_cluster)
                 # Desync on cached entry → fall through to re-walk.
                 break
@@ -315,6 +424,8 @@ async def resolve_proxmox_credentials(
             _HOST_CLUSTER_CACHE[host] = cluster_name
             logger.debug("proxmox resolve host=%s tier=cluster MATCH cluster=%s", host, cluster_name)
             logger.debug("proxmox resolve host=%s source=cluster", host)
+            # WR-04: populate telemetry cache.
+            _RESOLUTION_TELEMETRY_CACHE[(host, credential_id)] = ("cluster", cluster_name)
             return (candidate_token, "cluster", cluster_name)
 
     # Terminal: no credential anywhere (D-05, D-15).
@@ -337,25 +448,37 @@ async def get_proxmox_client(
     password: str | None = None,
     api_token: str | None = None,
     session: aiohttp.ClientSession | None = None,
+    *,
+    credential_id: str | None = None,
+    dial_host: str | None = None,
 ) -> ProxmoxAPIClient:
     """
     Get a Proxmox API client with credentials from environment or parameters.
 
     Args:
-        host: Proxmox host (defaults to PROXMOX_HOST env var)
+        host: Proxmox host. Required — register via
+            ``homelab-mcp credentials add --type proxmox <host> <username>`` (per-node)
+            or ``... --scope cluster:<name> <token_id>`` (cluster scope).
         port: API port (default: 8006)
         verify_ssl: Verify SSL (defaults to PROXMOX_VERIFY_SSL env var)
         username: Username (defaults to PROXMOX_USER env var)
         password: Password (defaults to PROXMOX_PASSWORD env var)
         api_token: API token (defaults to PROXMOX_API_TOKEN env var)
         session: Optional shared aiohttp.ClientSession (from ResourceManager)
+        credential_id: Optional UUID from a sitemap row's
+            ``proxmox_credential_id`` column (Phase 38.1 D-14 keyword-only).
+            When supplied and ``host`` is set with no explicit auth,
+            triggers the tier-0 UUID short-circuit on the resolver.
+        dial_host: Optional TCP dial target (Phase 41-06 CR-01 fix). When
+            supplied, the underlying ProxmoxAPIClient connects to this
+            ``host:port`` instead of ``host:port``. The resolver and
+            telemetry/cluster caches continue to key on ``host``. Used by
+            drift_detection to dial sitemap ``row.connection_ip`` while
+            keeping hostname as the canonical cache key.
 
     Returns:
         Configured ProxmoxAPIClient instance
     """
-    # Get from environment if not provided
-    host = host or os.getenv("PROXMOX_HOST")
-
     if verify_ssl is None:
         verify_ssl = os.getenv("PROXMOX_VERIFY_SSL", "true").lower() != "false"
 
@@ -367,26 +490,57 @@ async def get_proxmox_client(
     # Explicit api_token / username+password (from kwargs or env vars picked up above)
     # bypasses the resolver entirely — preserves SC-5 back-compat for environments
     # that have always configured Proxmox via PROXMOX_* env vars.
-    if host and not api_token and not (username and password):
-        resolved_token, scope, cluster_name = await resolve_proxmox_credentials(host, session=session)
-        api_token = resolved_token
-        logger.debug(
-            "Proxmox credential resolved for host=%s via source=%s cluster=%s",
-            host,
-            scope,
-            cluster_name,
-        )
+    #
+    # CR-04 (Phase 38.1 review): when an env-var/explicit auth is in play AND
+    # the caller threaded a sitemap binding via credential_id, emit a warning
+    # so operators can detect that the binding is being silently overridden by
+    # env vars. Drift's not_eligible bucket relies on the resolver actually
+    # being invoked — under env-var dominance, every probe succeeds with
+    # env creds regardless of binding state, and stale bindings become
+    # invisible to drift. Logging the override surfaces this for observability.
+    if host:
+        has_explicit_auth = bool(api_token or (username and password))
+        if credential_id is not None and has_explicit_auth:
+            logger.warning(
+                "Sitemap binding %s ignored for host=%s — explicit/env-var "
+                "credentials take precedence. Drift reports against env-creds, "
+                "not the bound UUID.",
+                credential_id,
+                host,
+            )
+        if not has_explicit_auth:
+            resolved_token, scope, cluster_name = await resolve_proxmox_credentials(
+                host,
+                session=session,
+                credential_id=credential_id,
+            )
+            api_token = resolved_token
+            logger.debug(
+                "Proxmox credential resolved for host=%s via source=%s cluster=%s",
+                host,
+                scope,
+                cluster_name,
+            )
 
-    # Validation gates
+    # Validation gates (POL-03 D-04: env-var fallback removed; host is mandatory.
+    # Wording mirrors `resolve_proxmox_credentials` raise at lines 431-440 for
+    # cross-error consistency — same canonical phrasing for "no creds, here's the
+    # CLI to fix it".)
     if not host:
-        raise ValueError("Proxmox host must be provided or set in PROXMOX_HOST env var")
+        raise ValueError(
+            "Proxmox host required. "
+            "Run `homelab-mcp credentials add --type proxmox <host> <username>` "
+            "in your terminal to register a node, or "
+            "`homelab-mcp credentials add --type proxmox --scope cluster:<name> <token_id>` "
+            "for cluster tokens."
+        )
 
     # Must have either API token or username+password
     if not api_token and not (username and password):
         raise ValueError("Must provide either PROXMOX_API_TOKEN or PROXMOX_USER+PROXMOX_PASSWORD")
 
     return ProxmoxAPIClient(
-        host=host,
+        host=(dial_host or host),
         port=port,
         verify_ssl=verify_ssl,
         username=username,
@@ -470,6 +624,60 @@ async def get_proxmox_node_status(
         }
 
 
+def _classify_vm_status_error(
+    exc: Exception,
+    *,
+    node: str,
+    vmid: int,
+    vm_type: Literal["qemu", "lxc"],
+    host: str,
+) -> dict[str, Any] | None:
+    """POL-01 D-01/D-02: classify a Proxmox VM-status failure as `vm_not_found`.
+
+    Detects ``aiohttp.ClientResponseError`` with ``status`` 500 (Proxmox's
+    quirk for missing-VMID) or 404 (defensive: missing-node case) whose
+    rendered message contains either the literal substring ``"does not
+    exist"`` or the supplied ``vmid`` as a substring (covers both QEMU and
+    LXC error wording variants).
+
+    On match → returns the structured ``vm_not_found`` dict per D-02.
+    On no-match → returns ``None``; caller falls through to the existing
+    generic-error response shape (graceful degradation if Proxmox changes
+    its error format).
+
+    The returned ``message`` is constructed from the input parameters only.
+    The exception's URL fields are never read, which is what closes the
+    URL-leak in this code path (Bug I).
+    """
+    if not isinstance(exc, aiohttp.ClientResponseError):
+        return None
+    if exc.status not in (500, 404):
+        return None
+    rendered = f"{getattr(exc, 'message', '')} {exc!s}"
+    if "does not exist" not in rendered and str(vmid) not in rendered:
+        logger.warning(
+            "Proxmox VM-status error did not match vm_not_found heuristic "
+            "(status=%s, vmid=%s, message-snippet=%r); falling through to "
+            "generic error path. May indicate Proxmox error-format drift.",
+            exc.status,
+            vmid,
+            rendered[:120],
+        )
+        return None
+    return {
+        "status": "error",
+        "error_kind": "vm_not_found",
+        "node": node,
+        "vmid": vmid,
+        "vm_type": vm_type,
+        "host": host,
+        "message": (
+            f"VM {vmid} ({vm_type}) not found on node {node!r} at host {host!r}. "
+            f"Run list_proxmox_resources to see available VMs."
+        ),
+    }
+
+
 async def get_proxmox_vm_status(
     node: str,
     vmid: int,
@@ -505,6 +713,15 @@ async def get_proxmox_vm_status(
 
     except (aiohttp.ClientError, ValueError) as e:
         logger.error("Error getting VM status: %s", str(e))
+        classified = _classify_vm_status_error(
+            e,
+            node=node,
+            vmid=vmid,
+            vm_type=vm_type,  # type: ignore[arg-type]
+            host=host or "",
+        )
+        if classified is not None:
+            return classified
         return {
             "status": "error",
             "message": f"Failed to get VM status: {sanitize_error(e)}",

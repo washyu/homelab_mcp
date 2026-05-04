@@ -1,14 +1,15 @@
 """Database abstraction layer for network sitemap functionality."""
 
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import sqlite3
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,85 @@ class DatabaseAdapter(ABC):
         pass
 
     @abstractmethod
+    def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
+        """Phase 38 D-05/D-11: merge fingerprint dict into the device row.
+
+        Top-level keys overwrite; the ``capabilities`` sub-dict updates one level
+        deep (incoming capability keys replace stored entries entirely — see
+        :func:`merge_fingerprint` for full semantics). Returns the merged
+        fingerprint dict. Raises ValueError if hostname is not found in the
+        sitemap (with a hint pointing to discover_and_map).
+        """
+        pass
+
+    @abstractmethod
+    def set_device_credential_binding(
+        self,
+        device_id: int,
+        credential_type: str,
+        credential_id: str | None,
+    ) -> None:
+        """Phase 38.1 R3/R4/R8/R9: write the credential_id binding column.
+
+        Args:
+            device_id: ``devices.id`` primary key.
+            credential_type: ``"ssh"`` or ``"proxmox"`` — selects which
+                column (``ssh_credential_id`` or ``proxmox_credential_id``).
+                Closed set; ValueError on any other value (defense-in-depth
+                even though argparse and CLI handlers already constrain).
+            credential_id: UUID string from
+                ``credential_store.register_credential()``, or ``None`` to
+                null the binding (used by R9 rotation cleanup and ``unlink``).
+        """
+        pass
+
+    @abstractmethod
+    def find_devices_by_hostname_or_ip(self, hostname: str) -> list[dict[str, Any]]:
+        """Phase 38.1 R4/R8 (Blocker B2): find sitemap rows where
+        ``hostname == arg`` OR ``connection_ip == arg``.
+
+        Encapsulates SQLite ``?`` vs Postgres ``%s`` placeholder differences
+        so adapter-agnostic callers (server.py auto-bind, link, unlink) never
+        need to construct raw SQL.
+
+        Args:
+            hostname: identifier to match against either column. May be a
+                hostname (short or FQDN) or an IP address string.
+
+        Returns:
+            List of dicts each containing at minimum keys: ``id``,
+            ``hostname``, ``connection_ip``, ``ssh_credential_id``,
+            ``proxmox_credential_id``. Empty list when no row matches.
+        """
+        pass
+
+    @abstractmethod
+    def bulk_null_credential_binding(
+        self,
+        credential_ids: list[str],
+        credential_type: str,
+    ) -> list[str]:
+        """Phase 38.1 R9 (Blocker B2): null the ``<type>_credential_id`` column
+        on every devices row whose binding is in the given UUID list.
+
+        Used by the rotation-cleanup path in ``credentials remove``.
+        Encapsulates the placeholder differences (``IN (?,?,...)`` for SQLite
+        vs ``= ANY(%s)`` for Postgres) so the caller passes only plain Python
+        values.
+
+        Args:
+            credential_ids: UUID list to match against the binding column.
+                Empty list → no-op, returns ``[]``.
+            credential_type: ``"ssh"`` or ``"proxmox"`` — selects which
+                column to null. Closed set; ValueError on any other value.
+
+        Returns:
+            List of hostnames whose binding was nulled (for D-26 stderr
+            feedback). Empty list when no row matched.
+        """
+        pass
+
+    @abstractmethod
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from the database."""
         pass
@@ -64,34 +144,6 @@ class DatabaseAdapter(ABC):
         """Execute a query and return results."""
         pass
 
-    # Drift baseline CRUD methods
-    @abstractmethod
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
-        pass
-
-    @abstractmethod
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
-        pass
-
-    @abstractmethod
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Return all stored drift baselines ordered by node, vmid."""
-        pass
-
     @abstractmethod
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
         """Remove devices where discovery failed.
@@ -100,6 +152,25 @@ class DatabaseAdapter(ABC):
         Returns the list of removed rows (preview only when ``dry_run=True``).
         Also deletes the corresponding ``discovery_history`` rows to avoid
         orphan foreign keys.
+        """
+        pass
+
+    @abstractmethod
+    def delete_device_by_id(self, device_id: int, dry_run: bool = False) -> dict[str, Any] | None:
+        """Delete a single sitemap row by ``id``.
+
+        Returns the row dict that was (or would be) deleted; returns ``None``
+        when no row matches ``device_id``. Cascades into ``discovery_history``
+        for the same ``device_id`` in a single transaction (no FK CASCADE on
+        the schema — manual cascade per Phase 44 D-06c, mirroring
+        ``purge_failed_devices``).
+
+        ``dry_run=True`` returns the row payload without writing.
+
+        Phase 44 D-13. The ``handle_remove_device`` call path (network_handlers.py)
+        and this adapter method body are scoped by the
+        TestPhase44RemoveDeviceCallPath AST guard (D-10) — keep the body free
+        of SSH/Ansible/Terraform/keyring-mutation symbols.
         """
         pass
 
@@ -168,6 +239,9 @@ class SQLiteAdapter(DatabaseAdapter):
                 usb_devices TEXT,
                 pci_devices TEXT,
                 block_devices TEXT,
+                fingerprint TEXT,
+                ssh_credential_id TEXT,
+                proxmox_credential_id TEXT,
                 uptime TEXT,
                 os_info TEXT,
                 error_message TEXT,
@@ -200,25 +274,6 @@ class SQLiteAdapter(DatabaseAdapter):
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_history_device_id
             ON discovery_history (device_id)
-        """)
-
-        # Create drift_baselines table for VM configuration baseline storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS drift_baselines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node TEXT NOT NULL,
-                vmid INTEGER NOT NULL,
-                vm_type TEXT NOT NULL DEFAULT 'qemu',
-                baseline_config TEXT NOT NULL,
-                recorded_at TEXT NOT NULL,
-                recorded_by TEXT NOT NULL,
-                UNIQUE(node, vmid, vm_type)
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
-            ON drift_baselines (node, vmid, vm_type)
         """)
 
         self.connection.commit()
@@ -269,6 +324,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     disk_filesystem = ?, disk_size = ?, disk_used = ?, disk_available = ?,
                     disk_use_percent = ?, disk_mount = ?, network_interfaces = ?,
                     usb_devices = ?, pci_devices = ?, block_devices = ?,
+                    fingerprint = ?,
                     uptime = ?, os_info = ?, error_message = ?, updated_at = ?,
                     connection_ip = ?
                 WHERE id = ?
@@ -292,6 +348,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("usb_devices"),
                     device_data.get("pci_devices"),
                     device_data.get("block_devices"),
+                    device_data.get("fingerprint"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
@@ -310,8 +367,9 @@ class SQLiteAdapter(DatabaseAdapter):
                     disk_filesystem, disk_size, disk_used, disk_available,
                     disk_use_percent, disk_mount, network_interfaces,
                     usb_devices, pci_devices, block_devices,
+                    fingerprint,
                     uptime, os_info, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     device_data["hostname"],
@@ -334,6 +392,7 @@ class SQLiteAdapter(DatabaseAdapter):
                     device_data.get("usb_devices"),
                     device_data.get("pci_devices"),
                     device_data.get("block_devices"),
+                    device_data.get("fingerprint"),
                     device_data.get("uptime"),
                     device_data.get("os_info"),
                     device_data.get("error_message"),
@@ -345,6 +404,124 @@ class SQLiteAdapter(DatabaseAdapter):
 
         self.connection.commit()
         return device_id
+
+    def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
+        """Phase 38 D-05/D-11 SQLite: read-merge-write fingerprint."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        # Hostname-natural-key lookup (Phase 35 D-01 — AST guard tests/test_ast_regression.py:392).
+        if hostname in (None, "", "unknown"):
+            raise ValueError(
+                f"Cannot fingerprint degenerate hostname: {hostname!r}. "
+                "Run discover_and_map for this hostname first to populate a real hostname."
+            )
+        cursor.execute(
+            "SELECT fingerprint FROM devices WHERE hostname = ?",
+            (hostname,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError(
+                f"Hostname not in sitemap: {hostname!r}. "
+                "Run discover_and_map for this hostname first to add the device."
+            )
+
+        stored: dict[str, Any] = json.loads(row[0]) if row[0] else {}
+        merged = merge_fingerprint(stored, fingerprint)
+        now_iso = datetime.now().isoformat()
+        # Phase 38 WR-03: do NOT bump ``last_seen`` here — fingerprint merge is
+        # NOT a discovery event. ``last_seen`` should reflect "we last heard
+        # from the device" (set by store_device); ``updated_at`` already covers
+        # "this row was touched". Bumping last_seen on every fingerprint call
+        # would confuse Phase 39 drift detection that reads last_seen.
+        cursor.execute(
+            "UPDATE devices SET fingerprint = ?, updated_at = ? WHERE hostname = ?",
+            (json.dumps(merged), now_iso, hostname),
+        )
+        self.connection.commit()
+        return merged
+
+    def set_device_credential_binding(self, device_id: int, credential_type: str, credential_id: str | None) -> None:
+        """Phase 38.1 R3/R4/R8/R9 — see DatabaseAdapter.set_device_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        # Closed set ({"ssh", "proxmox"}) — safe to interpolate column name.
+        column = f"{credential_type}_credential_id"
+        cursor.execute(
+            f"UPDATE devices SET {column} = ?, updated_at = ? WHERE id = ?",  # noqa: S608
+            (credential_id, datetime.now().isoformat(), device_id),
+        )
+        self.connection.commit()
+
+    def find_devices_by_hostname_or_ip(self, hostname: str) -> list[dict[str, Any]]:
+        """SQLite implementation. See DatabaseAdapter.find_devices_by_hostname_or_ip."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT id, hostname, connection_ip, "
+            "ssh_credential_id, proxmox_credential_id "
+            "FROM devices WHERE hostname = ? OR connection_ip = ?",
+            (hostname, hostname),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def bulk_null_credential_binding(
+        self,
+        credential_ids: list[str],
+        credential_type: str,
+    ) -> list[str]:
+        """SQLite implementation. See DatabaseAdapter.bulk_null_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
+        if not credential_ids:
+            return []  # no-op on empty input
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        column = f"{credential_type}_credential_id"  # closed set
+
+        # WR-02 (Phase 38.1 review): chunk to stay safely under SQLite's
+        # SQLITE_MAX_VARIABLE_NUMBER limit (default 999 on older builds,
+        # 32766 on newer). 500 is a conservative cap that works on all
+        # supported SQLite versions and leaves headroom for the trailing
+        # updated_at parameter on the UPDATE.
+        chunk_size = 500
+        affected_hostnames: list[str] = []
+        now_iso = datetime.now().isoformat()
+        for start in range(0, len(credential_ids), chunk_size):
+            chunk = credential_ids[start : start + chunk_size]
+            # SQLite-side placeholder construction stays internal to the adapter —
+            # never leaks to server.py (Blocker B2 mitigation).
+            placeholders = ",".join("?" * len(chunk))
+            # Step 1: capture affected hostnames BEFORE the UPDATE
+            cursor.execute(
+                f"SELECT hostname FROM devices WHERE {column} IN ({placeholders})",  # noqa: S608
+                tuple(chunk),
+            )
+            chunk_hostnames = [row["hostname"] for row in cursor.fetchall()]
+            if not chunk_hostnames:
+                continue
+            # Step 2: null the binding
+            cursor.execute(
+                f"UPDATE devices SET {column} = NULL, updated_at = ? "  # noqa: S608
+                f"WHERE {column} IN ({placeholders})",
+                (now_iso, *chunk),
+            )
+            affected_hostnames.extend(chunk_hostnames)
+        if not affected_hostnames:
+            return []
+        self.connection.commit()
+        return affected_hostnames
 
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from SQLite."""
@@ -372,6 +549,23 @@ class SQLiteAdapter(DatabaseAdapter):
                         device_dict[_json_col] = json.loads(device_dict[_json_col])
                     except json.JSONDecodeError:
                         device_dict[_json_col] = []
+
+            # Phase 38 D-10: parse fingerprint JSON (dict default, not list)
+            if device_dict.get("fingerprint"):
+                try:
+                    device_dict["fingerprint"] = json.loads(device_dict["fingerprint"])
+                except json.JSONDecodeError:
+                    device_dict["fingerprint"] = {}
+
+            # Phase 38.1 R7 / D-10: per-row eligibility derived from binding columns.
+            # Pure binding-state (NOT cluster-walk-aware — D-09 ratifies this for the
+            # sitemap-row read path; cluster-served rows still report eligibility=false
+            # for the proxmox column even though drift's resolver Tier-2 walk resolves
+            # them at scan time).
+            device_dict["eligibility"] = {
+                "ssh": device_dict.get("ssh_credential_id") is not None,
+                "proxmox": device_dict.get("proxmox_credential_id") is not None,
+            }
 
             devices.append(device_dict)
 
@@ -447,118 +641,44 @@ class SQLiteAdapter(DatabaseAdapter):
 
         return [dict(row) for row in cursor.fetchall()]
 
-    # Drift baseline CRUD methods
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
+    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
+        """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``.
+
+        Phase 44 D-07: refactored to delegate to ``_purge_devices_by_filter`` with
+        the ``failed_discovery`` sentinel so the bulk-delete SQL path is unified
+        with ``purge_devices``.
+        """
+        return _purge_devices_by_filter(self, "sqlite", "failed_discovery", None, dry_run=dry_run)
+
+    def delete_device_by_id(self, device_id: int, dry_run: bool = False) -> dict[str, Any] | None:
+        """SQLite implementation. See ``DatabaseAdapter.delete_device_by_id``."""
         if not self.connection:
             self.connect()
-
         assert self.connection is not None
         cursor = self.connection.cursor()
         cursor.execute(
-            """
-            INSERT OR REPLACE INTO drift_baselines
-                (node, vmid, vm_type, baseline_config, recorded_at, recorded_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                node,
-                vmid,
-                vm_type,
-                json.dumps(baseline_config),
-                datetime.now().isoformat(),
-                recorded_by,
-            ),
-        )
-        self.connection.commit()
-
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
-            FROM drift_baselines
-            WHERE node = ? AND vmid = ? AND vm_type = ?
-            """,
-            (node, vmid, vm_type),
+            "SELECT * FROM devices WHERE id = ?",
+            (device_id,),
         )
         row = cursor.fetchone()
         if row is None:
             return None
-        result = dict(row)
-        result["baseline_config"] = json.loads(result["baseline_config"])
-        return result
-
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Return all stored drift baselines ordered by node, vmid."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
-            FROM drift_baselines ORDER BY node, vmid
-            """
-        )
-        results = []
-        for row in cursor.fetchall():
-            entry = dict(row)
-            entry["baseline_config"] = json.loads(entry["baseline_config"])
-            results.append(entry)
-        return results
-
-    def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
-        """SQLite implementation. See ``DatabaseAdapter.purge_failed_devices``."""
-        if not self.connection:
-            self.connect()
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT id, hostname, connection_ip, status, error_message, last_seen
-            FROM devices
-            WHERE status = 'error'
-               OR hostname IS NULL
-               OR hostname = ''
-               OR hostname = 'unknown'
-            ORDER BY id
-            """
-        )
-        candidates = [dict(row) for row in cursor.fetchall()]
-        if dry_run or not candidates:
-            return candidates
-        ids = [row["id"] for row in candidates]
-        placeholders = ",".join("?" * len(ids))
+        candidate = dict(row)
+        if dry_run:
+            return candidate
         # Delete history first (no ON DELETE CASCADE); then devices.
+        # Single transaction — both DELETEs share the commit so a partial
+        # failure does not orphan history rows.
         cursor.execute(
-            f"DELETE FROM discovery_history WHERE device_id IN ({placeholders})",  # noqa: S608
-            ids,
+            "DELETE FROM discovery_history WHERE device_id = ?",
+            (device_id,),
         )
         cursor.execute(
-            f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
-            ids,
+            "DELETE FROM devices WHERE id = ?",
+            (device_id,),
         )
         self.connection.commit()
-        return candidates
+        return candidate
 
 
 class PostgreSQLAdapter(DatabaseAdapter):
@@ -612,6 +732,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
                 status VARCHAR(50) NOT NULL,
                 system_info JSONB DEFAULT '{}',
                 network_interfaces JSONB DEFAULT '[]',
+                ssh_credential_id TEXT,
+                proxmox_credential_id TEXT,
                 error_message TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
@@ -706,6 +828,10 @@ class PostgreSQLAdapter(DatabaseAdapter):
             "usb_devices": _maybe_json_load(device_data.get("usb_devices")),
             "pci_devices": _maybe_json_load(device_data.get("pci_devices")),
             "block_devices": _maybe_json_load(device_data.get("block_devices")),
+            # Phase 38 D-09a: fingerprint sub-dict lands inside system_info JSONB
+            # (no DDL change). _maybe_json_load handles JSON-string from
+            # parse_discovery_output AND already-decoded dict from update_device_fingerprint.
+            "fingerprint": _maybe_json_load(device_data.get("fingerprint")),
         }
 
         # Parse network interfaces
@@ -787,6 +913,161 @@ class PostgreSQLAdapter(DatabaseAdapter):
         self.connection.commit()
         return device_id
 
+    def update_device_fingerprint(self, hostname: str, fingerprint: dict[str, Any]) -> dict[str, Any]:
+        """Phase 38 D-05/D-11 Postgres: read-merge-write for path parity with SQLite.
+
+        Pitfall 4 (RESEARCH.md): does NOT use jsonb_set / || — merge happens in
+        Python so that SQLite and Postgres adapters produce identical results.
+
+        Phase 38 WR-04: the SELECT + Python merge + UPDATE sequence is wrapped
+        in an explicit transaction with ``SELECT ... FOR UPDATE`` to row-lock
+        the device during the merge window. Without the lock, a concurrent
+        ``store_device`` writer landing between the SELECT and the UPDATE
+        would have its mutations to other ``system_info`` sub-keys (cpu,
+        memory, disk, etc.) silently overwritten by this method's write-back
+        of the full blob. The connection is configured with ``autocommit =
+        False`` (see ``connect``), so the explicit ``BEGIN`` is redundant but
+        kept for clarity. On any error the transaction is rolled back to
+        avoid leaving an open lock on the row.
+        """
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+
+        if hostname in (None, "", "unknown"):
+            raise ValueError(
+                f"Cannot fingerprint degenerate hostname: {hostname!r}. "
+                "Run discover_and_map for this hostname first to populate a real hostname."
+            )
+
+        try:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT system_info FROM devices WHERE hostname = %s FOR UPDATE",
+                (hostname,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                # No row to lock; release the empty transaction before raising.
+                self.connection.rollback()
+                raise ValueError(
+                    f"Hostname not in sitemap: {hostname!r}. "
+                    "Run discover_and_map for this hostname first to add the device."
+                )
+
+            system_info = row[0] if row[0] else {}
+            if isinstance(system_info, str):
+                system_info = json.loads(system_info)
+            stored_fp = system_info.get("fingerprint") or {}
+            merged = merge_fingerprint(stored_fp, fingerprint)
+            system_info["fingerprint"] = merged
+
+            # Phase 38 WR-03: do NOT bump ``last_seen`` here — fingerprint merge is
+            # NOT a discovery event. ``last_seen`` should reflect "we last heard
+            # from the device" (set by store_device); ``updated_at`` already covers
+            # "this row was touched".
+            cursor.execute(
+                "UPDATE devices SET system_info = %s, updated_at = NOW() WHERE hostname = %s",
+                (json.dumps(system_info), hostname),
+            )
+            self.connection.commit()
+            return merged
+        except ValueError:
+            # ValueError already rolled back above; re-raise for the caller.
+            raise
+        except Exception:
+            # Any DB or merge error: release the row lock before propagating.
+            self.connection.rollback()
+            raise
+
+    def set_device_credential_binding(self, device_id: int, credential_type: str, credential_id: str | None) -> None:
+        """Phase 38.1 R3/R4/R8/R9 — see DatabaseAdapter.set_device_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor()
+        column = f"{credential_type}_credential_id"  # closed set
+        try:
+            cursor.execute("BEGIN")
+            cursor.execute(
+                "SELECT id FROM devices WHERE id = %s FOR UPDATE",
+                (device_id,),
+            )
+            if cursor.fetchone() is None:
+                self.connection.rollback()
+                raise ValueError(f"device_id {device_id} not found in devices table")
+            cursor.execute(
+                f"UPDATE devices SET {column} = %s, updated_at = NOW() WHERE id = %s",  # noqa: S608
+                (credential_id, device_id),
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def find_devices_by_hostname_or_ip(self, hostname: str) -> list[dict[str, Any]]:
+        """PostgreSQL implementation. See DatabaseAdapter.find_devices_by_hostname_or_ip."""
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        # WR-05 (Phase 38.1 review): compare against host(connection_ip) so a
+        # row inserted with a CIDR-suffixed INET ('192.168.1.5/24') still
+        # matches when caller passes a bare IP. ::text would preserve the
+        # netmask suffix and silently miss the row, falling into the silent
+        # no-op D-01 path. host() strips any netmask. The SELECT clause keeps
+        # ::text for output stability (consumers expect plain-string IPs).
+        cursor.execute(
+            "SELECT id, hostname, connection_ip::text AS connection_ip, "
+            "ssh_credential_id, proxmox_credential_id "
+            "FROM devices WHERE hostname = %s OR host(connection_ip) = %s",
+            (hostname, hostname),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def bulk_null_credential_binding(
+        self,
+        credential_ids: list[str],
+        credential_type: str,
+    ) -> list[str]:
+        """PostgreSQL implementation. See DatabaseAdapter.bulk_null_credential_binding."""
+        if credential_type not in ("ssh", "proxmox"):
+            raise ValueError(f"credential_type must be 'ssh' or 'proxmox', got {credential_type!r}")
+        if not credential_ids:
+            return []
+        if not self.connection:
+            self.connect()
+        assert self.connection is not None
+        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        column = f"{credential_type}_credential_id"  # closed set
+        try:
+            cursor.execute("BEGIN")
+            # Capture affected hostnames first (under the same transaction so a
+            # concurrent rebind doesn't sneak in between SELECT and UPDATE).
+            cursor.execute(
+                f"SELECT id, hostname FROM devices "  # noqa: S608
+                f"WHERE {column} = ANY(%s) FOR UPDATE",
+                (credential_ids,),
+            )
+            rows = cursor.fetchall()
+            affected_hostnames = [row["hostname"] for row in rows]
+            if not affected_hostnames:
+                self.connection.rollback()
+                return []
+            cursor.execute(
+                f"UPDATE devices SET {column} = NULL, updated_at = NOW() "  # noqa: S608
+                f"WHERE {column} = ANY(%s)",
+                (credential_ids,),
+            )
+            self.connection.commit()
+            return affected_hostnames
+        except Exception:
+            self.connection.rollback()
+            raise
+
     def get_all_devices(self) -> list[dict[str, Any]]:
         """Get all devices from PostgreSQL."""
         if not self.connection:
@@ -797,7 +1078,8 @@ class PostgreSQLAdapter(DatabaseAdapter):
         cursor.execute("""
             SELECT
                 id, hostname, connection_ip::text as connection_ip, last_seen, status,
-                system_info, network_interfaces, error_message, created_at, updated_at
+                system_info, network_interfaces, error_message, created_at, updated_at,
+                ssh_credential_id, proxmox_credential_id
             FROM devices
             ORDER BY hostname, connection_ip
         """)
@@ -831,8 +1113,17 @@ class PostgreSQLAdapter(DatabaseAdapter):
                         "usb_devices": system_info.get("usb_devices"),
                         "pci_devices": system_info.get("pci_devices"),
                         "block_devices": system_info.get("block_devices"),
+                        # Phase 38 D-10: flatten fingerprint sub-dict to top-level
+                        # for SQLite parity (Phase 35 D-09b convention).
+                        "fingerprint": system_info.get("fingerprint"),
                     }
                 )
+
+            # Phase 38.1 R7 / D-10: per-row eligibility (parity with SQLite path).
+            device_dict["eligibility"] = {
+                "ssh": device_dict.get("ssh_credential_id") is not None,
+                "proxmox": device_dict.get("proxmox_credential_id") is not None,
+            }
 
             devices.append(device_dict)
 
@@ -913,57 +1204,226 @@ class PostgreSQLAdapter(DatabaseAdapter):
 
         return [dict(row) for row in cursor.fetchall()]
 
-    # Drift baseline CRUD methods (Phase 11 scope: SQLite only — stubs for ABC compliance)
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
     def purge_failed_devices(self, dry_run: bool = False) -> list[dict[str, Any]]:
-        """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``."""
+        """PostgreSQL implementation. See ``DatabaseAdapter.purge_failed_devices``.
+
+        Phase 44 D-07: refactored to delegate to ``_purge_devices_by_filter`` with
+        the ``failed_discovery`` sentinel so the bulk-delete SQL path is unified
+        with ``purge_devices``.
+        """
+        return _purge_devices_by_filter(self, "postgres", "failed_discovery", None, dry_run=dry_run)
+
+    def delete_device_by_id(self, device_id: int, dry_run: bool = False) -> dict[str, Any] | None:
+        """PostgreSQL implementation. See ``DatabaseAdapter.delete_device_by_id``."""
         if not self.connection:
             self.connect()
         assert self.connection is not None
         cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(
-            """
-            SELECT id, hostname, connection_ip::text AS connection_ip,
-                   status, error_message, last_seen::text AS last_seen
-            FROM devices
-            WHERE status = 'error'
-               OR hostname IS NULL
-               OR hostname = ''
-               OR hostname = 'unknown'
-            ORDER BY id
-            """
+            "SELECT * FROM devices WHERE id = %s",
+            (device_id,),
         )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        candidate = dict(row)
+        if dry_run:
+            return candidate
+        cursor.execute(
+            "DELETE FROM discovery_history WHERE device_id = %s",
+            (device_id,),
+        )
+        cursor.execute(
+            "DELETE FROM devices WHERE id = %s",
+            (device_id,),
+        )
+        self.connection.commit()
+        return candidate
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Phase 44 D-14: shared filter-dispatch helpers for purge_devices + the
+# purge_failed_discoveries alias.
+#
+# Helpers in this section are pure: no adapter coupling, no isinstance
+# branching. The orchestrator `_purge_devices_by_filter` (Task 1b) takes
+# an explicit `dialect: Literal["sqlite", "postgres"]` parameter and each
+# adapter calls the orchestrator with its own dialect string.
+# ─────────────────────────────────────────────────────────────────────────
+
+_FAILED_DISCOVERY_WHERE = "status = 'error' OR hostname IS NULL OR hostname = '' OR hostname = 'unknown'"
+
+
+def _build_filter_clause(
+    filter_type: str,
+    value: Any,
+    dialect: Literal["sqlite", "postgres"],
+) -> tuple[str, tuple[Any, ...]]:
+    """Build the WHERE clause + params for one filter_type. Returns (where, params).
+
+    ``dialect`` is "sqlite" (uses ``?``) or "postgres" (uses ``%s``).
+    Raises ValueError on bad value shape; the caller (handler) wraps that
+    into a structured-error envelope per D-01b.
+
+    Note: ip_range is NOT handled here — the orchestrator dispatches it to
+    Python-side ``ipaddress`` filtering instead of SQL (D-03).
+
+    Phase 44 D-01/D-01b/D-02/D-04/D-05/D-08.
+    """
+    ph = "?" if dialect == "sqlite" else "%s"
+
+    if filter_type == "failed_discovery":
+        # D-08: 4-clause OR alias semantics; no value bound.
+        return (_FAILED_DISCOVERY_WHERE, ())
+
+    if filter_type == "hostname":
+        # D-02: exact match only — no glob/LIKE.
+        if not isinstance(value, str):
+            raise ValueError(f"`value` must be str for filter_type='hostname' (got {type(value).__name__})")
+        return (f"hostname = {ph}", (value,))
+
+    if filter_type == "status":
+        # D-05: exact match. Bare 'status'='error' does NOT cover zombie rows
+        # (those need filter_type='failed_discovery' for backward compat).
+        if not isinstance(value, str):
+            raise ValueError(f"`value` must be str for filter_type='status' (got {type(value).__name__})")
+        return (f"status = {ph}", (value,))
+
+    if filter_type == "last_seen_older_than_days":
+        # D-04: integer N; rows where last_seen < (now_utc - N days).
+        # Exclusive boundary so N=0 matches "older than this instant".
+        # last_seen is TEXT (ISO format) per Phase 42 W2 canonical UTC.
+        # Reject bool explicitly — `isinstance(True, int)` is True in Python.
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(
+                f"`value` must be int for filter_type='last_seen_older_than_days' (got {type(value).__name__})"
+            )
+        threshold = (datetime.now(UTC) - timedelta(days=value)).isoformat()
+        return (f"last_seen < {ph}", (threshold,))
+
+    if filter_type == "ip_range":
+        # Handled separately by the orchestrator (Python-side filter, not SQL).
+        raise ValueError(
+            "_build_filter_clause does not handle ip_range — orchestrator dispatches "
+            "to Python-side ipaddress filter per D-03"
+        )
+
+    raise ValueError(
+        f"Unknown filter_type: {filter_type!r}. Valid: hostname, "
+        f"last_seen_older_than_days, status, ip_range, failed_discovery"
+    )
+
+
+def _row_in_cidr(
+    row: dict[str, Any],
+    net: ipaddress.IPv4Network | ipaddress.IPv6Network,
+) -> bool:
+    """D-03/D-03a: per-row CIDR membership. Silent skip on unparseable IP.
+
+    ``net`` is the parsed CIDR network (caller must have already validated
+    via ``ipaddress.ip_network(value, strict=False)``). Returns False for
+    any row whose connection_ip is missing, empty, or unparseable as an IP
+    address (zombie rows, hostname-fallback rows). Never raises.
+    """
+    raw_ip = row.get("connection_ip", "")
+    if not raw_ip:
+        return False
+    try:
+        return ipaddress.ip_address(raw_ip) in net
+    except ValueError:
+        return False
+
+
+def _purge_devices_by_filter(
+    adapter: Any,
+    dialect: Literal["sqlite", "postgres"],
+    filter_type: str,
+    value: Any,
+    dry_run: bool = False,
+) -> list[dict[str, Any]]:
+    """Shared filter-dispatch for purge_devices + purge_failed_discoveries alias.
+
+    ``adapter``: a SQLiteAdapter or PostgreSQLAdapter instance — used for
+        ``connection`` and ``get_all_devices()`` only. The orchestrator does
+        NOT branch on the concrete adapter class; ``dialect`` carries the
+        SQL flavor instead. Annotated as Any because the abstract
+        ``DatabaseAdapter`` does not declare ``connection`` (concrete impls
+        carry it).
+    ``dialect``: "sqlite" or "postgres" — caller (the adapter method) passes
+        its own dialect string. Removes the need for ``isinstance`` checks
+        in this function.
+    ``filter_type``: one of {'hostname', 'last_seen_older_than_days', 'status',
+        'ip_range', 'failed_discovery'} (last is alias-internal sentinel per
+        D-08 — matches status='error' OR hostname IN (NULL,'','unknown')).
+    ``value``: per-filter shape (str/int/CIDR-str). May be None for
+        'failed_discovery' (no value bound).
+    ``dry_run``: returns candidates without DELETE.
+
+    Returns the list of removed (or would-be-removed) row dicts. Each row is
+    a full sitemap row (per D-01a — agent confirms what would be / was
+    deleted). Two-step cascade per D-06c.
+
+    Phase 44 D-14. Validation errors raise ValueError; the handler wraps
+    into the structured-error envelope per D-01b.
+    """
+    if not adapter.connection:
+        adapter.connect()
+    assert adapter.connection is not None
+
+    # ip_range = Python-side filter via ipaddress, not SQL.
+    if filter_type == "ip_range":
+        try:
+            net = ipaddress.ip_network(value, strict=False)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid CIDR for ip_range filter: {value!r} ({e})") from e
+        all_devices = adapter.get_all_devices()
+        candidates = [dict(row) for row in all_devices if _row_in_cidr(row, net)]
+    else:
+        # SQL-side filter. Caller's `dialect` drives placeholder + cursor choice.
+        where, params = _build_filter_clause(filter_type, value, dialect)
+        if dialect == "postgres":
+            # RealDictCursor for postgres parity with purge_failed_devices.
+            # ::text casts on connection_ip + last_seen for SQLite-shape parity.
+            cursor = adapter.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            # WHERE fragment is from a controlled set (`_build_filter_clause`
+            # only emits `column OP placeholder` shapes); value is bound as a
+            # parameter, never interpolated.
+            cursor.execute(
+                f"SELECT id, hostname, connection_ip::text AS connection_ip, "  # noqa: S608
+                f"status, error_message, last_seen::text AS last_seen "
+                f"FROM devices WHERE {where} ORDER BY id",
+                params,
+            )
+        else:
+            cursor = adapter.connection.cursor()
+            cursor.execute(
+                f"SELECT id, hostname, connection_ip, status, error_message, "  # noqa: S608
+                f"last_seen FROM devices WHERE {where} ORDER BY id",
+                params,
+            )
         candidates = [dict(row) for row in cursor.fetchall()]
-        if dry_run or not candidates:
-            return candidates
-        ids = [row["id"] for row in candidates]
+
+    if dry_run or not candidates:
+        return candidates
+
+    # Two-step cascade per D-06c. Single transaction.
+    ids = [row["id"] for row in candidates]
+    cursor = adapter.connection.cursor()
+    if dialect == "sqlite":
+        placeholders = ",".join("?" * len(ids))
+        cursor.execute(
+            f"DELETE FROM discovery_history WHERE device_id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+        cursor.execute(
+            f"DELETE FROM devices WHERE id IN ({placeholders})",  # noqa: S608
+            ids,
+        )
+    else:
         cursor.execute("DELETE FROM discovery_history WHERE device_id = ANY(%s)", (ids,))
         cursor.execute("DELETE FROM devices WHERE id = ANY(%s)", (ids,))
-        self.connection.commit()
-        return candidates
+    adapter.connection.commit()
+    return candidates
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
@@ -1006,3 +1466,36 @@ def _maybe_json_load(value: Any) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return None
+
+
+def merge_fingerprint(stored: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Phase 38 D-05 merge contract: top-level overwrite, capabilities one-level overwrite.
+
+    ``stored`` is the existing fingerprint dict (parsed from DB).
+    ``incoming`` is the dict from update_device_fingerprint (already filtered
+    to recognized keys). Returns the merged dict to write back. Pure function —
+    no side effects.
+
+    Semantics (NOT a recursive deep-merge):
+
+    - Top-level keys (kernel_name, kernel_version, os_name, os_version,
+      package_fingerprint) overwrite (last-write-wins).
+    - The ``capabilities`` sub-dict updates one level deep: incoming top-level
+      capability keys REPLACE the stored entry entirely. Example: passing
+      ``capabilities={"vulkan": {"loader_version": "1.3.275"}}`` does NOT merge
+      into an existing ``capabilities.vulkan`` dict — it REPLACES the entire
+      vulkan sub-dict. Callers updating any field within a capability MUST pass
+      the full capability dict.
+    - Missing top-level capability keys (e.g. an existing ``capabilities.cuda``
+      entry) are preserved when the incoming ``capabilities`` dict does not
+      mention them.
+    """
+    merged: dict[str, Any] = dict(stored)
+    for key, value in incoming.items():
+        if key == "capabilities" and isinstance(value, dict):
+            existing_caps = dict(merged.get("capabilities", {}))
+            existing_caps.update(value)  # incoming sub-keys overwrite, others preserved
+            merged["capabilities"] = existing_caps
+        else:
+            merged[key] = value  # top-level keys overwrite (D-05 step 3a)
+    return merged

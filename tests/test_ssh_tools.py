@@ -6,110 +6,110 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncssh
 import pytest
 
+from homelab_mcp.ssh_tools import (
+    CredentialNotFoundError,
+    SSHCredentials,
+    resolve_ssh_for_sitemap_row,
+)
 from src.homelab_mcp.ssh_tools import (
     _sudo_run,
     ensure_mcp_ssh_key,
     ssh_discover_system,
 )
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38 Plan 01 Task 1 (RED): refactor brittle fixed-order list mock to
+# STDOUT_BY_CMD lookup pattern (mirrors Phase 35 tests at lines 507-525) so
+# adding more probes never silently breaks existing assertions. Also adds
+# new probe entries (uname-s, uname-r, os-release-full, dpkg-fingerprint)
+# in preparation for the Task 2 GREEN implementation.
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
-@patch("src.homelab_mcp.ssh_tools.ssh_connect", new_callable=AsyncMock)
-async def test_ssh_discover_success(mock_connect):
-    """Test successful SSH discovery."""
-    # Mock command results - in the order they are executed by ssh_discover_system
-    # Only the commands that will actually be executed when CPU model succeeds on first try
-    hostname_result = MagicMock()
-    hostname_result.exit_status = 0
-    hostname_result.stdout = "raspberrypi"
+async def test_ssh_discover_success(monkeypatch):
+    """Test successful SSH discovery (Phase 38 refactor: STDOUT_BY_CMD lookup)."""
+    import json as _json
+    from types import SimpleNamespace
 
-    # nproc command for CPU cores
-    nproc_result = MagicMock()
-    nproc_result.exit_status = 0
-    nproc_result.stdout = "4"
+    from src.homelab_mcp import ssh_tools
 
-    # CPU model name command (succeeds, so fallback methods won't be called)
-    cpu_model_result = MagicMock()
-    cpu_model_result.exit_status = 0
-    cpu_model_result.stdout = "model name\t: Intel Core i5"
+    fake_conn = MagicMock()
 
-    # Memory command - free -b returns bytes
-    mem_result = MagicMock()
-    mem_result.exit_status = 0
-    mem_result.stdout = """              total        used        free      shared  buff/cache   available
-Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"""
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
 
-    # Disk command — Phase 35 D-09a.3: `df -B1 -T /` (adds Type column)
-    # Columns: filesystem, type, 1B-blocks(size), used, available, use%, mount
-    disk_result = MagicMock()
-    disk_result.exit_status = 0
-    disk_result.stdout = """Filesystem     Type  1B-blocks        Used    Available Use% Mounted on
-/dev/sda1      ext4  21474836480  5905580032  14970068992  30% /"""
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
 
-    # Network command
-    net_result = MagicMock()
-    net_result.exit_status = 0
-    net_result.stdout = json.dumps(
-        [
-            {
-                "ifname": "eth0",
-                "operstate": "UP",
-                "addr_info": [{"family": "inet", "local": "192.168.1.100"}],
-            }
-        ]
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
     )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
 
-    # Uptime command
-    uptime_result = MagicMock()
-    uptime_result.exit_status = 0
-    uptime_result.stdout = "up 2 days, 3 hours, 45 minutes"
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        # Mirror Phase 35 helper at line 504: empty stdout still returns
+        # exit_status=0 by default so the probe-success conditional bites
+        # only on stdout truthiness when needed.
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
 
-    # OS command
-    os_result = MagicMock()
-    os_result.exit_status = 0
-    os_result.stdout = 'PRETTY_NAME="Ubuntu 22.04.3 LTS"'
+    STDOUT_BY_CMD = {
+        # Pre-Phase-38 probes (existing assertions preserved)
+        "hostname": "raspberrypi\n",
+        "nproc": "4\n",
+        "cpuinfo": "model name\t: Intel Core i5\n",
+        "free": (
+            "              total        used        free      shared  buff/cache   available\n"
+            "Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208\n"
+        ),
+        "df": (
+            "Filesystem     Type  1B-blocks        Used    Available Use% Mounted on\n"
+            "/dev/sda1      ext4  21474836480  5905580032  14970068992  30% /\n"
+        ),
+        "ip": _json.dumps(
+            [
+                {
+                    "ifname": "eth0",
+                    "operstate": "UP",
+                    "addr_info": [{"family": "inet", "local": "192.168.1.100"}],
+                }
+            ]
+        )
+        + "\n",
+        "uptime": "up 2 days, 3 hours, 45 minutes\n",
+        "os-release": 'PRETTY_NAME="Ubuntu 22.04.3 LTS"\n',
+        "lsusb": "",
+        "lspci": "",
+        "lsblk": "",
+        # Phase 38 NEW probes (Task 2 will land the implementation that reads these)
+        "uname-s": "Linux\n",
+        "uname-r": "6.5.13-1-pve\n",
+        "os-release-full": ('NAME="Proxmox VE"\nPRETTY_NAME="Proxmox VE 8.2.4"\nVERSION_ID="8.2.4"\n'),
+        "dpkg-fingerprint": "abc123def456789  -\n",
+    }
 
-    # Create mock connection
-    mock_conn = AsyncMock()
-    call_count = 0
+    async def _mock_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        return _fake_cp(STDOUT_BY_CMD.get(cmd_name, ""))
 
-    async def mock_run(*args, **kwargs):
-        nonlocal call_count
-        # Commands in actual order: hostname, nproc, cpu model, free, df, ip, uptime, os-release
-        results = [
-            hostname_result,
-            nproc_result,
-            cpu_model_result,
-            mem_result,
-            disk_result,
-            net_result,
-            uptime_result,
-            os_result,
-        ]
-        if call_count < len(results):
-            result = results[call_count]
-            call_count += 1
-            return result
-        else:
-            # Return a default failure result for any extra calls
-            default_result = MagicMock()
-            default_result.exit_status = 1
-            default_result.stdout = ""
-            return default_result
-
-    mock_conn.run = mock_run
-
-    # ssh_connect is async, returns a connection usable as async context manager
-    mock_ctx = AsyncMock()
-    mock_ctx.__aenter__.return_value = mock_conn
-    mock_ctx.__aexit__.return_value = None
-    mock_connect.return_value = mock_ctx
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", _mock_run_with_timeout)
 
     # Execute discovery
-    result = await ssh_discover_system(hostname="test-host", username="test-user", password="test-pass")
+    result = await ssh_tools.ssh_discover_system(hostname="test-host", username="test-user", password="test-pass")
 
     # Parse result
-    result_data = json.loads(result)
+    result_data = _json.loads(result)
 
     # Verify structure
     assert result_data["status"] == "success"
@@ -146,9 +146,194 @@ Mem:     8266850304  2254479360  4182536704   128974848  1829834240  5677662208"
     assert result_data["data"]["network"][0]["name"] == "eth0"
     assert "192.168.1.100" in result_data["data"]["network"][0]["addresses"]
 
-    # Verify uptime and OS
+    # Verify uptime and OS (Phase 38 D-07: legacy data["os"] field stays
+    # populated independently of the new data["fingerprint"] sub-dict)
     assert result_data["data"]["uptime"] == "up 2 days, 3 hours, 45 minutes"
     assert result_data["data"]["os"] == "Ubuntu 22.04.3 LTS"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38 Plan 01 Task 1 (RED): fingerprint sub-dict assertions.
+# These tests MUST fail before Task 2 lands the new probes and MUST pass
+# after Task 2. They prove the universal-core fingerprint substrate exists
+# on every successful discovery.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _phase38_install_mocks(monkeypatch, stdout_by_cmd, *, run_with_timeout=None):
+    """Shared mock plumbing for the Phase 38 fingerprint tests.
+
+    Mirrors the Phase 35 helper plumbing in ``test_ssh_discover_system_*_phase35``
+    tests above so the fingerprint tests stay in lockstep with the existing
+    convention.
+    """
+    from types import SimpleNamespace
+
+    from src.homelab_mcp import ssh_tools
+
+    fake_conn = MagicMock()
+
+    async def _fake_ssh_connect(**kwargs):
+        class _Ctx:
+            async def __aenter__(self_inner):
+                return fake_conn
+
+            async def __aexit__(self_inner, exc_type, exc, tb):
+                return None
+
+        return _Ctx()
+
+    monkeypatch.setattr(
+        ssh_tools,
+        "resolve_ssh_credentials",
+        lambda hostname, username, password, key_path, port: SimpleNamespace(
+            hostname=hostname,
+            username="testuser",
+            port=port,
+            password="x",
+            key_path=None,
+        ),
+    )
+    monkeypatch.setattr(ssh_tools, "ssh_connect", _fake_ssh_connect)
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    if run_with_timeout is None:
+
+        async def _default_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+            return _fake_cp(stdout_by_cmd.get(cmd_name, ""))
+
+        run_with_timeout = _default_run_with_timeout
+
+    monkeypatch.setattr(ssh_tools, "_run_with_timeout", run_with_timeout)
+    return _fake_cp
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_populates_fingerprint_phase38(monkeypatch):
+    """Phase 38 D-04: fingerprint sub-dict populated from new probes.
+
+    RED before Task 2 — once Task 2 lands the three universal-core probes
+    (uname -s, uname -r, /etc/os-release full parse, dpkg-fingerprint),
+    every successful discovery payload carries a top-level
+    ``data["fingerprint"]`` sub-dict with kernel + OS + package digest.
+    """
+    import json as _json
+
+    stdout_by_cmd = {
+        "hostname": "pve1\n",
+        "nproc": "4\n",
+        "cpuinfo": "model name : CPU Model Z9\n",
+        "free": (
+            "              total        used        free      shared  buff/cache   available\n"
+            "Mem:    8589934592  2147483648  4294967296           0  2147483648  5368709120\n"
+        ),
+        "df": (
+            "Filesystem     Type  1B-blocks       Used   Available Use% Mounted on\n"
+            "/dev/sda1      ext4  100000000000  40000000000  60000000000  40% /\n"
+        ),
+        "ip": '[{"ifname":"eth0","operstate":"UP","addr_info":[{"family":"inet","local":"10.0.0.5"}]}]\n',
+        "uptime": "up 2 days, 3 hours\n",
+        "os-release": 'PRETTY_NAME="Debian 12"\n',
+        "lsusb": "",
+        "lspci": "",
+        "lsblk": "",
+        # Phase 38 NEW probes
+        "uname-s": "Linux\n",
+        "uname-r": "6.5.13-1-pve\n",
+        "os-release-full": ('NAME="Proxmox VE"\nPRETTY_NAME="Proxmox VE 8.2.4"\nVERSION_ID="8.2.4"\n'),
+        "dpkg-fingerprint": "abc123def456789  -\n",
+    }
+    _phase38_install_mocks(monkeypatch, stdout_by_cmd)
+
+    from src.homelab_mcp import ssh_tools
+
+    result_str = await ssh_tools.ssh_discover_system(hostname="10.0.0.5", username="user", password="pw")
+    result = _json.loads(result_str)
+
+    assert "fingerprint" in result["data"], (
+        "Phase 38 D-04 regression: expected `data.fingerprint` sub-dict on successful discovery"
+    )
+    fp = result["data"]["fingerprint"]
+    assert fp["kernel_name"] == "Linux"
+    assert fp["kernel_version"] == "6.5.13-1-pve"
+    assert fp["os_name"] == "Proxmox VE 8.2.4"
+    assert fp["os_version"] == "8.2.4"
+    assert fp["package_fingerprint"] == "sha256:abc123def456789"
+
+
+@pytest.mark.asyncio
+async def test_ssh_discover_partial_when_dpkg_missing_phase38(monkeypatch):
+    """Phase 38 D-04 + Phase 35 D-09a: missing dpkg means key absent + partial:True.
+
+    When the dpkg probe returns exit_status=1 (e.g., on Alpine where dpkg
+    is absent), the ``package_fingerprint`` key MUST be absent from the
+    fingerprint sub-dict and the response MUST flag ``partial: True`` per
+    the Phase 35 timed_out_commands accumulator path.
+    """
+    import json as _json
+    from types import SimpleNamespace
+
+    from src.homelab_mcp import ssh_tools
+
+    stdout_by_cmd = {
+        "hostname": "alpine1\n",
+        "nproc": "2\n",
+        "cpuinfo": "model name : CPU Model Z9\n",
+        "free": (
+            "              total        used        free      shared  buff/cache   available\n"
+            "Mem:    4294967296  1073741824  2147483648           0  1073741824  3221225472\n"
+        ),
+        "df": (
+            "Filesystem     Type  1B-blocks       Used   Available Use% Mounted on\n"
+            "/dev/sda1      ext4  50000000000  20000000000  30000000000  40% /\n"
+        ),
+        "ip": '[{"ifname":"eth0","operstate":"UP","addr_info":[{"family":"inet","local":"10.0.0.6"}]}]\n',
+        "uptime": "up 1 day\n",
+        "os-release": 'PRETTY_NAME="Alpine Linux v3.19"\n',
+        "lsusb": "",
+        "lspci": "",
+        "lsblk": "",
+        "uname-s": "Linux\n",
+        "uname-r": "6.6.10-0-lts\n",
+        "os-release-full": 'PRETTY_NAME="Alpine Linux v3.19"\nVERSION_ID="3.19.0"\n',
+        # dpkg-fingerprint intentionally omitted from stdout dict — handler
+        # below returns a non-zero-exit-status SimpleNamespace for it.
+    }
+
+    def _fake_cp(stdout: str, exit_status: int = 0):
+        return SimpleNamespace(stdout=stdout, stderr="", exit_status=exit_status)
+
+    async def _missing_dpkg_run_with_timeout(conn, command, *, cmd_name, timed_out, timeout=10.0):
+        if cmd_name == "dpkg-fingerprint":
+            # Phase 35 D-09a: Phase 38 implementation must trigger the partial
+            # path when dpkg is unavailable. The implementation MAY do this by
+            # appending to ``timed_out`` OR by leaving the field unset (which
+            # the test below confirms is sufficient when paired with the
+            # accumulator append in ssh_discover_system's missing-tool branch).
+            timed_out.append("dpkg-fingerprint")
+            return _fake_cp("", exit_status=1)
+        return _fake_cp(stdout_by_cmd.get(cmd_name, ""))
+
+    _phase38_install_mocks(monkeypatch, stdout_by_cmd, run_with_timeout=_missing_dpkg_run_with_timeout)
+
+    result_str = await ssh_tools.ssh_discover_system(hostname="10.0.0.6", username="user", password="pw")
+    result = _json.loads(result_str)
+
+    fp = result["data"].get("fingerprint", {})
+    assert "package_fingerprint" not in fp, (
+        "Phase 38 D-04: package_fingerprint key must be absent when dpkg is unavailable on the remote host"
+    )
+    # Other fingerprint fields still populated
+    assert fp.get("kernel_name") == "Linux"
+    assert fp.get("kernel_version") == "6.6.10-0-lts"
+    # Phase 35 D-09a: partial:True fires because dpkg-fingerprint was added
+    # to timed_out_commands by the implementation's missing-tool branch.
+    assert result.get("partial") is True, (
+        "Phase 35 D-09a: expected `partial: true` when dpkg-fingerprint probe is unavailable"
+    )
+    assert "dpkg-fingerprint" in result.get("timed_out_commands", [])
 
 
 @pytest.mark.asyncio
@@ -684,3 +869,351 @@ async def test_ssh_discover_system_hostname_timeout_does_not_suppress_probes_pha
     # hostname field falls back to the connection-IP argument since the hostname
     # probe produced no stdout to overwrite actual_hostname.
     assert result["hostname"] == "10.0.0.5", result["hostname"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 38.1 — Wave 0 RED tests: resolve_ssh_credentials credential_id kwarg (R5, D-11, D-12, D-13, D-14)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_ssh_credential_id_short_circuit_phase381(monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-13: resolve_ssh_credentials(hostname='host', credential_id=<uuid>) short-circuits to UUID lookup."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415, F401
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.1",  # different from 'host' arg
+        "username": "root",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value="ssh-password"):
+            # Phase 38.1 R5: credential_id kwarg must exist and bypass hostname-exact-match
+            result = resolve_ssh_credentials("host", credential_id=test_uuid)
+
+    assert result is not None
+    assert result.hostname in ("192.168.10.1", "host")  # implementation decides which hostname to use
+
+
+def test_resolve_ssh_with_unknown_uuid_raises_binding_stale_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-11: resolve_ssh_credentials with UUID not in registry raises CredentialNotFoundError (binding stale)."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=None):
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(
+                "host",
+                credential_id="00000000-0000-4000-8000-000000000001",
+            )
+
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, f"Phase 38.1 D-11 SSH: expected 'binding stale' in error, got: {error_msg!r}"
+
+
+def test_resolve_ssh_uuid_keyring_miss_raises_desync_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-12: UUID in registry but keyring returns None → CredentialNotFoundError (keyring_desync)."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "aaaabbbb-aaaa-4aaa-8aaa-bbbbbbbbbbbb"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "host",
+        "username": "root",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value=None):  # keyring desync
+            with pytest.raises(CredentialNotFoundError):
+                resolve_ssh_credentials("host", credential_id=test_uuid)
+
+
+def test_resolve_ssh_credential_id_ignores_host_mismatch_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D-13: UUID wins over host — hostname mismatch between sitemap and registry is expected."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "ccccbbbb-cccc-4ccc-8ccc-bbbbbbbbbbbb"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.5",  # mismatch with 'short-name'
+        "username": "ubuntu",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value="ssh-pw"):
+            # Must not raise even though sitemap hostname ≠ registry hostname
+            result = resolve_ssh_credentials("short-name", credential_id=test_uuid)
+
+    assert result is not None
+
+
+def test_resolve_ssh_legacy_positional_backward_compat_phase381(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Existing callers without credential_id kwarg still work (D-14 backward compat)."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import resolve_ssh_credentials  # noqa: PLC0415
+
+    with patch(
+        "homelab_mcp.ssh_tools.list_credentials",
+        return_value=[
+            {
+                "hostname": "legacy-host",
+                "username": "legacy-user",
+                "credential_type": "ssh",
+            }
+        ],
+    ):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value="legacy-pw"):
+            # Phase 38.1 D-14: no credential_id → falls back to existing hostname-exact-match
+            result = resolve_ssh_credentials("legacy-host", username="legacy-user")
+
+    assert result is not None
+
+
+def test_resolve_ssh_with_uuid_of_wrong_type_raises_type_mismatch_phase381() -> None:
+    """T-38.1-05-02: caller passes proxmox UUID to SSH resolver → 'binding type mismatch'."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "22222222-2222-4222-8222-222222222222"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "192.168.10.20",
+        "username": "root@pam!tok",
+        "credential_type": "proxmox",  # WRONG TYPE
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials("host", credential_id=test_uuid)
+
+    error_msg = str(exc_info.value)
+    assert "binding type mismatch" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02 SSH: expected 'binding type mismatch', got: {error_msg!r}"
+    )
+    assert "expected 'ssh'" in error_msg, (
+        f"Phase 38.1 T-38.1-05-02 SSH: expected target type in message, got: {error_msg!r}"
+    )
+
+
+def test_resolve_ssh_with_malformed_credential_id_phase381() -> None:
+    """T-38.1-05-01 SSH: malformed (non-UUID) credential_id → 'binding stale: malformed'."""
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    with pytest.raises(CredentialNotFoundError) as exc_info:
+        resolve_ssh_credentials("host", credential_id="not-a-uuid")
+
+    error_msg = str(exc_info.value)
+    assert "binding stale" in error_msg, (
+        f"Phase 38.1 T-38.1-05-01 SSH: expected 'binding stale' for malformed UUID, got: {error_msg!r}"
+    )
+    assert "malformed" in error_msg, f"Phase 38.1 T-38.1-05-01 SSH: expected 'malformed' marker, got: {error_msg!r}"
+
+
+def test_resolve_ssh_unknown_uuid_sets_reason_hint_binding_stale_phase381() -> None:
+    """D-08: stale UUID → CredentialNotFoundError with .reason_hint='binding_stale'."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=None):
+        with pytest.raises(CredentialNotFoundError) as exc_info:
+            resolve_ssh_credentials(
+                "host",
+                credential_id="00000000-0000-4000-8000-000000000002",
+            )
+
+    assert getattr(exc_info.value, "reason_hint", None) == "binding_stale", (
+        f"Phase 38.1 D-08 SSH: expected reason_hint='binding_stale', got: "
+        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
+
+
+def test_resolve_ssh_keyring_miss_sets_reason_hint_keyring_desync_phase381() -> None:
+    """D-08: keyring desync → CredentialNotFoundError with .reason_hint='keyring_desync'."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import CredentialNotFoundError, resolve_ssh_credentials  # noqa: PLC0415
+
+    test_uuid = "33333333-3333-4333-8333-333333333333"
+    registry_entry = {
+        "credential_id": test_uuid,
+        "hostname": "host",
+        "username": "root",
+        "credential_type": "ssh",
+    }
+    with patch("homelab_mcp.ssh_tools.find_credential_by_id", return_value=registry_entry):
+        with patch("homelab_mcp.ssh_tools.get_credential", return_value=None):
+            with pytest.raises(CredentialNotFoundError) as exc_info:
+                resolve_ssh_credentials("host", credential_id=test_uuid)
+
+    assert getattr(exc_info.value, "reason_hint", None) == "keyring_desync", (
+        f"Phase 38.1 D-08 SSH: expected reason_hint='keyring_desync', got: "
+        f"{getattr(exc_info.value, 'reason_hint', None)!r}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 41 Plan 02 — Unit tests for resolve_ssh_for_sitemap_row helper
+# Covers all 5 resolution paths + multi-match disambiguation case (6 tests).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _stub_creds() -> SSHCredentials:
+    """Return a minimal SSHCredentials stub for test mocks."""
+    return SSHCredentials(hostname="stub", username="root", port=22)
+
+
+def test_helper_uses_row_binding_when_single_match_with_binding(mocker):
+    """Phase 41 Bug AA: single match with ssh_credential_id → Tier-0 UUID short-circuit."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "192.168.10.20",
+            "ssh_credential_id": "uuid-abc",
+            "status": "success",
+        }
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("pve")
+
+    assert resolve.call_args.kwargs.get("credential_id") == "uuid-abc"
+    assert row is not None and row["connection_ip"] == "192.168.10.20"
+
+
+def test_helper_falls_back_when_no_row_matches(mocker):
+    """Phase 41 Bug AA: zero row matches → bare resolve_ssh_credentials (no credential_id)."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = []
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("never-seen")
+
+    assert "credential_id" not in resolve.call_args.kwargs
+    assert row is None
+
+
+def test_helper_handles_unbound_row(mocker):
+    """Phase 41: single match with null ssh_credential_id → Tier-1/2 fallback, row returned."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "old-host",
+            "connection_ip": "10.0.0.5",
+            "ssh_credential_id": None,
+            "status": "success",
+        }
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("old-host")
+
+    assert "credential_id" not in resolve.call_args.kwargs
+    assert row is not None and row["connection_ip"] == "10.0.0.5"
+
+
+def test_helper_raises_on_ambiguous_match(mocker):
+    """Phase 41 T-41-02-01: multi-match with no status='success' rows → CredentialNotFoundError."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.10",
+            "ssh_credential_id": "uuid-1",
+            "status": "error",
+        },
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.11",
+            "ssh_credential_id": "uuid-2",
+            "status": "error",
+        },
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+
+    with pytest.raises(CredentialNotFoundError) as exc:
+        resolve_ssh_for_sitemap_row("pve")
+    assert "Multiple sitemap rows matched" in str(exc.value)
+    assert "get_network_sitemap" in str(exc.value)
+
+
+def test_helper_handles_empty_connection_ip(mocker):
+    """Phase 41 Bug V: empty connection_ip → helper does NOT raise; caller's responsibility."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "",
+            "ssh_credential_id": "uuid-abc",
+            "status": "success",
+        }
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("pve")
+
+    # Helper does NOT validate connection_ip — caller's responsibility.
+    assert row is not None and row["connection_ip"] == ""
+
+
+def test_helper_disambiguates_multi_match_via_status_success(mocker):
+    """Phase 41 T-41-02-01: multi-match with exactly one status='success' → picks healthy row."""
+    db = MagicMock()
+    db.find_devices_by_hostname_or_ip.return_value = [
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.10",
+            "ssh_credential_id": "uuid-old",
+            "status": "error",
+        },
+        {
+            "hostname": "pve",
+            "connection_ip": "10.0.0.20",
+            "ssh_credential_id": "uuid-new",
+            "status": "success",
+        },
+    ]
+    mocker.patch("homelab_mcp.ssh_tools.get_database_adapter", return_value=db)
+    resolve = mocker.patch(
+        "homelab_mcp.ssh_tools.resolve_ssh_credentials",
+        return_value=_stub_creds(),
+    )
+
+    creds, row = resolve_ssh_for_sitemap_row("pve")
+
+    assert resolve.call_args.kwargs.get("credential_id") == "uuid-new"
+    assert row is not None and row["status"] == "success"

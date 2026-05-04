@@ -286,6 +286,39 @@ async def test_bulk_discover_and_map_sends_list_changed(mocker: MockerFixture) -
 
 
 @pytest.mark.asyncio
+async def test_update_device_fingerprint_sends_list_changed_phase38(mocker: MockerFixture) -> None:
+    """Phase 38 D-05 + RESEARCH.md §2: handle_call_tool fires resource notification on update_device_fingerprint success."""
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "success"}'}]})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    await handle_call_tool("update_device_fingerprint", {"hostname": "x", "fingerprint": {}})
+
+    mock_session.send_resource_list_changed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_device_fingerprint_preview_no_notification_phase38(mocker: MockerFixture) -> None:
+    """Phase 38 D-05c (Plan 05): preview is read-only, MUST NOT fire resource notification.
+
+    Mirror of test_update_device_fingerprint_sends_list_changed_phase38 above, but for the
+    preview wrapper — preview does no DB write, so no homelab://devices refresh is needed.
+    Subscribed clients should not be told to re-fetch over a no-op merge calculation.
+    """
+    mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "success"}'}]})
+    mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
+
+    mock_session, mock_ctx = _make_mock_session()
+    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+
+    await handle_call_tool("update_device_fingerprint_preview", {"hostname": "x", "fingerprint": {}})
+
+    mock_session.send_resource_list_changed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_dry_run_does_not_send_notification(mocker: MockerFixture) -> None:
     """handle_call_tool for discover_and_map with dry_run=True does NOT send notification."""
     mock_handler = AsyncMock(return_value={"mode": "dry_run", "tool": "discover_and_map", "would_affect": []})

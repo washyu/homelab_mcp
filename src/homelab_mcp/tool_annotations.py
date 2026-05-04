@@ -1,6 +1,6 @@
 """Tool annotations for MCP spec compliance.
 
-Maps all 57 tool names to ToolAnnotations instances with readOnlyHint,
+Maps all 58 tool names to ToolAnnotations instances with readOnlyHint,
 destructiveHint, and idempotentHint set. MCP clients use these hints
 to distinguish read-only from destructive tools and provide safety warnings.
 """
@@ -43,12 +43,14 @@ _READ_ONLY_TOOLS = [
     "get_proxmox_vm_status",
     "check_ansible_service",
     "validate_infrastructure_changes",
-    "list_keyring_credentials",
     "decommission_device_preview",
     "delete_proxmox_vm_preview",
     "remove_vm_preview",
     "destroy_terraform_service_preview",
     "rollback_infrastructure_changes_preview",
+    "update_device_fingerprint_preview",  # Phase 38 D-05c (Plan 05)
+    "remove_device_preview",  # Phase 44 D-11
+    "purge_devices_preview",  # Phase 44 D-11
 ]
 
 # ---------------------------------------------------------------------------
@@ -69,6 +71,8 @@ _DESTRUCTIVE_TOOLS = [
     "destroy_terraform_service",
     "rollback_infrastructure_changes",
     "purge_failed_discoveries",
+    "remove_device",  # Phase 44 D-06
+    "purge_devices",  # Phase 44 D-01
 ]
 
 # ---------------------------------------------------------------------------
@@ -83,6 +87,13 @@ _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
         idempotentHint=True,
     ),
     "bulk_discover_and_map": ToolAnnotations(
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+    ),
+    "update_device_fingerprint": ToolAnnotations(
+        # Phase 38: idempotent because identical (hostname, fingerprint) input
+        # produces identical merged output.
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=True,

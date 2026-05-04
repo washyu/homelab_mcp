@@ -230,6 +230,20 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
     """
     Specialized wrapper for SSH operations with connection-specific error handling.
 
+    Phase 41 Bug BB: every error envelope carries both ``hostname`` and
+    ``connection_ip`` fields so :func:`sitemap.parse_discovery_output` can
+    route failed discoveries to a row matching the requested identifier
+    instead of a degenerate zombie row.
+
+    NOTE: the ``hostname`` field here carries the DIAL-TARGET identity
+    (the value the wrapped function received as its ``hostname`` arg —
+    typically row.connection_ip after the Phase 41 helper resolved a row),
+    NOT the requested identifier the user originally passed to
+    discover_and_map. Preservation of the requested identifier on the
+    final sitemap row is the responsibility of the post-parse merge in
+    :func:`sitemap.discover_and_store` (find_devices_by_hostname_or_ip
+    lookup + identity reuse), not this envelope.
+
     Args:
         timeout_seconds: Timeout for SSH operations
     """
@@ -244,11 +258,14 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                 # Return successful result as-is (should be JSON string)
                 return str(result)
             except TimeoutError:
-                hostname = kwargs.get("hostname", args[0] if args else "unknown")
+                # Phase 41-09 WR-05: split requested identifier from dial target.
+                requested = kwargs.get("hostname", args[0] if args else "unknown")
+                dial_target = kwargs.get("dial_target", requested)
                 error_response = json.dumps(
                     {
                         "status": "error",
-                        "connection_ip": hostname,
+                        "hostname": requested,
+                        "connection_ip": dial_target,
                         "error": f"SSH connection timeout after {effective_timeout} seconds",
                         "error_type": "ssh_timeout",
                         "suggestions": [
@@ -263,13 +280,16 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                 )
                 return error_response
             except (ConnectionError, OSError) as e:
-                hostname = kwargs.get("hostname", args[0] if args else "unknown")
+                # Phase 41-09 WR-05: split requested identifier from dial target.
+                requested = kwargs.get("hostname", args[0] if args else "unknown")
+                dial_target = kwargs.get("dial_target", requested)
                 # Check if this is a timeout error
                 if isinstance(e, asyncio.TimeoutError | TimeoutError):
                     error_response = json.dumps(
                         {
                             "status": "error",
-                            "connection_ip": hostname,
+                            "hostname": requested,
+                            "connection_ip": dial_target,
                             "error": f"SSH connection timeout: {sanitize_error(e)}",
                             "error_type": "ssh_timeout",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -280,7 +300,8 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                     error_response = json.dumps(
                         {
                             "status": "error",
-                            "connection_ip": hostname,
+                            "hostname": requested,
+                            "connection_ip": dial_target,
                             "error": f"SSH connection failed: {sanitize_error(e)}",
                             "error_type": "ssh_connection_error",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -289,14 +310,17 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                     )
                 return error_response
             except Exception as e:
-                hostname = kwargs.get("hostname", "unknown")
+                # Phase 41-09 WR-05: split requested identifier from dial target.
+                requested = kwargs.get("hostname", args[0] if args else "unknown")
+                dial_target = kwargs.get("dial_target", requested)
 
                 # Check for authentication-specific errors
                 if "PermissionDenied" in str(type(e)) or "Authentication failed" in str(e):
                     error_response = json.dumps(
                         {
                             "status": "error",
-                            "connection_ip": hostname,
+                            "hostname": requested,
+                            "connection_ip": dial_target,
                             "error": f"SSH key authentication failed: {sanitize_error(e)}",
                             "error_type": "ssh_auth_error",
                             "timestamp": datetime.now(UTC).isoformat(),
@@ -307,7 +331,8 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                     error_response = json.dumps(
                         {
                             "status": "error",
-                            "connection_ip": hostname,
+                            "hostname": requested,
+                            "connection_ip": dial_target,
                             "error": f"SSH operation failed: {sanitize_error(e)}",
                             "error_type": "ssh_general_error",
                             "timestamp": datetime.now(UTC).isoformat(),

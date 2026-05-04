@@ -1,147 +1,122 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: Credential Architecture Cleanup
-status: shipped
-stopped_at: v1.6 closed — milestone archived, tag v1.6 cut. Ready for /gsd-new-milestone.
-last_updated: "2026-04-24T17:30:00.000Z"
-last_activity: 2026-04-24 -- v1.6 milestone closed (4 phases / 18 plans / 5 reqs satisfied)
+milestone: v1.7
+milestone_name: Drift Architectural Fix
+status: executing
+stopped_at: Phase 44 context gathered
+last_updated: "2026-05-03T00:26:01.421Z"
+last_activity: 2026-05-03 -- Phase 44 execution started
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 18
-  completed_plans: 18
-  percent: 100
+  total_phases: 15
+  completed_phases: 10
+  total_plans: 25
+  completed_plans: 19
+  percent: 67
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-24 after v1.6 milestone close)
+See: .planning/PROJECT.md (updated 2026-04-25 — v1.7 opened)
 
 **Core value:** Every tool in the server actually works — a Proxmox homelabber can install this, connect it to any MCP client, and reliably manage their infrastructure through AI.
-**Current focus:** Between milestones — v1.6 shipped 2026-04-24; v1.7 scope to be defined via `/gsd-new-milestone`
+**Current focus:** Phase 44 — sitemap-crud-completion
 
 ## Current Position
 
-Milestone: v1.6 Credential Architecture Cleanup — SHIPPED 2026-04-24
-Phases: 4/4 complete (33, 33.1, 34, 35)
-Plans: 18/18 complete
-Status: Milestone closed. Run `/gsd-new-milestone` to define v1.7 scope.
-Last activity: 2026-04-24 -- v1.6 milestone close (archives written, tag cut)
+Milestone: v1.7 Drift Architectural Fix
+Phase: 44 (sitemap-crud-completion) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 44
+Last activity: 2026-05-03 -- Phase 44 execution started
 
-Progress: [██████████] 100% — v1.6 complete
+Progress: [███████░░░] 76%
+
+## v1.7 Phase Summary
+
+| Phase | Goal | Requirements |
+|-------|------|--------------|
+| 36. Drift ↔ Sitemap Foundation | Sitemap becomes single source of truth; `drift_baselines` table dropped | DRFT-11, DRFT-12, DRFT-21 |
+| 37. Drift Output Shape & Error Hygiene | Consistent shape across filter scopes; four-bucket coverage; sitemap-CRUD-tool error pointers | DRFT-13, DRFT-14, DRFT-15, DRFT-16 |
+| 38. Sitemap Fingerprint Schema | Kernel/package/capability fields on sitemap rows so OS-level changes surface as drift | DRFT-20 |
+| 39. Drift Detection Cases | Detect unknown / missing / changed infrastructure | DRFT-17, DRFT-18, DRFT-19 |
+| 40. Proxmox VM Lifecycle Polish | Clean error messages on VM-not-found and missing-credentials paths | POL-01, POL-02, POL-03 |
+
+**Coverage:** 14 / 14 requirements mapped, 0 orphans, 0 duplicates.
 
 ## Milestone Origin
 
-v1.6 anchors on the Phase 33 idea originally drafted at commit `8ac2270` on 2026-04-19 (credential-cleanup branch). That commit's narrative labeled v1.4/v1.5 as "parked/broken" — superseded. v1.4/v1.4.1/v1.5 all shipped cleanly. v1.6 picks up the actual credential cleanup scope from that commit's SPEC without the stale narrative.
+v1.7 surfaced during a 2026-04-25 retest of the v1.6 codebase. Live testing of the drift detection family produced 10 distinct bugs (A-J) of which 9 trace to a single architectural gap: the drift module maintains its own baseline data layer that was never integrated with the sitemap or keyring.
 
-## Deferred Items (carried from v1.5 close)
+**Architectural decision (2026-04-25):** Sitemap is the single source of truth for drift detection. The parallel `drift_baselines` table is dropped — sitemap rows are the baseline. This dissolves Bug J at its root rather than integrating two data layers. Drift becomes "stored sitemap state ≠ current live-probe state" with three buckets: unknown (manually-created infra not in sitemap), missing (sitemap rows that no longer probe-respond), changed (probe values differ from stored).
+
+**Scope split:** Originally scoped 32 requirements across drift unification, lifecycle hooks across 7 tool families, and role-aware drift. Split into v1.7 / v1.7.1 / v1.7.2 for shippability:
+
+- **v1.7 Drift Architectural Fix** (this milestone) — DRFT-11..21 + POL-01..03 (14 reqs). Drop parallel baseline table, wire scan_infrastructure_drift to sitemap, detect unknown/missing/changed buckets, capture kernel/package/capability fingerprints, polish Bug I + G. 5 phases (36-40).
+- **v1.7.1 Infrastructure Lifecycle Hooks** — LIFE-01..12 (12 reqs). Every infra-mutating tool family updates sitemap on create/destroy. Estimated 5-7 phases.
+- **v1.7.2 Role-Aware Drift** — TAGS-01..03 + ROLE-01..03 (6 reqs); promotes backlog 999.4. Gateway routing/NAT drift, NAS service-health drift. Estimated 3-5 phases.
+
+Bug I (`get_proxmox_vm_status` HTTP 500 leak) bundled into v1.7 as adjacent polish. Pending OS / app update advisories captured as 999.9 backlog (sibling to drift, not part of it).
+
+## Phase Ordering Constraints
+
+- **Phase 36 first, in isolation.** DRFT-21 (drop `drift_baselines` table) is a one-way migration. DRFT-11 (drift iterates sitemap) and DRFT-12 (resolve creds via `resolve_proxmox_credentials`) are foundational rewrites. All three must land before any phase that depends on the unified data model.
+- **Phase 38 before Phase 39.** DRFT-20 (sitemap schema extension) must land before DRFT-19 (changed-detection) — the changed bucket compares against the new fingerprint fields.
+- **Phase 37 and Phase 38 parallelizable** — they touch different code paths (drift output shape vs sitemap schema extension) and both depend only on Phase 36.
+- **Phase 40 independent.** POL-01/02/03 are adjacent polish on Proxmox VM lifecycle tools; can run any time after milestone open. Bundled at end for clean separation from drift work.
+
+## Deferred Items (carried from v1.6 close)
 
 | Category | Item | Status | Notes |
 |----------|------|--------|-------|
-| tech_debt | 31-VERIFICATION.md missing | deferred | Phase 31 merged on plan-SUMMARY evidence; Phase 32 revert-proof regressions re-prove each fix via integration |
+| tech_debt | 31-VERIFICATION.md missing | deferred | Phase 31 merged on plan-SUMMARY evidence; Phase 32 revert-proof regressions re-prove each fix |
 | tech_debt | 31-VALIDATION.md draft | deferred | Nyquist validation incomplete |
 | tech_debt | 32-VALIDATION.md missing | deferred | No Nyquist VALIDATION.md for regression-tests phase |
+| tech_debt | 33-VERIFICATION.md missing | deferred | Phase 33 merged on plan-SUMMARY evidence; integration checker supplied retroactive verification |
+| tech_debt | 33/33.1/34/35 VALIDATION.md gaps | deferred | Non-blocking; revert-proof regression + AST meta-tests provide equivalent coverage per CLAUDE.md |
 | tech_debt | SUMMARY frontmatter shape inconsistency | deferred | 32-01 flat vs 32-02..05 nested |
-| v1.7_candidate | SSH-04 per-call timeout handshake | deferred | Not credential-architecture; v1.7 candidate |
-| v1.7_candidate | QUAL-01 Proxmox iso/cdrom exclusivity | deferred | Schema correctness; v1.7 candidate |
-| v1.7_candidate | HTTP-01 HTTP flag truthy variants | deferred | Ergonomic polish; v1.7 candidate |
-| v1.7_candidate | SSH-03/SSH-05/ERR-02 credential-adjacent | deferred | Scoped out of v1.6 Tier A — could fit v1.6.x or v1.7 |
+| v1.8_candidate | Cross-cutting `mcp_admin` cleanup | deferred | ~20 sites in `infrastructure_crud.py`, `vm_operations.py`, `ssh_connection.py`, `service_installer.py`, schemas. Out of v1.7 scope (drift integration only) |
+| v1.8_candidate | SSH-04 per-call timeout handshake | deferred | Out of v1.7 scope |
+| v1.8_candidate | QUAL-01 Proxmox iso/cdrom exclusivity | deferred | Out of v1.7 scope |
+| v1.8_candidate | HTTP-01 HTTP flag truthy variants | deferred | Out of v1.7 scope |
+| v1.8_candidate | ERR-02 resolver error wrapping | deferred | Out of v1.7 scope |
+| v1.8_candidate | Rename docker-adjacent tools to `docker_*` | deferred | Captured as 999.8 backlog; naming-only refactor; out of v1.7 |
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 38.1 inserted after Phase 38: Sitemap-keystore credential binding (URGENT) — Claude Desktop UAT on 2026-04-26 surfaced Bug O (sitemap stores hostnames, keyring keyed by IP/FQDN, no normalization → drift returns scanned: 0 on documented happy path) and Bug N (drift eligibility heuristic invisible to users). Architectural decision: each sitemap row carries a stable `keystore_id` reference rather than relying on hostname/IP join inference. Blocks Phase 39 — drift detection cases depend on credential resolution working end-to-end.
+- Phase 39.1 inserted after Phase 39: Thread credential_id through drift_detection._enum_one + extend Phase 38.1 AST guard. Closes Phase 38.1 R6 regression surfaced in 38.1-VERIFICATION.md. Bisected to Phase 39 commit e05df24 (DRFT-17). (URGENT)
+- Phase 44 added at end of v1.7: Sitemap CRUD Completion — promotes backlog 999.21 (`remove_device`) and 999.5 (`purge_devices` generalization) into v1.7 scope after 2026-05-02 validation testing surfaced that drift detection without a corrective action surface is half-shipped. `decommission_device` carries host-cleanup semantics that are wrong for "VM was deleted externally — drop the inventory entry"; `purge_failed_discoveries` only covers error rows. Closes the v1.7 detection-to-correction loop.
+
 ### Decisions
 
-Full v1.0-v1.5 decision logs in `.planning/milestones/v{X.Y}-ROADMAP.md`.
+Full v1.0-v1.6 decision logs in `.planning/milestones/v{X.Y}-ROADMAP.md`. Key patterns established through v1.6 (carry forward into v1.7):
 
-Active patterns established through v1.5:
-
-- `contextlib.suppress(Exception)` around `websocket.close()` — idempotent cleanup for PTY session teardown
-- Quoted return annotations for non-subscriptable third-party classes (e.g., `'asyncssh.SSHCompletedProcess'`) — defers evaluation safely under mypy and runtime
-- AST meta-tests for lint-style regression guards — catches tautological-assertion bugs that no single positive regression test can catch
-- Report computed/derived values in error messages (`effective_timeout`), not raw decorator parameters
-- JSON Schema `enum` keyword for fixed-choice MCP tool parameters — validated at framework boundary before handler runs
-
-Phase 34 Plan 03 decisions (added 2026-04-23):
-
-- get_proxmox_client converted to async def; INJECT-03 'first registry entry' shortcut block deleted entirely (D-12); resolver call inserted for host-known + no-auth path (D-10); explicit api_token or username+password bypasses resolver (SC-5).
-- All 9 internal call sites in proxmox_api.py updated to await get_proxmox_client(host=host, session=session) via replace_all edit.
-- Patch target for new TestGetProxmoxClientAsync tests is src.homelab_mcp.proxmox_api.resolve_proxmox_credentials (matches test file import convention); homelab_mcp.proxmox_api path does not intercept the call.
-- All @patch("src.homelab_mcp.proxmox_api.get_proxmox_client") decorators in consumer-function test classes changed to new_callable=AsyncMock — MagicMock cannot be awaited.
-- test_client_missing_credentials changed from ValueError('Must provide...') to CredentialNotFoundError raised by mocked resolver — behavior change is correct since host+no-auth now routes through resolver.
-- test_get_proxmox_client_keyring_fallback (INJECT-03 test) deleted; replaced with explanatory comment per D-16a (no AST meta-test for shortcut removal in greenfield phase).
-- CredentialNotFoundError imported via src.homelab_mcp.ssh_tools in test body to avoid headless home-dir RuntimeError from lazy module-level path expansion in credential_store.py.
-
-Phase 35 Plan 04 decisions (added 2026-04-24):
-
-- 3 AST meta-tests (D-14 hostname-only store_device match, D-15 wrapped conn.run, D-16 no threshold coercion) + 5 functional tests (D-17a/D-01a/D-17b DB + D-17c/D-06/W4 SSH + D-17d parallelism + D-17e analyzer null-skip) = 11 Phase 35 tests total, all pass.
-- D-14 scanner filters the abstract base class `DatabaseAdapter.store_device` (which has a `pass` body, no SQL) by only counting functions whose bodies contain a `SELECT id FROM devices` string constant.
-- D-15 scanner uses parent-pointer annotation (`setattr(child, "_parent", parent)` on ast.walk) + upward-walk to detect enclosing `asyncio.wait_for` OR `_run_with_timeout` wrappers — standard ast idiom since ast does not wire parents by default.
-- D-16 scanner narrows by pattern: BoolOp(Or) + 2 operands + device.get() on left + Constant(0/"") on right + left.args[0].value in PHASE35_FORBIDDEN_COERCION_FIELDS frozenset (`cpu_cores`, `memory_total`, `disk_use_percent`). Correct `is not None` guards and the `_has_threshold_data` helper naturally do not match.
-- Two pre-existing tests updated in Plan 04 scope (not silently deleted or skipped): `test_ssh_discover_success` for Plan 01 field renames (`count`→`cores`, df -B1→-T, Gi memory strings), and `test_database_schema_creation` for Plan 03 index rename (`idx_devices_hostname_ip`→`idx_devices_hostname`). Each update documented in the 35-04-SUMMARY Deviations section.
-- Plan executed inline by orchestrator — subagents remained sandbox-blocked on Edit/Write (same as Plan 03).
-
-Phase 35 Plan 03 decisions (added 2026-04-24):
-
-- Hostname-only upsert with degenerate-hostname fallback (`None` / `""` / `'unknown'`) in both SQLiteAdapter.store_device and PostgreSQLAdapter.store_device — closes bug #2 (zombie rows on IP change) while preserving Phase-33 distinct-error rows.
-- `connection_ip` moved from match clause into UPDATE SET in both adapters — re-discovery with new IP overwrites the existing row's connection_ip instead of creating a duplicate.
-- SQLite: usb/pci/block added as separate TEXT columns via ALTER TABLE (idempotent PRAGMA-guarded); threaded through UPDATE/INSERT (23 placeholders); JSON-decoded in get_all_devices via a loop.
-- Postgres: JSONB-extend chosen over schema column add — usb/pci/block land inside existing system_info JSONB through new `_maybe_json_load` helper; flattened back to top-level keys in get_all_devices for reader symmetry with SQLite.
-- SQLite rebuild pattern used to drop stale UNIQUE (no native DROP CONSTRAINT): DROP INDEX + DROP TABLE IF EXISTS devices_new (I8 orphan-recovery) + CREATE + dynamic-column-copy INSERT + DROP + RENAME + CREATE INDEX.
-- Migration rebuild uses **dynamic column copy** (PRAGMA table_info + NULL AS fallback) — strictly more correct than the plan's literal column list, which crashed on the plan's own minimal-schema acceptance test.
-- Postgres dedup uses `DELETE ... WHERE id = ANY(%s)` (psycopg2-native array param) rather than a constructed placeholder list.
-- Plan executed inline by orchestrator: both subagent attempts were sandbox-blocked (worktree agent was created from wrong base and could not `git reset --hard`; sequential agent had every Edit call denied). Subagent sandbox is stricter than orchestrator.
-
-Phase 34 Plan 04 decisions (added 2026-04-23):
-
-- post-parse validation chosen over subparsers for conditional-positional: hostname made nargs="?" on add/remove; _parse_scope_arg() rejects ill-formed combinations after argparse runs. Matches --key-path precedent.
-- _parse_scope_arg placed as module-level private def above _cmd_credentials_add; raises ValueError for callers to translate to stderr + exit(1).
-- unregister_cluster_credential added to credential_store.py (not inlined in server.py) to keep registry mutation logic encapsulated in the store module.
-- Per-node paths in all three handlers byte-for-byte equivalent to pre-Plan-04 behavior — SC-5 CLI back-compat maintained.
-- tests/test_credential_handlers.py created fresh (did not exist before Plan 04); 4 tests for D-17a handler display tweak.
-- tools.py / tool_schemas/ not touched — D-17 schema-unchanged proof: git diff 42151c5..HEAD shows empty diff for both schema files.
-
-Phase 34 Plan 02 decisions (added 2026-04-23):
-
-- Top-level import of CredentialNotFoundError from .ssh_tools used (no circular import — ssh_tools does not import proxmox_api). noqa: F401 suppresses "imported but unused" since the name is re-exported for consumers.
-- ProxmoxAPIClient.get() strips the "data" wrapper (returns list directly from line 175). Defensive rows = status if isinstance(status, list) else [] branch is sufficient; dict fallback not needed.
-- Throwaway ProxmoxAPIClient per candidate cluster entry for /cluster/status probe — reuses all auth header/session logic with zero new HTTP plumbing (PATTERNS.md §3 pattern).
-- Plain dict for _HOST_CLUSTER_CACHE — allows _HOST_CLUSTER_CACHE.clear() in test autouse fixture; functools.lru_cache not used (Claude's Discretion per CONTEXT.md).
-- resolve_proxmox_credentials placed at line 194, immediately above get_proxmox_client, for locality with the consumer.
-
-Phase 34 Plan 01 decisions (added 2026-04-23):
-
-- scope/cluster_name added as keyword-only params (after `*`) to `register_credential`, `store_credential`, `get_credential`, `delete_credential` — preserves all existing positional call sites unchanged.
-- Cluster entry upsert dedup key is `(cluster_name, username, credential_type)` per D-08a — hostname intentionally not compared so re-running with a different host arg (or `""`) still upserts the same cluster row.
-- `_keyring_key(username, hostname, scope, cluster_name)` is a plain module-level private def inserted just above `store_credential` — single source of truth for the `@cluster:` key form (D-03).
-- `identity` variable used in all three keyring-helper fallback log messages so cluster calls log `cluster:<name>` instead of empty string.
-- Pre-existing failures in `test_database.py::test_ssh_credentials_table_dropped_postgres` and `test_proxmox_api.py::TestGetProxmoxClient::test_client_missing_host` confirmed pre-existing on baseline; out of scope for Plan 01 (scope-boundary rule).
-
-Phase 33.1 Plan 04 decisions (added 2026-04-23):
-
-- End-to-end unit-test keyring resolution proof: monkeypatch the KEYRING boundary (`list_credentials`/`get_credential`) and the NETWORK boundary (`ssh_connect`) — do NOT monkeypatch the resolver or the discovery helper. Full call stack executes, regressions in any intermediate layer surface as test failures.
-- Lazy-import monkeypatch target: when a module lazy-imports a name inside a function body (like `sitemap.py`'s `from .ssh_tools import ssh_discover_system`), tests must monkeypatch on the SOURCE module (`ssh_tools`), not the IMPORTING module (`sitemap`) — the name resolves against the source at call time.
-- Docstring `mcp_admin` cleanup: when removing a hardcoded default, also strip the quoted literal from explanatory docstrings/comments so grep-based audits (Phase 33 D-13 intent) stay clean. Future-proof against confusion in retroactive audits.
-
-Phase 33.1 Plan 03 decisions (added 2026-04-23):
-
-- Two-shape MCP tool-surface deletion: when removing a tool, `tool_annotations.py` needs BOTH a list-entry deletion (`_READ_ONLY_TOOLS`) AND a dict-entry deletion (`_MUTATING_ANNOTATIONS`) — the structural shape differs per mutating-hint profile. Import-time parity assertion must explicitly test `tool_name not in TOOL_ANNOTATIONS` to catch both shapes (extends Phase 33 5-way to 7-way parity: schema + handler + dispatch + annotation-list + annotation-dict + openapi allowlist + openapi category).
-- Orphan-test pruning scope: when deleting an MCP tool schema, ALL tests that key into the removed schema must be deleted alongside the explicit plan list — not just the ones the plan enumerates. Rule-3 blocking (KeyError prevents test sweep pass) forces the sweep. Phase-33 convention: delete tests, don't skip them, and replace with 1-3 line comment citing the removal decision (D-05).
-- `ssh_execute_command(command="sudo -n true")` as the generic "does this user have sudo" check replaces the removed `verify_mcp_admin` tool in the `connect_to_device` prompt. Exit code 0 = passwordless sudo available; non-zero = not configured. Works for any registered user, not just the literal mcp_admin account.
-- Scope-boundary finding for Phase 33.2: `infrastructure_crud.py:30` and `vm_operations.py:25` carry dict-literal `"username": "mcp_admin"` in `get_device_connection_info()` returns — pre-existing, not in Phase 33.1's `files_modified`, and bypasses the Phase 33.1 D-08 AST guard because they aren't function-signature defaults. Recommend Phase 33.2 either extend `DEFERRED_MCP_ADMIN_DEFAULT_FILES` to include them OR fix both sites during the service-tool + downstream-infrastructure sweep.
+- **Keyring as single source of truth** for remote credentials (CRED-04). v1.7's drift integration must resolve through `resolve_ssh_credentials` / `resolve_proxmox_credentials`, never bypass with env vars or DB reads
+- **`CredentialNotFoundError` with actionable pointer** instead of silent fallback (CRED-05) — v1.7 error messages should follow this pattern (`credentials add <hostname>` etc.), not env-var pointers
+- **Cluster-scoped Proxmox tokens** with node→cluster→error precedence (CRED-08) — drift integration must respect this resolution order
+- **Hostname-only sitemap upsert** with degenerate-hostname fallback (Phase 35) — drift baseline keys should follow the same convention
+- **AST meta-tests as regression guard pattern** — class of bugs that no positive regression test catches (33.1 D-08 mcp_admin defaults, 35 D-14/D-15/D-16 hostname-only/timeout-wrapped/no-coercion). v1.7 should consider similar guards: Phase 36 candidate (no parallel-table reads on drift-scan call chain), Phase 38 candidate (every new probe `conn.run` is timeout-wrapped)
+- **`_run_with_timeout(10s)` per-subprocess SSH probe wrapping** (Phase 35) — drift live-state probes (Phase 38, 39) must follow this pattern
+- **`Semaphore(10) + asyncio.gather`** for bulk discovery (Phase 35) — drift bulk scans (Phase 39) should use the same fanout pattern
+- **`contextlib.suppress(Exception)` around cleanup** — idempotent cleanup pattern; applies to drift baseline cleanup hooks on VM destroy
+- **Wave-0 TDD pattern (RED tests before implementation)** — established v1.1, used through v1.6; expected for every v1.7 plan
 
 Key constraints carried forward:
 
 - `credential_store.py` must have no homelab_mcp imports — circular import prevention
 - Every keyring call path must catch `NoKeyringError`, `RuntimeError`, and `Exception` — headless Linux primary deploy target
-- `_sudo_run` helper is the only path for sudo invocation — single consistent `check=` forwarding
+- `_sudo_run` helper is the only path for sudo invocation
 - PyPI OIDC trusted publisher registered at pypi.org; `git tag v*` push triggers publish
+- [Phase ?]: Phase 42-01: B1 fix uses (hostname, ssh_credential_id) tuple key for SSH probe map — preserves multi-credential attribution; B3 verified-already-done via three existing dedupe layers (no warm-up loop needed)
+- [Phase ?]: Phase 42 complete after Plan 02 fixture migration
 
 ### Pending Todos
 
-None.
+None at v1.7 ROADMAP-complete. Will be populated as phase planning progresses.
 
 ### Quick Tasks Completed
 
@@ -154,11 +129,11 @@ None.
 ### Blockers/Concerns
 
 - PyPI OIDC trusted publisher must remain registered at pypi.org/manage/project/homelab-mcp/settings/publishing/ for future `git tag v*` pushes
-- Human-only verifiable items: `homelab-mcp --version` in installed env, TTY echo suppression for `credentials add` — cannot be automated in headless CI
-- v1.6 migration implications: users with credentials stored only in the DB `ssh_credentials` table will need to re-add via `credentials add` after the drop — no auto-migration planned (homelab scope, single-user)
+- **Phase 36 migration risk:** DRFT-21 drops the `drift_baselines` table without auto-migration. Pre-existing baseline rows are not reconciled — homelab single-user scope, mirrors v1.6 CRED-04 keyring migration. Document clearly in phase plan and release notes
+- **Phase 38/39 live-test verifiability:** capability probes (GPU passthrough, Vulkan/ML availability) likely cannot be fully exercised in headless CI; expect manual verification on a real Proxmox host with a passthrough-capable GPU as part of milestone close
 
 ## Session Continuity
 
-Last session: 2026-04-24T17:30:00.000Z
-Stopped at: v1.6 milestone closed — archives written, tag v1.6 cut, REQUIREMENTS.md removed
-Resume command: /gsd-new-milestone (to define v1.7 scope) — or operate in maintenance mode
+Last session: 2026-05-02T21:44:48.555Z
+Stopped at: Phase 44 context gathered
+Resume command: `/gsd-verify-work 42` to run the Phase 42 verifier

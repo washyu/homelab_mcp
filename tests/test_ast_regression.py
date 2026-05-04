@@ -34,6 +34,11 @@ FORBIDDEN_SOURCE_STRINGS: list[str] = [
     "remove_server",  # D-25: removed MCP tool name (D-21)
     "update_mcp_admin_groups",  # D-10: removed by Plan 33.1-03
     "verify_mcp_admin_access",  # D-10: removed by Plan 33.1-03
+    # ─── Phase 36 D-12 additions ───
+    "drift_baselines",  # Phase 36 D-12: dropped table name
+    "upsert_drift_baseline",  # Phase 36 D-12: removed adapter method
+    "get_drift_baseline",  # Phase 36 D-12: removed adapter method
+    "get_all_drift_baselines",  # Phase 36 D-12: removed adapter method
 ]
 
 # Narrow allowlist: certain files may legitimately contain specific forbidden strings
@@ -42,6 +47,10 @@ ALLOWED_EXCEPTIONS: dict[str, set[str]] = {
     # migration.py legitimately names `ssh_credentials` inside the DROP statement
     # (removing this reference would prevent the drop from firing — self-defeating).
     "ssh_credentials": {"migration.py"},
+    # ─── Phase 36 D-12 addition ───
+    # migration.py legitimately names `drift_baselines` inside the DROP statement
+    # (D-05 drop step references the literal table name).
+    "drift_baselines": {"migration.py"},
 }
 
 # Phase 33.2 scope — mcp_admin cleanup sweep extension. These files retain
@@ -173,7 +182,7 @@ def test_no_forbidden_strings_in_source() -> None:
                 )
 
     assert not violations, (
-        "Phase 33 regression: found removed DB/tool references in source files.\n"
+        "Phase 33+36 regression: found removed DB/tool references in source files.\n"
         "These strings must not appear outside test files:\n" + "\n".join(f"  - {v}" for v in violations)
     )
 
@@ -551,3 +560,1253 @@ def test_no_threshold_coercion_in_analyzer_bodies_phase35() -> None:
         "analyzer bodies. Use explicit `is not None` guards or "
         "`_has_threshold_data(device, ...)`:\n" + "\n".join(f"  - {v}" for v in violations)
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 36 AST regression guards (D-13)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_drift_detection_no_baseline_references_phase36() -> None:
+    """Phase 36 D-13: drift_detection.py must contain no reference to the
+    parallel baseline data layer — singular OR plural, in any source-text form
+    (string literal, identifier, attribute access).
+
+    Belt-and-braces guard: the broader test_no_forbidden_strings_in_source()
+    catches reintroduction in any source file via AST walk; this test pins
+    drift_detection.py specifically as the only module on the drift-scan call
+    chain (per CONTEXT.md SC-4 wording).
+    """
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+
+    forbidden = [
+        "drift_baseline",  # singular — covers e.g. db_adapter.upsert_drift_baseline()
+        "drift_baselines",  # plural — covers table name + db_adapter.get_all_drift_baselines()
+    ]
+    violations = [s for s in forbidden if s in source]
+    assert not violations, (
+        f"Phase 36 D-13 regression — drift_detection.py contains forbidden baseline references: {violations}. "
+        f"scan_drift must read from sitemap rows (db_adapter.get_all_devices()) only."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 37 AST regression guards (D-11 / D-12)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase37DriftHygiene:
+    """Phase 37 D-11 + D-12: drift surface architectural lock-in.
+
+    D-11 (PROXMOX_HOST forbidden in drift surface, DRFT-15 closure):
+      Drift-family files must never reference the deprecated PROXMOX_HOST
+      env var. Recovery should point to sitemap CRUD tools and the
+      `homelab-mcp credentials add --type proxmox` CLI instead.
+
+      Per CONTEXT.md D-08 the openapi_app.py "Proxmox" entry STILL contains
+      PROXMOX_HOST (Phase 40 POL-03 territory) — this guard scopes the
+      openapi_app.py check to ONLY the "Drift Detection" INFRA_REQUIREMENTS
+      value, leaving the Proxmox entry to a future phase.
+
+    D-12 (no baseline-lifecycle MCP tools, DRFT-16 closure):
+      The Bug-C tool names register_drift_baseline / list_drift_baselines /
+      delete_drift_baseline must NEVER appear anywhere under
+      src/homelab_mcp/. Phase 36 architecturally dissolved Bug C by
+      unifying drift detection with the sitemap; this guard locks that in.
+
+    Per CONTEXT.md D-15, both guards are AST-only — no runtime registry
+    check. CI catches reintroduction at merge time; the duplicate
+    enforcement at server startup is not worth the production cost.
+    """
+
+    # ── D-11 + Phase 40 D-06: PROXMOX_HOST forbidden in drift + proxmox surface ──
+
+    # PROXMOX_HOST-hygiene source files (Phase 37 D-11 + Phase 40 D-06).
+    # Drift surface (Phase 37) + Proxmox surface (Phase 40 POL-03 hard-
+    # removed the env-var fallback at proxmox_api.py:474). openapi_app.py
+    # is NOT in this file list — its PROXMOX_HOST hygiene is verified via
+    # the INFRA_REQUIREMENTS dict-value scans below.
+    _DRIFT_SURFACE_FILES: tuple[str, ...] = (
+        "drift_detection.py",
+        "tool_handlers/drift_handlers.py",
+        "tool_schemas/drift_tools_schema.py",
+        "proxmox_api.py",  # Phase 40 D-06 / POL-03
+        "tool_schemas/proxmox_tools_schema.py",  # Phase 40 D-06 / POL-02 + D-05
+    )
+
+    def test_no_proxmox_host_in_drift_files(self) -> None:
+        """Phase 37 D-11 + Phase 40 D-06: PROXMOX_HOST-surface files contain no PROXMOX_HOST references.
+
+        Scans each of:
+          - src/homelab_mcp/drift_detection.py
+          - src/homelab_mcp/tool_handlers/drift_handlers.py
+          - src/homelab_mcp/tool_schemas/drift_tools_schema.py
+          - src/homelab_mcp/proxmox_api.py                       (Phase 40 D-06 / POL-03)
+          - src/homelab_mcp/tool_schemas/proxmox_tools_schema.py (Phase 40 D-06 / POL-02 + D-05)
+
+        for the substring `PROXMOX_HOST` (must be zero matches per file). Then
+        imports INFRA_REQUIREMENTS from openapi_app and verifies that BOTH the
+        "Drift Detection" entry (Phase 37) AND the "Proxmox" entry (Phase 40)
+        lack PROXMOX_HOST.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        violations: list[str] = []
+
+        # File scan: each PROXMOX_HOST-surface file must have zero PROXMOX_HOST.
+        for relative_path in self._DRIFT_SURFACE_FILES:
+            file_path = src_root / relative_path
+            assert file_path.exists(), (
+                f"Phase 37 D-11 / Phase 40 D-06 setup error: {file_path} does not exist. "
+                f"_DRIFT_SURFACE_FILES is out of sync with the source tree."
+            )
+            source = file_path.read_text(encoding="utf-8")
+            if "PROXMOX_HOST" in source:
+                violations.append(
+                    f"{relative_path}: contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15 + "
+                    f"Phase 40 D-06 / POL-03 — surface must reference the credentials "
+                    f"CLI (`homelab-mcp credentials add --type proxmox`) and sitemap "
+                    f"CRUD tools, not the deprecated env var)"
+                )
+
+        # Dict-value scans: openapi_app.py INFRA_REQUIREMENTS entries must lack
+        # PROXMOX_HOST. Done via import to avoid fragile line-number coupling.
+        from homelab_mcp.openapi_app import INFRA_REQUIREMENTS
+
+        drift_entry = INFRA_REQUIREMENTS.get("Drift Detection", "")
+        if "PROXMOX_HOST" in drift_entry:
+            violations.append(
+                "openapi_app.py INFRA_REQUIREMENTS['Drift Detection']: contains PROXMOX_HOST (Phase 37 D-11 / DRFT-15)"
+            )
+
+        # Phase 40 D-06: openapi_app.py "Proxmox" INFRA_REQUIREMENTS entry must
+        # also lack PROXMOX_HOST (POL-03 D-04 + D-05 ripple). Pre-Phase-40 this
+        # entry contained "Set PROXMOX_HOST..."; Phase 40 Plan 02 rewrote it to
+        # point at `homelab-mcp credentials add --type proxmox`.
+        proxmox_entry = INFRA_REQUIREMENTS.get("Proxmox", "")
+        if "PROXMOX_HOST" in proxmox_entry:
+            violations.append(
+                "openapi_app.py INFRA_REQUIREMENTS['Proxmox']: contains PROXMOX_HOST (Phase 40 D-06 / POL-03)"
+            )
+
+        assert not violations, (
+            "Phase 37 D-11 + Phase 40 D-06 regression — PROXMOX_HOST reintroduced "
+            "in drift/proxmox surface:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nText should reference 'homelab-mcp credentials add --type proxmox' "
+            "(per-node) or '--scope cluster:<name>' (cluster-wide), and sitemap CRUD "
+            "tools (discover_and_map / get_network_sitemap / purge_failed_discoveries "
+            "/ decommission_device) — never the deprecated PROXMOX_HOST env var."
+        )
+
+    # ── D-12: no baseline-lifecycle MCP tool names anywhere in src/ ─────
+
+    # Forbidden tool names — Bug C architectural dissolution. Per CONTEXT.md
+    # D-12, ZERO matches anywhere under src/homelab_mcp/. No allowed
+    # exceptions: these tools were never built and must never be built.
+    _FORBIDDEN_BASELINE_TOOL_NAMES: tuple[str, ...] = (
+        "register_drift_baseline",
+        "list_drift_baselines",
+        "delete_drift_baseline",
+    )
+
+    def test_no_baseline_lifecycle_tool_names_in_source(self) -> None:
+        """Phase 37 D-12: forbidden baseline-lifecycle MCP tool names absent.
+
+        Walks every *.py under src/homelab_mcp/ and scans each file's source
+        for register_drift_baseline / list_drift_baselines / delete_drift_baseline.
+        Must be ZERO matches across all source files — no allowed exceptions
+        (these tools were dissolved architecturally by Phase 36's sitemap
+        unification per DRFT-16 / Bug C).
+
+        Catches reintroduction in tool_schemas/, tools.py, handler files,
+        docstrings, deferred imports, and any other source location.
+
+        Per CONTEXT.md D-13, this scan is source-only; documentation drift is
+        caught via D-08 sweep + code review.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        assert src_root.exists(), f"Source root not found: {src_root}"
+
+        violations: list[str] = []
+
+        for py_file in sorted(src_root.rglob("*.py")):
+            source = py_file.read_text(encoding="utf-8")
+            for forbidden in self._FORBIDDEN_BASELINE_TOOL_NAMES:
+                if forbidden in source:
+                    violations.append(
+                        f"{py_file.relative_to(src_root.parent.parent)}: contains forbidden tool name {forbidden!r}"
+                    )
+
+        assert not violations, (
+            "Phase 37 D-12 regression — forbidden baseline-lifecycle MCP tool "
+            "names reintroduced in source:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+            + "\n\nPhase 36 architecturally dissolved Bug C by unifying drift "
+            "detection with the sitemap. The MCP tool surface must NEVER expose "
+            "register_drift_baseline / list_drift_baselines / delete_drift_baseline "
+            "(DRFT-16). Drift baselines ARE sitemap rows; lifecycle is handled by "
+            "discover_and_map / decommission_device / purge_failed_discoveries."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 38.1 AST regression guards (D-15 / D-17)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase381CredBinding:
+    """Phase 38.1 D-15/D-17: drift's row loop never silently skips a sitemap row.
+
+    D-15: no ``ast.Continue`` may appear inside the row-iter for-loop body of
+        ``drift_detection.scan_drift``. Every row MUST land in one of five buckets
+        (probed_ok / unreachable / not_eligible / unknown / changed).
+    D-17: degenerate-row routing now goes to ``not_eligible``, not ``continue`` —
+        D-15 catches this structurally.
+    D-16: scope is ONLY ``scan_drift`` for now; Phase 39's unknown/changed helpers
+        will extend.
+
+    NOTE on function name: ``scan_drift`` (drift_detection.py:54), NOT
+    ``scan_infrastructure_drift`` (the latter is the MCP tool name in
+    tool_handlers/drift_handlers.py). RESEARCH Pitfall 1.
+    """
+
+    def test_scan_drift_no_continue_in_row_loop_phase38_1(self) -> None:
+        """Phase 38.1 D-15: no ``continue`` in scan_drift row loop.
+
+        The for-loop body must route EVERY row into one of the five buckets.
+        A bare ``continue`` is the original Bug O shape (silent skip).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        target = next(
+            (
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"
+            ),
+            None,
+        )
+        assert target is not None, (
+            "Phase 38.1 D-15: scan_drift not found in drift_detection.py "
+            "(if you renamed the function, update this guard)"
+        )
+
+        # Find the row-iter for-loop ("for row in rows:")
+        row_loops = [
+            n
+            for n in ast.walk(target)
+            if isinstance(n, ast.For) and isinstance(n.target, ast.Name) and n.target.id == "row"
+        ]
+        assert len(row_loops) == 1, (
+            f"Phase 38.1 D-15: expected one `for row in rows:` loop in scan_drift, "
+            f"found {len(row_loops)}. If you intentionally split the loop, update "
+            f"this guard's row-loop discovery shape."
+        )
+
+        violations = [n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)]
+        assert not violations, (
+            f"Phase 38.1 D-15 regression — `continue` reappeared in scan_drift row "
+            f"loop at line(s): {violations}. Every row must land in one of five "
+            f"buckets (probed_ok, unreachable, not_eligible, unknown, changed)."
+        )
+
+    def test_drift_loop_routes_degenerate_to_not_eligible_phase38_1(self) -> None:
+        """Phase 38.1 D-17: scan_drift must contain at least one not_eligible.append(...)
+        call — degenerate-row routing per D-17 + credential-failure routing per D-15.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+        target = next(
+            (
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"
+            ),
+            None,
+        )
+        assert target is not None, "Phase 38.1 D-15: scan_drift not found"
+        not_eligible_appends = [
+            n
+            for n in ast.walk(target)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id == "not_eligible"
+            and n.func.attr == "append"
+        ]
+        assert not_eligible_appends, (
+            "Phase 38.1 D-17: scan_drift must contain at least one "
+            "`not_eligible.append(...)` call (degenerate-row routing per D-17 + "
+            "credential-failure routing per D-15). Current source has none."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 39.1 AST regression guard (R6-regression closure; D-16 anticipated extension)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase39_1NoSkipInDriftEnum:
+    """Phase 39.1 R6-regression: every get_proxmox_client(...) call inside
+    drift_detection.py threads credential_id= as a keyword.
+
+    Regression closed: Phase 39 commit e05df24 introduced
+    ``_enumerate_proxmox_vms._enum_one`` which called
+    ``get_proxmox_client(host=h, session=session)`` WITHOUT ``credential_id=``,
+    regressing the Phase 38.1 R6 binding contract on the unknown-VM
+    enumeration path. The Phase 38.1 D-15 guard covered only ``scan_drift``'s
+    row loop body — D-16 explicitly anticipated this extension point:
+    "Phase 39's unknown/changed detection helpers will likely extend the
+    guard's target list when they land."
+
+    Scope (per threat model T-39.1-02 — precise carve-out):
+      * Covers ONLY direct ``get_proxmox_client(...)`` calls inside
+        ``src/homelab_mcp/drift_detection.py``. Other modules and
+        ``getattr(...)``-indirected calls are NOT in scope.
+      * Import aliasing (``from .proxmox_api import get_proxmox_client as
+        <other>``) is BLOCKED by an explicit canonical-name assertion at
+        the top of the guard (WR-03 mitigation) — an alias rebinding
+        would otherwise be invisible to the ast.Name match.
+      * A future ``/version`` ping helper that intentionally does NOT need
+        credentials (e.g., capability-discovery before binding) would need
+        an explicit allowlist entry — but no such helper exists today, and
+        the cost of adding one is minimal.
+
+    Threat model T-39.1-03 mitigation: walk the AST (match
+    ``ast.Call`` where ``func.id == 'get_proxmox_client'``), do NOT regex
+    source text. Source-text matching misses ``getattr`` indirection.
+    """
+
+    def test_get_proxmox_client_calls_thread_credential_id_phase39_1(self) -> None:
+        """Every direct get_proxmox_client(...) call inside drift_detection.py
+        includes credential_id= as a keyword argument."""
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        # WR-03 (Phase 39.1 review): guard against import aliasing. The
+        # ast.Call match below keys on `func.id == "get_proxmox_client"`,
+        # which silently drops any call site bound to a different local
+        # name (e.g., `from .proxmox_api import get_proxmox_client as gpc`
+        # makes the call site `await gpc(...)` invisible to this guard).
+        # Pin the canonical name here so a future refactor that aliases
+        # the import fails LOUDLY at this assertion instead of silently
+        # weakening the guard's coverage. Option (b) — extending the
+        # guard to track aliased local names — is more permissive but
+        # requires walking ImportFrom nodes and resolving call.func.id
+        # back to its originating import; option (a) below is simpler
+        # and matches the project's "make implicit assumptions explicit"
+        # convention.
+        imports = [
+            a
+            for n in ast.walk(tree)
+            if isinstance(n, ast.ImportFrom) and (n.module or "").endswith("proxmox_api")
+            for a in n.names
+            if a.name == "get_proxmox_client"
+        ]
+        assert imports and all(a.asname is None for a in imports), (
+            "Phase 39.1 guard (WR-03): get_proxmox_client must be imported "
+            "under its canonical name in drift_detection.py — aliasing "
+            "(`from .proxmox_api import get_proxmox_client as <other>`) "
+            "would bypass the ast.Name match below and silently drop call "
+            "sites from this guard's coverage. If you have a legitimate "
+            "reason to alias, either rewrite this guard to track aliased "
+            "local names or remove the alias."
+        )
+
+        calls = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "get_proxmox_client"
+        ]
+        assert calls, (
+            "Phase 39.1 guard: zero get_proxmox_client(...) calls found in "
+            "drift_detection.py — either the file was renamed/refactored "
+            "(update this guard) or all calls were removed (the guard is "
+            "now vacuous and should be re-evaluated)."
+        )
+
+        violations: list[int] = []
+        for call in calls:
+            kw_names = {kw.arg for kw in call.keywords if kw.arg is not None}
+            if "credential_id" not in kw_names:
+                violations.append(call.lineno)
+
+        assert not violations, (
+            f"Phase 39.1 R6-regression — get_proxmox_client(...) called "
+            f"WITHOUT credential_id= keyword inside drift_detection.py at "
+            f"line(s): {violations}. This is the Phase 38.1 R6 binding "
+            f"contract: every Proxmox-touching call on the drift call chain "
+            f"must thread the binding UUID via credential_id=. If you have "
+            f"a legitimate non-credentialed call (e.g., a /version ping "
+            f"helper that intentionally bypasses the resolver), add it to "
+            f"an explicit allowlist in this guard with a comment explaining "
+            f"why credential_id= is not needed."
+        )
+
+    def test_phase39_1_guard_call_site_floor(self) -> None:
+        """WR-02 (Phase 39.1 review): rename of
+        ``test_phase39_1_guard_catches_added_helper``. The original name
+        promised behavior the test does not deliver — it does NOT exercise
+        an "added helper" scenario, only enumerates call-site count.
+
+        Defensive sanity check: the guard ENUMERATES at least 2 call sites
+        (row-loop in scan_drift + _enum_one in _enumerate_proxmox_vms).
+        This protects against a refactor that accidentally drops one of
+        the known call sites entirely (e.g., inlining _enum_one and
+        forgetting to re-add the get_proxmox_client call) — the primary
+        guard above would then become vacuous on a 1-call file. If a
+        future refactor LEGITIMATELY consolidates these to a single
+        helper, this count drops and the floor must be updated to match
+        the new structure (or this test removed if the consolidation
+        eliminates the regression risk it was added to defend against).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        calls = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "get_proxmox_client"
+        ]
+        assert len(calls) >= 2, (
+            f"Phase 39.1 guard discovery: expected >= 2 get_proxmox_client(...) "
+            f"call sites in drift_detection.py (scan_drift row loop + "
+            f"_enumerate_proxmox_vms._enum_one), found {len(calls)}. If you "
+            f"intentionally consolidated, update this floor or remove the "
+            f"defensive test."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 39 AST regression guards (D-11 / D-12)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestPhase39DriftCases:
+    """Phase 39 D-11/D-12: helpers added in Phase 39 stay loop-free.
+
+    Recommended path D-11(b): rather than extending an allowlist, the new
+    helpers (``_diff_fingerprints``, ``_enumerate_unknown_vms``,
+    ``_classify_unreachable``) are written without ``continue`` inside any
+    loop body that appends to a bucket-shaped list. This keeps the AST guard
+    scope unchanged from Phase 38.1.
+
+    D-12 carve-out (continue invariant only): ``_enumerate_proxmox_vms`` is
+    OUT of the ``continue``-invariant guard scope — it builds enumeration
+    TARGETS (does not iterate sitemap rows feeding bucket appends), so its
+    defensive ``continue`` for empty hostname is allowed. Phase 39.1 added
+    ``TestPhase39_1NoSkipInDriftEnum`` which DOES cover
+    ``_enumerate_proxmox_vms`` for a different invariant — every
+    ``get_proxmox_client(...)`` call must thread ``credential_id=``.
+    """
+
+    PHASE_39_NEW_HELPERS = (
+        "_diff_fingerprints",
+        "_enumerate_unknown_vms",
+        "_classify_unreachable",
+    )
+
+    def test_phase39_helpers_no_continue(self) -> None:
+        """Each helper named in PHASE_39_NEW_HELPERS has zero ``ast.Continue``
+        nodes (D-11(b))."""
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        for helper_name in self.PHASE_39_NEW_HELPERS:
+            target = next(
+                (
+                    n
+                    for n in ast.walk(tree)
+                    if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == helper_name
+                ),
+                None,
+            )
+            assert target is not None, f"Phase 39 D-11: helper {helper_name!r} not found in drift_detection.py"
+            violations = [n.lineno for n in ast.walk(target) if isinstance(n, ast.Continue)]
+            assert not violations, (
+                f"Phase 39 D-11 regression — `continue` in {helper_name} at "
+                f"line(s): {violations}. Recommended: refactor to comprehension "
+                f"or early-return."
+            )
+
+    def test_phase381_d15_still_green(self) -> None:
+        """D-12 sibling guard: re-asserts the Phase 38.1 D-15 invariant locally
+        so a Phase 39 row-loop edit can't slip a ``continue`` past the existing
+        ``test_scan_drift_no_continue_in_row_loop_phase38_1`` check.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+
+        target = next(
+            (
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "scan_drift"
+            ),
+            None,
+        )
+        assert target is not None, "Phase 39 D-12: scan_drift not found"
+
+        row_loops = [
+            n
+            for n in ast.walk(target)
+            if isinstance(n, ast.For) and isinstance(n.target, ast.Name) and n.target.id == "row"
+        ]
+        assert len(row_loops) == 1, (
+            f"Phase 39 D-12: expected one `for row in rows:` loop in scan_drift, found {len(row_loops)}"
+        )
+        violations = [n.lineno for n in ast.walk(row_loops[0]) if isinstance(n, ast.Continue)]
+        assert not violations, (
+            f"Phase 39 D-12 regression — `continue` slipped into scan_drift's row loop at line(s): {violations}"
+        )
+
+
+class TestPhase41_1KeyringHygiene:
+    """Phase 41.1 SC-2: any test that calls ``store_credential`` or
+    ``register_credential`` outside the audited allowlist fails CI.
+
+    The session-autouse ``_isolate_keyring`` fixture in
+    ``tests/conftest.py`` (Plan 02 / Wave 1) is the load-bearing safety
+    net — it installs an in-memory keyring backend AND redirects
+    ``_REGISTRY_PATH`` for the entire session, so most callers do not
+    need per-test monkeypatching. The allowlist below documents which
+    test files were AUDITED in Phase 41.1 and confirmed safe under the
+    session fixture.
+
+    A new test that calls ``store_credential`` or ``register_credential``
+    must be either:
+      1. Added to the allowlist with a one-line comment explaining why
+         the session-autouse fixture is sufficient (default case), OR
+      2. Refactored to use ``mocker.patch("keyring.set_password", ...)``
+         per-test (the existing ``tests/test_credential_store.py``
+         pattern) and any per-test ``_REGISTRY_PATH`` redirect must use
+         the dual-alias form.
+
+    Scope (per threat model T-41.1-02 — precise carve-out):
+      * Covers ONLY direct ``store_credential(...)`` and
+        ``register_credential(...)`` Name-bound calls under ``tests/``.
+      * ``getattr(...)``-indirected calls and aliased imports are
+        BLOCKED by the canonical-name pin in
+        ``test_guarded_symbols_not_aliased_in_tests``.
+      * The two read-only helpers (``find_credential_by_id``,
+        ``list_credentials``, etc.) are NOT in scope — they do not
+        write to the keyring or registry (RESEARCH §Open Question 3).
+      * Eager-binding via ``from keyring import set_password`` is
+        BLOCKED by ``test_no_eager_keyring_function_imports``
+        (RESEARCH §Pitfall 4 — eager binding defeats the session
+        fixture's Layer 2 monkeypatch).
+
+    Threat model T-41.1-02 mitigation: deny-by-default. Allowlist
+    entries must cite a fixture path or CONTEXT decision. New entries
+    require explicit Phase 41.1 audit.
+    """
+
+    # Symbols that WRITE to the keyring or registry. Read-only helpers
+    # (find_credential_by_id, list_credentials, get_credential, etc.)
+    # are intentionally NOT included — they cannot leak.
+    _GUARDED_SYMBOLS = ("store_credential", "register_credential")
+
+    # Test files audited in Phase 41.1 and confirmed safe under the
+    # session-autouse ``_isolate_keyring`` fixture installed in
+    # ``tests/conftest.py``.
+    #
+    # Each entry is the path RELATIVE TO THE REPO ROOT in posix form
+    # (use ``Path.as_posix()`` for the comparison key — this works on
+    # Windows + macOS + Linux without backslash drama).
+    #
+    # To add a new entry: confirm the file is covered by the session
+    # fixture (default), then add the path with a one-line citation
+    # comment. CI fails if a non-allowlisted file calls a guarded
+    # symbol.
+    _ALLOWLIST: frozenset[str] = frozenset(
+        {
+            # Owns the session-autouse fixture itself; safe by definition.
+            "tests/conftest.py",
+            # Uses mocker.patch + per-test _REGISTRY_PATH dual-alias
+            # redirect (existing pattern from v1.6 Phase 33).
+            "tests/test_credential_store.py",
+            # Phase 38.1 integration round-trip — already has dual-alias
+            # _REGISTRY_PATH + per-test keyring monkeypatch in
+            # _setup_isolated_environment (lines 48-90). Belt-and-braces
+            # under the session fixture.
+            "tests/integration/test_credential_binding_round_trip.py",
+            # Phase 41.1 Plan 02 fixed the test_R3 path (lines 947-952)
+            # to use dual-alias _REGISTRY_PATH; runs under session fixture.
+            "tests/test_sitemap.py",
+            # CLI coverage — calls server.store_credential indirectly via
+            # _cmd_credentials_add; covered by session-autouse fixture.
+            "tests/test_credentials_cli.py",
+            # Phase 41.1 SC-3 regression pin — drives register_credential
+            # ("test-host", "test-user") through the dual-alias-fixed call
+            # site to verify the leak is closed. Covered by session fixture.
+            "tests/test_keyring_isolation_phase41_1.py",
+        }
+    )
+
+    def test_no_unprotected_credential_writes_in_tests(self) -> None:
+        """Phase 41.1 SC-2: every direct call to a guarded symbol under
+        ``tests/`` must be in an allowlisted file.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        violations: list[str] = []
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            if rel in self._ALLOWLIST:
+                continue
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                # Skip files that genuinely fail to parse — the broader
+                # test suite covers syntax validation.
+                continue
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id in self._GUARDED_SYMBOLS
+                ):
+                    violations.append(f"{rel}:{node.lineno} — {node.func.id}(...) in non-allowlisted file")
+
+        assert not violations, (
+            "Phase 41.1 SC-2: unprotected store_credential / "
+            "register_credential call sites in tests/. The session-"
+            "autouse fixture in tests/conftest.py covers most callers, "
+            "but each new test file must be explicitly added to the "
+            "allowlist in TestPhase41_1KeyringHygiene._ALLOWLIST with "
+            "a one-line comment explaining why the session fixture is "
+            "sufficient. If a per-test monkeypatch is required, follow "
+            "the dual-alias pattern from "
+            "tests/integration/test_credential_binding_round_trip.py:"
+            "62-65.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+    def test_no_eager_keyring_function_imports(self) -> None:
+        """Phase 41.1 SC-2 + RESEARCH §Pitfall 4: forbid
+        ``from keyring import set_password`` / ``get_password`` /
+        ``delete_password`` in ``tests/``. Eager binding captures the
+        function reference at import time, BEFORE the session-autouse
+        ``_isolate_keyring`` fixture's Layer 2 monkeypatch runs —
+        silently leaking writes to the real OS keyring.
+
+        Production code is exempt — it does ``import keyring`` lazy
+        inside function bodies (``credential_store.py:58``) and
+        accesses ``keyring.set_password`` via attribute lookup, which
+        the monkeypatch covers.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        forbidden = {"set_password", "get_password", "delete_password"}
+        violations: list[str] = []
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and (node.module or "") == "keyring":
+                    for alias in node.names:
+                        if alias.name in forbidden:
+                            violations.append(f"{rel}:{node.lineno} — from keyring import {alias.name}")
+
+        assert not violations, (
+            "Phase 41.1 SC-2 + RESEARCH §Pitfall 4: eager-bound keyring "
+            "imports defeat the session fixture. Use lazy imports "
+            "(``import keyring`` inside the function body, then "
+            "``keyring.set_password(...)``) so the monkeypatch covers "
+            "the call.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+    def test_guarded_symbols_not_aliased_in_tests(self) -> None:
+        """Phase 41.1 SC-2 + RESEARCH WR-03: forbid aliasing of
+        ``store_credential`` and ``register_credential`` on import in
+        ``tests/``. The AST guard above keys on
+        ``func.id == "<symbol>"``, so aliasing
+        (``from homelab_mcp.credential_store import store_credential
+        as foo``) silently bypasses the guard.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        violations: list[str] = []
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("credential_store"):
+                    for alias in node.names:
+                        if alias.name in self._GUARDED_SYMBOLS and alias.asname is not None:
+                            violations.append(
+                                f"{rel}:{node.lineno} — from ...credential_store import {alias.name} as {alias.asname}"
+                            )
+
+        assert not violations, (
+            "Phase 41.1 SC-2 + RESEARCH WR-03: aliased imports of "
+            "store_credential/register_credential bypass the AST guard "
+            "(it keys on func.id, which sees the alias). Remove the "
+            "``as <other>`` from the import.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+    def test_phase41_1_guard_call_site_floor(self) -> None:
+        """Defensive sanity check: the guard ENUMERATES at least one
+        guarded-symbol call across the allowlist files. If the count
+        drops to zero, the entire credential test suite has been gutted
+        and the guard is vacuous — fail loudly so a future refactor
+        cannot silently weaken coverage.
+        """
+        tests_root = Path(__file__).parent
+        repo_root = tests_root.parent
+        total_calls = 0
+
+        for py_file in sorted(tests_root.rglob("*.py")):
+            rel = py_file.relative_to(repo_root).as_posix()
+            if rel not in self._ALLOWLIST:
+                continue
+            try:
+                source = py_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                tree = ast.parse(source, filename=str(py_file))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id in self._GUARDED_SYMBOLS
+                ):
+                    total_calls += 1
+
+        assert total_calls >= 1, (
+            "Phase 41.1 guard floor: zero store_credential / "
+            "register_credential calls found across the allowlist files "
+            f"({sorted(self._ALLOWLIST)}). Either the credential test "
+            "suite has been deleted (legitimate consolidation — update "
+            "this floor) or the allowlist no longer reflects reality "
+            "(stale entries — audit and trim)."
+        )
+
+
+class TestPhase41BindingAwareResolver:
+    """Phase 41 SC-4: discover_and_store and drift's _probe_one BOTH call
+    the shared row-binding-aware helper resolve_ssh_for_sitemap_row.
+
+    RED in Wave 0 (xfail strict), flips GREEN when Plans 02-04 land.
+    A future regression that drops one of the call sites or aliases the
+    import re-RED's the test.
+
+    Three checks (mirror TestPhase41_1KeyringHygiene + TestPhase39_1NoSkipInDriftEnum):
+      1. test_resolve_ssh_for_sitemap_row_helper_exists — the new symbol
+         exists in src/homelab_mcp/ssh_tools.py.
+      2. test_shared_helper_used_by_both_call_sites — both sitemap.py and
+         drift_detection.py have at least one direct call to the helper
+         under its canonical name (no `as` aliasing).
+      3. test_no_unguarded_resolve_ssh_credentials_in_call_chain — direct
+         calls to resolve_ssh_credentials in sitemap.py / drift_detection.py
+         must be on the allowlist (intentional bypass) or zero — the
+         post-fix invariant is "go through the new helper, not the
+         underlying resolver."
+
+    Pitfall 5 (function-rename gotcha): the AST guards key on the
+    IMPLEMENTATION symbol names (`discover_and_store`, `_probe_one`) NOT
+    the MCP tool names (`discover_and_map`, `scan_infrastructure_drift`).
+    A future refactor that renames the implementation symbols must
+    update this guard.
+    """
+
+    _SCANNED_FILES = ("sitemap.py", "drift_detection.py")
+    _RESOLVER_CALLS_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
+    # Phase 41 audit (post-Plan-04): zero direct resolve_ssh_credentials(...)
+    # call sites in sitemap.py or drift_detection.py. The shared
+    # resolve_ssh_for_sitemap_row helper is the only path. Empty allowlist
+    # = strongest invariant; any future direct call fails the guard.
+
+    def test_resolve_ssh_for_sitemap_row_helper_exists(self) -> None:
+        """Phase 41 Bug AA: ssh_tools.py must define resolve_ssh_for_sitemap_row."""
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "ssh_tools.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="ssh_tools.py")
+        targets = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == "resolve_ssh_for_sitemap_row"
+        ]
+        assert targets, (
+            "Phase 41 Bug AA: src/homelab_mcp/ssh_tools.py must define "
+            "function resolve_ssh_for_sitemap_row — the shared row-binding-"
+            "aware credential resolver. RESEARCH §Pattern 1 (lines 175-240) "
+            "is the proposed signature."
+        )
+
+    def test_shared_helper_used_by_both_call_sites(self) -> None:
+        """Phase 41 Bug AA + V: both sitemap.py and drift_detection.py must
+        call resolve_ssh_for_sitemap_row under its canonical name (no aliasing).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        per_file_calls: dict[str, int] = {}
+        for fname in self._SCANNED_FILES:
+            source = (src_root / fname).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=fname)
+            # WR-03 / Phase 39.1 pattern: pin canonical name to defeat aliasing.
+            imports = [
+                a
+                for n in ast.walk(tree)
+                if isinstance(n, ast.ImportFrom) and (n.module or "").endswith("ssh_tools")
+                for a in n.names
+                if a.name == "resolve_ssh_for_sitemap_row"
+            ]
+            if imports:
+                assert all(a.asname is None for a in imports), (
+                    f"Phase 41 guard (canonical-name pin): {fname} imports "
+                    f"resolve_ssh_for_sitemap_row under an alias; aliasing "
+                    f"defeats the ast.Name match below. Drop the alias."
+                )
+            calls = [
+                n
+                for n in ast.walk(tree)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "resolve_ssh_for_sitemap_row"
+            ]
+            per_file_calls[fname] = len(calls)
+        missing = [f for f, c in per_file_calls.items() if c == 0]
+        assert not missing, (
+            f"Phase 41 Bug AA + V: resolve_ssh_for_sitemap_row not called in "
+            f"{missing}. Each of {list(self._SCANNED_FILES)} must call the "
+            f"shared helper at least once. Per-file call counts: {per_file_calls}."
+        )
+        assert sum(per_file_calls.values()) >= 2, (
+            f"Phase 41 call-site floor: expected >= 2 total call sites "
+            f"(at least one per file), found {sum(per_file_calls.values())}. "
+            f"If a refactor consolidated to a helper, update this floor."
+        )
+
+    def test_no_unguarded_resolve_ssh_credentials_in_call_chain(self) -> None:
+        """Phase 41 Bug AA: no unguarded direct resolve_ssh_credentials calls
+        in sitemap.py or drift_detection.py — these must go through the helper.
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        violations: list[str] = []
+        for fname in self._SCANNED_FILES:
+            source = (src_root / fname).read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=fname)
+            # Build line-number → enclosing function name lookup so allowlist
+            # entries can name the function (more readable than raw line
+            # numbers, more stable across small refactors).
+            line_to_func: dict[int, str] = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    start = node.lineno
+                    end = getattr(node, "end_lineno", start) or start
+                    for ln in range(start, end + 1):
+                        # Inner functions overwrite outer; we want the most-specific scope.
+                        line_to_func[ln] = node.name
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "resolve_ssh_credentials"
+                ):
+                    enclosing = line_to_func.get(node.lineno, "<module>")
+                    key = (fname, enclosing)
+                    if key in self._RESOLVER_CALLS_ALLOWLIST:
+                        continue
+                    violations.append(
+                        f"{fname}:{node.lineno} (in {enclosing}) — "
+                        f"direct resolve_ssh_credentials(...) call (use "
+                        f"resolve_ssh_for_sitemap_row instead, or add "
+                        f"{(fname, enclosing)!r} to _RESOLVER_CALLS_ALLOWLIST "
+                        f"with a one-line justification)"
+                    )
+        assert not violations, (
+            "Phase 41 Bug AA shared-helper invariant: direct "
+            "resolve_ssh_credentials(...) calls in the discover/drift "
+            "call chain. Replace with resolve_ssh_for_sitemap_row, OR "
+            "if a legitimate bypass is required (e.g., a non-row-scoped "
+            "auth helper), add (filename, enclosing_function) to "
+            "_RESOLVER_CALLS_ALLOWLIST with a one-line justification "
+            "comment.\n\nViolations:\n  " + "\n  ".join(violations)
+        )
+
+
+class TestPhase41HostDialHostHygiene:
+    """Phase 41-06 CR-01 + WR-01: every ``get_proxmox_client(...)`` call inside
+    ``src/homelab_mcp/drift_detection.py`` must:
+
+      1. Pass ``host=`` keyword (the resolver/cache key — typically the hostname).
+      2. NEVER alias ``host=`` to a variable named ``dial_host`` /
+         ``dial_target`` / ``connection_ip`` (those are TCP-dial identifiers;
+         they belong on the new ``dial_host=`` kwarg only).
+      3. Pass ``credential_id=`` keyword (Phase 39.1 D-16 invariant —
+         duplicates TestPhase39_1NoSkipInDriftEnum but the structural pairing
+         here makes the triple visible at one site).
+
+    Why this guard exists: Plan 41-04 introduced a key inconsistency by
+    routing connection_ip through the host= kwarg (CR-01). The fix in
+    Plan 41-06 routes connection_ip through the new dial_host= kwarg instead.
+    A future regression that drops back to host=connection_ip would silently
+    re-introduce the double-resolution + cluster-cache miss class of bug.
+
+    Sources:
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-REVIEW.md (CR-01, WR-01)
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-06-PLAN.md
+    """
+
+    _DIAL_TARGET_NAMES: frozenset[str] = frozenset({"dial_host", "dial_target", "connection_ip"})
+
+    def _drift_calls(self) -> list[ast.Call]:
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+        return [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "get_proxmox_client"
+        ]
+
+    def test_drift_get_proxmox_client_pairs_host_with_hostname_not_dial_target(self) -> None:
+        violations: list[str] = []
+        for call in self._drift_calls():
+            kwargs = {kw.arg: kw.value for kw in call.keywords if kw.arg}
+            if "host" not in kwargs:
+                violations.append(f"line {call.lineno}: missing host= keyword")
+                continue
+            host_val = kwargs["host"]
+            if isinstance(host_val, ast.Name) and host_val.id in self._DIAL_TARGET_NAMES:
+                violations.append(
+                    f"line {call.lineno}: host={host_val.id} — host= must be the "
+                    "resolver/cache key (typically the hostname). Pass connection_ip "
+                    "via dial_host= instead."
+                )
+        assert not violations, "Phase 41-06 CR-01 violation in drift_detection.py:\n  " + "\n  ".join(violations)
+
+    def test_drift_get_proxmox_client_with_dial_host_pairs_with_host(self) -> None:
+        violations: list[str] = []
+        for call in self._drift_calls():
+            kwarg_names = {kw.arg for kw in call.keywords if kw.arg}
+            if "dial_host" in kwarg_names and "host" not in kwarg_names:
+                violations.append(
+                    f"line {call.lineno}: dial_host= present without host=. "
+                    "Both kwargs must coexist: host= is the resolver/cache key, "
+                    "dial_host= is the TCP target."
+                )
+        assert not violations, "Phase 41-06 CR-01 violation in drift_detection.py:\n  " + "\n  ".join(violations)
+
+    def test_drift_get_proxmox_client_threads_credential_id(self) -> None:
+        # Belt-and-braces with TestPhase39_1NoSkipInDriftEnum — Plan 41-06 adds
+        # dial_host=, so we re-state the credential_id= invariant alongside it.
+        violations: list[str] = []
+        for call in self._drift_calls():
+            kwarg_names = {kw.arg for kw in call.keywords if kw.arg}
+            if "credential_id" not in kwarg_names:
+                violations.append(f"line {call.lineno}: missing credential_id= keyword")
+        assert not violations, (
+            "Phase 39.1 D-16 + Phase 41-06 invariant violation in drift_detection.py:\n  " + "\n  ".join(violations)
+        )
+
+    def test_phase41_06_guard_call_site_floor(self) -> None:
+        calls = self._drift_calls()
+        assert len(calls) >= 2, (
+            f"Phase 41-06 guard call-site floor: expected at least 2 "
+            f"get_proxmox_client(...) call sites in drift_detection.py "
+            f"(scan_drift Proxmox loop + _enumerate_proxmox_vms._enum_one). "
+            f"Found {len(calls)}. A regression that drops a call site silently "
+            "weakens the host/dial_host hygiene guard."
+        )
+
+
+class TestPhase41DBAdapterHygiene:
+    """Phase 41-07 WR-02: every ``resolve_ssh_for_sitemap_row(...)`` call inside
+    ``src/homelab_mcp/drift_detection.py`` MUST supply a ``db_adapter=``
+    keyword argument. Without the kwarg, the helper falls through to
+    ``get_database_adapter()`` (which consults ``os.getenv('DATABASE_TYPE')``
+    and constructs a fresh adapter), breaking the single-source-of-truth
+    contract in scan_drift's docstring.
+
+    Why an AST guard: silent fallthrough to get_database_adapter() is a known
+    footgun (per CLAUDE.md memory "Regression-test scope: AST meta-tests
+    guard known footguns"). Plan 41-07's functional regression covers
+    ``_probe_one`` only; a new caller of ``resolve_ssh_for_sitemap_row``
+    inside drift_detection.py would silently regress without this guard.
+
+    Sources:
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-REVIEW.md WR-02
+      * .planning/phases/41-binding-aware-resolver-hygiene/41-07-PLAN.md
+    """
+
+    def _drift_resolve_calls(self) -> list[ast.Call]:
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / "drift_detection.py").read_text(encoding="utf-8")
+        tree = ast.parse(source, filename="drift_detection.py")
+        calls: list[ast.Call] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            # Match unqualified ``resolve_ssh_for_sitemap_row(...)`` (func is
+            # ast.Name) AND attribute-form ``module.resolve_ssh_for_sitemap_row``.
+            if isinstance(node.func, ast.Name) and node.func.id == "resolve_ssh_for_sitemap_row":
+                calls.append(node)
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "resolve_ssh_for_sitemap_row":
+                calls.append(node)
+        return calls
+
+    def test_drift_resolve_ssh_for_sitemap_row_threads_db_adapter(self) -> None:
+        violations: list[str] = []
+        for call in self._drift_resolve_calls():
+            kwarg_names = {kw.arg for kw in call.keywords if kw.arg}
+            if "db_adapter" not in kwarg_names:
+                violations.append(
+                    f"line {call.lineno}: resolve_ssh_for_sitemap_row(...) "
+                    "missing db_adapter= keyword. Without the kwarg, the "
+                    "helper falls through to get_database_adapter() (a "
+                    "fresh adapter from os.environ), breaking scan_drift's "
+                    "single-source-of-truth contract."
+                )
+        assert not violations, "Phase 41-07 WR-02 violation in drift_detection.py:\n  " + "\n  ".join(violations)
+
+    def test_phase41_07_resolve_call_site_floor(self) -> None:
+        calls = self._drift_resolve_calls()
+        assert len(calls) >= 1, (
+            f"Phase 41-07 guard call-site floor: expected at least 1 "
+            f"resolve_ssh_for_sitemap_row(...) call site in drift_detection.py "
+            f"(_probe_one post-Plan-41-07). Found {len(calls)}. A regression "
+            "that drops the call site silently weakens the db_adapter hygiene guard."
+        )
+
+
+class TestPhase44RemoveDeviceCallPath:
+    """Phase 44 D-10: handle_remove_device + handle_remove_device_preview +
+    delete_device_by_id are body-level free of SSH/Ansible/Terraform/
+    credential-cleanup/decommission symbols.
+
+    Scope per D-10a: walks ONLY the named functions' AST subtrees, NOT the
+    transitive call graph. If a future refactor extracts a helper, the
+    helper's name MUST be added to ``_GUARDED_FUNCTIONS`` — keeping the body
+    of each guarded function minimal (validate -> adapter call -> response
+    shape) is what makes this guard hold.
+
+    Per D-10b: one ``test_*`` method per forbidden symbol so failures
+    pinpoint which symbol regressed. Sibling to TestPhase37/38.1/40 classes.
+
+    SC-6 explicitly justifies this AST guard: "regression protection against
+    future 'let's just call decommission internally' drift."
+
+    Issue 12: ``handle_remove_device_preview`` is included in
+    ``_GUARDED_FUNCTIONS``. Its body is currently a 1-line delegate so the
+    guard trivially passes, but including it catches future drift where
+    someone extends the preview body with logic that touches a forbidden
+    symbol.
+    """
+
+    # (relative_path_under_src/homelab_mcp, optional_class_name_or_None, function_name)
+    # class_name=None means top-level FunctionDef; otherwise scope to ClassDef first.
+    _GUARDED_FUNCTIONS: tuple[tuple[str, str | None, str], ...] = (
+        ("tool_handlers/network_handlers.py", None, "handle_remove_device"),
+        ("tool_handlers/network_handlers.py", None, "handle_remove_device_preview"),
+        ("database.py", "SQLiteAdapter", "delete_device_by_id"),
+        ("database.py", "PostgreSQLAdapter", "delete_device_by_id"),
+    )
+
+    # Forbidden bare names (used as ast.Name id, ast.alias name in Import,
+    # or ast.Attribute attr where appropriate).
+    _FORBIDDEN_NAMES: tuple[str, ...] = (
+        "ssh_connect",
+        "asyncssh",
+        "decommission_network_device",
+        "_stop_all_device_services",
+        "_remove_from_clusters",
+        "_execute_migration_plan",
+        "delete_credential",
+        "delete_proxmox_credential",
+    )
+
+    # Forbidden attribute pairs: (value_id, attr_name) — e.g.,
+    # ("keyring", "delete_password") matches `keyring.delete_password(...)`.
+    _FORBIDDEN_ATTRIBUTES: tuple[tuple[str, str], ...] = (
+        ("keyring", "delete_password"),
+        ("keyring", "set_password"),
+        # subprocess.* — most defensive scope per D-10. The handler should be
+        # pure DB work; no shell needed.
+        ("subprocess", "run"),
+        ("subprocess", "Popen"),
+        ("subprocess", "call"),
+        ("subprocess", "check_call"),
+        ("subprocess", "check_output"),
+    )
+
+    @classmethod
+    def _load_function_subtree(cls, rel_path: str, class_name: str | None, func_name: str) -> ast.AST:
+        """Find the named function's AST subtree.
+
+        For class methods, scope to the ClassDef first then find the method
+        within. Raises if the function is not found (planner renamed it
+        without updating this guard).
+        """
+        src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+        source = (src_root / rel_path).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=rel_path)
+
+        if class_name is not None:
+            class_node = next(
+                (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == class_name),
+                None,
+            )
+            assert class_node is not None, (
+                f"Phase 44 D-10: class {class_name!r} not found in {rel_path} "
+                f"(if you renamed it, update _GUARDED_FUNCTIONS)"
+            )
+            search_root: ast.AST = class_node
+        else:
+            search_root = tree
+
+        func_node = next(
+            (
+                n
+                for n in ast.walk(search_root)
+                if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and n.name == func_name
+            ),
+            None,
+        )
+        assert func_node is not None, (
+            f"Phase 44 D-10: function {func_name!r} not found in "
+            f"{class_name or '<module>'} of {rel_path} "
+            f"(if you renamed it, update _GUARDED_FUNCTIONS)"
+        )
+        return func_node
+
+    @classmethod
+    def _scan_for_name(cls, subtree: ast.AST, forbidden_name: str) -> list[int]:
+        """Return line numbers where ``forbidden_name`` appears as a bare
+        ast.Name id, ast.alias name in Import/ImportFrom, or as an
+        ast.Attribute attr (e.g., ``something.<forbidden_name>(...)``).
+        """
+        violations: list[int] = []
+        for node in ast.walk(subtree):
+            # Bare reference: forbidden_name(...) or forbidden_name.x
+            if isinstance(node, ast.Name) and node.id == forbidden_name:
+                violations.append(node.lineno)
+            # Attribute access: x.forbidden_name (matches asyncssh.connect etc.)
+            elif isinstance(node, ast.Attribute) and node.attr == forbidden_name:
+                violations.append(node.lineno)
+            # Import: from X import forbidden_name OR import forbidden_name
+            elif isinstance(node, ast.ImportFrom | ast.Import):
+                for alias in node.names:
+                    if alias.name == forbidden_name or alias.asname == forbidden_name:
+                        violations.append(node.lineno)
+        return violations
+
+    @classmethod
+    def _scan_for_attribute(cls, subtree: ast.AST, value_id: str, attr_name: str) -> list[int]:
+        """Return line numbers where ``value_id.attr_name`` appears (e.g.,
+        ``keyring.delete_password``)."""
+        violations: list[int] = []
+        for node in ast.walk(subtree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == attr_name
+                and isinstance(node.value, ast.Name)
+                and node.value.id == value_id
+            ):
+                violations.append(node.lineno)
+        return violations
+
+    # --- Per-symbol test methods (D-10b: one test per forbidden symbol). ---
+
+    def test_handle_remove_device_no_ssh_connect(self) -> None:
+        self._assert_no_forbidden_name("ssh_connect")
+
+    def test_handle_remove_device_no_asyncssh(self) -> None:
+        self._assert_no_forbidden_name("asyncssh")
+
+    def test_handle_remove_device_no_decommission_network_device(self) -> None:
+        self._assert_no_forbidden_name("decommission_network_device")
+
+    def test_handle_remove_device_no_stop_all_device_services(self) -> None:
+        self._assert_no_forbidden_name("_stop_all_device_services")
+
+    def test_handle_remove_device_no_remove_from_clusters(self) -> None:
+        self._assert_no_forbidden_name("_remove_from_clusters")
+
+    def test_handle_remove_device_no_execute_migration_plan(self) -> None:
+        self._assert_no_forbidden_name("_execute_migration_plan")
+
+    def test_handle_remove_device_no_delete_credential(self) -> None:
+        self._assert_no_forbidden_name("delete_credential")
+
+    def test_handle_remove_device_no_delete_proxmox_credential(self) -> None:
+        self._assert_no_forbidden_name("delete_proxmox_credential")
+
+    def test_handle_remove_device_no_keyring_delete_password(self) -> None:
+        self._assert_no_forbidden_attribute("keyring", "delete_password")
+
+    def test_handle_remove_device_no_keyring_set_password(self) -> None:
+        self._assert_no_forbidden_attribute("keyring", "set_password")
+
+    def test_handle_remove_device_no_subprocess_run(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "run")
+
+    def test_handle_remove_device_no_subprocess_popen(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "Popen")
+
+    def test_handle_remove_device_no_subprocess_call(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "call")
+
+    def test_handle_remove_device_no_subprocess_check_call(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "check_call")
+
+    def test_handle_remove_device_no_subprocess_check_output(self) -> None:
+        self._assert_no_forbidden_attribute("subprocess", "check_output")
+
+    # --- Helper assertions (shared across the per-symbol tests). ---
+
+    def _assert_no_forbidden_name(self, forbidden_name: str) -> None:
+        for rel_path, class_name, func_name in self._GUARDED_FUNCTIONS:
+            subtree = self._load_function_subtree(rel_path, class_name, func_name)
+            violations = self._scan_for_name(subtree, forbidden_name)
+            assert not violations, (
+                f"Phase 44 D-10 regression — forbidden symbol "
+                f"{forbidden_name!r} appeared in "
+                f"{class_name or '<module>'}.{func_name} ({rel_path}) "
+                f"at line(s): {violations}. This handler/adapter must be "
+                f"free of SSH/Ansible/Terraform/credential-cleanup symbols. "
+                f"If you intentionally extracted a helper, add the helper's "
+                f"qualified name to _GUARDED_FUNCTIONS."
+            )
+
+    def _assert_no_forbidden_attribute(self, value_id: str, attr_name: str) -> None:
+        for rel_path, class_name, func_name in self._GUARDED_FUNCTIONS:
+            subtree = self._load_function_subtree(rel_path, class_name, func_name)
+            violations = self._scan_for_attribute(subtree, value_id, attr_name)
+            assert not violations, (
+                f"Phase 44 D-10 regression — forbidden attribute "
+                f"{value_id}.{attr_name} appeared in "
+                f"{class_name or '<module>'}.{func_name} ({rel_path}) "
+                f"at line(s): {violations}."
+            )
