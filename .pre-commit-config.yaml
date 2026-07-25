@@ -22,7 +22,7 @@ repos:
       - id: mypy
         name: mypy type check
         args: [--ignore-missing-imports]
-        additional_dependencies: [types-pyyaml, asyncssh>=2.14.0, aiohttp>=3.9.0]
+        additional_dependencies: [types-pyyaml, asyncssh>=2.14.0, aiohttp>=3.9.0, sqlalchemy>=2.0.0]
         pass_filenames: false
         entry: mypy src
 

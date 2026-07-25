@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from .config import get_config
-from .database import PostgreSQLAdapter, SQLiteAdapter, calculate_data_hash
+from .database import calculate_data_hash, get_database_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -18,77 +18,12 @@ def run_sqlite_migrations(db_path: str | None = None) -> list[str]:
     if db_path is None:
         db_path = config.database.sqlite_path
 
-    adapter = SQLiteAdapter(db_path)
+    adapter = get_database_adapter("sqlite", db_path=db_path)
     adapter.connect()
-    assert adapter.connection is not None
+    adapter.init_schema()
 
     applied_migrations: list[str] = []
-
-    # Check if ssh_credentials table exists
-    cursor = adapter.connection.cursor()
-    cursor.execute("""
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name='ssh_credentials'
-    """)
-
-    if not cursor.fetchone():
-        # Create ssh_credentials table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER,
-                hostname TEXT NOT NULL,
-                username TEXT NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name TEXT,
-                is_active INTEGER DEFAULT 1,
-                last_verified TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, username),
-                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
-        adapter.connection.commit()
-        applied_migrations.append("create_ssh_credentials_table")
-        print("✓ Created ssh_credentials table")
-
-    # Check if drift_baselines table exists
-    cursor.execute("""
-        SELECT name FROM sqlite_master
-        WHERE type='table' AND name='drift_baselines'
-    """)
-    if not cursor.fetchone():
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS drift_baselines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node TEXT NOT NULL,
-                vmid INTEGER NOT NULL,
-                vm_type TEXT NOT NULL DEFAULT 'qemu',
-                baseline_config TEXT NOT NULL,
-                recorded_at TEXT NOT NULL,
-                recorded_by TEXT NOT NULL,
-                UNIQUE(node, vmid, vm_type)
-            )
-        """)
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
-            ON drift_baselines (node, vmid, vm_type)
-        """)
-        adapter.connection.commit()
-        applied_migrations.append("create_drift_baselines_table")
+    print("✓ Schema initialized via Alembic migration")
 
     adapter.close()
     return applied_migrations
@@ -100,54 +35,12 @@ def run_postgres_migrations(postgres_params: dict[str, Any] | None = None) -> li
     if postgres_params is None:
         postgres_params = config.database.postgres_config
 
-    adapter = PostgreSQLAdapter(postgres_params)
+    adapter = get_database_adapter("postgresql", connection_params=postgres_params)
     adapter.connect()
-    assert adapter.connection is not None
+    adapter.init_schema()
 
     applied_migrations: list[str] = []
-
-    cursor = adapter.connection.cursor()
-
-    # Check if ssh_credentials table exists
-    cursor.execute("""
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables
-            WHERE table_name = 'ssh_credentials'
-        )
-    """)
-
-    if not cursor.fetchone()[0]:
-        # Create ssh_credentials table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name VARCHAR(255),
-                is_active BOOLEAN DEFAULT TRUE,
-                last_verified TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, username)
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
-        adapter.connection.commit()
-        applied_migrations.append("create_ssh_credentials_table")
-        print("✓ Created ssh_credentials table")
+    print("✓ PostgreSQL schema initialized via Alembic migration")
 
     adapter.close()
     return applied_migrations
@@ -285,7 +178,7 @@ def migrate_sqlite_to_postgresql(
 
     print(f"Source SQLite: {sqlite_path}")
 
-    source = SQLiteAdapter(sqlite_path)
+    source = get_database_adapter("sqlite", db_path=sqlite_path)
 
     # Setup target (PostgreSQL)
     if postgres_params is None:
@@ -309,7 +202,7 @@ def migrate_sqlite_to_postgresql(
 
         if not dry_run:
             print("Testing target connection...")
-            target = PostgreSQLAdapter(postgres_params)
+            target = get_database_adapter("postgresql", connection_params=postgres_params)
             target.connect()
             target.init_schema()
             print("Target database connection successful")
@@ -362,7 +255,7 @@ def setup_postgresql_database(postgres_params: dict[str, Any] | None = None) -> 
     try:
         print(f"Connecting to PostgreSQL at {postgres_params['host']}:{postgres_params['port']}")
 
-        adapter = PostgreSQLAdapter(postgres_params)
+        adapter = get_database_adapter("postgresql", connection_params=postgres_params)
         adapter.connect()
         adapter.init_schema()
 

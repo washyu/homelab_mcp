@@ -362,20 +362,17 @@ class TestDatabaseOperations:
         """Test that all required tables are created."""
         sitemap = NetworkSiteMap(db_path=temp_db, db_type="sqlite")
 
-        # Use the existing database adapter connection
-        cursor = sitemap.db_adapter.connection.cursor()
-
-        # Check that devices table exists
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")
-        assert cursor.fetchone() is not None
-
-        # Check that discovery_history table exists
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
-        assert cursor.fetchone() is not None
+        # SQLAlchemyAdapter exposes execute_query, not a raw DB-API connection.
+        tables = [
+            row["name"] for row in sitemap.db_adapter.execute_query("SELECT name FROM sqlite_master WHERE type='table'")
+        ]
+        assert "devices" in tables
+        assert "discovery_history" in tables
 
         # Check that indexes exist
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
-        indexes = [row[0] for row in cursor.fetchall()]
+        indexes = [
+            row["name"] for row in sitemap.db_adapter.execute_query("SELECT name FROM sqlite_master WHERE type='index'")
+        ]
         assert any("idx_devices_hostname_ip" in idx for idx in indexes)
         assert any("idx_history_device_id" in idx for idx in indexes)
 

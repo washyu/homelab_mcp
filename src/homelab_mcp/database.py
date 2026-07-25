@@ -1,20 +1,34 @@
-"""Database abstraction layer for network sitemap functionality."""
+"""Database abstraction layer using SQLAlchemy ORM.
+
+Replaces the legacy sqlite3/psycopg2 direct connection approach with SQLAlchemy 2.0 ORM.
+Provides type-safe models and automatic migration support via Alembic.
+
+Maintains backward compatibility with the DatabaseAdapter interface used throughout
+the codebase.
+"""
+
+from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
-import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
+
+from .models import Device, DiscoveryHistory, DriftBaseline, SSHCredential
+
 logger = logging.getLogger(__name__)
 
+# Try to import psycopg2 for PostgreSQL support (optional)
 try:
-    import psycopg2
-    import psycopg2.extras
+    import psycopg2  # noqa: F401
 
     POSTGRESQL_AVAILABLE = True
 except ImportError:
@@ -22,7 +36,10 @@ except ImportError:
 
 
 class DatabaseAdapter(ABC):
-    """Abstract base class for database adapters."""
+    """Abstract base class for database adapters.
+
+    Provides a consistent interface for database operations regardless of backend.
+    """
 
     @abstractmethod
     def connect(self) -> None:
@@ -137,340 +154,245 @@ class DatabaseAdapter(ABC):
         pass
 
 
-class SQLiteAdapter(DatabaseAdapter):
-    """SQLite database adapter."""
+class SQLAlchemyAdapter(DatabaseAdapter):
+    """SQLAlchemy-based database adapter.
 
-    def __init__(self, db_path: str | None = None):
-        if db_path is None:
-            # Default to ~/.mcp/sitemap.db
-            try:
-                home_dir = Path.home()
-                mcp_dir = home_dir / ".mcp"
-                mcp_dir.mkdir(exist_ok=True)
-                db_path = str(mcp_dir / "sitemap.db")
-            except (RuntimeError, OSError):
-                # Fallback to current directory if home directory cannot be determined
-                current_dir = Path.cwd()
-                mcp_dir = current_dir / ".mcp"
-                mcp_dir.mkdir(exist_ok=True)
-                db_path = str(mcp_dir / "sitemap.db")
+    Uses SQLAlchemy 2.0 ORM with async-style synchronous sessions for simplicity.
+    Supports both SQLite (default) and PostgreSQL backends.
+    """
 
-        self.db_path = db_path
-        self.connection: sqlite3.Connection | None = None
+    def __init__(
+        self,
+        db_type: str = "sqlite",
+        db_path: str | None = None,
+        connection_params: dict[str, Any] | None = None,
+    ) -> None:
+        self._db_type = db_type.lower()
+        self._engine: Engine | None = None
+        self._SessionLocal: sessionmaker[Session] | None = None
+        self._connection_params = connection_params or {}
+
+        # Determine database URL
+        if self._db_type == "postgresql":
+            if not POSTGRESQL_AVAILABLE:
+                raise ImportError(
+                    "PostgreSQL support requires psycopg2-binary. Install with: pip install psycopg2-binary"
+                )
+            self._database_url = self._build_postgres_url()
+        else:
+            # SQLite
+            if db_path is None:
+                try:
+                    home_dir = Path.home()
+                    mcp_dir = home_dir / ".mcp"
+                    mcp_dir.mkdir(exist_ok=True)
+                    db_path = str(mcp_dir / "sitemap.db")
+                except (RuntimeError, OSError):
+                    current_dir = Path.cwd()
+                    mcp_dir = current_dir / ".mcp"
+                    mcp_dir.mkdir(exist_ok=True)
+                    db_path = str(mcp_dir / "sitemap.db")
+            self._database_url = f"sqlite:///{db_path}"
+
+    def _build_postgres_url(self) -> str:
+        """Build PostgreSQL database URL from connection params."""
+        host = self._connection_params.get("host", "localhost")
+        port = self._connection_params.get("port", 5432)
+        database = self._connection_params.get("database", "homelab_mcp")
+        user = self._connection_params.get("user", "postgres")
+        password = self._connection_params.get("password", "")
+
+        return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
     def connect(self) -> None:
-        """Establish SQLite connection."""
-        self.connection = sqlite3.connect(self.db_path)
-        self.connection.row_factory = sqlite3.Row
+        """Establish database connection and create engine."""
+        if self._engine is not None:
+            return
+
+        echo = False  # Set to True for debugging SQL queries
+        if self._db_type == "sqlite":
+            self._engine = create_engine(self._database_url, echo=echo, future=True)
+        else:
+            self._engine = create_engine(
+                self._database_url,
+                echo=echo,
+                future=True,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+            )
+
+        self._SessionLocal = sessionmaker(bind=self._engine, autocommit=False, autoflush=False)
+        logger.debug(
+            "Database engine created: %s",
+            self._database_url.split("@")[-1] if "@" in self._database_url else self._database_url,
+        )
 
     def close(self) -> None:
-        """Close SQLite connection."""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
+        """Close database connection and dispose engine."""
+        if self._engine is not None:
+            self._engine.dispose()
+            self._engine = None
+            self._SessionLocal = None
+            logger.debug("Database engine disposed")
 
     def init_schema(self) -> None:
-        """Initialize SQLite schema."""
-        if not self.connection:
+        """Initialize database schema using SQLAlchemy metadata."""
+        if self._engine is None:
             self.connect()
+        if self._engine is None:
+            raise RuntimeError("Database not connected. Call connect() first.")
 
-        assert self.connection is not None
-        cursor = self.connection.cursor()
+        from .models import Base
 
-        # Create devices table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                hostname TEXT NOT NULL,
-                connection_ip TEXT NOT NULL,
-                last_seen TEXT NOT NULL,
-                status TEXT NOT NULL,
-                cpu_model TEXT,
-                cpu_cores INTEGER,
-                memory_total TEXT,
-                memory_used TEXT,
-                memory_free TEXT,
-                memory_available TEXT,
-                disk_filesystem TEXT,
-                disk_size TEXT,
-                disk_used TEXT,
-                disk_available TEXT,
-                disk_use_percent TEXT,
-                disk_mount TEXT,
-                network_interfaces TEXT,
-                uptime TEXT,
-                os_info TEXT,
-                error_message TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, connection_ip)
-            )
-        """)
+        Base.metadata.create_all(self._engine)
+        logger.debug("Database schema initialized")
 
-        # Create discovery history table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS discovery_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER,
-                discovery_data TEXT,
-                data_hash TEXT,
-                discovered_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (device_id) REFERENCES devices (id)
-            )
-        """)
-
-        # Create ssh_credentials table for persistent credential storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id INTEGER,
-                hostname TEXT NOT NULL,
-                username TEXT NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name TEXT,
-                is_active INTEGER DEFAULT 1,
-                last_verified TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(hostname, username),
-                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL
-            )
-        """)
-
-        # Create indexes
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
-            ON devices (hostname, connection_ip)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_device_id
-            ON discovery_history (device_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
-        # Create drift_baselines table for VM configuration baseline storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS drift_baselines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                node TEXT NOT NULL,
-                vmid INTEGER NOT NULL,
-                vm_type TEXT NOT NULL DEFAULT 'qemu',
-                baseline_config TEXT NOT NULL,
-                recorded_at TEXT NOT NULL,
-                recorded_by TEXT NOT NULL,
-                UNIQUE(node, vmid, vm_type)
-            )
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_drift_baselines_node_vmid
-            ON drift_baselines (node, vmid, vm_type)
-        """)
-
-        self.connection.commit()
+    def _get_session(self) -> Session:
+        """Get a new database session."""
+        if self._SessionLocal is None:
+            raise RuntimeError("Database not connected. Call connect() first.")
+        return self._SessionLocal()
 
     def store_device(self, device_data: dict[str, Any]) -> int:
-        """Store or update a device in SQLite."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        # Check if device exists
-        cursor.execute(
-            """
-            SELECT id FROM devices
-            WHERE hostname = ? AND connection_ip = ?
-        """,
-            (device_data["hostname"], device_data["connection_ip"]),
-        )
-
-        existing = cursor.fetchone()
-
-        if existing:
-            # Update existing device
-            device_id: int = existing[0]
-            cursor.execute(
-                """
-                UPDATE devices SET
-                    last_seen = ?, status = ?, cpu_model = ?, cpu_cores = ?,
-                    memory_total = ?, memory_used = ?, memory_free = ?, memory_available = ?,
-                    disk_filesystem = ?, disk_size = ?, disk_used = ?, disk_available = ?,
-                    disk_use_percent = ?, disk_mount = ?, network_interfaces = ?,
-                    uptime = ?, os_info = ?, error_message = ?, updated_at = ?
-                WHERE id = ?
-            """,
-                (
-                    device_data["last_seen"],
-                    device_data["status"],
-                    device_data.get("cpu_model"),
-                    device_data.get("cpu_cores"),
-                    device_data.get("memory_total"),
-                    device_data.get("memory_used"),
-                    device_data.get("memory_free"),
-                    device_data.get("memory_available"),
-                    device_data.get("disk_filesystem"),
-                    device_data.get("disk_size"),
-                    device_data.get("disk_used"),
-                    device_data.get("disk_available"),
-                    device_data.get("disk_use_percent"),
-                    device_data.get("disk_mount"),
-                    device_data.get("network_interfaces"),
-                    device_data.get("uptime"),
-                    device_data.get("os_info"),
-                    device_data.get("error_message"),
-                    datetime.now().isoformat(),
-                    device_id,
-                ),
+        """Store or update a device in the database."""
+        session = self._get_session()
+        try:
+            # Try to find existing device
+            existing = (
+                session.query(Device)
+                .filter(
+                    Device.hostname == device_data["hostname"],
+                    Device.connection_ip == device_data["connection_ip"],
+                )
+                .first()
             )
-        else:
-            # Insert new device
-            cursor.execute(
-                """
-                INSERT INTO devices (
-                    hostname, connection_ip, last_seen, status, cpu_model, cpu_cores,
-                    memory_total, memory_used, memory_free, memory_available,
-                    disk_filesystem, disk_size, disk_used, disk_available,
-                    disk_use_percent, disk_mount, network_interfaces,
-                    uptime, os_info, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    device_data["hostname"],
-                    device_data["connection_ip"],
-                    device_data["last_seen"],
-                    device_data["status"],
-                    device_data.get("cpu_model"),
-                    device_data.get("cpu_cores"),
-                    device_data.get("memory_total"),
-                    device_data.get("memory_used"),
-                    device_data.get("memory_free"),
-                    device_data.get("memory_available"),
-                    device_data.get("disk_filesystem"),
-                    device_data.get("disk_size"),
-                    device_data.get("disk_used"),
-                    device_data.get("disk_available"),
-                    device_data.get("disk_use_percent"),
-                    device_data.get("disk_mount"),
-                    device_data.get("network_interfaces"),
-                    device_data.get("uptime"),
-                    device_data.get("os_info"),
-                    device_data.get("error_message"),
-                ),
-            )
-            lastrowid = cursor.lastrowid
-            assert lastrowid is not None
-            device_id = lastrowid
 
-        self.connection.commit()
-        return device_id
+            if existing:
+                # Update existing device
+                for field in [
+                    "last_seen",
+                    "status",
+                    "cpu_model",
+                    "cpu_cores",
+                    "memory_total",
+                    "memory_used",
+                    "memory_free",
+                    "memory_available",
+                    "disk_filesystem",
+                    "disk_size",
+                    "disk_used",
+                    "disk_available",
+                    "disk_use_percent",
+                    "disk_mount",
+                    "network_interfaces",
+                    "uptime",
+                    "os_info",
+                    "error_message",
+                ]:
+                    if field in device_data:
+                        setattr(existing, field, device_data.get(field))
+                existing.updated_at = datetime.now().isoformat()
+                session.commit()
+                return existing.id
+            else:
+                # Create new device
+                device = Device(**{k: v for k, v in device_data.items() if hasattr(Device, k)})
+                session.add(device)
+                session.commit()
+                session.refresh(device)
+                return device.id
+        except Exception as e:
+            session.rollback()
+            logger.error("Error storing device: %s", e)
+            raise
+        finally:
+            session.close()
 
     def get_all_devices(self) -> list[dict[str, Any]]:
-        """Get all devices from SQLite."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute("SELECT * FROM devices ORDER BY hostname, connection_ip")
-
-        devices = []
-        for row in cursor.fetchall():
-            device_dict = dict(row)
-            # Parse network interfaces JSON
-            if device_dict.get("network_interfaces"):
-                try:
-                    device_dict["network_interfaces"] = json.loads(device_dict["network_interfaces"])
-                except json.JSONDecodeError:
-                    device_dict["network_interfaces"] = []
-
-            devices.append(device_dict)
-
-        return devices
+        """Get all devices from the database."""
+        session = self._get_session()
+        try:
+            devices = session.query(Device).order_by(Device.hostname, Device.connection_ip).all()
+            return [device.to_dict() for device in devices]
+        finally:
+            session.close()
 
     def store_discovery_history(self, device_id: int, discovery_data: str, data_hash: str) -> None:
-        """Store discovery history in SQLite."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        # Check if this exact data was already stored recently
-        cursor.execute(
-            """
-            SELECT id FROM discovery_history
-            WHERE device_id = ? AND data_hash = ?
-            ORDER BY discovered_at DESC LIMIT 1
-        """,
-            (device_id, data_hash),
-        )
-
-        if not cursor.fetchone():
-            cursor.execute(
-                """
-                INSERT INTO discovery_history (device_id, discovery_data, data_hash)
-                VALUES (?, ?, ?)
-            """,
-                (device_id, discovery_data, data_hash),
+        """Store discovery history in the database."""
+        session = self._get_session()
+        try:
+            # Check if this exact data was already stored recently
+            existing = (
+                session.query(DiscoveryHistory)
+                .filter(
+                    DiscoveryHistory.device_id == device_id,
+                    DiscoveryHistory.data_hash == data_hash,
+                )
+                .order_by(DiscoveryHistory.discovered_at.desc())
+                .first()
             )
-            self.connection.commit()
+
+            if not existing:
+                history = DiscoveryHistory(
+                    device_id=device_id,
+                    discovery_data=discovery_data,
+                    data_hash=data_hash,
+                    discovered_at=datetime.now().isoformat(),
+                )
+                session.add(history)
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error("Error storing discovery history: %s", e)
+            raise
+        finally:
+            session.close()
 
     def get_device_changes(self, device_id: int, limit: int = 10) -> list[dict[str, Any]]:
-        """Get device change history from SQLite."""
-        if not self.connection:
-            self.connect()
+        """Get device change history from the database."""
+        session = self._get_session()
+        try:
+            history = (
+                session.query(DiscoveryHistory)
+                .filter(DiscoveryHistory.device_id == device_id)
+                .order_by(DiscoveryHistory.discovered_at.desc())
+                .limit(limit)
+                .all()
+            )
 
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT discovery_data, discovered_at FROM discovery_history
-            WHERE device_id = ?
-            ORDER BY discovered_at DESC LIMIT ?
-        """,
-            (device_id, limit),
-        )
+            changes = []
+            for record in history:
+                try:
+                    data = json.loads(record.discovery_data)
+                    changes.append({"data": data, "discovered_at": record.discovered_at})
+                except (json.JSONDecodeError, TypeError):
+                    logger.debug("Failed to parse discovery history JSON for record at %s", record.discovered_at)
 
-        changes = []
-        for row in cursor.fetchall():
-            try:
-                data = json.loads(row[0])
-                changes.append({"data": data, "discovered_at": row[1]})
-            except json.JSONDecodeError:
-                logger.debug(
-                    "Failed to parse discovery history JSON for record at %s", row[1] if len(row) > 1 else "unknown"
-                )
-
-        return changes
+            return changes
+        finally:
+            session.close()
 
     def execute_query(self, query: str, params: tuple | None = None) -> list[dict[str, Any]]:
-        """Execute a query and return results."""
-        if not self.connection:
-            self.connect()
+        """Execute a raw SQL query and return results."""
+        session = self._get_session()
+        try:
+            from sqlalchemy import text
 
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
+            if params:
+                result = session.execute(text(query), {"params": params})
+            else:
+                result = session.execute(text(query))
 
-        return [dict(row) for row in cursor.fetchall()]
+            columns = result.keys()
+            return [dict(zip(columns, row, strict=False)) for row in result]
+        except Exception as e:
+            logger.error("Error executing query: %s", e)
+            raise
+        finally:
+            session.close()
 
     # SSH Credentials CRUD methods
+
     def add_credential(
         self,
         hostname: str,
@@ -481,160 +403,144 @@ class SQLiteAdapter(DatabaseAdapter):
         device_id: int | None = None,
     ) -> int:
         """Add a new SSH credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO ssh_credentials
-            (hostname, username, key_path, port, display_name, device_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (hostname, username, key_path, port, display_name, device_id),
-        )
-
-        self.connection.commit()
-        lastrowid = cursor.lastrowid
-        assert lastrowid is not None
-        return lastrowid
+        session = self._get_session()
+        try:
+            credential = SSHCredential(
+                hostname=hostname,
+                username=username,
+                key_path=key_path,
+                port=port,
+                display_name=display_name,
+                device_id=device_id,
+                is_active=True,
+                created_at=datetime.now().isoformat(),
+                updated_at=datetime.now().isoformat(),
+            )
+            session.add(credential)
+            session.commit()
+            session.refresh(credential)
+            return credential.id
+        except IntegrityError as e:
+            session.rollback()
+            raise ValueError(f"Credential for {hostname}@{username} already exists") from e
+        except Exception as e:
+            session.rollback()
+            logger.error("Error adding credential: %s", e)
+            raise
+        finally:
+            session.close()
 
     def get_credential(self, credential_id: int) -> dict[str, Any] | None:
         """Get a credential by its ID."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "SELECT * FROM ssh_credentials WHERE id = ?",
-            (credential_id,),
-        )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
+        session = self._get_session()
+        try:
+            credential = session.query(SSHCredential).filter(SSHCredential.id == credential_id).first()
+            if credential:
+                return credential.to_dict()
+            return None
+        finally:
+            session.close()
 
     def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
         """Get credential by hostname and optionally username."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        if username:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = ? AND username = ? AND is_active = 1
-            """,
-                (hostname, username),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = ? AND is_active = 1
-                ORDER BY id DESC LIMIT 1
-            """,
-                (hostname,),
+        session = self._get_session()
+        try:
+            query = session.query(SSHCredential).filter(
+                SSHCredential.hostname == hostname,
+                SSHCredential.is_active == True,  # noqa: E712  (SQLAlchemy needs the comparison, not a truth check)
             )
 
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
+            if username:
+                query = query.filter(SSHCredential.username == username)
+
+            credential = query.order_by(SSHCredential.id.desc()).first()
+
+            if credential:
+                return credential.to_dict()
+            return None
+        finally:
+            session.close()
 
     def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
         """Update a credential record."""
-        if not self.connection:
-            self.connect()
+        session = self._get_session()
+        try:
+            allowed_fields = {
+                "hostname",
+                "username",
+                "key_path",
+                "port",
+                "display_name",
+                "device_id",
+                "is_active",
+            }
+            # dict[Any, Any]: Query.update() types its keys as column descriptors,
+            # but accepts plain column-name strings at runtime.
+            update_data: dict[Any, Any] = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
-        assert self.connection is not None
+            if not update_data:
+                return False
 
-        # Build update query dynamically based on provided kwargs
-        allowed_fields = {
-            "hostname",
-            "username",
-            "key_path",
-            "port",
-            "display_name",
-            "device_id",
-            "is_active",
-        }
-        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
+            update_data["updated_at"] = datetime.now().isoformat()
 
-        if not update_fields:
-            return False
-
-        # Add updated_at timestamp
-        set_clause = ", ".join(f"{k} = ?" for k in update_fields)
-        set_clause += ", updated_at = CURRENT_TIMESTAMP"
-        values = list(update_fields.values()) + [credential_id]
-
-        cursor = self.connection.cursor()
-        cursor.execute(
-            f"UPDATE ssh_credentials SET {set_clause} WHERE id = ?",  # nosec B608 — set_clause built from validated column names, not user input; values are parameterized
-            values,
-        )
-
-        self.connection.commit()
-        return cursor.rowcount > 0
+            result = session.query(SSHCredential).filter(SSHCredential.id == credential_id).update(update_data)
+            session.commit()
+            return result > 0
+        except Exception as e:
+            session.rollback()
+            logger.error("Error updating credential: %s", e)
+            raise
+        finally:
+            session.close()
 
     def delete_credential(self, credential_id: int) -> bool:
         """Delete a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "DELETE FROM ssh_credentials WHERE id = ?",
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        return cursor.rowcount > 0
+        session = self._get_session()
+        try:
+            result = session.query(SSHCredential).filter(SSHCredential.id == credential_id).delete()
+            session.commit()
+            return result > 0
+        except Exception as e:
+            session.rollback()
+            logger.error("Error deleting credential: %s", e)
+            raise
+        finally:
+            session.close()
 
     def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
         """List all credentials."""
-        if not self.connection:
-            self.connect()
+        session = self._get_session()
+        try:
+            query = session.query(SSHCredential)
+            if active_only:
+                query = query.filter(SSHCredential.is_active == True)  # noqa: E712
 
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        if active_only:
-            cursor.execute("SELECT * FROM ssh_credentials WHERE is_active = 1 ORDER BY hostname")
-        else:
-            cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
-
-        return [dict(row) for row in cursor.fetchall()]
+            credentials = query.order_by(SSHCredential.hostname).all()
+            return [cred.to_dict() for cred in credentials]
+        finally:
+            session.close()
 
     def update_last_verified(self, credential_id: int) -> bool:
         """Update the last_verified timestamp for a credential."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            UPDATE ssh_credentials
-            SET last_verified = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """,
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        return cursor.rowcount > 0
+        session = self._get_session()
+        try:
+            now = datetime.now().isoformat()
+            result = (
+                session.query(SSHCredential)
+                .filter(SSHCredential.id == credential_id)
+                .update({"last_verified": now, "updated_at": now})
+            )
+            session.commit()
+            return result > 0
+        except Exception as e:
+            session.rollback()
+            logger.error("Error updating last_verified: %s", e)
+            raise
+        finally:
+            session.close()
 
     # Drift baseline CRUD methods
+
     def upsert_drift_baseline(
         self,
         node: str,
@@ -643,28 +549,41 @@ class SQLiteAdapter(DatabaseAdapter):
         baseline_config: dict[str, Any],
         recorded_by: str,
     ) -> None:
-        """Insert or replace a drift baseline for the given (node, vmid, vm_type)."""
-        if not self.connection:
-            self.connect()
+        """Insert or replace a drift baseline."""
+        session = self._get_session()
+        try:
+            existing = (
+                session.query(DriftBaseline)
+                .filter(
+                    DriftBaseline.node == node,
+                    DriftBaseline.vmid == vmid,
+                    DriftBaseline.vm_type == vm_type,
+                )
+                .first()
+            )
 
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO drift_baselines
-                (node, vmid, vm_type, baseline_config, recorded_at, recorded_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                node,
-                vmid,
-                vm_type,
-                json.dumps(baseline_config),
-                datetime.now().isoformat(),
-                recorded_by,
-            ),
-        )
-        self.connection.commit()
+            if existing:
+                existing.baseline_config = json.dumps(baseline_config)
+                existing.recorded_at = datetime.now().isoformat()
+                existing.recorded_by = recorded_by
+            else:
+                baseline = DriftBaseline(
+                    node=node,
+                    vmid=vmid,
+                    vm_type=vm_type,
+                    baseline_config=json.dumps(baseline_config),
+                    recorded_at=datetime.now().isoformat(),
+                    recorded_by=recorded_by,
+                )
+                session.add(baseline)
+
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error("Error upserting drift baseline: %s", e)
+            raise
+        finally:
+            session.close()
 
     def get_drift_baseline(
         self,
@@ -673,606 +592,83 @@ class SQLiteAdapter(DatabaseAdapter):
         vm_type: str,
     ) -> dict[str, Any] | None:
         """Return the baseline dict for (node, vmid, vm_type), or None if absent."""
-        if not self.connection:
-            self.connect()
+        session = self._get_session()
+        try:
+            baseline = (
+                session.query(DriftBaseline)
+                .filter(
+                    DriftBaseline.node == node,
+                    DriftBaseline.vmid == vmid,
+                    DriftBaseline.vm_type == vm_type,
+                )
+                .first()
+            )
 
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
-            FROM drift_baselines
-            WHERE node = ? AND vmid = ? AND vm_type = ?
-            """,
-            (node, vmid, vm_type),
-        )
-        row = cursor.fetchone()
-        if row is None:
+            if baseline:
+                return {
+                    "node": baseline.node,
+                    "vmid": baseline.vmid,
+                    "vm_type": baseline.vm_type,
+                    "baseline_config": json.loads(baseline.baseline_config),
+                    "recorded_at": baseline.recorded_at,
+                    "recorded_by": baseline.recorded_by,
+                }
             return None
-        result = dict(row)
-        result["baseline_config"] = json.loads(result["baseline_config"])
-        return result
+        finally:
+            session.close()
 
     def get_all_drift_baselines(self) -> list[dict[str, Any]]:
         """Return all stored drift baselines ordered by node, vmid."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT node, vmid, vm_type, baseline_config, recorded_at, recorded_by
-            FROM drift_baselines ORDER BY node, vmid
-            """
-        )
-        results = []
-        for row in cursor.fetchall():
-            entry = dict(row)
-            entry["baseline_config"] = json.loads(entry["baseline_config"])
-            results.append(entry)
-        return results
-
-
-class PostgreSQLAdapter(DatabaseAdapter):
-    """PostgreSQL database adapter with JSONB support."""
-
-    def __init__(self, connection_params: dict[str, Any] | None = None):
-        if not POSTGRESQL_AVAILABLE:
-            raise ImportError("psycopg2 is required for PostgreSQL support")
-
-        if connection_params is None:
-            # Default connection parameters from environment
-            connection_params = {
-                "host": os.getenv("POSTGRES_HOST", "localhost"),
-                "port": int(os.getenv("POSTGRES_PORT", "5432")),
-                "database": os.getenv("POSTGRES_DB", "homelab_mcp"),
-                "user": os.getenv("POSTGRES_USER", "postgres"),
-                "password": os.getenv("POSTGRES_PASSWORD", "password"),
-            }
-
-        self.connection_params = connection_params
-        self.connection: Any | None = None  # psycopg2 connection type
-
-    def connect(self) -> None:
-        """Establish PostgreSQL connection."""
-        self.connection = psycopg2.connect(**self.connection_params)
-        self.connection.autocommit = False
-
-    def close(self) -> None:
-        """Close PostgreSQL connection."""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
-
-    def init_schema(self) -> None:
-        """Initialize PostgreSQL schema with JSONB support."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        # Create devices table with JSONB columns
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS devices (
-                id SERIAL PRIMARY KEY,
-                hostname VARCHAR(255) NOT NULL,
-                connection_ip INET NOT NULL,
-                last_seen TIMESTAMP NOT NULL,
-                status VARCHAR(50) NOT NULL,
-                system_info JSONB DEFAULT '{}',
-                network_interfaces JSONB DEFAULT '[]',
-                error_message TEXT,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, connection_ip)
-            )
-        """)
-
-        # Create discovery history table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS discovery_history (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES devices(id),
-                discovery_data JSONB NOT NULL,
-                data_hash VARCHAR(64) NOT NULL,
-                discovered_at TIMESTAMP DEFAULT NOW()
-            )
-        """)
-
-        # Create ssh_credentials table for persistent credential storage
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ssh_credentials (
-                id SERIAL PRIMARY KEY,
-                device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
-                hostname VARCHAR(255) NOT NULL,
-                username VARCHAR(255) NOT NULL DEFAULT 'mcp_admin',
-                key_path TEXT,
-                port INTEGER DEFAULT 22,
-                display_name VARCHAR(255),
-                is_active BOOLEAN DEFAULT TRUE,
-                last_verified TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(hostname, username)
-            )
-        """)
-
-        # Create indexes including JSONB indexes
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_hostname_ip
-            ON devices (hostname, connection_ip)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_status
-            ON devices (status)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_system_info_gin
-            ON devices USING GIN (system_info)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_devices_network_gin
-            ON devices USING GIN (network_interfaces)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_device_id
-            ON discovery_history (device_id)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_history_data_gin
-            ON discovery_history USING GIN (discovery_data)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_hostname
-            ON ssh_credentials (hostname)
-        """)
-
-        cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_ssh_credentials_device_id
-            ON ssh_credentials (device_id)
-        """)
-
-        self.connection.commit()
-
-    def store_device(self, device_data: dict[str, Any]) -> int:
-        """Store or update a device in PostgreSQL with JSONB."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        # Prepare system info JSONB
-        system_info = {
-            "cpu": {
-                "model": device_data.get("cpu_model"),
-                "cores": device_data.get("cpu_cores"),
-            },
-            "memory": {
-                "total": device_data.get("memory_total"),
-                "used": device_data.get("memory_used"),
-                "free": device_data.get("memory_free"),
-                "available": device_data.get("memory_available"),
-            },
-            "disk": {
-                "filesystem": device_data.get("disk_filesystem"),
-                "size": device_data.get("disk_size"),
-                "used": device_data.get("disk_used"),
-                "available": device_data.get("disk_available"),
-                "use_percent": device_data.get("disk_use_percent"),
-                "mount": device_data.get("disk_mount"),
-            },
-            "uptime": device_data.get("uptime"),
-            "os": device_data.get("os_info"),
-        }
-
-        # Parse network interfaces
-        network_interfaces = []
-        if device_data.get("network_interfaces"):
-            if isinstance(device_data["network_interfaces"], str):
-                try:
-                    network_interfaces = json.loads(device_data["network_interfaces"])
-                except json.JSONDecodeError:
-                    network_interfaces = []
-            elif isinstance(device_data["network_interfaces"], list):
-                network_interfaces = device_data["network_interfaces"]
-
-        # Check if device exists
-        cursor.execute(
-            """
-            SELECT id FROM devices
-            WHERE hostname = %s AND connection_ip = %s
-        """,
-            (device_data["hostname"], device_data["connection_ip"]),
-        )
-
-        existing = cursor.fetchone()
-
-        if existing:
-            # Update existing device
-            device_id: int = existing[0]
-            cursor.execute(
-                """
-                UPDATE devices SET
-                    last_seen = %s, status = %s, system_info = %s,
-                    network_interfaces = %s, error_message = %s, updated_at = NOW()
-                WHERE id = %s
-            """,
-                (
-                    device_data["last_seen"],
-                    device_data["status"],
-                    json.dumps(system_info),
-                    json.dumps(network_interfaces),
-                    device_data.get("error_message"),
-                    device_id,
-                ),
-            )
-        else:
-            # Insert new device
-            cursor.execute(
-                """
-                INSERT INTO devices (
-                    hostname, connection_ip, last_seen, status,
-                    system_info, network_interfaces, error_message
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id
-            """,
-                (
-                    device_data["hostname"],
-                    device_data["connection_ip"],
-                    device_data["last_seen"],
-                    device_data["status"],
-                    json.dumps(system_info),
-                    json.dumps(network_interfaces),
-                    device_data.get("error_message"),
-                ),
-            )
-            result = cursor.fetchone()
-            assert result is not None
-            device_id = result[0]
-
-        self.connection.commit()
-        return device_id
-
-    def get_all_devices(self) -> list[dict[str, Any]]:
-        """Get all devices from PostgreSQL."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute("""
-            SELECT
-                id, hostname, connection_ip::text as connection_ip, last_seen, status,
-                system_info, network_interfaces, error_message, created_at, updated_at
-            FROM devices
-            ORDER BY hostname, connection_ip
-        """)
-
-        devices = []
-        for row in cursor.fetchall():
-            device_dict = dict(row)
-
-            # Flatten system_info for backward compatibility
-            if device_dict.get("system_info"):
-                system_info = device_dict["system_info"]
-                device_dict.update(
-                    {
-                        "cpu_model": system_info.get("cpu", {}).get("model"),
-                        "cpu_cores": system_info.get("cpu", {}).get("cores"),
-                        "memory_total": system_info.get("memory", {}).get("total"),
-                        "memory_used": system_info.get("memory", {}).get("used"),
-                        "memory_free": system_info.get("memory", {}).get("free"),
-                        "memory_available": system_info.get("memory", {}).get("available"),
-                        "disk_filesystem": system_info.get("disk", {}).get("filesystem"),
-                        "disk_size": system_info.get("disk", {}).get("size"),
-                        "disk_used": system_info.get("disk", {}).get("used"),
-                        "disk_available": system_info.get("disk", {}).get("available"),
-                        "disk_use_percent": system_info.get("disk", {}).get("use_percent"),
-                        "disk_mount": system_info.get("disk", {}).get("mount"),
-                        "uptime": system_info.get("uptime"),
-                        "os_info": system_info.get("os"),
-                    }
-                )
-
-            devices.append(device_dict)
-
-        return devices
-
-    def store_discovery_history(self, device_id: int, discovery_data: str, data_hash: str) -> None:
-        """Store discovery history in PostgreSQL."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        # Parse discovery data to JSONB
+        session = self._get_session()
         try:
-            discovery_json = json.loads(discovery_data)
-        except json.JSONDecodeError:
-            discovery_json = {"raw_data": discovery_data}
+            baselines = session.query(DriftBaseline).order_by(DriftBaseline.node, DriftBaseline.vmid).all()
 
-        # Check if this exact data was already stored recently
-        cursor.execute(
-            """
-            SELECT id FROM discovery_history
-            WHERE device_id = %s AND data_hash = %s
-            ORDER BY discovered_at DESC LIMIT 1
-        """,
-            (device_id, data_hash),
-        )
-
-        if not cursor.fetchone():
-            cursor.execute(
-                """
-                INSERT INTO discovery_history (device_id, discovery_data, data_hash)
-                VALUES (%s, %s, %s)
-            """,
-                (device_id, json.dumps(discovery_json), data_hash),
-            )
-            self.connection.commit()
-
-    def get_device_changes(self, device_id: int, limit: int = 10) -> list[dict[str, Any]]:
-        """Get device change history from PostgreSQL."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(
-            """
-            SELECT discovery_data, discovered_at FROM discovery_history
-            WHERE device_id = %s
-            ORDER BY discovered_at DESC LIMIT %s
-        """,
-            (device_id, limit),
-        )
-
-        changes = []
-        for row in cursor.fetchall():
-            changes.append(
-                {
-                    "data": row["discovery_data"],
-                    "discovered_at": row["discovered_at"].isoformat(),
+            results = []
+            for baseline in baselines:
+                entry = {
+                    "node": baseline.node,
+                    "vmid": baseline.vmid,
+                    "vm_type": baseline.vm_type,
+                    "baseline_config": json.loads(baseline.baseline_config),
+                    "recorded_at": baseline.recorded_at,
+                    "recorded_by": baseline.recorded_by,
                 }
-            )
-
-        return changes
-
-    def execute_query(self, query: str, params: tuple | None = None) -> list[dict[str, Any]]:
-        """Execute a query and return results."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-
-        return [dict(row) for row in cursor.fetchall()]
-
-    # SSH Credentials CRUD methods
-    def add_credential(
-        self,
-        hostname: str,
-        username: str = "mcp_admin",
-        key_path: str | None = None,
-        port: int = 22,
-        display_name: str | None = None,
-        device_id: int | None = None,
-    ) -> int:
-        """Add a new SSH credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO ssh_credentials
-            (hostname, username, key_path, port, display_name, device_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """,
-            (hostname, username, key_path, port, display_name, device_id),
-        )
-
-        result = cursor.fetchone()
-        assert result is not None
-        self.connection.commit()
-        credential_id_result: int = result[0]
-        return credential_id_result
-
-    def get_credential(self, credential_id: int) -> dict[str, Any] | None:
-        """Get a credential by its ID."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(
-            "SELECT * FROM ssh_credentials WHERE id = %s",
-            (credential_id,),
-        )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
-
-    def get_credential_by_hostname(self, hostname: str, username: str | None = None) -> dict[str, Any] | None:
-        """Get credential by hostname and optionally username."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        if username:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = %s AND username = %s AND is_active = TRUE
-            """,
-                (hostname, username),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT * FROM ssh_credentials
-                WHERE hostname = %s AND is_active = TRUE
-                ORDER BY id DESC LIMIT 1
-            """,
-                (hostname,),
-            )
-
-        row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
-
-    def update_credential(self, credential_id: int, **kwargs: Any) -> bool:
-        """Update a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-
-        # Build update query dynamically based on provided kwargs
-        allowed_fields = {
-            "hostname",
-            "username",
-            "key_path",
-            "port",
-            "display_name",
-            "device_id",
-            "is_active",
-        }
-        update_fields = {k: v for k, v in kwargs.items() if k in allowed_fields}
-
-        if not update_fields:
-            return False
-
-        # Add updated_at timestamp
-        set_clause = ", ".join(f"{k} = %s" for k in update_fields)
-        set_clause += ", updated_at = NOW()"
-        values = list(update_fields.values()) + [credential_id]
-
-        cursor = self.connection.cursor()
-        cursor.execute(
-            f"UPDATE ssh_credentials SET {set_clause} WHERE id = %s",  # nosec B608 — set_clause built from validated column names, not user input; values are parameterized
-            values,
-        )
-
-        self.connection.commit()
-        rowcount: int = cursor.rowcount
-        return rowcount > 0
-
-    def delete_credential(self, credential_id: int) -> bool:
-        """Delete a credential record."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            "DELETE FROM ssh_credentials WHERE id = %s",
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        rowcount: int = cursor.rowcount
-        return rowcount > 0
-
-    def list_credentials(self, active_only: bool = True) -> list[dict[str, Any]]:
-        """List all credentials."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        if active_only:
-            cursor.execute("SELECT * FROM ssh_credentials WHERE is_active = TRUE ORDER BY hostname")
-        else:
-            cursor.execute("SELECT * FROM ssh_credentials ORDER BY hostname")
-
-        return [dict(row) for row in cursor.fetchall()]
-
-    def update_last_verified(self, credential_id: int) -> bool:
-        """Update the last_verified timestamp for a credential."""
-        if not self.connection:
-            self.connect()
-
-        assert self.connection is not None
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            UPDATE ssh_credentials
-            SET last_verified = NOW(), updated_at = NOW()
-            WHERE id = %s
-        """,
-            (credential_id,),
-        )
-
-        self.connection.commit()
-        rowcount: int = cursor.rowcount
-        return rowcount > 0
-
-    # Drift baseline CRUD methods (Phase 11 scope: SQLite only — stubs for ABC compliance)
-    def upsert_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-        baseline_config: dict[str, Any],
-        recorded_by: str,
-    ) -> None:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
-    def get_drift_baseline(
-        self,
-        node: str,
-        vmid: int,
-        vm_type: str,
-    ) -> dict[str, Any] | None:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
-
-    def get_all_drift_baselines(self) -> list[dict[str, Any]]:
-        """Not implemented for PostgreSQL in Phase 11 scope."""
-        raise NotImplementedError("drift baseline CRUD is SQLite-only in Phase 11")
+                results.append(entry)
+            return results
+        finally:
+            session.close()
 
 
 def get_database_adapter(db_type: str | None = None, **kwargs: Any) -> DatabaseAdapter:
-    """Factory function to get the appropriate database adapter."""
-    if db_type is None:
-        # Auto-detect based on environment
-        db_type = os.getenv("DATABASE_TYPE", "sqlite")
+    """Factory function to get the appropriate database adapter.
 
-    if db_type.lower() == "postgresql":
-        if not POSTGRESQL_AVAILABLE:
-            raise ImportError("PostgreSQL support requires psycopg2. Install it with: pip install psycopg2-binary")
-        return PostgreSQLAdapter(kwargs.get("connection_params"))
-    elif db_type.lower() == "sqlite":
-        return SQLiteAdapter(kwargs.get("db_path"))
+    Args:
+        db_type: Database type ("sqlite" or "postgresql"). Auto-detects from env if None.
+        **kwargs: Additional parameters (db_path for SQLite, connection_params for PostgreSQL).
+
+    Returns:
+        DatabaseAdapter instance configured for the specified backend.
+    """
+    if db_type is None:
+        db_type = "sqlite"
+
+    if db_type not in ("sqlite", "postgresql"):
+        raise ValueError(f"Unsupported database type: {db_type}. Must be 'sqlite' or 'postgresql'")
+
+    if db_type == "postgresql":
+        return SQLAlchemyAdapter(db_type="postgresql", connection_params=kwargs.get("connection_params"))
     else:
-        raise ValueError(f"Unsupported database type: {db_type}")
+        return SQLAlchemyAdapter(db_type="sqlite", db_path=kwargs.get("db_path"))
 
 
 def calculate_data_hash(discovery_data: str) -> str:
-    """Calculate hash of discovery data for change detection."""
+    """Calculate SHA-256 hash of discovery data for change detection."""
     return hashlib.sha256(discovery_data.encode()).hexdigest()
+
+
+# No SQLiteAdapter/PostgreSQLAdapter aliases here on purpose. They looked
+# compatible but were not: the old adapters took a path or a params dict as the
+# first positional arg, while SQLAlchemyAdapter takes db_type. `SQLiteAdapter(path)`
+# therefore silently fell back to the default database instead of the requested
+# one, and `PostgreSQLAdapter(params)` raised AttributeError on dict.lower().
+# Use get_database_adapter() — it routes the kwargs to the right place.

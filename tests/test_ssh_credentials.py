@@ -2,12 +2,11 @@
 
 import json
 import logging
-import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.homelab_mcp.database import SQLiteAdapter
+from src.homelab_mcp.database import get_database_adapter
 from src.homelab_mcp.ssh_tools import (
     CredentialNotFoundError,
     SSHCredentials,
@@ -25,15 +24,16 @@ class TestSSHCredentialsDatabase:
     @pytest.fixture
     def adapter(self):
         """Create a SQLite adapter with in-memory database."""
-        adapter = SQLiteAdapter(":memory:")
+        adapter = get_database_adapter("sqlite", db_path=":memory:")
+        adapter.connect()
         adapter.init_schema()
         return adapter
 
     def test_ssh_credentials_table_created(self, adapter):
         """Test that ssh_credentials table is created during init_schema."""
-        cursor = adapter.connection.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ssh_credentials'")
-        assert cursor.fetchone() is not None
+        result = adapter.execute_query("SELECT name FROM sqlite_master WHERE type='table'")
+        table_names = [row["name"] for row in result]
+        assert "ssh_credentials" in table_names
 
     def test_add_credential(self, adapter):
         """Test adding a new credential."""
@@ -184,7 +184,8 @@ class TestSSHCredentialsDatabase:
         """Test that hostname+username combination must be unique."""
         adapter.add_credential(hostname="192.168.1.100", username="admin")
 
-        with pytest.raises(sqlite3.IntegrityError):
+        # Database raises ValueError on duplicate constraint violation
+        with pytest.raises(ValueError, match="already exists"):
             adapter.add_credential(hostname="192.168.1.100", username="admin")
 
 

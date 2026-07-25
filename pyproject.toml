@@ -19,6 +19,9 @@ dependencies = [
     "websockets>=12.0",
     "keyring>=25.6.0",
     "fastapi>=0.135.3",
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +38,11 @@ ai = [
 ]
 security = [
     "cryptography>=42.0.0",
+]
+# database.py gates the psycopg2 import behind POSTGRESQL_AVAILABLE and raises a
+# pointer to this extra, so Postgres stays opt-in. SQLite needs no extra.
+postgres = [
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
@@ -60,6 +68,9 @@ dev = [
     "aioresponses>=0.7.6",
     "coverage[toml]>=7.9.1",
     "docker>=7.0.0",
+    # Ships as the optional `postgres` extra for users, but tests exercise the
+    # PostgreSQL adapter paths, so dev always needs it.
+    "psycopg2-binary>=2.9.0",
     # Code quality
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -69,14 +80,21 @@ dev = [
     # Development tools
     "ipython>=8.0.0",
     "types-pyyaml>=6.0.12.20250915",
+    "types-jsonschema>=4.24.0",
     "pre-commit>=4.3.0",
+    # Local MCP contract-test framework — dev-only, resolved via [tool.uv.sources]
+    # below. Must never appear in [project.dependencies]: the path source does not
+    # exist for anyone installing from PyPI.
+    "mcp-contracts",
 ]
 
 [tool.uv]
 
 [tool.uv.sources]
+mcp-contracts = { path = "../mvp_test_framework", editable = true }
 
 [tool.pytest.ini_options]
+mcp_config_file = "./config.yaml"
 minversion = "8.0"
 addopts = [
     "-ra",
@@ -153,7 +171,7 @@ directory = "htmlcov"
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-extend-exclude = ["testsprite_tests"]
+extend-exclude = ["testsprite_tests", "tests/test_code/_generated"]
 
 [tool.ruff.lint]
 select = [
@@ -173,6 +191,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["B018", "S101", "S105", "S106"]
+# Importing a pytest fixture registers it in the module namespace; ruff reads the
+# import as unused and each test taking it as a parameter as a redefinition.
+"tests/test_create_proxmox_vm.py" = ["F401", "F811"]
 
 [tool.mypy]
 python_version = "3.12"

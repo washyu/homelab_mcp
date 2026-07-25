@@ -16,6 +16,19 @@ from src.homelab_mcp.migration import (
 )
 
 
+def adapter_factory(sqlite_mock=None, postgres_mock=None):
+    """Build a side_effect for get_database_adapter that routes on db_type.
+
+    migration.py now creates both adapters through the one factory, so tests
+    dispatch on the db_type argument instead of patching two separate classes.
+    """
+
+    def _factory(db_type="sqlite", **kwargs):
+        return postgres_mock if db_type == "postgresql" else sqlite_mock
+
+    return _factory
+
+
 class MockDevice:
     """Mock device data for testing."""
 
@@ -295,18 +308,16 @@ class TestMigrationFunctions:
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch("src.homelab_mcp.migration.SQLiteAdapter")
-    @patch("src.homelab_mcp.migration.PostgreSQLAdapter")
+    @patch("src.homelab_mcp.migration.get_database_adapter")
     @patch("src.homelab_mcp.migration.DatabaseMigrator")
-    def test_migrate_sqlite_to_postgresql_success(self, mock_migrator_class, mock_pg_adapter, mock_sqlite_adapter):
+    def test_migrate_sqlite_to_postgresql_success(self, mock_migrator_class, mock_get_adapter):
         """Test successful SQLite to PostgreSQL migration."""
         # Setup mocks
         mock_sqlite = MagicMock()
         mock_sqlite.get_all_devices.return_value = [MockDevice.create_sample_device()]
-        mock_sqlite_adapter.return_value = mock_sqlite
 
         mock_pg = MagicMock()
-        mock_pg_adapter.return_value = mock_pg
+        mock_get_adapter.side_effect = adapter_factory(mock_sqlite, mock_pg)
 
         mock_migrator = MagicMock()
         mock_migrator.migrate_devices.return_value = (1, 0)  # 1 migrated, 0 errors
@@ -327,9 +338,13 @@ class TestMigrationFunctions:
 
         assert result is True
 
-        # Verify adapters were created
-        mock_sqlite_adapter.assert_called_once_with(sqlite_path)
-        mock_pg_adapter.assert_called_once_with(postgres_params)
+        # Verify adapters were created with the right routing kwargs. These
+        # asserts are the guard against the regression where a path or params
+        # dict was passed positionally as db_type.
+        assert mock_get_adapter.call_args_list == [
+            call("sqlite", db_path=sqlite_path),
+            call("postgresql", connection_params=postgres_params),
+        ]
 
         # Verify connections were established
         mock_sqlite.connect.assert_called_once()
@@ -345,12 +360,12 @@ class TestMigrationFunctions:
         mock_sqlite.close.assert_called_once()
         mock_pg.close.assert_called_once()
 
-    @patch("src.homelab_mcp.migration.SQLiteAdapter")
-    def test_migrate_sqlite_to_postgresql_no_devices(self, mock_sqlite_adapter):
+    @patch("src.homelab_mcp.migration.get_database_adapter")
+    def test_migrate_sqlite_to_postgresql_no_devices(self, mock_get_adapter):
         """Test migration when source database is empty."""
         mock_sqlite = MagicMock()
         mock_sqlite.get_all_devices.return_value = []
-        mock_sqlite_adapter.return_value = mock_sqlite
+        mock_get_adapter.side_effect = adapter_factory(mock_sqlite)
 
         sqlite_path = os.path.join(self.temp_dir, "empty.db")
 
@@ -361,12 +376,12 @@ class TestMigrationFunctions:
         mock_sqlite.connect.assert_called_once()
         mock_sqlite.close.assert_called_once()
 
-    @patch("src.homelab_mcp.migration.SQLiteAdapter")
-    def test_migrate_sqlite_to_postgresql_dry_run(self, mock_sqlite_adapter):
+    @patch("src.homelab_mcp.migration.get_database_adapter")
+    def test_migrate_sqlite_to_postgresql_dry_run(self, mock_get_adapter):
         """Test dry run migration."""
         mock_sqlite = MagicMock()
         mock_sqlite.get_all_devices.return_value = [MockDevice.create_sample_device()]
-        mock_sqlite_adapter.return_value = mock_sqlite
+        mock_get_adapter.side_effect = adapter_factory(mock_sqlite)
 
         sqlite_path = os.path.join(self.temp_dir, "test.db")
 
@@ -380,32 +395,40 @@ class TestMigrationFunctions:
 
     def test_migrate_sqlite_to_postgresql_missing_psycopg2(self):
         """Test migration failure when psycopg2 is not available."""
+        # Only the postgresql branch may raise — the sqlite source must still
+        # build and report devices, or the run short-circuits on "no devices"
+        # and returns True before psycopg2 is ever needed.
+        mock_sqlite = MagicMock()
+        mock_sqlite.get_all_devices.return_value = [MockDevice.create_sample_device()]
+
+        def _factory(db_type="sqlite", **kwargs):
+            if db_type == "postgresql":
+                raise ImportError("No module named 'psycopg2'")
+            return mock_sqlite
+
         with patch("builtins.print"):  # Suppress output
-            with patch(
-                "src.homelab_mcp.migration.PostgreSQLAdapter",
-                side_effect=ImportError("No module named 'psycopg2'"),
-            ):
+            with patch("src.homelab_mcp.migration.get_database_adapter", side_effect=_factory):
                 result = migrate_sqlite_to_postgresql("/test/path.db", dry_run=False)
 
         assert result is False
 
-    @patch("src.homelab_mcp.migration.SQLiteAdapter")
-    def test_migrate_sqlite_to_postgresql_connection_error(self, mock_sqlite_adapter):
+    @patch("src.homelab_mcp.migration.get_database_adapter")
+    def test_migrate_sqlite_to_postgresql_connection_error(self, mock_get_adapter):
         """Test migration failure due to connection error."""
         mock_sqlite = MagicMock()
         mock_sqlite.connect.side_effect = Exception("Connection failed")
-        mock_sqlite_adapter.return_value = mock_sqlite
+        mock_get_adapter.side_effect = adapter_factory(mock_sqlite)
 
         with patch("builtins.print"):  # Suppress output
             result = migrate_sqlite_to_postgresql("/test/path.db", dry_run=False)
 
         assert result is False
 
-    @patch("src.homelab_mcp.migration.PostgreSQLAdapter")
-    def test_setup_postgresql_database_success(self, mock_pg_adapter):
+    @patch("src.homelab_mcp.migration.get_database_adapter")
+    def test_setup_postgresql_database_success(self, mock_get_adapter):
         """Test successful PostgreSQL database setup."""
         mock_pg = MagicMock()
-        mock_pg_adapter.return_value = mock_pg
+        mock_get_adapter.side_effect = adapter_factory(postgres_mock=mock_pg)
 
         postgres_params = {
             "host": "localhost",
@@ -419,7 +442,7 @@ class TestMigrationFunctions:
             result = setup_postgresql_database(postgres_params)
 
         assert result is True
-        mock_pg_adapter.assert_called_once_with(postgres_params)
+        mock_get_adapter.assert_called_once_with("postgresql", connection_params=postgres_params)
         mock_pg.connect.assert_called_once()
         mock_pg.init_schema.assert_called_once()
         mock_pg.close.assert_called_once()
@@ -428,19 +451,19 @@ class TestMigrationFunctions:
         """Test PostgreSQL setup failure when psycopg2 is not available."""
         with patch("builtins.print"):  # Suppress output
             with patch(
-                "src.homelab_mcp.migration.PostgreSQLAdapter",
+                "src.homelab_mcp.migration.get_database_adapter",
                 side_effect=ImportError("No module named 'psycopg2'"),
             ):
                 result = setup_postgresql_database()
 
         assert result is False
 
-    @patch("src.homelab_mcp.migration.PostgreSQLAdapter")
-    def test_setup_postgresql_database_connection_error(self, mock_pg_adapter):
+    @patch("src.homelab_mcp.migration.get_database_adapter")
+    def test_setup_postgresql_database_connection_error(self, mock_get_adapter):
         """Test PostgreSQL setup failure due to connection error."""
         mock_pg = MagicMock()
         mock_pg.connect.side_effect = Exception("Connection refused")
-        mock_pg_adapter.return_value = mock_pg
+        mock_get_adapter.side_effect = adapter_factory(postgres_mock=mock_pg)
 
         with patch("builtins.print"):  # Suppress output
             result = setup_postgresql_database()

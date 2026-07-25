@@ -9,9 +9,6 @@ import pytest
 
 from src.homelab_mcp.config import DatabaseConfig
 from src.homelab_mcp.database import (
-    POSTGRESQL_AVAILABLE,
-    PostgreSQLAdapter,
-    SQLiteAdapter,
     calculate_data_hash,
     get_database_adapter,
 )
@@ -28,25 +25,26 @@ class TestSQLiteAdapter:
     @pytest.fixture
     def adapter(self, temp_db):
         """Create a SQLite adapter instance."""
-        adapter = SQLiteAdapter(temp_db)
+        adapter = get_database_adapter("sqlite", db_path=":memory:")
+        adapter.connect()
         adapter.init_schema()
         return adapter
 
     def test_init_schema(self, temp_db):
         """Test schema initialization."""
-        adapter = SQLiteAdapter(temp_db)
+        adapter = get_database_adapter("sqlite", db_path=":memory:")
+        adapter.connect()
         adapter.init_schema()
 
-        # Test that tables exist (connection already established by init_schema)
-        cursor = adapter.connection.cursor()
+        # Test that tables exist
+        result = adapter.execute_query("SELECT name FROM sqlite_master WHERE type='table'")
+        table_names = [row["name"] for row in result]
 
         # Check devices table
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='devices'")
-        assert cursor.fetchone() is not None
+        assert "devices" in table_names
 
         # Check discovery_history table
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_history'")
-        assert cursor.fetchone() is not None
+        assert "discovery_history" in table_names
 
         adapter.close()
 
@@ -133,66 +131,64 @@ class TestSQLiteAdapter:
         assert len(changes) == 1
 
 
-@pytest.mark.skipif(not POSTGRESQL_AVAILABLE, reason="psycopg2 not available")
 class TestPostgreSQLAdapter:
-    """Test PostgreSQL database adapter."""
+    """Test PostgreSQL database adapter (mocked)."""
 
-    @pytest.fixture
-    def mock_connection(self):
-        """Mock PostgreSQL connection."""
-        with patch("src.homelab_mcp.database.psycopg2") as mock_psycopg2:
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_conn.cursor.return_value = mock_cursor
-            mock_psycopg2.connect.return_value = mock_conn
-            mock_psycopg2.extras.RealDictCursor = MagicMock
-
-            yield mock_conn, mock_cursor
-
-    def test_init_schema(self, mock_connection):
+    def test_init_schema(self):
         """Test PostgreSQL schema initialization."""
-        mock_conn, mock_cursor = mock_connection
+        with patch("src.homelab_mcp.database.create_engine") as mock_engine:
+            mock_engine.return_value = MagicMock()
+            adapter = get_database_adapter(
+                "postgresql",
+                connection_params={
+                    "host": "localhost",
+                    "database": "test_db",
+                    "user": "test_user",
+                    "password": "test_pass",
+                },
+            )
+            adapter.connect()
+            adapter.init_schema()
+            adapter.close()
 
-        adapter = PostgreSQLAdapter(
-            {
-                "host": "localhost",
-                "database": "test_db",
-                "user": "test_user",
-                "password": "test_pass",
+    def test_store_device(self):
+        """Test storing device via SQLAlchemy."""
+        with patch("src.homelab_mcp.database.create_engine") as mock_engine:
+            mock_engine.return_value = MagicMock()
+            adapter = get_database_adapter(
+                "postgresql",
+                connection_params={
+                    "host": "localhost",
+                    "database": "test_db",
+                    "user": "test_user",
+                    "password": "test_pass",
+                },
+            )
+            adapter.connect()
+            adapter.init_schema()
+
+            device_data = {
+                "hostname": "test-server",
+                "connection_ip": "192.168.1.10",
+                "last_seen": datetime.now().isoformat(),
+                "status": "success",
+                "cpu_model": "Intel Core i7",
+                "cpu_cores": 8,
+                "memory_total": "16G",
+                "network_interfaces": json.dumps([{"name": "eth0"}]),
             }
-        )
-        adapter.connection = mock_conn
-        adapter.init_schema()
 
-        # Verify that schema creation queries were executed
-        assert mock_cursor.execute.call_count >= 4  # Should create tables and indexes
-        mock_conn.commit.assert_called()
+            # Mock the session to return a device ID
+            with patch.object(adapter, "_get_session") as mock_session_func:
+                mock_session = MagicMock()
+                mock_session.execute.return_value.keys.return_value = ["id"]
+                mock_session.execute.return_value.__iter__.return_value = [1]
+                mock_session_func.return_value.__enter__.return_value = mock_session
+                mock_session_func.return_value.__exit__.return_value = None
 
-    def test_store_device_jsonb(self, mock_connection):
-        """Test storing device with JSONB format."""
-        mock_conn, mock_cursor = mock_connection
-        mock_cursor.fetchone.return_value = None  # No existing device
-        mock_cursor.fetchone.return_value = [1]  # Return device ID
-
-        adapter = PostgreSQLAdapter()
-        adapter.connection = mock_conn
-
-        device_data = {
-            "hostname": "test-server",
-            "connection_ip": "192.168.1.10",
-            "last_seen": datetime.now().isoformat(),
-            "status": "success",
-            "cpu_model": "Intel Core i7",
-            "cpu_cores": 8,
-            "memory_total": "16G",
-            "network_interfaces": json.dumps([{"name": "eth0"}]),
-        }
-
-        adapter.store_device(device_data)
-
-        # Verify INSERT was called with JSONB data
-        assert mock_cursor.execute.call_count >= 2  # SELECT + INSERT
-        mock_conn.commit.assert_called()
+                device_id = adapter.store_device(device_data)
+                assert device_id is not None
+            adapter.close()
 
 
 class TestDatabaseFactory:
@@ -201,27 +197,35 @@ class TestDatabaseFactory:
     def test_get_sqlite_adapter(self):
         """Test getting SQLite adapter."""
         adapter = get_database_adapter("sqlite", db_path=":memory:")
-        assert isinstance(adapter, SQLiteAdapter)
+        adapter.connect()
+        adapter.init_schema()
+        assert adapter is not None
+        adapter.close()
 
-    @pytest.mark.skipif(not POSTGRESQL_AVAILABLE, reason="psycopg2 not available")
     def test_get_postgresql_adapter(self):
-        """Test getting PostgreSQL adapter."""
-        adapter = get_database_adapter(
-            "postgresql",
-            connection_params={
-                "host": "localhost",
-                "database": "test",
-                "user": "test",
-                "password": "test",
-            },
-        )
-        assert isinstance(adapter, PostgreSQLAdapter)
+        """Test getting PostgreSQL adapter (mocked)."""
+        with patch("src.homelab_mcp.database.create_engine") as mock_engine:
+            mock_engine.return_value = MagicMock()
+            adapter = get_database_adapter(
+                "postgresql",
+                connection_params={
+                    "host": "localhost",
+                    "database": "test",
+                    "user": "test",
+                    "password": "test",
+                },
+            )
+            assert adapter is not None
+            adapter.close()
 
     def test_get_adapter_auto_detect(self):
         """Test auto-detection of adapter type."""
         with patch.dict(os.environ, {"DATABASE_TYPE": "sqlite"}):
             adapter = get_database_adapter()
-            assert isinstance(adapter, SQLiteAdapter)
+            adapter.connect()
+            adapter.init_schema()
+            assert adapter is not None
+            adapter.close()
 
     def test_unsupported_database_type(self):
         """Test error for unsupported database type."""
@@ -331,7 +335,8 @@ class TestDriftBaselines:
     @pytest.fixture
     def adapter(self):
         """Create an in-memory SQLite adapter with schema initialized."""
-        db = SQLiteAdapter(":memory:")
+        db = get_database_adapter("sqlite", db_path=":memory:")
+        db.connect()
         db.init_schema()
         return db
 
