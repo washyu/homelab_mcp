@@ -540,6 +540,36 @@ def _cmd_credentials_remove(args: argparse.Namespace) -> None:
     print(f"Removed {credential_type} credential for {args.hostname}")
 
 
+def _cmd_setup_admin(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp setup-admin <hostname> [--user root]`.
+
+    One-time bootstrap: propagates the mcp_admin key + NOPASSWD sudoers to a host.
+    Bootstrap user must be root or already have passwordless sudo (no-TTY SSH).
+    """
+    import asyncio  # noqa: PLC0415
+    import getpass  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import setup_remote_mcp_admin  # noqa: PLC0415
+
+    # getpass keeps the bootstrap password off argv/ps and out of shell history.
+    password = getpass.getpass(f"Bootstrap password for {args.username}@{args.hostname}: ")
+    result = asyncio.run(setup_remote_mcp_admin(args.hostname, args.username, password, port=args.port))
+    print(result)
+
+
+def _cmd_verify_admin(args: argparse.Namespace) -> None:
+    """Handle `homelab-mcp verify-admin <hostname>`.
+
+    Confirms a prior setup-admin worked: connects as mcp_admin with the key
+    (no password) and checks passwordless sudo + group membership.
+    """
+    import asyncio  # noqa: PLC0415
+
+    from homelab_mcp.ssh_tools import verify_mcp_admin_access  # noqa: PLC0415
+
+    print(asyncio.run(verify_mcp_admin_access(args.hostname, port=args.port)))
+
+
 def _run_stdio_wrapper(args: argparse.Namespace) -> None:
     """Dispatch to stdio or HTTP server. Called when no credentials subcommand is given."""
     import asyncio  # noqa: PLC0415
@@ -666,6 +696,19 @@ Credential management (OS keyring):
     remove_p.add_argument("hostname")
     remove_p.add_argument("--type", choices=["ssh", "proxmox"], default="ssh", dest="credential_type")
     remove_p.set_defaults(func=_cmd_credentials_remove)
+
+    # setup-admin <hostname> [--user root] [--port 22]
+    setup_p = sub.add_parser("setup-admin", help="Bootstrap mcp_admin (key + NOPASSWD sudo) on a host")
+    setup_p.add_argument("hostname")
+    setup_p.add_argument("--user", default="root", dest="username", help="Bootstrap login user (default: root)")
+    setup_p.add_argument("--port", type=int, default=22, help="SSH port (default: 22)")
+    setup_p.set_defaults(func=_cmd_setup_admin)
+
+    # verify-admin <hostname> [--port 22]
+    verify_p = sub.add_parser("verify-admin", help="Verify mcp_admin key access + passwordless sudo on a host")
+    verify_p.add_argument("hostname")
+    verify_p.add_argument("--port", type=int, default=22, help="SSH port (default: 22)")
+    verify_p.set_defaults(func=_cmd_verify_admin)
 
     args = parser.parse_args()
     getattr(args, "func", _run_stdio_wrapper)(args)

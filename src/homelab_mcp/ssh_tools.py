@@ -203,16 +203,23 @@ async def setup_remote_mcp_admin(
         ) as conn:
             setup_results = {}
 
+            # Elevate via the bootstrap password on stdin (sudo -S), so a normal
+            # password-sudo bootstrap user works — not just root/NOPASSWD. The
+            # password goes over stdin, never argv, so it stays off the remote `ps`.
+            # NOPASSWD/root users still work: sudo ignores the unused stdin line.
+            async def _sudo(inner: str, check: bool = False) -> Any:
+                return await conn.run(f"sudo -S -p '' {inner}", input=password + "\n", check=check)
+
             # Check if mcp_admin user already exists
             user_check = await conn.run("id mcp_admin", check=False)
             user_exists = user_check.exit_status == 0
 
             if not user_exists:
                 # Clean up any leftover home directory before creating user
-                await conn.run("sudo rm -rf /home/mcp_admin", check=False)
+                await _sudo("rm -rf /home/mcp_admin", check=False)
 
                 # Create mcp_admin user
-                create_user = await conn.run("sudo useradd -m -s /bin/bash -G sudo mcp_admin", check=False)
+                create_user = await _sudo("useradd -m -s /bin/bash -G sudo mcp_admin", check=False)
                 if create_user.exit_status != 0:
                     stderr_text = (
                         create_user.stderr.decode()
@@ -223,12 +230,12 @@ async def setup_remote_mcp_admin(
                 else:
                     setup_results["user_creation"] = "Success: mcp_admin user created"
                     # Ensure proper ownership of home directory
-                    await conn.run("sudo chown -R mcp_admin:mcp_admin /home/mcp_admin", check=False)
+                    await _sudo("chown -R mcp_admin:mcp_admin /home/mcp_admin", check=False)
             else:
                 setup_results["user_creation"] = "User already exists"
 
             # Ensure mcp_admin is in sudo group
-            sudo_group = await conn.run("sudo usermod -a -G sudo mcp_admin", check=False)
+            sudo_group = await _sudo("usermod -a -G sudo mcp_admin", check=False)
             if sudo_group.exit_status == 0:
                 setup_results["sudo_access"] = "Success: Added to sudo group"
             else:
@@ -260,8 +267,8 @@ async def setup_remote_mcp_admin(
                         await sftp.put(local_tmp_path, remote_tmp)
 
                     # Step 3: Injection-safe existence check — grep reads pattern from file, not args
-                    key_check = await conn.run(
-                        f"sudo grep -Ff {remote_tmp} /home/mcp_admin/.ssh/authorized_keys 2>/dev/null",
+                    key_check = await _sudo(
+                        f"grep -Ff {remote_tmp} /home/mcp_admin/.ssh/authorized_keys 2>/dev/null",
                         check=False,
                     )
                     key_exists = key_check.exit_status == 0
@@ -270,14 +277,15 @@ async def setup_remote_mcp_admin(
                         setup_results["ssh_key"] = "SSH key already exists"
                     else:
                         # Setup SSH directory
-                        await conn.run("sudo mkdir -p /home/mcp_admin", check=False)
-                        await conn.run("sudo chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
+                        await _sudo("mkdir -p /home/mcp_admin", check=False)
+                        await _sudo("chown mcp_admin:mcp_admin /home/mcp_admin", check=False)
 
-                        # Create .ssh directory as root, then change ownership
-                        mkdir_cmd = await conn.run(
-                            "sudo mkdir -p /home/mcp_admin/.ssh && "
-                            "sudo chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
-                            "sudo chmod 700 /home/mcp_admin/.ssh",
+                        # Create .ssh directory as root, then change ownership.
+                        # Single sudo (bash -c) so one password prompt covers all three.
+                        mkdir_cmd = await _sudo(
+                            "bash -c 'mkdir -p /home/mcp_admin/.ssh && "
+                            "chown mcp_admin:mcp_admin /home/mcp_admin/.ssh && "
+                            "chmod 700 /home/mcp_admin/.ssh'",
                             check=False,
                         )
 
@@ -291,14 +299,14 @@ async def setup_remote_mcp_admin(
                         else:
                             if force_update_key and key_exists:
                                 # Remove old MCP keys (sed does not use key content — safe)
-                                await conn.run(
-                                    "sudo sed -i '/mcp_admin@/d' /home/mcp_admin/.ssh/authorized_keys",
+                                await _sudo(
+                                    "sed -i '/mcp_admin@/d' /home/mcp_admin/.ssh/authorized_keys",
                                     check=False,
                                 )
 
                             # Step 4: Append key from tmpfile — no key content in shell string
-                            add_key = await conn.run(
-                                f"sudo bash -c 'cat {remote_tmp} >> /home/mcp_admin/.ssh/authorized_keys && "
+                            add_key = await _sudo(
+                                f"bash -c 'cat {remote_tmp} >> /home/mcp_admin/.ssh/authorized_keys && "
                                 "chown mcp_admin:mcp_admin /home/mcp_admin/.ssh/authorized_keys && "
                                 "chmod 600 /home/mcp_admin/.ssh/authorized_keys'",
                                 check=False,
@@ -322,9 +330,10 @@ async def setup_remote_mcp_admin(
                         os.unlink(local_tmp_path)
                     await conn.run(f"rm -f {remote_tmp}", check=False)
 
-            # Enable passwordless sudo for mcp_admin
-            sudoers_setup = await conn.run(
-                'echo "mcp_admin ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/mcp_admin',
+            # Enable passwordless sudo for mcp_admin. Write via `sudo bash -c` (not
+            # `| sudo tee`) because sudo -S already owns stdin for the password.
+            sudoers_setup = await _sudo(
+                "bash -c 'echo \"mcp_admin ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/mcp_admin'",
                 check=False,
             )
 
@@ -339,7 +348,7 @@ async def setup_remote_mcp_admin(
                 setup_results["passwordless_sudo"] = f"Failed: {stderr_text}"
 
             # Test SSH key authentication
-            test_conn = await conn.run("sudo -u mcp_admin whoami", check=False)
+            test_conn = await _sudo("-u mcp_admin whoami", check=False)
             if test_conn.exit_status == 0:
                 setup_results["test_access"] = "Success: mcp_admin access verified"
             else:
