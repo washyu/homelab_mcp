@@ -68,6 +68,10 @@ jobs:
         files: ./coverage.xml
         flags: unittests
         fail_ci_if_error: false
+        # Codecov rejects tokenless uploads for this repo. Inert until the
+        # CODECOV_TOKEN secret is added; an unset secret resolves to the empty
+        # string, which is what the step already sends today.
+        token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Upload test results
       uses: actions/upload-artifact@v7
