@@ -1048,12 +1048,17 @@ async def _sudo_run(
     Both the password and no-password branches forward ``check`` to
     ``conn.run``, so callers get identical raise-on-failure semantics
     regardless of whether a password is supplied.
+
+    The password is written to stdin rather than embedded in the command
+    string. Embedding it meant the plaintext appeared in the remote host's
+    ``ps`` output for the lifetime of the call, and the surrounding single
+    quotes were unescaped -- a password containing ``'`` would either break
+    the command or close the quote and inject the remainder as shell.
+    ``-p ''`` suppresses the sudo prompt so it does not pollute stderr.
     """
     if password:
-        full_command = f"echo '{password}' | sudo -S {command}"  # nosec B608 -- password is user-provided credential, not SQL
-    else:
-        full_command = f"sudo {command}"
-    return await conn.run(full_command, check=check)
+        return await conn.run(f"sudo -S -p '' {command}", input=password + "\n", check=check)
+    return await conn.run(f"sudo {command}", check=check)
 
 
 @ssh_connection_wrapper(timeout_seconds=20.0)

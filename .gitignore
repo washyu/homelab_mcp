@@ -43,3 +43,11 @@ htmlcov/
 # Ansible
 *.retry
 ansible-vault-password
+
+# Local device database (created at runtime by the SQLite adapter)
+.mcp/
+
+# Machine-specific test config: points at a local Ollama host and the local
+# mcp-contracts checkout. Not portable, and this repo is public.
+config.yaml
+config.yaml.bak

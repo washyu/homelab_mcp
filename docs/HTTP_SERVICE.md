@@ -78,6 +78,22 @@ curl -X POST http://localhost:8080/mcp \
 | `/health` | GET | Health check | No |
 | `/` | GET | Service discovery info | No |
 
+## Error Contract
+
+In OpenAPI/REST mode (`--openapi`), failures return a specific status rather than a generic 500:
+
+| Status | Meaning | Example |
+|--------|---------|---------|
+| 422 | Missing or malformed request fields | Required `hostname` not provided |
+| 412 | Infrastructure precondition not met | Device ID not registered in sitemap |
+| 424 | External dependency unreachable | SSH target / Proxmox host down |
+
+Tools that talk to real infrastructure (SSH hosts, Proxmox API, TrueNAS) run a TCP preflight
+probe before the handler is invoked. If the target is unreachable the request returns 424 with a
+structured payload — `status`, `host`, `port`, `protocol`, and a `requires` remediation hint —
+without ever entering the handler. No partial execution, and no credentials sent toward an
+unreachable host.
+
 ## OpenWebUI Configuration
 
 1. Go to **Settings** > **Connections** > **MCP Servers** in OpenWebUI

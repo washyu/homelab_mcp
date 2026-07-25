@@ -551,6 +551,26 @@ async def test_ssh01_sudo_run_check_raises_in_password_branch():
     )
 
 
+@pytest.mark.asyncio
+async def test_sudo_password_never_enters_the_command_string():
+    """The sudo password goes over stdin, not inside the command.
+
+    The previous form built `echo '<password>' | sudo -S <cmd>`, which put the
+    plaintext into the remote host's `ps` output and left the single quotes
+    unescaped. A password containing a quote could close it and inject shell.
+    """
+    mock_conn = AsyncMock()
+    password = "p'; touch /tmp/pwned; #"
+
+    await _sudo_run(mock_conn, "ls /root", password=password, check=False)
+
+    command = mock_conn.run.call_args.args[0]
+    assert password not in command, f"password leaked into the command string: {command!r}"
+    assert "echo" not in command, f"password must not be piped in via echo: {command!r}"
+    assert command == "sudo -S -p '' ls /root"
+    assert mock_conn.run.call_args.kwargs["input"] == password + "\n"
+
+
 def test_ssh02_no_disjunctive_always_true_assertions() -> None:
     """SSH-02 meta-guard: no `assert X or <structurally-always-true>` in this file.
 
