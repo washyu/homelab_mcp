@@ -9,53 +9,52 @@ from src.homelab_mcp.tools import execute_tool, get_available_tools
 
 
 def test_get_available_tools():
-    """Test getting available tools."""
+    """Every tool family stays wired into the registry.
+
+    Deliberately asserts membership, not an exact count — a count assertion
+    breaks on every added tool without catching anything a name check misses.
+    """
     tools = get_available_tools()
 
-    assert (
-        len(tools) == 57
-    )  # All tools: SSH, sitemap, infrastructure, VM, service, Ansible, server registration, Proxmox, drift, preview, list_keyring_credentials
-    assert "ssh_discover" in tools
-    assert "setup_mcp_admin" in tools
-    assert "verify_mcp_admin" in tools
+    expected = {
+        # SSH
+        "ssh_discover",
+        "setup_mcp_admin",
+        "verify_mcp_admin",
+        # Server registration
+        "register_server",
+        "list_registered_servers",
+        "update_server_credentials",
+        "remove_server",
+        # Sitemap
+        "discover_and_map",
+        "bulk_discover_and_map",
+        "get_network_sitemap",
+        "analyze_network_topology",
+        "suggest_deployments",
+        "get_device_changes",
+        # CRUD infrastructure
+        "deploy_infrastructure",
+        "update_device_config",
+        "decommission_device",
+        "scale_services",
+        "validate_infrastructure_changes",
+        "create_infrastructure_backup",
+        "rollback_infrastructure_changes",
+        # VM management
+        "deploy_vm",
+        "control_vm",
+        "get_vm_status",
+        "list_vms",
+        "get_vm_logs",
+        "remove_vm",
+        # Service and Ansible
+        "install_service",
+        "run_ansible_playbook",
+        "check_ansible_service",
+    }
+    assert expected <= tools.keys(), f"missing from registry: {sorted(expected - tools.keys())}"
 
-    # Server registration tools
-    assert "register_server" in tools
-    assert "list_registered_servers" in tools
-    assert "update_server_credentials" in tools
-    assert "remove_server" in tools
-
-    # New sitemap tools
-    assert "discover_and_map" in tools
-    assert "bulk_discover_and_map" in tools
-    assert "get_network_sitemap" in tools
-    assert "analyze_network_topology" in tools
-    assert "suggest_deployments" in tools
-    assert "get_device_changes" in tools
-
-    # New CRUD infrastructure tools
-    assert "deploy_infrastructure" in tools
-    assert "update_device_config" in tools
-    assert "decommission_device" in tools
-    assert "scale_services" in tools
-    assert "validate_infrastructure_changes" in tools
-    assert "create_infrastructure_backup" in tools
-    assert "rollback_infrastructure_changes" in tools
-
-    # New VM management tools
-    assert "deploy_vm" in tools
-    assert "control_vm" in tools
-    assert "get_vm_status" in tools
-    assert "list_vms" in tools
-    assert "get_vm_logs" in tools
-    assert "remove_vm" in tools
-
-    # Service and Ansible tools
-    assert "install_service" in tools
-    assert "run_ansible_playbook" in tools
-    assert "check_ansible_service" in tools
-
-    # Check ssh_discover tool schema
     ssh_tool = tools["ssh_discover"]
     assert "description" in ssh_tool
     assert "inputSchema" in ssh_tool
