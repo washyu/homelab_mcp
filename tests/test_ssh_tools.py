@@ -1149,7 +1149,6 @@ def test_ssh02_no_disjunctive_always_true_assertions() -> None:
         The `Constant in X` case is the exact shape of the d25c915 pre-fix defect
         and is special-cased because the comparator may be any expression
         (Subscript, Attribute, Name, Call) and still yield a tautology in context.
-        See .planning/phases/32-regression-tests/32-CONTEXT.md decision D-10.
         """
         if isinstance(node, ast.Constant):
             # Non-empty string, non-zero number, True

@@ -6,88 +6,6 @@
 
 **AI-Powered Homelab Infrastructure Management via the Model Context Protocol**
 
----
-
-## 🏆 TestSprite Season 2 Hackathon Submission
-
-**Branch:** `TestSprite_Hackathon` | **Final Pass Rate: 10/10 (100%)**
-
-### What I Built
-
-homelab_mcp is an MCP (Model Context Protocol) server — it doesn't speak REST. TestSprite tests REST APIs. The core challenge of this submission was bridging that protocol gap.
-
-**The solution:** A FastAPI wrapper that exposes all 56 MCP tools as proper REST endpoints, complete with a documented HTTP error contract, so TestSprite can exercise the full tool surface without any MCP protocol knowledge.
-
-```
-TestSprite Agent → FastAPI wrapper (port 8080) → homelab_mcp tools → Infrastructure
-```
-
-### Error Contract Design
-
-Rather than returning generic 500s, the wrapper implements a three-tier HTTP error contract:
-
-| Status | Meaning | Example |
-|--------|---------|---------|
-| 422 | Missing or malformed request fields | Required `hostname` not provided |
-| 412 | Infrastructure precondition not met | Device ID not registered in sitemap |
-| 424 | External dependency unreachable | SSH target / Proxmox host down |
-
-The **424 Failed Dependency** design is the most interesting piece. Tools that talk to real infrastructure (SSH hosts, Proxmox API, TrueNAS) run a TCP preflight probe before invoking the handler. If the target is unreachable, the wrapper returns 424 with a structured payload — `status`, `host`, `port`, `protocol`, and a `requires` remediation hint — without ever touching the handler. No partial execution, no credential leakage to unreachable hosts.
-
-Once this contract was documented in the Swagger spec, TestSprite automatically generated negative-path test cases for all three error types.
-
-### Test Results — Five Run Arc
-
-| Run | Pass Rate | Key Change |
-|-----|-----------|------------|
-| Pre-hackathon baseline | ~40% | MCP protocol mismatch — all test harness failures, zero server bugs |
-| Run 1 | 7/10 (70%) | FastAPI wrapper + 424 spec — real bugs surfaced |
-| Run 2 | 9/10 (90%) | Per-route jsonschema validation — 422 contract fixed for all 56 tools |
-| Run 3 | 7/10 (70%) | Regenerated test plan after fixing code_summary.yaml — stricter tests exposed new gaps |
-| Run 4 | 8/10 (80%) | ResourceManager lifespan wiring + 412 classifier patterns |
-| Run 5 | **10/10 (100%)** | minItems schema fix + consistent error message wording |
-
-### Fixes Delivered by TestSprite
-
-| File | Change |
-|------|--------|
-| `openapi_app.py` | Per-route jsonschema validator; 422 with field path; FastAPI lifespan for ResourceManager; extended error classifier |
-| `drift_handlers.py` | Short-circuit to 412 when no drift baselines registered |
-| `network_tools_schema.py` | `minItems: 1` on `bulk_discover_and_map.targets` |
-| `vm_operations.py` | Consistent "Device not found" error wording for classifier matching |
-| `code_summary.yaml` | Corrected field names; documented 412/422/424 contracts per tool |
-
-### Running the TestSprite Test Suite
-
-```bash
-# Clone the hackathon branch
-git clone -b TestSprite_Hackathon https://github.com/washyu/homelab_mcp.git
-cd homelab_mcp
-
-# Install dependencies
-uv sync
-
-# Start the FastAPI wrapper (no auth mode for testing)
-uv run python run_server.py --openapi --port 8080 --no-auth
-
-# TestSprite test cases are in testsprite_tests/
-# Run via the TestSprite agent pointed at http://localhost:8080
-```
-
-### Lessons Learned
-
-1. **MCP servers need a REST facade** for conventional API testing tools
-2. **Your Swagger spec is your test plan** — document error contracts and TestSprite generates tests for them
-3. **`code_summary.yaml` accuracy matters** — wrong field names produce wrong tests
-4. **Add CLAUDE.md guardrails** before letting Claude Code near TestSprite — without them it will autonomously loop fix→rerun and burn through credits
-5. **Exclude `testsprite_tests/` from your linter and formatter** — treat it like `vendor/`
-6. **Commit or copy reports after every run** — the summary is overwritten each time
-7. **Auth and no-auth modes require separate runs** — can't cover both in one TestSprite session
-
-Full writeup: [shaunjackson.space](https://www.shaunjackson.space)
-
----
-
 A Python MCP server that enables AI assistants to manage, deploy, and monitor homelab infrastructure. Tools span SSH discovery, VM management, service installation, network topology mapping, Proxmox operations, and credential management.
 
 ## Key Features
@@ -122,6 +40,7 @@ For the full walkthrough (environment variables, MCP client configuration, first
 | [Tool Reference](docs/tool-reference.md) | All tools with arguments and examples |
 | [Configuration](docs/configuration.md) | Environment variables and CLI options |
 | [Claude Desktop Setup](docs/CLAUDE_SETUP.md) | Claude Desktop integration guide |
+| [HTTP Service](docs/HTTP_SERVICE.md) | REST/OpenAPI mode, endpoints, and error contract |
 
 ## How It Works
 
@@ -219,7 +138,6 @@ src/homelab_mcp/
   prompt_registry.py     # MCP prompts registry
   resource_readers.py    # MCP resource read handlers
   service_templates/     # YAML service definitions
-testsprite_tests/        # TestSprite generated test suite (hackathon)
 tests/                   # Unit and integration tests
 docs/                    # Full documentation
 ```
