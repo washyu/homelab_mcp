@@ -8,10 +8,15 @@ long-running operations. Extracted into its own module to avoid circular imports
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from typing import Any
 
 import mcp.types as types
-from mcp.server.lowlevel.server import request_ctx
+
+# mcp 2.0 removed the SDK-global request contextvar; we keep our own, set by
+# server._on_call_tool for each dispatch. Same name/semantics as the old SDK
+# one so emit_progress and its tests are unchanged (unset -> LookupError).
+request_ctx: ContextVar[Any] = ContextVar("homelab_request_ctx")
 
 logger = logging.getLogger(__name__)
 

@@ -112,11 +112,11 @@ class TestDriftAnnotations:
         from homelab_mcp.tool_annotations import TOOL_ANNOTATIONS
 
         annotation = TOOL_ANNOTATIONS["scan_infrastructure_drift"]
-        assert annotation.readOnlyHint is True
+        assert annotation.read_only_hint is True
 
     def test_scan_infrastructure_drift_not_destructive(self):
         """scan_infrastructure_drift annotation has destructiveHint=False."""
         from homelab_mcp.tool_annotations import TOOL_ANNOTATIONS
 
         annotation = TOOL_ANNOTATIONS["scan_infrastructure_drift"]
-        assert annotation.destructiveHint is False
+        assert annotation.destructive_hint is False

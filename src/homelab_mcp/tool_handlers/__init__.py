@@ -62,6 +62,8 @@ from .service_handlers import (
     handle_run_ansible_playbook,
 )
 from .ssh_handlers import (
+    handle_cancel_background_job,
+    handle_get_background_job,
     handle_ssh_discover,
     handle_ssh_execute_command,
     handle_start_interactive_shell,
@@ -84,6 +86,8 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     # SSH tools
     "ssh_discover": handle_ssh_discover,
     "ssh_execute_command": handle_ssh_execute_command,
+    "get_background_job": handle_get_background_job,
+    "cancel_background_job": handle_cancel_background_job,
     "start_interactive_shell": handle_start_interactive_shell,
     # Network tools
     "discover_and_map": handle_discover_and_map,

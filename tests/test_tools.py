@@ -13,9 +13,11 @@ def test_get_available_tools():
     tools = get_available_tools()
 
     assert (
-        len(tools) == 58
-    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint + update_device_fingerprint_preview (Plan 05); Phase 44 Plan 01 added remove_device + remove_device_preview; Phase 44 Plan 02 added purge_devices + purge_devices_preview
+        len(tools) == 60
+    )  # Phase 33 removed setup_mcp_admin, update_server_credentials, remove_server, remove_server_preview; Phase 33.1 removed update_mcp_admin_groups, verify_mcp_admin; v1.6.x added purge_failed_discoveries; Phase 38 added update_device_fingerprint + update_device_fingerprint_preview (Plan 05); Phase 44 Plan 01 added remove_device + remove_device_preview; Phase 44 Plan 02 added purge_devices + purge_devices_preview; v1.8 added get_background_job + cancel_background_job
     assert "ssh_discover" in tools
+    assert "get_background_job" in tools  # v1.8: background job polling
+    assert "cancel_background_job" in tools  # v1.8: background job polling
     assert "purge_failed_discoveries" in tools  # v1.6.x: sitemap CRUD completion
     assert "update_device_fingerprint" in tools  # Phase 38
     assert "update_device_fingerprint_preview" in tools  # Phase 38 D-05c (Plan 05)
@@ -1012,9 +1014,9 @@ def test_update_device_fingerprint_annotations_phase38():
 
     ann = get_tool_annotations("update_device_fingerprint")
     assert ann is not None
-    assert ann.idempotentHint is True
-    assert ann.readOnlyHint is False
-    assert ann.destructiveHint is False
+    assert ann.idempotent_hint is True
+    assert ann.read_only_hint is False
+    assert ann.destructive_hint is False
 
 
 @pytest.mark.asyncio

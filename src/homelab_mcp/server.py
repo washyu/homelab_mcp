@@ -16,9 +16,10 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import mcp.types as types
+from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl
 
 from .config import MCPConfig, get_config
@@ -35,6 +36,7 @@ from .log_filter import CredentialFilter, sanitize_error
 from .progress import (
     LOG_LEVEL_ORDER,
     emit_progress,
+    request_ctx,
     set_min_log_level,
     should_emit,
 )
@@ -88,7 +90,7 @@ def set_latest_drift_report(report: dict[str, Any] | None) -> None:
 
 
 @asynccontextmanager
-async def app_lifespan(server: Server[dict[str, Any], Any]) -> AsyncIterator[dict[str, Any]]:
+async def app_lifespan(server: Server[dict[str, Any]]) -> AsyncIterator[dict[str, Any]]:
     """Server lifespan: initialize and shut down ResourceManager.
 
     Yields a context dict with the ResourceManager instance, accessible via
@@ -124,7 +126,8 @@ def _get_version() -> str:
         return "unknown"
 
 
-server = Server("homelab-mcp", version=_get_version(), lifespan=app_lifespan)
+# NOTE: the Server instance is constructed after the handler definitions below
+# (mcp 2.0 registers handlers via constructor kwargs, not decorators).
 
 # ---------------------------------------------------------------------------
 # MCP Resources registry
@@ -185,7 +188,6 @@ DRIFT_SCAN_TOOLS: frozenset[str] = frozenset({"scan_infrastructure_drift"})
 # ---------------------------------------------------------------------------
 
 
-@server.list_resources()  # type: ignore[misc]
 async def handle_list_resources() -> list[types.Resource]:
     """Return all homelab:// resources with metadata.
 
@@ -196,10 +198,10 @@ async def handle_list_resources() -> list[types.Resource]:
     for uri_str, meta in HOMELAB_RESOURCES.items():
         resources.append(
             types.Resource(
-                uri=AnyUrl(uri_str),
+                uri=uri_str,
                 name=str(meta["name"]),
                 description=str(meta["description"]),
-                mimeType="application/json",
+                mime_type="application/json",
             )
         )
     return resources
@@ -210,15 +212,14 @@ async def handle_list_resources() -> list[types.Resource]:
 # ---------------------------------------------------------------------------
 
 
-@server.read_resource()  # type: ignore[misc]
 async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
     """Return live JSON content for a known homelab:// resource URI.
 
     Dispatches to the appropriate reader function from resource_readers module.
-    Non-McpError exceptions are caught and returned as error payloads (not raised).
+    Non-MCPError exceptions are caught and returned as error payloads (not raised).
 
     Raises:
-        McpError: With code -32002 if the URI is not recognized, or if
+        MCPError: With code -32002 if the URI is not recognized, or if
             homelab://services/ is requested without a service name.
     """
     uri_str = str(uri)
@@ -231,12 +232,10 @@ async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
         elif uri_str.startswith("homelab://services/"):
             service_name = uri_str.removeprefix("homelab://services/")
             if not service_name:
-                raise McpError(
-                    types.ErrorData(
-                        code=RESOURCE_NOT_FOUND,
-                        message="Service name required",
-                        data={"uri": uri_str},
-                    )
+                raise MCPError(
+                    code=RESOURCE_NOT_FOUND,
+                    message="Service name required",
+                    data={"uri": uri_str},
                 )
             payload = await read_service_resource(service_name)
         elif uri_str == "homelab://drift/latest":
@@ -248,14 +247,12 @@ async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
                 "scanned_at": datetime.now(UTC).isoformat(),
             }
         else:
-            raise McpError(
-                types.ErrorData(
-                    code=RESOURCE_NOT_FOUND,
-                    message="Resource not found",
-                    data={"uri": uri_str},
-                )
+            raise MCPError(
+                code=RESOURCE_NOT_FOUND,
+                message="Resource not found",
+                data={"uri": uri_str},
             )
-    except McpError:
+    except MCPError:
         raise
     except Exception as e:
         logger.exception("Error reading resource %s", uri_str)
@@ -272,7 +269,6 @@ async def handle_read_resource(uri: AnyUrl) -> list[ReadResourceContents]:
 # ---------------------------------------------------------------------------
 
 
-@server.subscribe_resource()  # type: ignore[misc]
 async def handle_subscribe_resource(uri: AnyUrl) -> None:
     """Add URI to subscription tracker so future updates can be pushed."""
     _subscriptions.add(str(uri))
@@ -283,7 +279,6 @@ async def handle_subscribe_resource(uri: AnyUrl) -> None:
 # ---------------------------------------------------------------------------
 
 
-@server.unsubscribe_resource()  # type: ignore[misc]
 async def handle_unsubscribe_resource(uri: AnyUrl) -> None:
     """Remove URI from subscription tracker (no-op if not present)."""
     _subscriptions.discard(str(uri))
@@ -294,7 +289,6 @@ async def handle_unsubscribe_resource(uri: AnyUrl) -> None:
 # ---------------------------------------------------------------------------
 
 
-@server.list_prompts()  # type: ignore[misc]
 async def handle_list_prompts() -> list[types.Prompt]:
     """Return all homelab prompt templates."""
     return list(HOMELAB_PROMPTS.values())
@@ -305,7 +299,6 @@ async def handle_list_prompts() -> list[types.Prompt]:
 # ---------------------------------------------------------------------------
 
 
-@server.get_prompt()  # type: ignore[misc]
 async def handle_get_prompt(name: str, arguments: dict[str, str] | None) -> types.GetPromptResult:
     """Return the rendered messages for a named prompt."""
     return get_prompt_result(name, arguments)
@@ -316,7 +309,6 @@ async def handle_get_prompt(name: str, arguments: dict[str, str] | None) -> type
 # ---------------------------------------------------------------------------
 
 
-@server.set_logging_level()  # type: ignore[misc]
 async def handle_set_logging_level(level: types.LoggingLevel) -> None:
     """Store the client-requested minimum log level for notification filtering."""
     set_min_log_level(level)
@@ -328,7 +320,6 @@ async def handle_set_logging_level(level: types.LoggingLevel) -> None:
 # ---------------------------------------------------------------------------
 
 
-@server.list_tools()  # type: ignore[misc]
 async def handle_list_tools() -> list[types.Tool]:
     """Return all available tools as MCP Tool objects."""
     schemas = get_all_tool_schemas()
@@ -338,7 +329,7 @@ async def handle_list_tools() -> list[types.Tool]:
             types.Tool(
                 name=name,
                 description=schema.get("description", ""),
-                inputSchema=schema.get("inputSchema", {"type": "object", "properties": {}}),
+                input_schema=schema.get("inputSchema", {"type": "object", "properties": {}}),
                 annotations=get_tool_annotations(name),
             )
         )
@@ -353,7 +344,7 @@ async def handle_list_tools() -> list[types.Tool]:
 class ToolError(Exception):
     """Raised when a tool handler returns an error result.
 
-    The SDK call_tool decorator catches exceptions and auto-sets isError=True
+    The SDK call_tool decorator catches exceptions and auto-sets is_error=True
     in the CallToolResult, so raising this converts handler error dicts into
     proper MCP error signals.
     """
@@ -418,14 +409,13 @@ def _extract_error_text(result: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-@server.call_tool()  # type: ignore[misc]
 async def handle_call_tool(
     name: str, arguments: dict[str, Any] | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Dispatch a tool call to the appropriate handler.
 
     Converts the handler's legacy dict result format into MCP SDK content types.
-    Detects error results and raises ToolError so the SDK sets isError=True.
+    Detects error results and raises ToolError so the SDK sets is_error=True.
     After a successful call to a device-writing tool, emits
     notifications/resources/list_changed to subscribed clients.
 
@@ -444,7 +434,7 @@ async def handle_call_tool(
     is_dry_run = bool((arguments or {}).get("dry_run", False))
     if name in MUTATING_TOOLS and not is_dry_run:
         try:
-            session = server.request_context.session
+            session = request_ctx.get().session
             await session.send_resource_list_changed()
         except LookupError:
             # No active request context — handler called outside MCP lifecycle (e.g. tests).
@@ -453,7 +443,7 @@ async def handle_call_tool(
     # Notify subscribed clients when the drift scan completes (resource content changed).
     if name in DRIFT_SCAN_TOOLS:
         try:
-            session = server.request_context.session
+            session = request_ctx.get().session
             await session.send_resource_updated(AnyUrl("homelab://drift/latest"))
         except LookupError:
             logger.debug("No request context available for drift resource notification")
@@ -485,7 +475,7 @@ def _convert_result(
                 types.ImageContent(
                     type="image",
                     data=item.get("data", ""),
-                    mimeType=item.get("mimeType", "image/png"),
+                    mime_type=item.get("mimeType", "image/png"),
                 )
             )
         else:
@@ -496,6 +486,102 @@ def _convert_result(
                 )
             )
     return converted
+
+
+# ---------------------------------------------------------------------------
+# mcp 2.0 adapters: (ctx, params) SDK handlers wrapping the legacy handle_*
+# functions above. The legacy functions keep their original signatures so unit
+# tests and internal callers are unchanged; adapters do param unpacking,
+# result wrapping, and request_ctx bookkeeping.
+# ---------------------------------------------------------------------------
+
+type _Ctx = ServerRequestContext[dict[str, Any]]
+
+
+async def _on_list_resources(ctx: _Ctx, params: types.PaginatedRequestParams | None) -> types.ListResourcesResult:
+    return types.ListResourcesResult(resources=await handle_list_resources())
+
+
+async def _on_read_resource(ctx: _Ctx, params: types.ReadResourceRequestParams) -> types.ReadResourceResult:
+    token = request_ctx.set(ctx)
+    try:
+        contents = await handle_read_resource(AnyUrl(str(params.uri)))
+    finally:
+        request_ctx.reset(token)
+    return types.ReadResourceResult(
+        contents=[
+            types.TextResourceContents(
+                uri=str(params.uri),
+                mime_type=c.mime_type or "application/json",
+                text=c.content if isinstance(c.content, str) else c.content.decode(),
+            )
+            for c in contents
+        ]
+    )
+
+
+async def _on_subscribe_resource(ctx: _Ctx, params: types.SubscribeRequestParams) -> types.EmptyResult:
+    await handle_subscribe_resource(AnyUrl(str(params.uri)))
+    return types.EmptyResult()
+
+
+async def _on_unsubscribe_resource(ctx: _Ctx, params: types.UnsubscribeRequestParams) -> types.EmptyResult:
+    await handle_unsubscribe_resource(AnyUrl(str(params.uri)))
+    return types.EmptyResult()
+
+
+async def _on_list_prompts(ctx: _Ctx, params: types.PaginatedRequestParams | None) -> types.ListPromptsResult:
+    return types.ListPromptsResult(prompts=await handle_list_prompts())
+
+
+async def _on_get_prompt(ctx: _Ctx, params: types.GetPromptRequestParams) -> types.GetPromptResult:
+    return await handle_get_prompt(params.name, params.arguments)
+
+
+async def _on_set_logging_level(ctx: _Ctx, params: types.SetLevelRequestParams) -> types.EmptyResult:
+    await handle_set_logging_level(params.level)
+    return types.EmptyResult()
+
+
+async def _on_list_tools(ctx: _Ctx, params: types.PaginatedRequestParams | None) -> types.ListToolsResult:
+    return types.ListToolsResult(tools=await handle_list_tools())
+
+
+async def _on_call_tool(ctx: _Ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
+    """SDK entry point for tools/call.
+
+    Mirrors the old SDK decorator behavior: any exception from the tool
+    handler becomes a CallToolResult with is_error=True rather than a
+    protocol-level error.
+    """
+    token = request_ctx.set(ctx)
+    try:
+        content = await handle_call_tool(params.name, params.arguments)
+    except Exception as e:
+        logger.exception("Tool %s failed", params.name)
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=str(e))],
+            is_error=True,
+        )
+    finally:
+        request_ctx.reset(token)
+    return types.CallToolResult(content=list(content))
+
+
+server = Server(
+    "homelab-mcp",
+    version=_get_version(),
+    lifespan=app_lifespan,
+    on_list_tools=_on_list_tools,
+    on_call_tool=_on_call_tool,
+    on_list_resources=_on_list_resources,
+    on_read_resource=_on_read_resource,
+    on_subscribe_resource=_on_subscribe_resource,
+    on_unsubscribe_resource=_on_unsubscribe_resource,
+    on_list_prompts=_on_list_prompts,
+    on_get_prompt=_on_get_prompt,
+    on_set_logging_level=_on_set_logging_level,
+)
 
 
 def _parse_scope_arg(scope_arg: str | None) -> tuple[str, str]:
