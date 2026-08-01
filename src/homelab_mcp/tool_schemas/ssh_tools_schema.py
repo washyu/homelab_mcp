@@ -58,8 +58,45 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                     "description": "SSH port (default: 22)",
                     "default": 22,
                 },
+                "background": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Run the command as a background job and return a job_id immediately "
+                        "instead of waiting for completion. Use for long-running commands "
+                        "(installs, upgrades, builds) that could exceed the client timeout. "
+                        "Poll get_background_job with the returned job_id for status and output."
+                    ),
+                },
             },
             "required": ["hostname", "command"],
+        },
+    },
+    "get_background_job": {
+        "description": (
+            "Get the status and result of a background job started by ssh_execute_command "
+            "with background=true. Returns status (running/completed/failed/cancelled) and, "
+            "once finished, the command output. Omit job_id to list all jobs."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "description": "Job ID returned when the job was started. Omit to list all jobs.",
+                },
+            },
+            "required": [],
+        },
+    },
+    "cancel_background_job": {
+        "description": "Cancel a running background job started by ssh_execute_command with background=true.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string", "description": "Job ID to cancel"},
+            },
+            "required": ["job_id"],
         },
     },
     "start_interactive_shell": {

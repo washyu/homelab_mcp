@@ -130,15 +130,15 @@ def test_connect_to_device_prompt() -> None:
 
 
 def test_get_unknown_prompt_raises_mcp_error() -> None:
-    """PRMT-01: get_prompt_result raises McpError for unknown prompt names.
+    """PRMT-01: get_prompt_result raises MCPError for unknown prompt names.
 
     Will be RED until Plan 02 implements error handling in prompt_registry.py.
     """
-    from mcp.shared.exceptions import McpError  # type: ignore[import]
+    from mcp.shared.exceptions import MCPError  # type: ignore[import]
 
     from homelab_mcp.prompt_registry import get_prompt_result  # type: ignore[import]
 
-    with pytest.raises(McpError) as exc_info:
+    with pytest.raises(MCPError) as exc_info:
         get_prompt_result("nonexistent_prompt", {})
     assert exc_info.value.error.code == -32002
 

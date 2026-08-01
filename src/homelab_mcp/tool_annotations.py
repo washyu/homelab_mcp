@@ -10,18 +10,19 @@ from __future__ import annotations
 from mcp.types import ToolAnnotations
 
 # ---------------------------------------------------------------------------
-# Read-Only tools: readOnlyHint=True, destructiveHint=False, idempotentHint=True
+# Read-Only tools: read_only_hint=True, destructive_hint=False, idempotent_hint=True
 # These tools only query state and never modify anything.
 # ---------------------------------------------------------------------------
 
 _READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
 )
 
 _READ_ONLY_TOOLS = [
     "ssh_discover",
+    "get_background_job",
     "get_network_sitemap",
     "analyze_network_topology",
     "suggest_deployments",
@@ -54,14 +55,14 @@ _READ_ONLY_TOOLS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Destructive tools: readOnlyHint=False, destructiveHint=True, idempotentHint=True
+# Destructive tools: read_only_hint=False, destructive_hint=True, idempotent_hint=True
 # These tools delete or destroy resources.
 # ---------------------------------------------------------------------------
 
 _DESTRUCTIVE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=True,
-    idempotentHint=True,
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=True,
 )
 
 _DESTRUCTIVE_TOOLS = [
@@ -76,114 +77,119 @@ _DESTRUCTIVE_TOOLS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Mutating Non-Destructive tools: readOnlyHint=False, destructiveHint=False
+# Mutating Non-Destructive tools: read_only_hint=False, destructive_hint=False
 # Each has its own idempotentHint and openWorldHint settings.
 # ---------------------------------------------------------------------------
 
 _MUTATING_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "discover_and_map": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "bulk_discover_and_map": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "update_device_fingerprint": ToolAnnotations(
         # Phase 38: idempotent because identical (hostname, fingerprint) input
         # produces identical merged output.
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "ssh_execute_command": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
+    ),
+    "cancel_background_job": ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "start_interactive_shell": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
     ),
     "deploy_infrastructure": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "deploy_vm": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "install_service": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "update_device_config": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "scale_services": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "register_server": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "create_proxmox_vm": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "create_proxmox_lxc": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "clone_proxmox_vm": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "create_infrastructure_backup": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "plan_terraform_service": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "refresh_terraform_service": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "run_ansible_playbook": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
     ),
     "manage_proxmox_vm": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
     "control_vm": ToolAnnotations(
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
     ),
 }
 

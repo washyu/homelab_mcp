@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Any
@@ -369,11 +371,19 @@ class MCPHTTPTransport:
             )
         ]
 
+        # starlette 1.x removed on_startup/on_shutdown; use a lifespan context.
+        @asynccontextmanager
+        async def _lifespan(_app: Starlette) -> AsyncIterator[None]:
+            await self._on_startup()
+            try:
+                yield
+            finally:
+                await self._on_shutdown()
+
         app: Starlette | APIKeyAuth = Starlette(
             routes=routes,
             middleware=middleware,
-            on_startup=[self._on_startup],
-            on_shutdown=[self._on_shutdown],
+            lifespan=_lifespan,
         )
 
         # Wrap with authentication middleware if enabled

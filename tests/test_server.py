@@ -56,7 +56,7 @@ async def test_list_tools_has_name_description_schema() -> None:
     for tool in tools:
         assert tool.name, f"Tool missing name: {tool}"
         assert tool.description is not None, f"Tool {tool.name} missing description"
-        assert tool.inputSchema is not None, f"Tool {tool.name} missing inputSchema"
+        assert tool.input_schema is not None, f"Tool {tool.name} missing inputSchema"
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ def test_convert_result_image_content() -> None:
     assert len(converted) == 1
     assert isinstance(converted[0], types.ImageContent)
     assert converted[0].data == "base64data"
-    assert converted[0].mimeType == "image/png"
+    assert converted[0].mime_type == "image/png"
 
 
 def test_convert_result_fallback_wraps_as_json() -> None:
@@ -241,8 +241,9 @@ def test_server_name() -> None:
 
 def test_server_has_handlers_registered() -> None:
     """Server has list_tools and call_tool handlers registered."""
-    assert types.ListToolsRequest in server.request_handlers
-    assert types.CallToolRequest in server.request_handlers
+    # mcp 2.0: handlers are stored in _request_handlers keyed by method string
+    assert "tools/list" in server._request_handlers
+    assert "tools/call" in server._request_handlers
 
 
 # ---------------------------------------------------------------------------
@@ -332,9 +333,9 @@ async def test_all_tools_have_annotations() -> None:
     tools = await handle_list_tools()
     for tool in tools:
         assert tool.annotations is not None, f"Tool {tool.name} missing annotations"
-        assert tool.annotations.readOnlyHint is not None, f"Tool {tool.name} missing readOnlyHint"
-        assert tool.annotations.destructiveHint is not None, f"Tool {tool.name} missing destructiveHint"
-        assert tool.annotations.idempotentHint is not None, f"Tool {tool.name} missing idempotentHint"
+        assert tool.annotations.read_only_hint is not None, f"Tool {tool.name} missing readOnlyHint"
+        assert tool.annotations.destructive_hint is not None, f"Tool {tool.name} missing destructiveHint"
+        assert tool.annotations.idempotent_hint is not None, f"Tool {tool.name} missing idempotentHint"
 
 
 @pytest.mark.asyncio
@@ -356,8 +357,8 @@ async def test_read_only_tools_not_destructive() -> None:
     tools = await handle_list_tools()
     for tool in tools:
         assert tool.annotations is not None
-        if tool.annotations.readOnlyHint is True:
-            assert tool.annotations.destructiveHint is False, (
+        if tool.annotations.read_only_hint is True:
+            assert tool.annotations.destructive_hint is False, (
                 f"Tool {tool.name} is read-only but also marked destructive"
             )
 
@@ -368,8 +369,10 @@ async def test_destructive_tools_not_read_only() -> None:
     tools = await handle_list_tools()
     for tool in tools:
         assert tool.annotations is not None
-        if tool.annotations.destructiveHint is True:
-            assert tool.annotations.readOnlyHint is False, f"Tool {tool.name} is destructive but also marked read-only"
+        if tool.annotations.destructive_hint is True:
+            assert tool.annotations.read_only_hint is False, (
+                f"Tool {tool.name} is destructive but also marked read-only"
+            )
 
 
 # ---------------------------------------------------------------------------

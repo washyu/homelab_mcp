@@ -3,7 +3,7 @@
 Tests cover:
 - list_resources returns all homelab:// URIs with correct metadata
 - read_resource returns application/json stub content for known URIs
-- read_resource raises McpError(-32002) for unknown URIs
+- read_resource raises MCPError(-32002) for unknown URIs
 - Server capabilities include non-None resources field
 - subscribe/unsubscribe update the _subscriptions tracker
 - Live dispatch to reader functions (Phase 9 Plan 02)
@@ -12,14 +12,15 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, PropertyMock
+from unittest.mock import AsyncMock, MagicMock
 
 import mcp.types as types
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from pydantic import AnyUrl
 from pytest_mock import MockerFixture
 
+from src.homelab_mcp.progress import request_ctx
 from src.homelab_mcp.server import (
     HOMELAB_RESOURCES,
     RESOURCE_NOT_FOUND,
@@ -80,8 +81,8 @@ async def test_list_resources_has_json_mimetype() -> None:
     """Every returned Resource has mimeType == 'application/json'."""
     resources = await handle_list_resources()
     for resource in resources:
-        assert resource.mimeType == "application/json", (
-            f"Resource {resource.uri!r} has mimeType {resource.mimeType!r}, expected 'application/json'"
+        assert resource.mime_type == "application/json", (
+            f"Resource {resource.uri!r} has mimeType {resource.mime_type!r}, expected 'application/json'"
         )
 
 
@@ -131,8 +132,8 @@ async def test_read_resource_content_is_valid_json() -> None:
 
 @pytest.mark.asyncio
 async def test_read_unknown_resource_raises_mcp_error() -> None:
-    """handle_read_resource for unknown URI raises McpError with code -32002."""
-    with pytest.raises(McpError) as exc_info:
+    """handle_read_resource for unknown URI raises MCPError with code -32002."""
+    with pytest.raises(MCPError) as exc_info:
         await handle_read_resource(AnyUrl("homelab://nonexistent"))
     assert exc_info.value.error.code == -32002
 
@@ -233,8 +234,8 @@ async def test_read_services_template_uri(mocker: MockerFixture) -> None:
 
 @pytest.mark.asyncio
 async def test_read_services_empty_name_error() -> None:
-    """handle_read_resource for homelab://services/ (empty name) raises McpError -32002."""
-    with pytest.raises(McpError) as exc_info:
+    """handle_read_resource for homelab://services/ (empty name) raises MCPError -32002."""
+    with pytest.raises(MCPError) as exc_info:
         await handle_read_resource(AnyUrl("homelab://services/"))
     assert exc_info.value.error.code == RESOURCE_NOT_FOUND
 
@@ -264,7 +265,7 @@ async def test_discover_and_map_sends_list_changed(mocker: MockerFixture) -> Non
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     await handle_call_tool("discover_and_map", {})
 
@@ -278,7 +279,7 @@ async def test_bulk_discover_and_map_sends_list_changed(mocker: MockerFixture) -
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     await handle_call_tool("bulk_discover_and_map", {})
 
@@ -292,7 +293,7 @@ async def test_update_device_fingerprint_sends_list_changed_phase38(mocker: Mock
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     await handle_call_tool("update_device_fingerprint", {"hostname": "x", "fingerprint": {}})
 
@@ -311,7 +312,7 @@ async def test_update_device_fingerprint_preview_no_notification_phase38(mocker:
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     await handle_call_tool("update_device_fingerprint_preview", {"hostname": "x", "fingerprint": {}})
 
@@ -325,7 +326,7 @@ async def test_dry_run_does_not_send_notification(mocker: MockerFixture) -> None
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     await handle_call_tool("discover_and_map", {"dry_run": True})
 
@@ -339,7 +340,7 @@ async def test_ssh_discover_no_notification(mocker: MockerFixture) -> None:
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     await handle_call_tool("ssh_discover_system", {})
 
@@ -355,7 +356,7 @@ async def test_error_result_no_notification(mocker: MockerFixture) -> None:
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
     mock_session, mock_ctx = _make_mock_session()
-    mocker.patch.object(type(server), "request_context", new_callable=PropertyMock, return_value=mock_ctx)
+    request_ctx.set(mock_ctx)  # mcp 2.0: notification session comes from our own contextvar
 
     with pytest.raises(ToolError):
         await handle_call_tool("discover_and_map", {})
@@ -365,17 +366,10 @@ async def test_error_result_no_notification(mocker: MockerFixture) -> None:
 
 @pytest.mark.asyncio
 async def test_no_context_no_crash(mocker: MockerFixture) -> None:
-    """handle_call_tool completes without exception when request_context raises LookupError."""
+    """handle_call_tool completes without exception when no request context is set."""
     mock_handler = AsyncMock(return_value={"content": [{"type": "text", "text": '{"status": "ok"}'}]})
     mocker.patch("src.homelab_mcp.server.get_tool_handler", return_value=mock_handler)
 
-    # Patch request_context property on the Server class to raise LookupError when accessed
-    mocker.patch.object(
-        type(server),
-        "request_context",
-        new_callable=PropertyMock,
-        side_effect=LookupError("No active request context"),
-    )
-
+    # request_ctx contextvar is unset here, so lookup raises LookupError internally.
     # Should NOT raise — LookupError must be swallowed silently
     await handle_call_tool("discover_and_map", {})

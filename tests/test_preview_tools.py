@@ -76,8 +76,8 @@ def test_preview_tools_have_readonly_annotation() -> None:
 
     for name in _PREVIEW_TOOLS:
         assert name in TOOL_ANNOTATIONS, f"Missing annotation for {name}"
-        assert TOOL_ANNOTATIONS[name].readOnlyHint is True, f"{name}: expected readOnlyHint=True"
-        assert TOOL_ANNOTATIONS[name].destructiveHint is False, f"{name}: expected destructiveHint=False"
+        assert TOOL_ANNOTATIONS[name].read_only_hint is True, f"{name}: expected readOnlyHint=True"
+        assert TOOL_ANNOTATIONS[name].destructive_hint is False, f"{name}: expected destructiveHint=False"
 
 
 def test_original_destructive_tools_still_present() -> None:

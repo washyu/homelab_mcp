@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any
 
+from .. import background_jobs
 from ..shell_session import session_manager
 from ..ssh_tools import (
     ssh_discover_system,
@@ -19,9 +20,66 @@ async def handle_ssh_discover(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_ssh_execute_command(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Handle ssh_execute_command tool."""
+    """Handle ssh_execute_command tool.
+
+    With background=true the command runs as a background job and the call
+    returns a job_id immediately — poll get_background_job for the result.
+    Use for long-running commands that would exceed the MCP client timeout.
+    """
+    arguments = dict(arguments)
+    if arguments.pop("background", False):
+        # Background exists to outlive timeouts: raise the SSH-side timeout to 1h
+        # instead of the 20s sync default. Internal only — Phase 26-02 guard says
+        # timeout must not appear in the tool schema.
+        # ponytail: 1h ceiling; make it configurable if a job ever legitimately runs longer.
+        arguments.setdefault("timeout", 3600)
+        job_id = background_jobs.start_job(
+            description=f"ssh {arguments.get('hostname', '?')}: {arguments.get('command', '')[:80]}",
+            coro=ssh_execute_command(**arguments),
+        )
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "status": "success",
+                            "job_id": job_id,
+                            "note": "Command running in background. Poll get_background_job with this job_id for status and output.",
+                        },
+                        indent=2,
+                    ),
+                }
+            ]
+        }
     result = await ssh_execute_command(**arguments)
     return {"content": [{"type": "text", "text": result}]}
+
+
+async def handle_get_background_job(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle get_background_job tool. Without job_id, lists all jobs."""
+    job_id = arguments.get("job_id")
+    if not job_id:
+        payload: dict[str, Any] = {"status": "success", "jobs": background_jobs.list_jobs()}
+    else:
+        job = background_jobs.get_job(job_id)
+        if job is None:
+            payload = {"status": "error", "error": f"Unknown job_id: {job_id}"}
+        else:
+            payload = {"status": "success", "job": job}
+    return {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}]}
+
+
+async def handle_cancel_background_job(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Handle cancel_background_job tool."""
+    job_id = arguments["job_id"]
+    if background_jobs.cancel_job(job_id):
+        payload: dict[str, Any] = {"status": "success", "job_id": job_id, "note": "Cancellation requested."}
+    else:
+        job = background_jobs.get_job(job_id)
+        reason = f"Job already {job['status']}" if job else f"Unknown job_id: {job_id}"
+        payload = {"status": "error", "error": reason}
+    return {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}]}
 
 
 async def handle_start_interactive_shell(arguments: dict[str, Any]) -> dict[str, Any]:

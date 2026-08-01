@@ -8,7 +8,7 @@ Only imports mcp.types and mcp.shared.exceptions — no homelab_mcp imports
 from __future__ import annotations
 
 import mcp.types as types
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 
 RESOURCE_NOT_FOUND = -32002
 
@@ -256,7 +256,7 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
         GetPromptResult with one or more PromptMessage objects.
 
     Raises:
-        McpError: With code -32002 if ``name`` is not a known prompt.
+        MCPError: With code -32002 if ``name`` is not a known prompt.
     """
     args = arguments or {}
     if name == "decommission_device_workflow":
@@ -270,10 +270,8 @@ def get_prompt_result(name: str, arguments: dict[str, str] | None) -> types.GetP
     elif name == "configure_host_fingerprint":
         return _build_configure_host_fingerprint_result(args)
     else:
-        raise McpError(
-            types.ErrorData(
-                code=RESOURCE_NOT_FOUND,
-                message=f"Prompt not found: {name}",
-                data={"name": name},
-            )
+        raise MCPError(
+            code=RESOURCE_NOT_FOUND,
+            message=f"Prompt not found: {name}",
+            data={"name": name},
         )
