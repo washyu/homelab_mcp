@@ -33,8 +33,10 @@ monitoring = [
     "pyarrow>=23.0.1",
 ]
 automation = [
+    # ansible-playbook is invoked as a subprocess, never imported.
+    # paramiko was dropped here: nothing imported it (asyncssh handles all SSH)
+    # and it carried an advisory with no published patch.
     "ansible>=2.9.0",
-    "paramiko>=3.0.0",
 ]
 ai = [
     "ollama>=0.4.4",
