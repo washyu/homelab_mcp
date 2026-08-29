@@ -513,8 +513,8 @@ def test_credentials_remove_cluster_scope(
     )
     monkeypatch.setattr(
         "homelab_mcp.server.unregister_cluster_credential",
-        lambda cluster_name, credential_type="proxmox": (
-            unregister_cluster_calls.append({"cluster_name": cluster_name, "credential_type": credential_type})
+        lambda cluster_name, credential_type="proxmox": unregister_cluster_calls.append(
+            {"cluster_name": cluster_name, "credential_type": credential_type}
         ),
     )
 
