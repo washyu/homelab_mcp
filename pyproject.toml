@@ -11,11 +11,9 @@ dependencies = [
     "asyncssh>=2.24.0",
     "jsonschema>=4.24.0",
     "httpx>=0.28.1",
-    # Floor clears 19 advisories. The <3.14 ceiling is not a security choice:
-    # aioresponses 0.7.9 (latest) breaks on 3.14's ClientResponse.__init__
-    # stream_writer kwarg. Drop the ceiling once aioresponses supports 3.14 --
-    # 14 aiohttp advisories stay open until then.
-    "aiohttp>=3.13.4,<3.14",
+    # Keep this floor current: aiohttp is the single largest source of
+    # advisories in this tree, and everything below 3.14.3 has open ones.
+    "aiohttp>=3.14.3",
     "aiofiles>=24.1.0",
     "rich>=13.10.5",
     # HTTP transport dependencies
@@ -67,7 +65,9 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=6.1.1",
     "pytest-mock>=3.14.0",
-    "aioresponses>=0.7.6",
+    # aioresponses was removed here: 0.7.9 is its latest release and it breaks
+    # on aiohttp 3.14, which would have pinned us below it indefinitely. The
+    # two test modules that used it now stub at the client seam instead.
     "coverage[toml]>=7.9.1",
     "docker>=7.0.0",
     # Code quality
