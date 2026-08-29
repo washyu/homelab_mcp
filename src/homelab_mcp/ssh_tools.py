@@ -10,6 +10,7 @@ from typing import Any, cast
 
 import asyncssh
 
+from . import background_jobs
 from .credential_store import find_credential_by_id, get_credential, list_credentials
 from .database import (
     DatabaseAdapter,
@@ -1057,8 +1058,73 @@ async def _sudo_run(
     ``-p ''`` suppresses the sudo prompt so it does not pollute stderr.
     """
     if password:
-        return await conn.run(f"sudo -S -p '' {command}", input=password + "\n", check=check)
-    return await conn.run(f"sudo {command}", check=check)
+        return await conn.run(_sudo_command(command, password), input=password + "\n", check=check)
+    return await conn.run(_sudo_command(command, password), check=check)
+
+
+def _sudo_command(command: str, password: str | None) -> str:
+    """Build the remote sudo command string. Never embeds the password.
+
+    Shared by the buffered and streaming paths so the two cannot drift; see
+    _sudo_run for why the password goes to stdin instead of the command line.
+    """
+    if password:
+        return f"sudo -S -p '' {command}"
+    return f"sudo {command}"
+
+
+#: Bytes requested per stream read while pumping a background job's output.
+#: SSHReader.read returns as soon as any data is available, so this caps the
+#: chunk size rather than forcing a wait for a full buffer.
+_STREAM_CHUNK_BYTES = 4096
+
+
+async def _stream_command(
+    conn: "asyncssh.SSHClientConnection",
+    command: str,
+    job_id: str,
+    *,
+    stdin_input: str | None = None,
+) -> tuple[str, str, int | None]:
+    """Run *command*, publishing output to job *job_id* as it arrives.
+
+    Returns ``(stdout, stderr, exit_status)``. Unlike ``conn.run``, which only
+    returns once the command is done, this drains both streams incrementally so
+    a caller polling get_background_job sees progress on a long install.
+    """
+    process = await conn.create_process(command)
+    try:
+        if stdin_input is not None:
+            process.stdin.write(stdin_input)
+        # Close stdin so a command that reads it gets EOF rather than hanging
+        # forever against a pipe nobody is writing to.
+        process.stdin.write_eof()
+
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+
+        async def pump(reader: Any, parts: list[str], *, is_stderr: bool) -> None:
+            while True:
+                chunk = await reader.read(_STREAM_CHUNK_BYTES)
+                if not chunk:
+                    break
+                text = chunk.decode(errors="replace") if isinstance(chunk, bytes) else chunk
+                parts.append(text)
+                if is_stderr:
+                    background_jobs.update_job_output(job_id, stderr_chunk=text)
+                else:
+                    background_jobs.update_job_output(job_id, stdout_chunk=text)
+
+        await asyncio.gather(
+            pump(process.stdout, stdout_parts, is_stderr=False),
+            pump(process.stderr, stderr_parts, is_stderr=True),
+        )
+        # Both streams are at EOF, so wait() only awaits channel close and
+        # collects the (now empty) residual buffers -- it does not re-read.
+        await process.wait()
+        return "".join(stdout_parts), "".join(stderr_parts), process.exit_status
+    finally:
+        process.close()
 
 
 @ssh_connection_wrapper(timeout_seconds=20.0)
@@ -1071,6 +1137,7 @@ async def ssh_execute_command(
     port: int = 22,
     *,
     dial_target: str | None = None,
+    job_id: str | None = None,
     **kwargs: Any,
 ) -> str:
     """Execute a command on a remote system via SSH.
@@ -1080,6 +1147,10 @@ async def ssh_execute_command(
     envelope reports ``hostname`` as the requested identifier and
     ``connection_ip`` as the dial target. When None, defaults to ``hostname``
     (back-compat with every legacy caller).
+
+    ``job_id`` opts into streaming: output is published to that background job
+    as it arrives instead of only at completion. Omit it for synchronous calls,
+    where nothing is polling for partial output anyway.
     """
     # Phase 41-09 WR-05: split requested identifier from TCP dial target.
     effective_dial = dial_target or hostname
@@ -1111,23 +1182,35 @@ async def ssh_execute_command(
         password=creds.password,
         key_path=resolved_key,
     ) as conn:
-        # Execute the command, routing sudo through _sudo_run for consistent check= semantics
-        if sudo:
-            if creds.username == "mcp_admin":
-                # mcp_admin has passwordless sudo
-                result = await _sudo_run(conn, command, password=None, check=False)
+        # mcp_admin has passwordless sudo; other users may need to supply one.
+        sudo_password = None if creds.username == "mcp_admin" else creds.password
+
+        if job_id:
+            # Streaming path: same command construction as _sudo_run, but drained
+            # incrementally so the job's tail updates while the command runs.
+            if sudo:
+                remote_command = _sudo_command(command, sudo_password)
+                stdin_input = sudo_password + "\n" if sudo_password else None
             else:
-                # Other users might need password for sudo
-                result = await _sudo_run(conn, command, password=creds.password, check=False)
+                remote_command = command
+                stdin_input = None
+            stdout_text, stderr_text, exit_code = await _stream_command(
+                conn, remote_command, job_id, stdin_input=stdin_input
+            )
         else:
-            result = await conn.run(command, check=False)
+            # Buffered path, routing sudo through _sudo_run for consistent check= semantics
+            if sudo:
+                result = await _sudo_run(conn, command, password=sudo_password, check=False)
+            else:
+                result = await conn.run(command, check=False)
+            stdout_text = result.stdout.decode() if isinstance(result.stdout, bytes) else str(result.stdout or "")
+            stderr_text = result.stderr.decode() if isinstance(result.stderr, bytes) else str(result.stderr or "")
+            exit_code = result.exit_status
 
         output = []
-        if result.stdout:
-            stdout_text = result.stdout.decode() if isinstance(result.stdout, bytes) else str(result.stdout)
+        if stdout_text:
             output.append(f"Output:\n{stdout_text.strip()}")
-        if result.stderr:
-            stderr_text = result.stderr.decode() if isinstance(result.stderr, bytes) else str(result.stderr)
+        if stderr_text:
             output.append(f"Error:\n{stderr_text.strip()}")
 
     return json.dumps(
@@ -1135,7 +1218,7 @@ async def ssh_execute_command(
             "status": "success",
             "hostname": hostname,
             "command": command,
-            "exit_code": result.exit_status,
+            "exit_code": exit_code,
             "output": "\n\n".join(output) if output else "Command executed successfully (no output)",
         },
         indent=2,

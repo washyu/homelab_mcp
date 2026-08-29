@@ -7,7 +7,7 @@ builds) where MCP client request timeouts would otherwise kill the call.
 
 The MCP spec's tasks/* polling protocol is deliberately absent from every
 negotiated protocol version in mcp SDK 2.0, so this is application-level by
-design — it works with every client.
+design - it works with every client.
 
 ponytail: in-memory only; jobs are lost on server restart. Persist to the
 SQLite db if that ever matters.
@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,6 +28,19 @@ logger = logging.getLogger(__name__)
 
 #: Finished jobs kept for polling before the oldest are pruned.
 _MAX_FINISHED = 50
+
+#: Stored results larger than this are middle-truncated (curl progress bars
+#: and build logs can reach hundreds of KB, which breaks MCP client polling).
+_MAX_RESULT_CHARS = 60_000
+
+#: Live stdout/stderr buffers are trimmed to this many characters, keeping the
+#: tail. Unbounded buffers would let one chatty job exhaust server memory.
+_MAX_BUFFER_CHARS = 200_000
+
+#: A running job that has produced no new output for this long is reported as
+#: stalled. Time-based, not poll-based, so the signal does not depend on how
+#: often the client happens to poll.
+_STALL_SECONDS = 120
 
 _jobs: dict[str, dict[str, Any]] = {}
 _counter = itertools.count(1)
@@ -39,18 +52,40 @@ def start_job(description: str, coro: Coroutine[Any, Any, str]) -> str:
     *coro* must resolve to the tool's normal string result; it is stored
     verbatim as the job result.
     """
+    return _register(description, lambda _job_id: coro)
+
+
+def start_job_with_id(description: str, make_coro: Callable[[str], Coroutine[Any, Any, str]]) -> str:
+    """Like start_job, but *make_coro* is handed the allocated job_id.
+
+    Producers that stream partial output back via update_job_output need to
+    know their own job_id before they start running, and the id is not
+    assigned until registration.
+    """
+    return _register(description, make_coro)
+
+
+def _register(description: str, make_coro: Callable[[str], Coroutine[Any, Any, str]]) -> str:
     job_id = f"job-{next(_counter)}"
+    coro = make_coro(job_id)
     task = asyncio.get_running_loop().create_task(_run(job_id, coro))
+    now = datetime.now(UTC)
     _jobs[job_id] = {
         "job_id": job_id,
         "description": description,
         "status": "running",
-        "started_at": datetime.now(UTC).isoformat(),
+        "started_at": now.isoformat(),
         "finished_at": None,
         "result": None,
         "error": None,
         "_task": task,
         "_coro": coro,
+        "_started_ts": now,
+        "_finished_ts": None,
+        "_stdout_buffer": "",
+        "_stderr_buffer": "",
+        "_bytes_captured": 0,
+        "_last_output_ts": None,
     }
     # Covers cancellation before _run's first tick, where _run never executes
     # and could not record the terminal state itself.
@@ -63,14 +98,11 @@ def _finalize(job_id: str) -> None:
     entry = _jobs.get(job_id)
     if entry is None or entry["status"] != "running":
         return
+    now = datetime.now(UTC)
     entry["status"] = "cancelled"
-    entry["finished_at"] = datetime.now(UTC).isoformat()
+    entry["finished_at"] = now.isoformat()
+    entry["_finished_ts"] = now
     entry["_coro"].close()  # never-started coroutine; suppress the un-awaited warning
-
-
-#: Stored results larger than this are middle-truncated (curl progress bars
-#: and build logs can reach hundreds of KB, which breaks MCP client polling).
-_MAX_RESULT_CHARS = 60_000
 
 
 def _truncate(result: str) -> str:
@@ -91,20 +123,102 @@ async def _run(job_id: str, coro: Coroutine[Any, Any, str]) -> None:
         entry["error"] = sanitize_error(e)
         entry["status"] = "failed"
         logger.warning("Background job %s failed: %s", job_id, entry["error"])
-    entry["finished_at"] = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC)
+    entry["finished_at"] = now.isoformat()
+    entry["_finished_ts"] = now
 
 
-def get_job(job_id: str) -> dict[str, Any] | None:
-    """Return a public view of the job, or None if unknown."""
+def update_job_output(job_id: str, stdout_chunk: str = "", stderr_chunk: str = "") -> None:
+    """Append live output for a running job; ignored for unknown or finished jobs."""
+    entry = _jobs.get(job_id)
+    if entry is None or entry["status"] != "running":
+        return
+    if not stdout_chunk and not stderr_chunk:
+        return
+    # Counted before trimming and never recomputed from the buffers, so this
+    # stays monotonic across trims and remains a usable progress signal.
+    entry["_bytes_captured"] += len(stdout_chunk.encode("utf-8", errors="replace")) + len(
+        stderr_chunk.encode("utf-8", errors="replace")
+    )
+    entry["_last_output_ts"] = datetime.now(UTC)
+    if stdout_chunk:
+        entry["_stdout_buffer"] = (entry["_stdout_buffer"] + stdout_chunk)[-_MAX_BUFFER_CHARS:]
+    if stderr_chunk:
+        entry["_stderr_buffer"] = (entry["_stderr_buffer"] + stderr_chunk)[-_MAX_BUFFER_CHARS:]
+
+
+def _tail(text: str, n: int) -> str:
+    """Return the last *n* lines of *text*, never with a trailing newline.
+
+    Normalising the ending matters: returning *text* verbatim when it is short
+    but a stripped join when it is truncated makes the trailing newline depend
+    on whether truncation happened, which is a trap for anyone asserting on it.
+    """
+    if n <= 0:
+        return ""
+    return "\n".join(text.splitlines()[-n:])
+
+
+def _public_view(entry: dict[str, Any], tail_lines: int) -> dict[str, Any]:
+    """Build the client-facing view of a job entry.
+
+    Every key is listed explicitly rather than filtered out of *entry*: an
+    allowlist by construction is the only thing that reliably keeps the
+    unbounded internal buffers from being shipped to the client on every poll.
+    """
+    now = datetime.now(UTC)
+    finished_ts: datetime | None = entry["_finished_ts"]
+    # Freezes once the job ends, so a job that finished an hour ago does not
+    # report an hour of elapsed time.
+    end_ts = finished_ts if finished_ts is not None else now
+    elapsed_seconds = int((end_ts - entry["_started_ts"]).total_seconds())
+
+    last_output_ts: datetime | None = entry["_last_output_ts"]
+    seconds_since_output: int | None = None
+    if last_output_ts is not None:
+        seconds_since_output = int((now - last_output_ts).total_seconds())
+
+    running = entry["status"] == "running"
+    # A job that has never emitted anything is judged on its total age instead.
+    quiet_seconds = seconds_since_output if seconds_since_output is not None else elapsed_seconds
+    output_is_growing = running and seconds_since_output is not None and seconds_since_output < _STALL_SECONDS
+    stall_warning = running and quiet_seconds >= _STALL_SECONDS
+
+    return {
+        "job_id": entry["job_id"],
+        "description": entry["description"],
+        "status": entry["status"],
+        "started_at": entry["started_at"],
+        "finished_at": entry["finished_at"],
+        "result": entry["result"],
+        "error": entry["error"],
+        "elapsed_seconds": elapsed_seconds,
+        "bytes_captured": entry["_bytes_captured"],
+        "stdout_tail": _tail(entry["_stdout_buffer"], tail_lines),
+        "stderr_tail": _tail(entry["_stderr_buffer"], tail_lines),
+        "seconds_since_output": seconds_since_output,
+        "output_is_growing": output_is_growing,
+        "stall_warning": stall_warning,
+    }
+
+
+def get_job(job_id: str, tail_lines: int = 50) -> dict[str, Any] | None:
+    """Return a public view of the job, or None if unknown. Pure read."""
     entry = _jobs.get(job_id)
     if entry is None:
         return None
-    return {k: v for k, v in entry.items() if not k.startswith("_")}
+    return _public_view(entry, tail_lines)
 
 
 def list_jobs() -> list[dict[str, Any]]:
-    """Return public views of all tracked jobs, oldest first, without results."""
-    return [{k: v for k, v in e.items() if not k.startswith("_") and k != "result"} for e in _jobs.values()]
+    """Return public views of all tracked jobs, oldest first, without result or output tails."""
+    out: list[dict[str, Any]] = []
+    for entry in _jobs.values():
+        view = _public_view(entry, 0)
+        for key in ("result", "stdout_tail", "stderr_tail"):
+            view.pop(key, None)
+        out.append(view)
+    return out
 
 
 def cancel_job(job_id: str) -> bool:

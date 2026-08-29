@@ -261,23 +261,43 @@ def ssh_connection_wrapper(timeout_seconds: float = 15.0) -> Callable[[F], F]:
                 # Phase 41-09 WR-05: split requested identifier from dial target.
                 requested = kwargs.get("hostname", args[0] if args else "unknown")
                 dial_target = kwargs.get("dial_target", requested)
-                error_response = json.dumps(
-                    {
-                        "status": "error",
-                        "hostname": requested,
-                        "connection_ip": dial_target,
-                        "error": f"SSH connection timeout after {effective_timeout} seconds",
-                        "error_type": "ssh_timeout",
-                        "suggestions": [
-                            "Check if the target device is reachable",
-                            "Verify SSH service is running on the target",
-                            "Check network connectivity",
-                            "Try increasing the timeout value",
-                        ],
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    },
-                    indent=2,
-                )
+                payload: dict[str, Any] = {
+                    "status": "error",
+                    "hostname": requested,
+                    "connection_ip": dial_target,
+                    "error": f"SSH connection timeout after {effective_timeout} seconds",
+                    "error_type": "ssh_timeout",
+                    "suggestions": [
+                        "Check if the target device is reachable",
+                        "Verify SSH service is running on the target",
+                        "Check network connectivity",
+                        "Try increasing the timeout value",
+                    ],
+                }
+                if getattr(func, "__name__", "") == "ssh_execute_command":
+                    # The caller here is an agent that can simply retry in background
+                    # mode, so spell that out instead of leaving it to guess. Without
+                    # this it tends to re-run the same blocking call and time out again.
+                    payload["error"] = (
+                        f"SSH command exceeded the {effective_timeout}s synchronous timeout on {requested}."
+                    )
+                    payload["warning"] = (
+                        "The command MAY still be running on the remote host. Verify before retrying: "
+                        "re-running a partially completed install or download wastes work."
+                    )
+                    payload["suggestion"] = (
+                        "Re-issue the SAME call with background=true. You get a job_id back immediately; "
+                        "poll it with get_background_job."
+                    )
+                    payload["suggestions"] = [
+                        "Re-issue with background=true for long-running commands",
+                        "Poll the returned job_id with get_background_job",
+                        "Cancel with cancel_background_job if needed",
+                        "Check if the target device is reachable",
+                        "Verify SSH service is running on the target",
+                    ]
+                payload["timestamp"] = datetime.now(UTC).isoformat()
+                error_response = json.dumps(payload, indent=2)
                 return error_response
             except (ConnectionError, OSError) as e:
                 # Phase 41-09 WR-05: split requested identifier from dial target.

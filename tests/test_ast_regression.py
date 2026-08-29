@@ -1810,3 +1810,34 @@ class TestPhase44RemoveDeviceCallPath:
                 f"{class_name or '<module>'}.{func_name} ({rel_path}) "
                 f"at line(s): {violations}."
             )
+
+
+def test_every_asyncssh_attribute_reference_exists() -> None:
+    """Every ``asyncssh.X`` referenced in src/ must exist on the real module.
+
+    A v1.8 streaming attempt shipped ``asyncssh.STDIN_CHILD``,
+    ``asyncssh.STDOUT_SYSLOG`` and ``asyncssh.STDERR_SYSLOG`` -- none of which
+    are real (the module exports PIPE / DEVNULL / STDOUT). Mocked unit tests
+    could not catch it because they never touch the real module, so the whole
+    background-streaming path raised AttributeError on first use. This resolves
+    each referenced name against the installed asyncssh instead.
+    """
+    import asyncssh
+
+    src_root = Path(__file__).parent.parent / "src" / "homelab_mcp"
+    missing: list[str] = []
+    for py_file in sorted(src_root.rglob("*.py")):
+        tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "asyncssh"
+                and not hasattr(asyncssh, node.attr)
+            ):
+                missing.append(f"{py_file.relative_to(src_root)}:{node.lineno} asyncssh.{node.attr}")
+
+    assert not missing, (
+        "Source references asyncssh attributes that do not exist on the installed "
+        f"asyncssh {asyncssh.__version__}: " + "; ".join(missing)
+    )

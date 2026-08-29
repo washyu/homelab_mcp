@@ -51,3 +51,7 @@ ansible-vault-password
 # mcp-contracts checkout. Not portable, and this repo is public.
 config.yaml
 config.yaml.bak
+
+# Codex CLI local config: holds a plaintext TestSprite API key. This repo is
+# public — never commit it.
+.codex/
