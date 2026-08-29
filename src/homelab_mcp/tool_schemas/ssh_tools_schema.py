@@ -31,18 +31,18 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
         },
     },
     "ssh_execute_command": {
-        "description": "Execute a command on a remote system via SSH. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored.",
+        "description": "Execute a command on a remote system via SSH. If credentials were stored with `credentials add`, username and password are auto-injected from the keyring — omit them. If authentication fails with 'No credentials found', run `homelab-mcp credentials add <hostname> <username>` in the terminal or call `list_keyring_credentials` to see what is already stored. For long-running commands, set `background=true` and poll with `get_background_job`. Cancel with `cancel_background_job`.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "hostname": {"type": "string", "description": "Hostname or IP address"},
                 "username": {
                     "type": "string",
-                    "description": "SSH username. Omit if credentials were stored with `credentials add` — they are auto-injected.",
+                    "description": "SSH username. Omit when credentials for this hostname are in the keyring; they are auto-injected.",
                 },
                 "password": {
                     "type": "string",
-                    "description": "SSH password. Omit if credentials were stored with `credentials add` — they are auto-injected.",
+                    "description": "SSH password. Omit when using keyring credentials. Prefer the keyring.",
                 },
                 "command": {
                     "type": "string",
@@ -51,21 +51,24 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                 "sudo": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Execute command with sudo privileges",
+                    "description": "Prefix the command with sudo. Requires a credential with sudo rights.",
                 },
                 "port": {
                     "type": "integer",
-                    "description": "SSH port (default: 22)",
+                    "description": "SSH port.",
                     "default": 22,
                 },
                 "background": {
                     "type": "boolean",
                     "default": False,
                     "description": (
-                        "Run the command as a background job and return a job_id immediately "
-                        "instead of waiting for completion. Use for long-running commands "
-                        "(installs, upgrades, builds) that could exceed the client timeout. "
-                        "Poll get_background_job with the returned job_id for status and output."
+                        "Run the command asynchronously and return a job_id immediately instead of "
+                        "blocking. REQUIRED for anything that may exceed the 20 second synchronous "
+                        "timeout: package installs, compiles, large downloads, model pulls, backups, "
+                        "or any loop that waits on another process. Poll the returned job_id with "
+                        "get_background_job. Cancel with cancel_background_job. The server tracks completion "
+                        "for you. Do not write pgrep/pkill wait loops in the command; `pgrep -f` will match "
+                        "the wait loop's own command line."
                     ),
                 },
             },
@@ -84,6 +87,11 @@ SSH_TOOLS: dict[str, dict[str, Any]] = {
                 "job_id": {
                     "type": "string",
                     "description": "Job ID returned when the job was started. Omit to list all jobs.",
+                },
+                "tail_lines": {
+                    "type": "integer",
+                    "description": "Number of tail lines to return for stdout/stderr. Defaults to 50.",
+                    "default": 50,
                 },
             },
             "required": [],

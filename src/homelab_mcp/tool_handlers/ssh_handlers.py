@@ -59,10 +59,11 @@ async def handle_ssh_execute_command(arguments: dict[str, Any]) -> dict[str, Any
 async def handle_get_background_job(arguments: dict[str, Any]) -> dict[str, Any]:
     """Handle get_background_job tool. Without job_id, lists all jobs."""
     job_id = arguments.get("job_id")
+    tail_lines = arguments.get("tail_lines", 50)
     if not job_id:
         payload: dict[str, Any] = {"status": "success", "jobs": background_jobs.list_jobs()}
     else:
-        job = background_jobs.get_job(job_id)
+        job = background_jobs.get_job(job_id, tail_lines=tail_lines)
         if job is None:
             payload = {"status": "error", "error": f"Unknown job_id: {job_id}"}
         else:
