@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import logging
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from typing import Any
 
@@ -52,7 +52,22 @@ def start_job(description: str, coro: Coroutine[Any, Any, str]) -> str:
     *coro* must resolve to the tool's normal string result; it is stored
     verbatim as the job result.
     """
+    return _register(description, lambda _job_id: coro)
+
+
+def start_job_with_id(description: str, make_coro: Callable[[str], Coroutine[Any, Any, str]]) -> str:
+    """Like start_job, but *make_coro* is handed the allocated job_id.
+
+    Producers that stream partial output back via update_job_output need to
+    know their own job_id before they start running, and the id is not
+    assigned until registration.
+    """
+    return _register(description, make_coro)
+
+
+def _register(description: str, make_coro: Callable[[str], Coroutine[Any, Any, str]]) -> str:
     job_id = f"job-{next(_counter)}"
+    coro = make_coro(job_id)
     task = asyncio.get_running_loop().create_task(_run(job_id, coro))
     now = datetime.now(UTC)
     _jobs[job_id] = {
@@ -133,13 +148,15 @@ def update_job_output(job_id: str, stdout_chunk: str = "", stderr_chunk: str = "
 
 
 def _tail(text: str, n: int) -> str:
-    """Return the last *n* lines of *text*."""
+    """Return the last *n* lines of *text*, never with a trailing newline.
+
+    Normalising the ending matters: returning *text* verbatim when it is short
+    but a stripped join when it is truncated makes the trailing newline depend
+    on whether truncation happened, which is a trap for anyone asserting on it.
+    """
     if n <= 0:
         return ""
-    lines = text.splitlines()
-    if len(lines) <= n:
-        return text
-    return "\n".join(lines[-n:])
+    return "\n".join(text.splitlines()[-n:])
 
 
 def _public_view(entry: dict[str, Any], tail_lines: int) -> dict[str, Any]:

@@ -33,9 +33,11 @@ async def handle_ssh_execute_command(arguments: dict[str, Any]) -> dict[str, Any
         # timeout must not appear in the tool schema.
         # ponytail: 1h ceiling; make it configurable if a job ever legitimately runs longer.
         arguments.setdefault("timeout", 3600)
-        job_id = background_jobs.start_job(
+        # start_job_with_id, not start_job: ssh_execute_command needs its own
+        # job_id to stream partial output back while the command is still running.
+        job_id = background_jobs.start_job_with_id(
             description=f"ssh {arguments.get('hostname', '?')}: {arguments.get('command', '')[:80]}",
-            coro=ssh_execute_command(**arguments),
+            make_coro=lambda jid: ssh_execute_command(job_id=jid, **arguments),
         )
         return {
             "content": [
