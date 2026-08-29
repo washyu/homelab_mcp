@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 from aiohttp import ClientError
-from aioresponses import aioresponses
 
 from src.homelab_mcp.proxmox_api import (
     ProxmoxAPIClient,
@@ -127,30 +126,28 @@ class TestProxmoxAuthentication:
         )
 
         # AND: Mock HTTP response for authentication
-        with aioresponses() as mocked:
-            # Mock the /access/ticket endpoint (authentication)
-            mocked.post(
-                "https://192.168.1.100:8006/api2/json/access/ticket",
-                payload={
-                    "data": {
-                        "ticket": "PVE:root@pam:12345678::ticket",
-                        "CSRFPreventionToken": "12345:csrf-token",
-                    }
-                },
-                status=200,
-            )
+        response = AsyncMock()
+        response.raise_for_status = lambda: None
+        response.json = AsyncMock(
+            return_value={
+                "data": {
+                    "ticket": "PVE:root@pam:12345678::ticket",
+                    "CSRFPreventionToken": "12345:csrf-token",
+                }
+            }
+        )
+        session = AsyncMock()
+        session.post = MagicMock(return_value=AsyncContextManagerMock(response))
 
-            # WHEN: Making an authenticated request
-            # Note: We need to test _authenticate directly since request() calls it
-            import aiohttp
+        # WHEN: Authenticating (tested directly, since request() calls it internally)
+        await client._authenticate(session)
 
-            connector = aiohttp.TCPConnector(ssl=False)
-            async with aiohttp.ClientSession(connector=connector) as session:
-                await client._authenticate(session)
-
-            # THEN: Auth cookie and CSRF token should be set
-            assert client._auth_cookie == "PVE:root@pam:12345678::ticket"
-            assert client._csrf_token == "12345:csrf-token"
+        # THEN: Auth cookie and CSRF token should be set
+        assert client._auth_cookie == "PVE:root@pam:12345678::ticket"
+        assert client._csrf_token == "12345:csrf-token"
+        # AND: it posted to the ticket endpoint with the supplied credentials
+        assert session.post.call_args.args[0] == "https://192.168.1.100:8006/api2/json/access/ticket"
+        assert session.post.call_args.kwargs["data"] == {"username": "root@pam", "password": "test123"}
 
     @pytest.mark.asyncio
     async def test_authenticate_invalid_credentials(self):
@@ -163,20 +160,26 @@ class TestProxmoxAuthentication:
         )
 
         # AND: Mock HTTP 401 Unauthorized response
-        with aioresponses() as mocked:
-            mocked.post(
-                "https://192.168.1.100:8006/api2/json/access/ticket",
+        def _raise_401() -> None:
+            raise aiohttp.ClientResponseError(
+                request_info=MagicMock(),
+                history=(),
                 status=401,
-                body="Authentication failure",
+                message="Authentication failure",
             )
 
-            # WHEN/THEN: Authentication should raise an error
-            import aiohttp
+        response = AsyncMock()
+        response.raise_for_status = _raise_401
+        session = AsyncMock()
+        session.post = MagicMock(return_value=AsyncContextManagerMock(response))
 
-            connector = aiohttp.TCPConnector(ssl=False)
-            with pytest.raises(aiohttp.ClientResponseError):
-                async with aiohttp.ClientSession(connector=connector) as session:
-                    await client._authenticate(session)
+        # WHEN/THEN: Authentication should surface the error, not swallow it
+        with pytest.raises(aiohttp.ClientResponseError):
+            await client._authenticate(session)
+
+        # AND: no credentials should have been cached from a failed auth
+        assert client._auth_cookie is None
+        assert client._csrf_token is None
 
     @pytest.mark.asyncio
     async def test_authenticate_missing_credentials(self):
@@ -1669,16 +1672,24 @@ class TestProxmoxSharedSession:
             api_token="root@pam!token=secret",
         )
 
-        # WHEN: Making a request with aioresponses mocking
-        with aioresponses() as mocked:
-            mocked.get(
-                "https://192.168.1.100:8006/api2/json/nodes",
-                payload={"data": [{"node": "pve"}]},
-            )
+        # AND: a stand-in for the session request() will construct for itself
+        response = AsyncMock()
+        response.raise_for_status = lambda: None
+        response.json = AsyncMock(return_value={"data": [{"node": "pve"}]})
+        per_request_session = AsyncMock()
+        per_request_session.request = MagicMock(return_value=AsyncContextManagerMock(response))
+
+        # WHEN: Making a request with no shared session supplied
+        with patch(
+            "homelab_mcp.proxmox_api.aiohttp.ClientSession",
+            return_value=AsyncContextManagerMock(per_request_session),
+        ) as mock_session_cls:
             result = await client.request("GET", "/nodes")
 
         # THEN: Request should succeed (per-request session was created)
         assert result == [{"node": "pve"}]
+        mock_session_cls.assert_called_once()
+        assert per_request_session.request.call_args.kwargs["url"] == "https://192.168.1.100:8006/api2/json/nodes"
 
     @pytest.mark.asyncio
     async def test_shared_session_auth_works(self):

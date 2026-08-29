@@ -6,10 +6,12 @@ cluster walk, cache hits, error messages, debug-log tier trace, and desync warni
 """
 
 import logging
-from unittest.mock import patch
+from contextlib import contextmanager
+from typing import Any
+from unittest.mock import MagicMock, patch
 
+import aiohttp
 import pytest
-from aioresponses import aioresponses
 
 from homelab_mcp.proxmox_api import _HOST_CLUSTER_CACHE, resolve_proxmox_credentials
 from homelab_mcp.ssh_tools import CredentialNotFoundError
@@ -25,6 +27,80 @@ def _clear_cache() -> None:
     _HOST_CLUSTER_CACHE.clear()
     yield  # type: ignore[misc]
     _HOST_CLUSTER_CACHE.clear()
+
+
+# ---------------------------------------------------------------------------
+# Helper: stub the /cluster/status probe
+# ---------------------------------------------------------------------------
+
+
+class _ProbeRecorder:
+    """Serves queued /cluster/status results and records each probe.
+
+    Replaces aioresponses, which cannot be used here: 0.7.9 is the latest
+    release and it breaks on aiohttp 3.14's ClientResponse signature, which
+    pinned the project below 3.14 and held 27 advisories open.
+
+    Patching ProxmoxAPIClient.get is also a better seam than the wire layer --
+    it is the resolver's actual dependency, and unlike a URL matcher it can see
+    which candidate token each probe was made with.
+    """
+
+    def __init__(self, results: list[Any]) -> None:
+        self._results = list(results)
+        self.probes: list[tuple[str, str, str | None]] = []
+
+    def record(self, client: Any, endpoint: str) -> Any:
+        self.probes.append((client.host, endpoint, client.api_token))
+        if not self._results:
+            raise AssertionError(f"Unexpected probe #{len(self.probes)} to {endpoint} — no queued result")
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    @property
+    def call_count(self) -> int:
+        return len(self.probes)
+
+
+@contextmanager
+def _probe(*results: Any):
+    """Patch ProxmoxAPIClient.get with a queue of results, one per probe.
+
+    Each result is either a value to return or an exception to raise, letting a
+    test express "first candidate 401s, second succeeds" in order.
+    """
+    recorder = _ProbeRecorder(list(results))
+
+    # Must be a real function, not a callable instance: only functions
+    # implement the descriptor protocol, so only they get `self` bound when
+    # patched onto a class.
+    async def _fake_get(self: Any, endpoint: str, params: Any = None) -> Any:
+        return recorder.record(self, endpoint)
+
+    with patch("homelab_mcp.proxmox_api.ProxmoxAPIClient.get", _fake_get):
+        yield recorder
+
+
+def _cluster_status(node: str, cluster: str | None = None) -> list[dict[str, str]]:
+    """Build a /cluster/status payload as ProxmoxAPIClient.get returns it.
+
+    The client strips the "data" wrapper, so the resolver sees the list directly.
+    """
+    rows = [{"type": "node", "name": node}]
+    if cluster is not None:
+        rows.append({"type": "cluster", "name": cluster})
+    return rows
+
+
+def _unauthorized() -> aiohttp.ClientResponseError:
+    """A 401 shaped the way the resolver's except clause expects.
+
+    request_info must not be None: the resolver logs the error, and
+    ClientResponseError.__str__ dereferences request_info.real_url.
+    """
+    return aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=401, message="Unauthorized")
 
 
 # ---------------------------------------------------------------------------
@@ -74,18 +150,10 @@ async def test_resolver_cluster_only_match(
     # cluster scope call uses scope="cluster", cluster_name="homelab-prod"
     mock_get_cred.return_value = "secret-uuid-abc"  # type: ignore[attr-defined]
 
-    with aioresponses() as m:
-        m.get(
-            "https://pve1.home:8006/api2/json/cluster/status",
-            payload={
-                "data": [
-                    {"type": "node", "name": "pve1.home"},
-                    {"type": "cluster", "name": "homelab-prod"},
-                ]
-            },
-            status=200,
-        )
+    with _probe(_cluster_status("pve1.home", "homelab-prod")) as probe:
         result = await resolve_proxmox_credentials("pve1.home")
+
+    assert probe.probes == [("pve1.home", "/cluster/status", "root@pam!clustertok=secret-uuid-abc")]
 
     api_token, scope, cluster_name = result
     assert scope == "cluster"
@@ -112,11 +180,11 @@ async def test_resolver_per_node_overrides_cluster_no_probe(
     ]
     mock_get_cred.return_value = "node-secret"  # type: ignore[attr-defined]
 
-    with aioresponses() as m:
+    with _probe() as probe:
         result = await resolve_proxmox_credentials("pve1.home")
 
-        # /cluster/status must NEVER have been called
-        assert not m.requests, "Expected zero HTTP requests (per-node short-circuit)"
+    # /cluster/status must NEVER have been called
+    assert probe.call_count == 0, "Expected zero HTTP requests (per-node short-circuit)"
 
     api_token, scope, cluster_name = result
     assert scope == "node"
@@ -142,12 +210,7 @@ async def test_resolver_standalone_node_raises_with_actionable_message(
     ]
     mock_get_cred.return_value = "some-secret"  # type: ignore[attr-defined]
 
-    with aioresponses() as m:
-        m.get(
-            "https://pve-standalone:8006/api2/json/cluster/status",
-            payload={"data": [{"type": "node", "name": "pve-standalone"}]},
-            status=200,
-        )
+    with _probe(_cluster_status("pve-standalone")):
         with pytest.raises(CredentialNotFoundError) as exc_info:
             await resolve_proxmox_credentials("pve-standalone")
 
@@ -184,24 +247,15 @@ async def test_resolver_multi_cluster_first_match_wins(
     mock_get_cred.side_effect = _get_cred_side_effect  # type: ignore[attr-defined]
 
     with caplog.at_level(logging.DEBUG, logger="homelab_mcp.proxmox_api"):
-        with aioresponses() as m:
-            # clusterA: 401 → should be skipped
-            m.get(
-                "https://pve-b1:8006/api2/json/cluster/status",
-                status=401,
-            )
-            # clusterB: 200 with matching cluster row
-            m.get(
-                "https://pve-b1:8006/api2/json/cluster/status",
-                payload={
-                    "data": [
-                        {"type": "node", "name": "pve-b1"},
-                        {"type": "cluster", "name": "clusterB"},
-                    ]
-                },
-                status=200,
-            )
+        # clusterA 401s and is skipped; clusterB then matches.
+        with _probe(_unauthorized(), _cluster_status("pve-b1", "clusterB")) as probe:
             result = await resolve_proxmox_credentials("pve-b1")
+
+    # Both candidates were tried, each with its own token
+    assert [t for _, _, t in probe.probes] == [
+        "root@pam!tokA=secretA",
+        "root@pam!tokB=secretB",
+    ]
 
     api_token, scope, cluster_name = result
     assert scope == "cluster"
@@ -234,21 +288,13 @@ async def test_resolver_cache_hit_skips_probe(
     ]
     mock_get_cred.return_value = "cache-secret"  # type: ignore[attr-defined]
 
-    with aioresponses() as m:
-        # Only ONE /cluster/status mock registered — second call must not issue a second request.
-        m.get(
-            "https://pve1.home:8006/api2/json/cluster/status",
-            payload={
-                "data": [
-                    {"type": "node", "name": "pve1.home"},
-                    {"type": "cluster", "name": "homelab-prod"},
-                ]
-            },
-            status=200,
-        )
+    # Only ONE queued result -- a second probe would raise from the recorder.
+    with _probe(_cluster_status("pve1.home", "homelab-prod")) as probe:
         result1 = await resolve_proxmox_credentials("pve1.home")
-        # Second call — cache should be hit, no extra HTTP call
+        # Second call -- cache should be hit, no extra HTTP call
         result2 = await resolve_proxmox_credentials("pve1.home")
+
+    assert probe.call_count == 1, "Cache hit should have avoided a second probe"
 
     assert result1 == result2
     assert result1[1] == "cluster"
@@ -278,17 +324,7 @@ async def test_resolver_debug_log_tier_trace(
     mock_get_cred.return_value = "secret-for-log-test"  # type: ignore[attr-defined]
 
     with caplog.at_level(logging.DEBUG, logger="homelab_mcp.proxmox_api"):
-        with aioresponses() as m:
-            m.get(
-                "https://pve1.home:8006/api2/json/cluster/status",
-                payload={
-                    "data": [
-                        {"type": "node", "name": "pve1.home"},
-                        {"type": "cluster", "name": "homelab-prod"},
-                    ]
-                },
-                status=200,
-            )
+        with _probe(_cluster_status("pve1.home", "homelab-prod")):
             await resolve_proxmox_credentials("pve1.home")
 
     records_a = [r.message for r in caplog.records]
@@ -310,7 +346,7 @@ async def test_resolver_debug_log_tier_trace(
     mock_get_cred.return_value = "node-secret-for-log-test"  # type: ignore[attr-defined]
 
     with caplog.at_level(logging.DEBUG, logger="homelab_mcp.proxmox_api"):
-        with aioresponses():
+        with _probe():
             await resolve_proxmox_credentials("pve1.home")
 
     records_b = [r.message for r in caplog.records]
