@@ -51,7 +51,7 @@ uv add pyyaml asyncssh
 
 # Optional feature groups
 uv add --group monitoring pandas pyarrow
-uv add --group automation ansible paramiko
+uv add --group automation ansible
 uv add --group ai ollama
 uv add --group security keyring cryptography
 

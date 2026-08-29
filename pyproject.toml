@@ -7,10 +7,15 @@ requires-python = ">=3.12"
 dependencies = [
     "mcp[cli]>=2.0.0,<3",
     "pyyaml>=6.0",
-    "asyncssh>=2.14.0",
+    # >=2.23.1 fixes the SCP path-traversal advisory; we use start_sftp_client.
+    "asyncssh>=2.24.0",
     "jsonschema>=4.24.0",
     "httpx>=0.28.1",
-    "aiohttp>=3.9.0",
+    # Floor clears 19 advisories. The <3.14 ceiling is not a security choice:
+    # aioresponses 0.7.9 (latest) breaks on 3.14's ClientResponse.__init__
+    # stream_writer kwarg. Drop the ceiling once aioresponses supports 3.14 --
+    # 14 aiohttp advisories stay open until then.
+    "aiohttp>=3.13.4,<3.14",
     "aiofiles>=24.1.0",
     "rich>=13.10.5",
     # HTTP transport dependencies
@@ -24,17 +29,22 @@ dependencies = [
 [project.optional-dependencies]
 monitoring = [
     "pandas>=2.2.3",
-    "pyarrow>=20.0.0",
+    # >=23.0.1 fixes the IPC use-after-free advisory.
+    "pyarrow>=23.0.1",
 ]
 automation = [
+    # ansible-playbook is invoked as a subprocess, never imported.
+    # paramiko was dropped here: nothing imported it (asyncssh handles all SSH)
+    # and it carried an advisory with no published patch.
     "ansible>=2.9.0",
-    "paramiko>=3.0.0",
 ]
 ai = [
     "ollama>=0.4.4",
 ]
 security = [
-    "cryptography>=42.0.0",
+    # >=50.0.0 clears the bundled-OpenSSL, subgroup-validation and PKCS#7
+    # Bleichenbacher advisories.
+    "cryptography>=50.0.1",
 ]
 
 [project.scripts]
